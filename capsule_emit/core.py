@@ -20,12 +20,11 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from agent_action_capsule import emit as _base_emit
-from agent_action_capsule.contracts import Disposition, EffectRecord
 from agent_action_capsule.anchor import anchor as _simple_anchor
+from agent_action_capsule.contracts import Disposition, EffectRecord
 
 from .ledger import append_to_ledger
 

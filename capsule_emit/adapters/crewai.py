@@ -11,7 +11,7 @@ Works without installing crewai — ``wrap()`` is framework-free.
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable
+from typing import Any
 
 from ._base import CapsuleEmitterBase
 

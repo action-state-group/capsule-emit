@@ -7,15 +7,11 @@ Verifies: emit → ledger append → ledger view → verify (VALID) → tamper (
 from __future__ import annotations
 
 import io
-import json
-import tempfile
-from pathlib import Path
 
 import pytest
-
-from capsule_emit import emit, ledger_view, load_manifest, read_ledger
 from agent_action_capsule import verify
 
+from capsule_emit import emit, ledger_view, load_manifest, read_ledger
 
 # ---------------------------------------------------------------------------
 # Fixtures

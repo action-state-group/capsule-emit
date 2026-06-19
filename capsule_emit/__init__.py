@@ -21,7 +21,8 @@ Anchor is on by default (async, digest-only). Ledger is written to
 ``ledger.jsonl`` by default. Both are configurable.
 """
 from .core import EmitResult, emit
-from .ledger import append_to_ledger, read_ledger, view as ledger_view
+from .ledger import append_to_ledger, read_ledger
+from .ledger import view as ledger_view
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
 
 __version__ = "0.1.0"

@@ -13,8 +13,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._base import CapsuleEmitterBase
 from capsule_emit.core import EmitResult
+
+from ._base import CapsuleEmitterBase
 
 __all__ = ["HermesCapsuleEmitter"]
 

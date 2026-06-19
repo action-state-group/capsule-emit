@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 
 
 def _cmd_ledger_view(args: argparse.Namespace) -> int:
-    from .ledger import read_ledger, view as _view
+    from .ledger import read_ledger
+    from .ledger import view as _view
 
     if args.as_json:
         records = read_ledger(args.path)

@@ -11,8 +11,6 @@ Run:
 """
 from __future__ import annotations
 
-import json
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -21,8 +19,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "agent-action-capsule" / "python"))
 
-from capsule_emit import emit, ledger_view, load_manifest
 from agent_action_capsule import verify
+
+from capsule_emit import emit, ledger_view, load_manifest
 
 LEDGER_PATH = Path(tempfile.mkdtemp()) / "ledger.jsonl"
 

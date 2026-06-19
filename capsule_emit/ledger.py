@@ -56,7 +56,6 @@ def view(path: str | os.PathLike, *, out: Any = None) -> None:
     col_op = 14
     col_effect = 22
     col_verdict = 12
-    col_anchored = 8
 
     header = (
         f"{'capsule_id':<{col_id}}  "

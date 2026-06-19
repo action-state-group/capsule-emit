@@ -23,7 +23,6 @@ import functools
 from typing import Any, Callable
 
 from ._base import CapsuleEmitterBase
-from capsule_emit.core import EmitResult
 
 __all__ = ["MCPCapsuleEmitter"]
 
