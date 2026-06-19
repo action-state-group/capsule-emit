@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: Apache-2.0
 """capsule-emit quickstart demo — the 5-minute acceptance bar.
 
 Demonstrates: emit → anchor (async, skipped here for offline) → ledger view → verify.
@@ -110,9 +110,6 @@ def main() -> int:
 
     print("=== All acceptance checks passed ✓ ===")
     print(f"\nLedger: {LEDGER_PATH}")
-    print("\nUpgrade path (no code change):")
-    print("  pip install gopher-ai")
-    print(f"  gopher-ai ledger serve {LEDGER_PATH} --flows-dir flows")
     return 0
 
 

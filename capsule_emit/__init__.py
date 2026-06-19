@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: Apache-2.0
 """capsule-emit — one-call emit() for Agent Action Capsules.
 
 The adoption surface for the Agent Action Capsule standard:

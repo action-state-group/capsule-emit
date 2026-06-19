@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: Apache-2.0
 """capsule-emit framework adapters.
 
 MCP-first: ``capsule_emit.adapters.mcp.MCPCapsuleEmitter``

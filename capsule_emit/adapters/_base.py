@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: Apache-2.0
 """Shared base for all capsule-emit framework adapters.
 
 All framework adapters (LangChain, CrewAI, Hermes, MCP) extend this base.

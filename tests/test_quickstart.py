@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: Apache-2.0
 """Quickstart acceptance tests — the 5-minute bar for capsule-emit.
 
 Verifies: emit → ledger append → ledger view → verify (VALID) → tamper (INVALID)

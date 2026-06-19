@@ -1,0 +1,13 @@
+capsule-emit
+Copyright 2024-2026 Action State Group, Inc.
+
+This product is developed by Action State Group, Inc. and is published
+as open-source software under the Apache License, Version 2.0.
+
+The Agent Action Capsule specification (draft-mih-scitt-agent-action-capsule)
+is developed and maintained at:
+  https://github.com/action-state-group/agent-action-capsule
+
+This library is a producer/emission layer for that specification.
+It depends on the agent-action-capsule reference library for capsule
+construction and Class-1 verification.

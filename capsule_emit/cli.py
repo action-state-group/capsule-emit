@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: Apache-2.0
 """capsule-emit CLI.
 
     capsule-emit ledger view <path>          — print the chain table

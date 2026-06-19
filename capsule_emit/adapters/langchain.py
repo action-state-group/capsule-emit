@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: Apache-2.0
 """Thin LangChain shell over CapsuleEmitterBase (~15 lines of adapter logic).
 
     from capsule_emit.adapters.langchain import LangChainCapsuleEmitter

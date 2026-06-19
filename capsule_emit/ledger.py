@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: Apache-2.0
 """Ledger read/write utilities and the ledger view renderer.
 
 The ledger is a newline-delimited JSON (JSONL) file — one capsule dict per line.

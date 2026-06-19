@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: Apache-2.0
 """capsule-emit core — the one-call emit() with anchor-on-by-default.
 
 This is the adoption-surface API described in capsule-emit-quickstart.md.
@@ -11,8 +11,8 @@ It wraps ``agent_action_capsule.emit()`` with:
 
 The ``confirms`` parameter threads a "did → confirmed" chain without a scheduler.
 
-Upgrade path: the same emit() calls produce records that gopher-ai reads directly
-(``gopher-ai ledger serve ./ledger.jsonl --flows-dir ./flows``).
+The same emit() calls and ledger files are compatible with gateway layers that
+enforce declared manifests — no code changes required to add enforcement on top.
 """
 from __future__ import annotations
 

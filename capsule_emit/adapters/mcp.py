@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: Apache-2.0
 """MCP-first capsule adapter (capsule-emit primary adapter).
 
 Wraps an MCP tool function so every call emits a sealed, anchored capsule.
