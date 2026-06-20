@@ -26,6 +26,7 @@ dev = ["pytest>=7.0", "ruff>=0.4"]
 langchain = ["langchain-core>=0.1"]
 crewai = ["crewai>=0.40"]
 mcp = []
+hermes = []
 
 [project.scripts]
 capsule-emit = "capsule_emit.cli:main"

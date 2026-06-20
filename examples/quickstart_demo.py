@@ -2,22 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 """capsule-emit quickstart demo — the 5-minute acceptance bar.
 
-Demonstrates: emit → anchor (async, skipped here for offline) → ledger view → verify.
+Demonstrates: emit → anchor (async, fire-and-forget) → ledger view → verify.
 
 Run:
-    cd capsule-emit
-    pip install -e ".[dev]" && pip install -e "../agent-action-capsule/python"
+    pip install "capsule-emit[dev]"
     python examples/quickstart_demo.py
 """
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
-
-# Make sure we can run from repo root without installing
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "agent-action-capsule" / "python"))
 
 from agent_action_capsule import verify
 
@@ -43,11 +37,11 @@ def main() -> int:
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         verdict="executed",
         effect={"type": "write_po", "status": "dispatched"},
-        anchor=False,               # offline demo — set anchor=True in production
+        anchor=True,                # fire-and-forget POST to agentactioncapsule.org/v1/digest
         ledger=LEDGER_PATH,
     )
     print(f"  capsule_id : {cap.capsule_id}")
-    print(f"  anchored   : {cap.anchored}  (anchor=False for offline demo)")
+    print(f"  anchored   : {cap.anchored}  (async dispatch to agentactioncapsule.org)")
     assert len(cap.capsule_id) == 64, "capsule_id must be 64-char hex"
     print("  ✓ sealed\n")
 
@@ -60,7 +54,7 @@ def main() -> int:
         confirms=cap.capsule_id,
         verdict="confirmed",
         effect={"type": "write_po", "status": "confirmed"},
-        anchor=False,
+        anchor=True,
         ledger=LEDGER_PATH,
     )
     print(f"  capsule_id : {confirm.capsule_id}")
