@@ -22,7 +22,9 @@ Anchor is on by default (async, digest-only). Ledger is written to
 """
 from .core import EmitResult, emit
 from .ledger import append_to_ledger, read_ledger
+from .ledger import show as ledger_show
 from .ledger import view as ledger_view
+from .ledger import view_chains as ledger_view_chains
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
 
 __version__ = "0.1.1"
@@ -36,6 +38,8 @@ __all__ = [
     "append_to_ledger",
     "read_ledger",
     "ledger_view",
+    "ledger_view_chains",
+    "ledger_show",
     # Manifest
     "load_manifest",
     "find_manifest",
