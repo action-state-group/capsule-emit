@@ -12,15 +12,16 @@ Initial public release: the producer/emission layer for the Agent Action Capsule
 profile.
 
 ### Added
-- `emit()` — one call to seal a signed, digest-committed capsule of an agent
+- `emit()` — one call to seal a content-addressed, digest-committed capsule of an agent
   action and its outcome (may/did verdict + confirmed-effect binding).
 - Anchoring on by default — digest-only submission to a SCITT transparency log,
-  returning an RFC 9162 inclusion-proof receipt; repointable via `AAC_ANCHOR_URL`
+  recorded in an RFC 9162 transparency log (inclusion checkable against the log;
+  surfacing the receipt onto the result is roadmap); repointable via `AAC_ANCHOR_URL`
   / `anchor_url=`, disable with `anchor=False`.
 - Chaining via `confirms=` (parent linkage; `approved → executed → confirmed`).
 - Layer capture: `agent_input`, `agent_output`, `model`, and compute attestation
   digest-committed into the capsule.
-- Framework adapters: MCP (`@emitter.tool`), LangChain callback, CrewAI listener,
+- Framework adapters: MCP (`@emitter.tool`), LangChain callback, CrewAI `wrap()`,
   Hermes — over one shared `CapsuleEmitterBase`.
 - `manifest.md` declaration parser (declare autonomy + constraints; enforcement
   is a downstream, same-file concern).

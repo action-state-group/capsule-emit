@@ -67,7 +67,12 @@ emitter.after_tool(name, inputs, result)                           # 3  (one lin
 
 - This is the adapter to copy if your framework isn't covered — one call at the
   boundary is all any adapter ultimately does.
+- **No effect block by default.** `after_tool()` emits with no `effect` key unless
+  you pass `effect_status=`. The *dispatched → confirmed* chain requires explicit calls;
+  this adapter seals what happened, not whether the real-world effect completed.
 - Input/output are digest-committed automatically; `model=` is explicit (pass it to
   `emit_capsule`/`emit` if you need it sealed).
-- `effect_status="confirmed"` plus `confirms=<prior_capsule_id>` (via the base
-  `emit_capsule`) is how you chain *dispatched → confirmed* — see [anatomy](../anatomy.md).
+- To **chain** *dispatched → confirmed*, drop to the base `emit_capsule(..., prior_capsule_id=<id>)`
+  — `after_tool` doesn't take a parent id. And `effect_status="confirmed"` needs a non-`None`
+  `tool_output` (a confirmed effect requires a response digest), or it raises — see
+  [anatomy](../anatomy.md).

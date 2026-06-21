@@ -35,7 +35,8 @@ logs can't do that.
 Writing the fingerprint (just the fingerprint — never your data) to a public, append-
 only list, so there's outside evidence the capsule existed at a certain time. On by
 default, free, no signup. Anyone can later check your capsule against the list.
-→ off with `emit(..., anchor=False)`
+→ off with `emit(..., anchor=False)`. *Why this is what turns "my word" into proof
+anyone can check: [why anchoring makes it trustworthy](why-anchoring.md).*
 
 ### Ledger
 Your local running file of capsules — the trail of everything sealed so far. View it

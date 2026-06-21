@@ -62,10 +62,13 @@ matter.
 
 ## Notes
 
+- **No effect block by default.** Capsules emitted here carry no `effect` key; the
+  *dispatched → confirmed* chain requires dropping to `emit()` directly. This adapter
+  records the action; effect-chain coverage is the boundary/gate layer above it.
 - Tool input/output are captured from `on_tool_start`/`on_tool_end` and
   digest-committed automatically.
 - **Model auto-capture is the one place LangChain can give us the model** (via
-  `on_llm_start`). That enhancement is in progress (inbox `[capsule-emit-adoptability]`);
+  `on_llm_start`). That enhancement is on the roadmap;
   until it lands, pass `model=` explicitly if you need it sealed.
 - `on_tool_error` discards the pending capsule — errored tool calls don't silently
   seal as successes.

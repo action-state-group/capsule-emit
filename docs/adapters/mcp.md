@@ -21,8 +21,8 @@ tool — from anywhere — emits a capsule. This is the cleanest: the sealing li
 with the tool, so no call site can forget it.
 
 ```python
-@emitter.tool("write_po")
-def write_po(vendor: str, total: float) -> dict:
+@emitter.tool("write_order")
+def write_order(vendor: str, total: float) -> dict:
     ...
 ```
 
@@ -36,9 +36,9 @@ untouched; only *this* call site seals. Use this when you **don't own the tool**
 ones that move money, not read-only lookups).
 
 ```python
-result = write_po(vendor="Frobozz", total=1240.19)
+result = write_order(vendor="Frobozz", total=1240.19)
 cap = emitter.emit_capsule(
-    "write_po",
+    "write_order",
     tool_input={"vendor": "Frobozz", "total": 1240.19},
     tool_output=result,
 )
@@ -57,8 +57,8 @@ decorator per consequential tool:
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter          # 1
 emitter = MCPCapsuleEmitter(operator="acme-co", developer="po-agent@v1")  # 2
 
-@emitter.tool("write_po")                                         # 3 (per tool)
-def write_po(vendor: str, total: float) -> dict:
+@emitter.tool("write_order")                                         # 3 (per tool)
+def write_order(vendor: str, total: float) -> dict:
     ...
 ```
 
@@ -82,5 +82,8 @@ Paste this into Claude Code (or any coding agent) in your repo:
 - `model=` is **not** auto-captured here — MCP wraps the *tool*, not the LLM, so the
   adapter can't see which model decided. Pass it explicitly via `emit_capsule(...,
   model={...})` (Option B) if you want it sealed.
-- Default verdict is `executed` and effect status `dispatched`. For a refusal or a
-  confirmed effect, use Option B and pass `verdict=`/`effect=`.
+- The decorator auto-adds `effect={"type": action, "status": "dispatched"}`. **There is no
+  auto-confirmed capsule** — recording that an effect *actually happened* requires a second
+  explicit `emit(..., confirms=..., effect={..., "status": "confirmed"})`. The
+  *dispatched → confirmed* chain is the boundary/gate layer, not the adapter layer.
+- For a refusal or a custom verdict, use Option B and pass `verdict=`/`effect=` explicitly.

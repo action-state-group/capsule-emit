@@ -16,8 +16,8 @@ capsule-emit ledger: ledger.jsonl  (2 record(s))
 
 capsule_id      action                  operator        effect/status           verdict       chain
 ---------------------------------------------------------------------------------------------------
-96d457260535f3  write_po                acme-co         write_po:dispatched     executed
-7430c9d886ebcf  write_po                acme-co         write_po:confirmed      confirmed     confirms→96d45726…
+96d457260535f3  write_order                acme-co         write_order:dispatched     executed
+7430c9d886ebcf  write_order                acme-co         write_order:confirmed      confirmed     confirms→96d45726…
 ```
 
 Read it left to right: a short id, what happened, who's accountable, the effect and
@@ -43,7 +43,7 @@ The same ledger file is what the verifier checks — one command covers every ca
 in it:
 
 ```console
-$ agent-action-capsule verify ./ledger.jsonl
+$ agent-action-capsule verify --store ./ledger.jsonl
 ```
 
 > **Coming soon:** richer views — a chain tree (group a whole *attempted → approved

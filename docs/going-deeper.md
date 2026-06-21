@@ -10,7 +10,7 @@ naturally come next, and they go in opposite directions.
 ```
               ▲  enforcement (act on the record)
    gateway    │  a compatible gateway reads your manifest and ENFORCES
-  (e.g. gopher-ai, OSS)   — HITL, autonomy, effects.  Same files, no emit() change.
+  (a compatible gateway) — HITL, autonomy, effects.  Same files, no emit() change.
   ───────────┼───────────────────────────────────────────────────
    YOU →   capsule-emit   produce: one call, sealed + anchored
               │
@@ -34,7 +34,7 @@ Start here if you want to know exactly what a valid capsule is, or verify in you
 own pipeline.
 
 - The reference verifier: `pip install agent-action-capsule` →
-  `agent-action-capsule verify ./ledger.jsonl`.
+  `agent-action-capsule verify --store ./ledger.jsonl`.
 - The Internet-Draft (the wire format, field by field):
   [`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/)
   — see also `spec/REGISTRY.md` for reserved members.
@@ -79,9 +79,9 @@ calls the **same `capsule-emit`** underneath. So:
 > compatible gateway in front — with no change to your `emit()` calls or your
 > manifests.**
 
-A compatible gateway — for example **[`gopher-ai`](https://github.com/action-state-group/gopher-ai)**,
-an open-source gateway on the **same core** (`agent-action-capsule`) as `capsule-emit` —
-adds the enforcement engine: constraint checks that actually block, human-in-the-loop
+A compatible gateway — an open-source enforcement engine on the **same core**
+(`agent-action-capsule`) as `capsule-emit` —
+adds the layer above: constraint checks that actually block, human-in-the-loop
 approval, autonomy dialing, and effect execution + confirmation. Because both rest on
 the same core, the capsules are byte-compatible (`capsule_id` identical): you don't
 rewrite your agent or re-emit anything — you route its consequential actions through

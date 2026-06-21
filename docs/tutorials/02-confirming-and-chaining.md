@@ -22,15 +22,15 @@ from capsule_emit import emit
 
 # 1) the agent attempts the action
 attempt = emit(
-    action="write_po", operator="acme-co", developer="po-agent@v1",
-    effect={"type": "write_po", "status": "dispatched"},   # attempted
+    action="write_order", operator="acme-co", developer="po-agent@v1",
+    effect={"type": "write_order", "status": "dispatched"},   # attempted
 )
 
 # 2) later, your system confirms it really landed
 done = emit(
-    action="write_po", operator="acme-co", developer="po-agent@v1",
+    action="write_order", operator="acme-co", developer="po-agent@v1",
     verdict="confirmed",
-    effect={"type": "write_po", "status": "confirmed"},    # observed
+    effect={"type": "write_order", "status": "confirmed"},    # observed
     confirms=attempt.capsule_id,                           # ← the chain link
 )
 
@@ -61,7 +61,7 @@ The same chain models a human in the loop:
 - human approves → capsule that `confirms=` the proposal
 - agent executes → capsule that `confirms=` the approval
 
-Each step is sealed and linked, so "a human approved this" is part of the
+Each step is sealed and linked, so the **approval sequence** is part of the
 verifiable record — not a line in a log you'd have to trust. This is also the
 backbone of **selective disclosure**: because each link commits by hash, you can
 show someone the *approval chain* without revealing the underlying business data.

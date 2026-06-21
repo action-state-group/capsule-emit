@@ -61,6 +61,9 @@ unwrapped if you don't need them on the record.
 
 ## Notes
 
+- **No effect block by default.** Wrapped tools emit capsules with no `effect` key;
+  the *dispatched → confirmed* chain requires an explicit `emit()` call. This adapter
+  records the action; effect-chain coverage is the boundary/gate layer above it.
 - Input/output are digest-committed automatically.
 - `model=` isn't auto-captured (the wrapper sees the tool, not the LLM) — pass it
   explicitly if you need it sealed.
