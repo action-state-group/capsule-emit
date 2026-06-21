@@ -28,7 +28,7 @@ pip install capsule-emit
 
 `capsule-emit` is the producer layer for the **Agent Action Capsule** — a [SCITT](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/) statement profile. You add one line at the moment your agent does something consequential; you get back a digest-committed, content-addressed capsule — anchored to a public log — that a third party who trusts neither you nor your agent can independently verify.
 
-## Why you need this
+## As Agents do more consequential actions...
 
 Agents now move money, change records, and act across organizational boundaries. When something goes wrong — or someone asks *"did your agent really do that, and was it authorized?"* — what's your proof?
 
@@ -38,16 +38,16 @@ A **capsule** is different: its content is committed to a hash the moment the ac
 
 > **\* "Public log" ≠ public data.** Only a one-way fingerprint (a SHA-256 digest) and a timestamp are logged — your prompts, payloads, vendors, and amounts never leave your machine. [What's on the log, and what isn't →](docs/the-public-log-explained.md)
 
-## Why your existing stack can't do this
+## Comparing with your existing stack...
 
-These layers answer **different questions** — a capsule fills the gap none of them cover:
+These layers answer **different questions** — a capsule fills the gap of what an agent provably did:
 
 | Layer | Examples | Answers | Doesn't answer |
 |---|---|---|---|
 | **Identity** | DIDs, SPIFFE, Agent Cards | *Who* is the agent? | What it did |
 | **Authorization** | OPA, policy, permits | What is it *may* to do? | What it actually _did_, or the outcome |
 | **Observability** | Datadog, audit logs, your DB | What *you say* happened | Nothing to a party who doesn't trust you — mutable, self-attested |
-| **Agent Action Capsule** | `capsule-emit` | **What it *did*, provably** | (composes with the above by reference) |
+| **Agent Action Capsule** | `capsule-emit` | **What it *did*, provably** | (composes with layers above) |
 
 A capsule records the action **and its outcome**, with a *confirmed-effect binding* so a **dispatched attempt can't be passed off as a completed effect** (the *may/did* distinction: approved ≠ executed ≠ confirmed). It records on **every verdict, including refusals** — a `blocked` capsule is auditor-grade evidence that a gate worked.
 
