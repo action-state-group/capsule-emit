@@ -63,6 +63,10 @@ class CapsuleEmitterBase:
         effect: dict[str, Any] | None = None,
         prior_capsule_id: str | None = None,
         model: dict[str, str] | None = None,
+        human_disposed: bool = False,
+        approver: str = "policy",
+        decision: str = "accept",
+        relation: str = "confirms",
     ) -> EmitResult:
         """Emit one capsule for a completed tool call."""
         result = emit(
@@ -74,10 +78,14 @@ class CapsuleEmitterBase:
             verdict=verdict,
             effect=effect,
             confirms=prior_capsule_id,
+            relation=relation,
             anchor=self._anchor,
             ledger=self._ledger,
             anchor_url=self._anchor_url,
             model=model,
+            human_disposed=human_disposed,
+            approver=approver,
+            decision=decision,
         )
         self._last = result
         self._results.append(result)
