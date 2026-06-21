@@ -175,6 +175,18 @@ def test_no_chain_when_no_confirms(tmp_ledger):
     assert verify(cap.capsule).ok
 
 
+def test_relation_without_confirms_raises(tmp_ledger):
+    with pytest.raises(ValueError, match="requires confirms="):
+        emit(
+            action="act",
+            operator="org",
+            developer="agent@v1",
+            relation="supersedes",
+            anchor=False,
+            ledger=tmp_ledger,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Group: disposition params
 # ---------------------------------------------------------------------------

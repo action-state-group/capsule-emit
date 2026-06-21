@@ -449,3 +449,38 @@ def test_hermes_auto_capture_io_digests(tmp_ledger):
     ca = emitter.last.capsule["model_attestation"]["compute_attestation"]
     assert "agent_input_digest" in ca
     assert "agent_output_digest" in ca
+
+
+# ---------------------------------------------------------------------------
+# Adapter disposition threading
+# ---------------------------------------------------------------------------
+
+
+def test_mcp_emit_capsule_human_disposed(tmp_ledger):
+    emitter = make_emitter(MCPCapsuleEmitter, tmp_ledger)
+    result = emitter.emit_capsule(
+        "approve_action",
+        tool_input={"decision": "yes"},
+        tool_output={"approved": True},
+        human_disposed=True,
+        approver="human",
+        decision="accept",
+        verdict="confirmed",
+        effect={"type": "approve_action", "status": "confirmed"},
+    )
+    disp = result.capsule["disposition"]
+    assert disp["human_disposed"] is True
+    assert disp["approver"] == "human"
+    assert verify(result.capsule).ok
+
+
+def test_mcp_emit_capsule_human_disposed_wrong_approver_raises(tmp_ledger):
+    from agent_action_capsule.contracts import InvariantError
+
+    emitter = make_emitter(MCPCapsuleEmitter, tmp_ledger)
+    with pytest.raises(InvariantError, match="requires approver"):
+        emitter.emit_capsule(
+            "approve_action",
+            human_disposed=True,
+            approver="policy",
+        )
