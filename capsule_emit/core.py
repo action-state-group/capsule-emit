@@ -63,9 +63,13 @@ def emit(
     verdict: str = "executed",
     effect: dict[str, Any] | None = None,
     confirms: str | None = None,
+    relation: str = "confirms",
     anchor: bool = True,
     ledger: str | os.PathLike = _DEFAULT_LEDGER,
     anchor_url: str | None = None,
+    human_disposed: bool = False,
+    approver: str = "policy",
+    decision: str = "accept",
 ) -> EmitResult:
     """Emit a sealed, optionally anchored Agent Action Capsule.
 
@@ -80,11 +84,16 @@ def emit(
         model: Dict with ``"provider"`` and ``"model_id"`` keys.
         verdict: Disposition verdict_class (e.g. ``"executed"``, ``"confirmed"``).
         effect: Effect dict with ``"type"`` and ``"status"`` (and optional ``"autonomy"``).
-        confirms: capsule_id of the prior capsule this one confirms (chains with relation
-            ``"confirms"``).
+        confirms: capsule_id of the prior capsule this one chains to.
+        relation: Chain relation (``"confirms"`` | ``"supersedes"`` | ``"escalates"`` | …).
+            Ignored when ``confirms`` is None. Default ``"confirms"``.
         anchor: When True (default), fire-and-forget async digest-only anchor submission.
         ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
         anchor_url: Override the anchor endpoint (else reads ``AAC_ANCHOR_URL`` env var).
+        human_disposed: Whether a human made the disposition decision (§5.4). When True,
+            ``approver`` MUST be ``"human"``.
+        approver: Who approved the disposition: ``"human"`` or ``"policy"`` (default).
+        decision: Disposition decision string (default ``"accept"``).
 
     Returns:
         :class:`EmitResult` with ``.capsule_id`` and ``.anchored``.
@@ -125,15 +134,15 @@ def emit(
         )
 
     disposition = Disposition(
-        decision="accept",
-        approver="policy",
-        human_disposed=False,
+        decision=decision,
+        approver=approver,
+        human_disposed=human_disposed,
         verdict_class=verdict,
     )
 
     chain_relation: str | None = None
     if confirms is not None:
-        chain_relation = "confirms"
+        chain_relation = relation
 
     capsule = _base_emit(
         action_id=None,
