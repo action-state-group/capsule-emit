@@ -16,6 +16,7 @@ You add one `emit()` call at each consequential action, and you get an **anchore
 
 - **[Concepts in plain words](concepts.md)** — the seven words (capsule, seal, may/did, chain, break, anchor, ledger), each tied to a field or a command.
 - **[Anatomy of a capsule](anatomy.md)** — exactly what gets sealed: the two-tier structure and how each layer is captured.
+- **[Chaining — within one agent, and across agents](chaining.md)** — how capsules link by content address into verifiable trails, including **cross-organizational** chains (a different agent confirms yours by id alone), and why the ledger is a DAG, not one line.
 - **[Why anchoring makes it trustworthy](why-anchoring.md)** — why a record *you* keep isn't proof to anyone else, and how a shared, append-only log fixes that. The heart of the whole thing.
 - **[The public log, explained](the-public-log-explained.md)** — plain-English (+ FAQ): what the transparency log is, how Merkle proofs work, what's visible vs hidden, and what you can progressively share. The page to read before someone asks *"you're putting our data on a public log?"*
 

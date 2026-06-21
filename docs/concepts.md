@@ -21,9 +21,10 @@ present "tried to charge the card" as "charged the card."
 
 ### Chain
 Actions link together. A *confirm* (or a human approval) is its own capsule that
-points back at the one before it (`chain.parent_capsule_id`). String them up and
+points back at the one before it (`chain.parent_capsule_id`), by content address — so a
+*different* agent can chain to yours by id alone. String them up and
 *attempted → approved → confirmed* becomes one trail you can follow and verify.
-→ `emit(..., confirms=earlier_id)`
+→ `emit(..., confirms=earlier_id)` · [within & across agents](chaining.md)
 
 ### Break
 The reason any of this is worth trusting: change one byte of a sealed capsule and the

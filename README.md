@@ -58,7 +58,7 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 **Then climb, one rung at a time:**
 
 - **Capture more, write less** — a framework [adapter](docs/adapters/) (MCP / LangChain / CrewAI / Hermes) emits for every tool call instead of hand-placing `emit()`.
-- **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence. → `emit(..., confirms=parent_id)`
+- **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence — and a *different* agent can chain to yours by id alone. → `emit(..., confirms=parent_id)` · [within & across agents](docs/chaining.md)
 - **Declare now, enforce later** — a `manifest.md` declares your rules; a compatible gateway enforces the *same file*, with no change to your `emit()` calls.
 
 The unit is the **capsule** (one action). What you keep and grow is the **ledger** (the anchored trail). Chaining links specific capsules within it. Start with the ledger; add the rest when you need it. → walk it end-to-end in the **[tutorials](docs/tutorials/)**.
@@ -116,6 +116,7 @@ New here? Written to be read top-to-bottom, no standards background needed:
 - **[Tutorials](docs/tutorials/)** — five-minute, copy-paste sessions: your first capsule → confirming & chaining → reading your ledger → declaring rules.
 - **[Concepts in plain words](docs/concepts.md)** — the seven words (capsule, seal, may/did, chain, break, anchor, ledger), each tied to a field or command.
 - **[Anatomy of a capsule](docs/anatomy.md)** — exactly what gets sealed, the two-tier structure, how each layer is captured.
+- **[Chaining — within one agent, and across agents](docs/chaining.md)** — capsules link by content address into verifiable trails, including **cross-organizational** chains; why the ledger is a DAG, not one line.
 - **[Why anchoring makes it trustworthy](docs/why-anchoring.md)** — why a record *you* keep isn't proof to anyone else, and how a shared append-only log fixes it. The heart of it.
 - **[The public log, explained](docs/the-public-log-explained.md)** — plain-English + FAQ: the transparency log, how Merkle proofs work, what's visible vs hidden, what you can progressively share. For when someone asks *"you're putting our data on a public log?"*
 - **[Adapters](docs/adapters/)** — let MCP / LangChain / CrewAI / Hermes emit capsules for you (paste-to-your-coding-agent prompt on each page).
@@ -134,6 +135,8 @@ capsule-emit  →  agent-action-capsule (spec + reference verifier)
 ## Status
 
 Alpha — API stable, not yet 1.0. The underlying specification is an **individual IETF Internet-Draft**, not an RFC; no RFC number is claimed.
+
+**Conformance & spec tracking.** Every capsule stamps its `spec_version` + `format_version`, and `capsule-emit` produces capsules conforming to the current draft (`draft-mih-scitt-agent-action-capsule`, format `2`) — proven by the *independent* [`agent-action-capsule`](https://github.com/action-state-group/agent-action-capsule) verifier and its frozen conformance vectors, not by self-assertion. When the spec revises, the version bumps and older capsules keep verifying; that's how this implementation stays tracked to the standard.
 
 ## Provenance, neutrality & governance
 
