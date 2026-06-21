@@ -6,14 +6,14 @@ The adoption surface for the Agent Action Capsule standard:
     from capsule_emit import emit
 
     cap = emit(
-        action="write_po",
+        action="write_order",
         operator="acme-co",
         developer="po-agent@v1",
         agent_input={"vendor": "Frobozz Supply", "total": 1240.19},
         agent_output=result,
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         verdict="executed",
-        effect={"type": "write_po", "status": "dispatched"},
+        effect={"type": "write_order", "status": "dispatched"},
     )
     print(cap.capsule_id, cap.anchored)
 
@@ -25,7 +25,7 @@ from .ledger import append_to_ledger, read_ledger
 from .ledger import view as ledger_view
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "__version__",
