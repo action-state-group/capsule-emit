@@ -45,7 +45,7 @@ These layers answer **different questions** — a capsule fills the gap none of 
 | Layer | Examples | Answers | Doesn't answer |
 |---|---|---|---|
 | **Identity** | DIDs, SPIFFE, Agent Cards | *Who* is the agent? | What it did |
-| **Authorization** | OPA, policy, permits | What is it *allowed* to do? | What it actually did, or the outcome |
+| **Authorization** | OPA, policy, permits | What is it *may* to do? | What it actually _did_, or the outcome |
 | **Observability** | Datadog, audit logs, your DB | What *you say* happened | Nothing to a party who doesn't trust you — mutable, self-attested |
 | **Agent Action Capsule** | `capsule-emit` | **What it *did*, provably** | (composes with the above by reference) |
 
