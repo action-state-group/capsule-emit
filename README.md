@@ -28,7 +28,7 @@ pip install capsule-emit
 
 `capsule-emit` is the producer layer for the **Agent Action Capsule** — a [SCITT](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/) statement profile. You add one line at the moment your agent does something consequential; you get back a digest-committed, content-addressed capsule — anchored to a public log — that a third party who trusts neither you nor your agent can independently verify.
 
-## As Agents do more consequential actions...
+## Why you need this
 
 Agents now move money, change records, and act across organizational boundaries. When something goes wrong — or someone asks *"did your agent really do that, and was it authorized?"* — what's your proof?
 
@@ -38,7 +38,7 @@ A **capsule** is different: its content is committed to a hash the moment the ac
 
 > **\* "Public log" ≠ public data.** Only a one-way fingerprint (a SHA-256 digest) and a timestamp are logged — your prompts, payloads, vendors, and amounts never leave your machine. [What's on the log, and what isn't →](docs/the-public-log-explained.md)
 
-## Comparing with your existing stack...
+## Why your existing stack can't do this
 
 These layers answer **different questions** — a capsule fills the gap of what an agent provably did:
 
