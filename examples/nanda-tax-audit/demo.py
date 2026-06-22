@@ -34,39 +34,41 @@ _AUDITOR_LEDGER = Path("tax_audit_auditor_reasoning.jsonl")
 
 
 def _parse_trace(trace_path: Path) -> dict:
-    """Extract audit results and cheat-rate trend from trace."""
+    """Extract audit results and cheat-rate trend from trace.
+
+    Counts only `kind=broadcast` events — each ctx.broadcast produces one
+    broadcast entry plus one receive entry per recipient, so filtering to
+    broadcast gives the logical event count without N-fold inflation.
+    """
     audits: list[dict] = []
     tx_capsule: list[dict] = []
     tx_control: list[dict] = []
     reasoning_capsules: list[str] = []
-    # actual cheat/honest decisions broadcast by each biz
     cheats_capsule = 0
     honest_capsule = 0
     cheats_control = 0
     honest_control = 0
-    # false positives: auditor fined when business was honest
     false_positives = 0
-    # last known cheat_prob for each biz
     last_cheat_prob_capsule: float | None = None
     last_cheat_prob_control: float | None = None
+    ctrl_suspicion_count = 0
+    crossover_entries: list[dict] = []
 
     if not trace_path.exists():
         return {}
-
-    # Two-pass: first collect cheat events per tick, then match to audit outcomes
-    cheat_ticks_capsule: set[int] = set()
 
     for line in trace_path.read_text().splitlines():
         if not line.strip():
             continue
         event = json.loads(line)
+        # Count only logical broadcast events (not per-recipient receive copies)
+        if event.get("kind") != "broadcast":
+            continue
         msg = event.get("msg", "")
 
         if msg.startswith("cheat:capsule:"):
             parts = msg.split(":")
             cheats_capsule += 1
-            tick = int(parts[2]) if len(parts) > 2 else 0
-            cheat_ticks_capsule.add(tick)
             if len(parts) > 3:
                 last_cheat_prob_capsule = float(parts[3])
 
@@ -97,16 +99,26 @@ def _parse_trace(trace_path: Path) -> dict:
             parts = msg.split(":")
             tx_control.append({"amount": int(parts[2])})
 
+        elif msg.startswith("suspected:biz_control:"):
+            ctrl_suspicion_count += 1
+
         elif msg.startswith("reasoning:"):
             parts = msg.split(":", 3)
             if len(parts) >= 4:
-                entry = f"  {parts[2][:8]}… [{parts[1][:16]}] : {parts[3][:70]}"
-                if not reasoning_capsules or reasoning_capsules[-1] != entry:
-                    reasoning_capsules.append(entry)
+                reasoning_capsules.append(f"  {parts[2][:8]}… [{parts[1][:16]}] : {parts[3][:70]}")
 
-    # Count false positives: auditor called "tampered" when biz was honest
+        elif msg.startswith("crossover:"):
+            parts = msg.split(":")
+            if len(parts) >= 6:
+                crossover_entries.append({
+                    "tick": int(parts[1]),
+                    "ctrl_saved": float(parts[2]),
+                    "ctrl_saved_total": float(parts[3]),
+                    "cap_fine": float(parts[4]),
+                    "cap_fines_total": float(parts[5]),
+                })
+
     caught_count = sum(1 for a in audits if a["status"] == "tampered")
-    # If caught > actual_cheats there are false positives
     false_positives = max(0, caught_count - cheats_capsule)
 
     return {
@@ -121,6 +133,8 @@ def _parse_trace(trace_path: Path) -> dict:
         "false_positives": false_positives,
         "last_cheat_prob_capsule": last_cheat_prob_capsule,
         "last_cheat_prob_control": last_cheat_prob_control,
+        "ctrl_suspicion_count": ctrl_suspicion_count,
+        "crossover_entries": crossover_entries,
     }
 
 
@@ -135,12 +149,13 @@ def _print_report(data: dict, capsule_ledger: Path, auditor_ledger: Path) -> Non
     false_positives = data.get("false_positives", 0)
     last_prob_cap = data.get("last_cheat_prob_capsule")
     last_prob_ctrl = data.get("last_cheat_prob_control")
+    ctrl_suspicion_count = data.get("ctrl_suspicion_count", 0)
+    crossover_entries = data.get("crossover_entries", [])
 
     total_audits = len(audits)
     caught = sum(1 for a in audits if a["status"] == "tampered")
     total_fines = sum(a["fine"] for a in audits)
 
-    # Correct metric: of the cheats attempted, how many were caught?
     catch_pct = (caught / cheats_capsule * 100) if cheats_capsule else 100.0
     fp_pct = (false_positives / max(1, honest_capsule) * 100)
 
@@ -155,6 +170,9 @@ def _print_report(data: dict, capsule_ledger: Path, auditor_ledger: Path) -> Non
     if last_prob_ctrl is not None:
         print(f"    Final cheat rate:  {last_prob_ctrl*100:.1f}%  (no deterrent — stays high)")
     print(f"    Caught:            0 of {cheats_control}  (0% — auditor has no anchor)")
+    if ctrl_suspicion_count > 0:
+        print(f"    Suspected:         {ctrl_suspicion_count} cycles flagged as anomalous")
+        print(f"                       (pattern detected, no proof — no fine issued)")
     print()
     print("  biz_capsule (anchored capsule ledger)")
     print(f"    Cheated:           {cheats_capsule} of {cheats_capsule+honest_capsule} cycles")
@@ -164,6 +182,17 @@ def _print_report(data: dict, capsule_ledger: Path, auditor_ledger: Path) -> Non
     print(f"    False positives:   {false_positives} of {honest_capsule} honest cycles ({fp_pct:.0f}%)")
     print(f"    Fines paid:        ${total_fines:,.0f}")
     print()
+
+    # Cumulative-$ crossover: how much did each side "gain" from cheating?
+    if crossover_entries:
+        last = crossover_entries[-1]
+        ctrl_saved = last["ctrl_saved_total"]
+        cap_fines = last["cap_fines_total"]
+        print("  Crossover (cumulative $):")
+        print(f"    biz_control estimated savings:  ${ctrl_saved:>10,.0f}  (no deterrent)")
+        print(f"    biz_capsule fines paid:         ${cap_fines:>10,.0f}  (learns to stop)")
+        print(f"    Net advantage (ctrl - cap):     ${ctrl_saved - cap_fines:>10,.0f}")
+        print()
 
     v1_pass = catch_pct >= 99.0 or cheats_capsule == 0
     v2_pass = false_positives == 0

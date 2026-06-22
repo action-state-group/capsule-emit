@@ -103,7 +103,11 @@ def scenario_trace():
 
 
 def _parse_trace(trace_path: Path) -> dict:
-    """Parse the trace into counters for the validator checks."""
+    """Parse the trace into counters for the validator checks.
+
+    Filters to kind=broadcast only — each ctx.broadcast produces one broadcast
+    entry plus receive entries per recipient, so filtering avoids N-fold inflation.
+    """
     audits_tampered = 0
     audits_clean = 0
     cheats_capsule = 0
@@ -115,6 +119,8 @@ def _parse_trace(trace_path: Path) -> dict:
         if not line.strip():
             continue
         event = json.loads(line)
+        if event.get("kind") != "broadcast":
+            continue
         msg = event.get("msg", "")
 
         if msg.startswith("audit:biz_capsule:tampered:"):
@@ -220,7 +226,7 @@ def test_auditor_reasoning_capsules_emitted(scenario_trace) -> None:
 
 
 def test_capsule_digest_detects_tampering() -> None:
-    """Core mechanic: digest computed from tampered amount ≠ stored digest."""
+    """Core mechanic: verify_input_digest returns False for tampered amount."""
     import capsule_emit
     import tempfile
 
@@ -228,7 +234,7 @@ def test_capsule_digest_detects_tampering() -> None:
         ledger_path = Path(f.name)
 
     real_amount = 1000
-    result = capsule_emit.emit(
+    capsule_emit.emit(
         action="record_transaction",
         operator="test",
         developer="test-agent",
@@ -238,11 +244,9 @@ def test_capsule_digest_detects_tampering() -> None:
     )
 
     cap = json.loads(ledger_path.read_text().splitlines()[0])
-    stored_digest = cap["model_attestation"]["compute_attestation"]["agent_input_digest"]
-
     tampered_amount = int(real_amount * (1 - CHEAT_FRACTION))
-    tampered_digest = _digest({"tick": 1, "amount": tampered_amount})
-    real_digest = _digest({"tick": 1, "amount": real_amount})
 
-    assert stored_digest == real_digest, "Stored digest should match real amount"
-    assert stored_digest != tampered_digest, "Tampered amount should produce different digest"
+    assert capsule_emit.verify_input_digest(cap, {"tick": 1, "amount": real_amount}), \
+        "Real input should verify against sealed digest"
+    assert not capsule_emit.verify_input_digest(cap, {"tick": 1, "amount": tampered_amount}), \
+        "Tampered amount should fail verification"

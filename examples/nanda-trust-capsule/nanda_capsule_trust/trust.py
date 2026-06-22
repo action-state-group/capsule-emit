@@ -45,18 +45,26 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 import capsule_emit
 from nest_core.types import AgentId, Attestation, Claim, Evidence, ReputationScore
-from nest_plugins_reference.trust.agent_receipts import (
-    NORMALIZATION_K,
-    DEFAULT_CATEGORY_WEIGHTS,
-    _action_field,
-    _counterparty,
-    _effective_receipts,
-    _normalize,
-    _raw_reputation,
-    _verify_receipt,
-    did_for_pubkey,
-    is_corroborated,
-)
+# Private helpers from nest-plugins-reference — may break if NANDA refactors
+# agent_receipts.  Sentinel test: tests/test_capsule_emit_trust.py::test_private_import_still_works
+try:
+    from nest_plugins_reference.trust.agent_receipts import (
+        NORMALIZATION_K,
+        DEFAULT_CATEGORY_WEIGHTS,
+        _action_field,
+        _counterparty,
+        _effective_receipts,
+        _normalize,
+        _raw_reputation,
+        _verify_receipt,
+        did_for_pubkey,
+        is_corroborated,
+    )
+except ImportError as _exc:
+    raise ImportError(
+        "nanda-trust-capsule requires nest-plugins-reference; "
+        "run: pip install nest-plugins-reference"
+    ) from _exc
 
 logger = logging.getLogger(__name__)
 

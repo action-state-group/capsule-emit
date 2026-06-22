@@ -273,6 +273,11 @@ class AuditorAgent(StateMachineAgent):
             "control": {"caught": 0, "total_audits": 0, "fines": 0.0},
             "capsule": {"caught": 0, "total_audits": 0, "fines": 0.0},
         }
+        # biz_control anomaly tracking (statistical suspicion, no proof)
+        self._ctrl_anomaly_consecutive: int = 0
+        self._ctrl_saved_total: float = 0.0   # estimated cumulative under-reporting
+        # crossover: biz_capsule cumulative fines paid
+        self._cap_fines_total: float = 0.0
 
     async def on_start(self, ctx: AgentContext) -> None:
         pass  # Wait for businesses to announce they're ready
@@ -301,14 +306,39 @@ class AuditorAgent(StateMachineAgent):
                 self._pending.clear()
 
     async def _run_audit(self, ctx: AgentContext) -> None:
-        # Audit biz_control: can't prove tampering → no fine
+        # --- biz_control: can't prove tampering, but track statistical anomalies ---
         ctrl_entries = self._pending.get("control", [])
         self._stats["control"]["total_audits"] += 1
-        ctrl_reason = "no anchor; cannot prove tampering"
         ctrl_fine = 0.0
-        await ctx.send(AgentId("biz_control-0"), f"no_fine:".encode())
 
-        # Audit biz_capsule: verify digest against capsule ledger
+        ctrl_suspected = False
+        ctrl_saved_this_cycle = 0.0
+        if ctrl_entries:
+            ctrl_reported = ctrl_entries[0].get("amount", 0)
+            ctrl_expected = _tx_amount(self._tick, 0)
+            ctrl_saved_this_cycle = max(0.0, ctrl_expected - ctrl_reported)
+            self._ctrl_saved_total += ctrl_saved_this_cycle
+            # Statistical suspicion: consistently under-reporting by >15%?
+            if ctrl_reported < ctrl_expected * 0.85:
+                self._ctrl_anomaly_consecutive += 1
+            else:
+                self._ctrl_anomaly_consecutive = max(0, self._ctrl_anomaly_consecutive - 1)
+            ctrl_suspected = self._ctrl_anomaly_consecutive >= 5
+
+        ctrl_reason = "no anchor; cannot prove tampering"
+        if ctrl_suspected:
+            ctrl_entry = ctrl_entries[0] if ctrl_entries else {}
+            ctrl_reason = (
+                f"SUSPECTED: {self._ctrl_anomaly_consecutive} consecutive low-reports "
+                f"(reported={ctrl_entry.get('amount', '?')} vs ~{_tx_amount(self._tick, 0)}); "
+                f"no anchor → no fine"
+            )
+            await ctx.broadcast(
+                f"suspected:biz_control:{self._tick}:{self._ctrl_anomaly_consecutive}".encode()
+            )
+        await ctx.send(AgentId("biz_control-0"), b"no_fine:")
+
+        # --- biz_capsule: verify digest against capsule ledger ---
         cap_entries = self._pending.get("capsule", [])
         self._stats["capsule"]["total_audits"] += 1
         cap_fine = 0.0
@@ -325,25 +355,15 @@ class AuditorAgent(StateMachineAgent):
                 cap_tampered = True
                 break
 
-            # Re-derive agent_input_digest from the submitted amount
-            expected_input = {"tick": entry.get("tick"), "amount": submitted_amount}
-            submitted_digest = _digest(expected_input)
-
-            actual_digest = (
-                capsule.get("model_attestation", {})
-                       .get("compute_attestation", {})
-                       .get("agent_input_digest")
-            )
-
-            if actual_digest is None or submitted_digest != actual_digest:
+            candidate_input = {"tick": entry.get("tick"), "amount": submitted_amount}
+            if not capsule_emit.verify_input_digest(capsule, candidate_input):
                 real_estimate = int(submitted_amount / (1 - CHEAT_FRACTION))
                 under_reported = real_estimate - submitted_amount
                 cap_fine = under_reported * FINE_MULTIPLIER
                 cap_tampered = True
                 cap_reason = (
                     f"digest mismatch on tick {entry['tick']}: "
-                    f"submitted amount={submitted_amount} recomputed_digest={submitted_digest[:16]}… "
-                    f"anchored_digest={str(actual_digest)[:16]}…; fine=${cap_fine:.0f}"
+                    f"submitted amount={submitted_amount}; fine=${cap_fine:.0f}"
                 )
                 self._stats["capsule"]["caught"] += 1
                 self._stats["capsule"]["fines"] += cap_fine
@@ -356,10 +376,16 @@ class AuditorAgent(StateMachineAgent):
         else:
             await ctx.send(AgentId("biz_capsule-0"), b"no_fine:")
 
+        # Update crossover running totals
+        self._cap_fines_total += cap_fine
+
         # Emit auditor reasoning capsule
         reasoning = {
             "tick": self._tick,
-            "biz_control": {"verdict": "no_fine", "reason": ctrl_reason},
+            "biz_control": {
+                "verdict": "suspected_no_fine" if ctrl_suspected else "no_fine",
+                "reason": ctrl_reason,
+            },
             "biz_capsule": {
                 "verdict": "fine" if cap_tampered else "no_fine",
                 "amount": cap_fine,
@@ -376,7 +402,7 @@ class AuditorAgent(StateMachineAgent):
             ledger="tax_audit_auditor_reasoning.jsonl",
         )
 
-        # Broadcast summary line for trace visibility
+        # Broadcast summary lines for trace visibility
         status = "tampered" if cap_tampered else "clean"
         await ctx.broadcast(
             f"audit:biz_capsule:{status}:{cap_fine:.0f}".encode()
@@ -386,6 +412,11 @@ class AuditorAgent(StateMachineAgent):
         )
         await ctx.broadcast(
             f"reasoning:{self._id}:{result.capsule_id}:{cap_reason[:80]}".encode()
+        )
+        # Cumulative crossover: ctrl estimated savings vs cap fines paid
+        await ctx.broadcast(
+            f"crossover:{self._tick}:{ctrl_saved_this_cycle:.0f}:{self._ctrl_saved_total:.0f}"
+            f":{cap_fine:.0f}:{self._cap_fines_total:.0f}".encode()
         )
 
 
