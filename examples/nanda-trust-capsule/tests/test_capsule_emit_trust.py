@@ -177,3 +177,31 @@ async def test_attest_and_stake_parity():
     att = await t.attest(a, claim)
     assert att.issuer == CapsuleEmitTrust._SYSTEM_AGENT
     await t.stake(a, 100)
+
+
+def test_private_import_still_works() -> None:
+    """Sentinel: if NANDA refactors agent_receipts, this test breaks first.
+
+    nanda_capsule_trust/trust.py imports private helpers from
+    nest_plugins_reference.trust.agent_receipts.  Run this test after any
+    NANDA update to catch breakage early.
+    """
+    from nest_plugins_reference.trust.agent_receipts import (
+        NORMALIZATION_K,
+        DEFAULT_CATEGORY_WEIGHTS,
+        _action_field,
+        _counterparty,
+        _effective_receipts,
+        _normalize,
+        _raw_reputation,
+        _verify_receipt,
+        did_for_pubkey,
+        is_corroborated,
+    )
+    assert callable(_action_field)
+    assert callable(_counterparty)
+    assert callable(_effective_receipts)
+    assert callable(_raw_reputation)
+    assert callable(_verify_receipt)
+    assert isinstance(DEFAULT_CATEGORY_WEIGHTS, dict)
+    assert isinstance(NORMALIZATION_K, (int, float))
