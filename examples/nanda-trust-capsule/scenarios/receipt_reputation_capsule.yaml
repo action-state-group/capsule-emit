@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+# Receipt-reputation scenario with capsule-emit trust plugin.
+#
+# Identical to the bundled `receipt_reputation` scenario with one change:
+#   trust: capsule_emit   (was: agent_receipts)
+#
+# With this swap, every interaction the agents already report via
+# `ctx.plugins.get("trust").report(...)` is sealed to a capsule ledger
+# (capsule_ledger.jsonl in the working directory) — zero agent-code changes.
+# The `receipt_reputation` adversarial validator still PASSES because
+# CapsuleEmitTrust applies the same collusion-ring severance as agent_receipts.
+#
+# After `nest run`, verify the ledger independently:
+#   agent-action-capsule verify --store capsule_ledger.jsonl
+name: receipt_reputation_capsule
+description: "receipt_reputation scenario with trust: capsule_emit (anchored ledger)"
+
+tier: 1
+seed: 42
+
+agents:
+  count: 14
+  brain: state-machine
+  roles:
+    - name: honest
+      count: 8
+    - name: ring
+      count: 4
+    - name: byzantine
+      count: 1
+    - name: auditor
+      count: 1
+
+layers:
+  transport: in_memory
+  comms: nest_native
+  identity: did_key
+  registry: in_memory
+  auth: jwt
+  # The one-line swap: capsule_emit anchors every report() to a JSONL ledger.
+  # Switch back to `agent_receipts` to see scores unchanged but no ledger.
+  trust: capsule_emit
+  payments: prepaid_credits
+  coordination: contract_net
+  negotiation: alternating_offers
+  memory: blackboard
+  privacy: noop
+  datafacts: datafacts_v1
+
+task:
+  type: receipt_reputation
+  config:
+    ring_size: 4
+    byzantine_fraction: 0.10
+
+failures:
+  message_drop: 0.0
+
+duration: "ticks: 10000"
+
+metrics:
+  - success_rate
+  - message_count
+  - agent_count
+
+output:
+  trace: ./traces/receipt_reputation_capsule.jsonl
