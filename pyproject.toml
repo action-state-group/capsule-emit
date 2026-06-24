@@ -44,6 +44,9 @@ include = ["capsule_emit*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "mcp: tests that require the mcp package (FastMCP integration)",
+]
 
 [tool.ruff]
 line-length = 110
