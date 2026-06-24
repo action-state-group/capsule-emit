@@ -72,6 +72,9 @@ class CapsuleEmitterBase:
         approver: str = "policy",
         decision: str = "accept",
         relation: str = "confirms",
+        action_type: str | None = None,
+        runtime: str | None = None,
+        extra_compute: dict[str, Any] | None = None,
     ) -> EmitResult:
         """Emit one capsule for a completed tool call.
 
@@ -96,6 +99,9 @@ class CapsuleEmitterBase:
             human_disposed=human_disposed,
             approver=approver,
             decision=decision,
+            action_type=action_type,
+            runtime=runtime,
+            extra_compute=extra_compute,
         )
         self._last = result
         self._results.append(result)

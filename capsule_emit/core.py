@@ -70,6 +70,8 @@ def emit(
     human_disposed: bool = False,
     approver: str = "policy",
     decision: str = "accept",
+    action_type: str | None = None,
+    extra_compute: dict[str, Any] | None = None,
 ) -> EmitResult:
     """Emit a sealed, optionally anchored Agent Action Capsule.
 
@@ -94,6 +96,12 @@ def emit(
             ``approver`` MUST be ``"human"`` — raises ``ValueError`` otherwise.
         approver: Who approved the disposition: ``"human"`` or ``"policy"`` (default).
         decision: Disposition decision string (default ``"accept"``).
+        action_type: ``"decide"`` | ``"act"`` | ``"retrieve"`` | ``"fyi"`` override.
+            When ``None`` (default), auto-derived from *verdict* — disposition verbs
+            (``"executed"``, ``"confirmed"``, ``"denied"``, ``"blocked"``) map to
+            ``"decide"``; anything else maps to ``"fyi"``.
+        extra_compute: Extra key/value pairs merged into ``compute_attestation``.
+            Use for framework-specific context (MCP request ID, host info, etc.).
 
     Returns:
         :class:`EmitResult` with ``.capsule_id`` and ``.anchored``.
@@ -116,6 +124,8 @@ def emit(
         compute_att["agent_output_digest"] = _digest(agent_output)
     if runtime is not None:
         compute_att["runtime"] = runtime
+    if extra_compute:
+        compute_att.update(extra_compute)
 
     model_id: str | None = None
     provider: str | None = None
@@ -155,9 +165,12 @@ def emit(
     if confirms is not None:
         chain_relation = relation
 
+    _action_type = action_type if action_type is not None else (
+        "decide" if verdict in ("executed", "confirmed", "denied", "blocked") else "fyi"
+    )
     capsule = _base_emit(
         action_id=None,
-        action_type="decide" if verdict in ("executed", "confirmed", "denied", "blocked") else "fyi",
+        action_type=_action_type,
         operator=operator,
         developer=developer,
         model_id=model_id,
