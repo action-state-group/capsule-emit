@@ -14,16 +14,13 @@ Covers:
 """
 from __future__ import annotations
 
-import io
-
 import pytest
 
-from capsule_emit import emit, read_ledger
+from capsule_emit import read_ledger
 from capsule_emit.adapters._base import CapsuleEmitterBase
 from capsule_emit.adapters.crewai import CrewAICapsuleEmitter
 from capsule_emit.adapters.hermes import HermesCapsuleEmitter
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -86,7 +83,10 @@ def test_base_no_model_when_not_set(tmp_path):
 # ---------------------------------------------------------------------------
 
 pytest.importorskip("langchain_core", reason="langchain-core not installed")
-from capsule_emit.adapters.langchain import LangChainCapsuleEmitter, _extract_model_from_serialized
+from capsule_emit.adapters.langchain import (  # noqa: E402
+    LangChainCapsuleEmitter,
+    _extract_model_from_serialized,
+)
 
 
 def test_langchain_on_llm_start_captures_openai(tmp_path):

@@ -27,7 +27,6 @@ from agent_action_capsule import verify
 from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

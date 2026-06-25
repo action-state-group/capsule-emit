@@ -14,14 +14,12 @@ run from a CI matrix that starts with only Python.
 """
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
 import tempfile
 import textwrap
 from pathlib import Path
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -348,7 +346,7 @@ def main() -> int:
         section("7. Adapter pages — I/O digests present on all adapters")
 
         # MCP adapter
-        r = run(venv_python, textwrap.dedent(f"""
+        r = run(venv_python, textwrap.dedent("""
             from capsule_emit.adapters.mcp import MCPCapsuleEmitter
             import tempfile, pathlib
             ledger = pathlib.Path(tempfile.mktemp(suffix=".jsonl"))
@@ -356,15 +354,15 @@ def main() -> int:
 
             @emitter.tool("write_order")
             def write_order(vendor: str, total: float) -> dict:
-                return {{"po_id": "PO-001"}}
+                return {"po_id": "PO-001"}
 
             result = write_order(vendor="Frobozz", total=1240.19)
             from capsule_emit.ledger import read_ledger
             caps = list(read_ledger(ledger))
-            assert len(caps) == 1, f"expected 1 capsule, got {{len(caps)}}"
-            ca = caps[0].get("model_attestation", {{}}).get("compute_attestation", {{}})
-            assert "agent_input_digest" in ca, f"MCP: no input digest. ca={{ca}}"
-            assert "agent_output_digest" in ca, f"MCP: no output digest. ca={{ca}}"
+            assert len(caps) == 1, f"expected 1 capsule, got {len(caps)}"
+            ca = caps[0].get("model_attestation", {}).get("compute_attestation", {})
+            assert "agent_input_digest" in ca, f"MCP: no input digest. ca={ca}"
+            assert "agent_output_digest" in ca, f"MCP: no output digest. ca={ca}"
             print("OK mcp input=" + ca["agent_input_digest"][:8])
         """))
         if r.returncode == 0 and "OK" in r.stdout:
@@ -373,21 +371,21 @@ def main() -> int:
             fail("MCP adapter", r.stderr or r.stdout)
 
         # Hermes adapter
-        r = run(venv_python, textwrap.dedent(f"""
+        r = run(venv_python, textwrap.dedent("""
             from capsule_emit.adapters.hermes import HermesCapsuleEmitter
             import tempfile, pathlib
             ledger = pathlib.Path(tempfile.mktemp(suffix=".jsonl"))
             emitter = HermesCapsuleEmitter(operator="acme-co", developer="hermes-agent@v1", ledger=ledger, anchor=False)
 
-            result = {{"confirmed": True}}
-            emitter.after_tool("write_order", {{"vendor": "X"}}, result)
+            result = {"confirmed": True}
+            emitter.after_tool("write_order", {"vendor": "X"}, result)
 
             from capsule_emit.ledger import read_ledger
             caps = list(read_ledger(ledger))
             assert len(caps) == 1
-            ca = caps[0].get("model_attestation", {{}}).get("compute_attestation", {{}})
-            assert "agent_input_digest" in ca, f"Hermes: no input digest. ca={{ca}}"
-            assert "agent_output_digest" in ca, f"Hermes: no output digest. ca={{ca}}"
+            ca = caps[0].get("model_attestation", {}).get("compute_attestation", {})
+            assert "agent_input_digest" in ca, f"Hermes: no input digest. ca={ca}"
+            assert "agent_output_digest" in ca, f"Hermes: no output digest. ca={ca}"
             print("OK hermes input=" + ca["agent_input_digest"][:8])
         """))
         if r.returncode == 0 and "OK" in r.stdout:
@@ -396,14 +394,14 @@ def main() -> int:
             fail("Hermes adapter", r.stderr or r.stdout)
 
         # CrewAI adapter (no crewai dep — plain callable path)
-        r = run(venv_python, textwrap.dedent(f"""
+        r = run(venv_python, textwrap.dedent("""
             from capsule_emit.adapters.crewai import CrewAICapsuleEmitter
             import tempfile, pathlib
             ledger = pathlib.Path(tempfile.mktemp(suffix=".jsonl"))
             emitter = CrewAICapsuleEmitter(operator="acme-co", developer="ops-agent@v1", ledger=ledger, anchor=False)
 
             def send_payment(amount: float) -> dict:
-                return {{"tx_id": "TX-001"}}
+                return {"tx_id": "TX-001"}
 
             wrapped = emitter.wrap(send_payment)
             result = wrapped(amount=40.00)
@@ -411,9 +409,9 @@ def main() -> int:
             from capsule_emit.ledger import read_ledger
             caps = list(read_ledger(ledger))
             assert len(caps) == 1
-            ca = caps[0].get("model_attestation", {{}}).get("compute_attestation", {{}})
-            assert "agent_input_digest" in ca, f"CrewAI: no input digest. ca={{ca}}"
-            assert "agent_output_digest" in ca, f"CrewAI: no output digest. ca={{ca}}"
+            ca = caps[0].get("model_attestation", {}).get("compute_attestation", {})
+            assert "agent_input_digest" in ca, f"CrewAI: no input digest. ca={ca}"
+            assert "agent_output_digest" in ca, f"CrewAI: no output digest. ca={ca}"
             print("OK crewai input=" + ca["agent_input_digest"][:8])
         """))
         if r.returncode == 0 and "OK" in r.stdout:
@@ -422,22 +420,22 @@ def main() -> int:
             fail("CrewAI adapter", r.stderr or r.stdout)
 
         # LangChain adapter (needs langchain-core, already installed)
-        r = run(venv_python, textwrap.dedent(f"""
+        r = run(venv_python, textwrap.dedent("""
             from capsule_emit.adapters.langchain import LangChainCapsuleEmitter
             import tempfile, pathlib, uuid
             ledger = pathlib.Path(tempfile.mktemp(suffix=".jsonl"))
             emitter = LangChainCapsuleEmitter(operator="acme-co", developer="research-agent@v1", ledger=ledger, anchor=False)
 
             run_id = uuid.uuid4()
-            emitter.on_tool_start({{"name": "write_order"}}, "Frobozz Supply", run_id=run_id)
+            emitter.on_tool_start({"name": "write_order"}, "Frobozz Supply", run_id=run_id)
             emitter.on_tool_end("PO-001", run_id=run_id)
 
             from capsule_emit.ledger import read_ledger
             caps = list(read_ledger(ledger))
             assert len(caps) == 1
-            ca = caps[0].get("model_attestation", {{}}).get("compute_attestation", {{}})
-            assert "agent_input_digest" in ca, f"LangChain: no input digest. ca={{ca}}"
-            assert "agent_output_digest" in ca, f"LangChain: no output digest. ca={{ca}}"
+            ca = caps[0].get("model_attestation", {}).get("compute_attestation", {})
+            assert "agent_input_digest" in ca, f"LangChain: no input digest. ca={ca}"
+            assert "agent_output_digest" in ca, f"LangChain: no output digest. ca={ca}"
             print("OK langchain input=" + ca["agent_input_digest"][:8])
         """))
         if r.returncode == 0 and "OK" in r.stdout:
@@ -447,7 +445,7 @@ def main() -> int:
 
         # ── 8. anchor=False, AAC_ANCHOR_URL override ──────────────────────────
         section("8. going-deeper / why-anchoring — offline + anchor_url override")
-        r = run(venv_python, textwrap.dedent(f"""
+        r = run(venv_python, textwrap.dedent("""
             from capsule_emit import emit
             import tempfile, pathlib
             ledger = pathlib.Path(tempfile.mktemp(suffix=".jsonl"))
@@ -455,7 +453,7 @@ def main() -> int:
             # anchor=False — must not network, anchored=False
             cap = emit(action="test", operator="o", developer="d@v1",
                        anchor=False, ledger=ledger)
-            assert not cap.anchored, f"expected anchored=False, got {{cap.anchored}}"
+            assert not cap.anchored, f"expected anchored=False, got {cap.anchored}"
 
             # AAC_ANCHOR_URL override (bad URL → emit still completes, anchored=False or True with error)
             import os
@@ -463,7 +461,7 @@ def main() -> int:
                         anchor_url="http://127.0.0.1:0/v1/digest",
                         anchor=True, ledger=ledger)
             # anchored may be True (fire-and-forget) or False — either is fine; must not raise
-            print(f"OK anchor_url_override anchored={{cap2.anchored}}")
+            print(f"OK anchor_url_override anchored={cap2.anchored}")
         """))
         if r.returncode == 0 and "OK" in r.stdout:
             ok("anchor=False works; anchor_url= override does not crash emit()")
@@ -524,19 +522,19 @@ def main() -> int:
 
         # ── 10. No unknown_registry_value warnings on canonical write_order path
         section("10. No unknown_registry_value on write_order + confirms")
-        r = run(venv_python, textwrap.dedent(f"""
+        r = run(venv_python, textwrap.dedent("""
             from capsule_emit import emit
             from agent_action_capsule import verify
             import tempfile, pathlib
             ledger = pathlib.Path(tempfile.mktemp(suffix=".jsonl"))
 
             a = emit(action="write_order", operator="acme-co", developer="po-agent@v1",
-                     effect={{"type": "write_order", "status": "dispatched"}},
+                     effect={"type": "write_order", "status": "dispatched"},
                      anchor=False, ledger=ledger)
             b = emit(action="write_order", operator="acme-co", developer="po-agent@v1",
                      verdict="confirmed",
-                     effect={{"type": "write_order", "status": "confirmed"}},
-                     agent_output={{"ok": True}},
+                     effect={"type": "write_order", "status": "confirmed"},
+                     agent_output={"ok": True},
                      confirms=a.capsule_id,
                      anchor=False, ledger=ledger)
 
@@ -545,7 +543,7 @@ def main() -> int:
                 bad = [f for f in res.findings
                        if f.code == "unknown_registry_value"
                        and f.severity in ("error", "warning")]
-                assert not bad, f"unexpected registry findings on {{cap.capsule.get('action_id')}}: {{bad}}"
+                assert not bad, f"unexpected registry findings on {cap.capsule.get('action_id')}: {bad}"
 
             print("OK no unknown_registry_value at error/warning severity")
         """))
@@ -564,7 +562,7 @@ def main() -> int:
         return 1
     else:
         print(f"  {PASS} ALL CHECKS PASSED — gate is green")
-        print(f"  capsule-emit is ready to flip public.")
+        print("  capsule-emit is ready to flip public.")
         print(f"{'='*60}")
         return 0
 

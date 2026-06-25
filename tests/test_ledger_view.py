@@ -13,9 +13,8 @@ import json
 
 import pytest
 
-from capsule_emit import emit, ledger_show, ledger_view, ledger_view_chains, read_ledger
+from capsule_emit import emit, ledger_show, ledger_view, ledger_view_chains
 from capsule_emit.cli import main as cli_main
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -116,8 +115,8 @@ def test_l2_view_chains_child_indented_under_root(two_capsule_ledger):
     buf = io.StringIO()
     ledger_view_chains(path, out=buf)
     lines = buf.getvalue().splitlines()
-    root_line = next(l for l in lines if root.capsule_id[:12] in l)
-    child_line = next(l for l in lines if child.capsule_id[:12] in l)
+    root_line = next(ln for ln in lines if root.capsule_id[:12] in ln)
+    child_line = next(ln for ln in lines if child.capsule_id[:12] in ln)
     # Child line must be more indented than root line
     root_indent = len(root_line) - len(root_line.lstrip())
     child_indent = len(child_line) - len(child_line.lstrip())
