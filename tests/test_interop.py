@@ -18,14 +18,12 @@ from __future__ import annotations
 import io
 import json
 import subprocess
-import sys
 
 import pytest
-
-from capsule_emit import emit, ledger_view, read_ledger
 from agent_action_capsule import verify, verify_store
 from agent_action_capsule.cli import _load_store
 
+from capsule_emit import emit, ledger_view, read_ledger
 
 # ---------------------------------------------------------------------------
 # Fixture
@@ -95,7 +93,7 @@ def test_load_store_json_array_still_works(tmp_path):
 
 def test_load_store_blank_lines_ignored(tmp_path):
     ledger = tmp_path / "ledger.jsonl"
-    results = _emit_n(2, ledger)
+    _emit_n(2, ledger)
     # Rewrite with a blank line in the middle.
     lines = ledger.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2

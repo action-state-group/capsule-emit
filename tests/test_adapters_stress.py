@@ -22,7 +22,6 @@ from capsule_emit.adapters.crewai import CrewAICapsuleEmitter
 from capsule_emit.adapters.hermes import HermesCapsuleEmitter
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
