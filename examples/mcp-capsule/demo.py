@@ -54,7 +54,6 @@ from agent_action_capsule import verify
 from capsule_emit import ledger_view, read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 
-
 LEDGER_PATH = Path(tempfile.mkdtemp()) / "mcp_capsule_ledger.jsonl"
 
 
@@ -84,7 +83,7 @@ def run_demo(anchor: bool) -> int:
     # functools.wraps preserves the signature so @server.tool() still sees
     # the real typed params and generates the correct JSON schema.
 
-    @emitter.tool()
+    @emitter.tool(effect_type="write_order")  # seeded registry value (§12 / REGISTRY.md §3)
     def submit_order(vendor: str, amount: float, po_number: str) -> dict:
         """Submit a purchase order (consequential action)."""
         return {
@@ -108,7 +107,7 @@ def run_demo(anchor: bool) -> int:
     ]
 
     for vendor, amount, po in orders:
-        result = submit_order(vendor=vendor, amount=amount, po_number=po)
+        submit_order(vendor=vendor, amount=amount, po_number=po)
         cap = emitter.last
         assert cap is not None
         c = cap.capsule
@@ -129,8 +128,8 @@ def run_demo(anchor: bool) -> int:
     print(f"  action_type     : {c['action_type']}  ← 'decide'=consequential action (§5.1); 'fyi'=observation-only")
     print(f"  runtime         : {compute.get('runtime')}   ← auto-set by adapter")
     print(f"  effect.status   : {c.get('effect', {}).get('status')}")
-    print(f"    'dispatched'  = tool ran; outcome not yet confirmed by a second party")
-    print(f"    'confirmed'   = use emit_capsule(effect={{status:'confirmed'}}) after confirmation")
+    print("    'dispatched'  = tool ran; outcome not yet confirmed by a second party")
+    print("    'confirmed'   = use emit_capsule(effect={status:'confirmed'}) after confirmation")
     print(f"  capsule_id      : {cap.capsule_id}")
     print(f"  anchored        : {cap.anchored}")
     print()

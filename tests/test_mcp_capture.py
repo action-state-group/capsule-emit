@@ -22,15 +22,14 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-import socket
 import platform
+import socket
 
 import pytest
 from agent_action_capsule import verify
 
 from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
-
 
 # ---------------------------------------------------------------------------
 # Helpers
