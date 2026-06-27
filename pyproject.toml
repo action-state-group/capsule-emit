@@ -25,11 +25,12 @@ dependencies = ["agent-action-capsule>=0.0.3"]
 dev = ["pytest>=7.0", "ruff>=0.4"]
 langchain = ["langchain-core>=0.1"]
 crewai = ["crewai>=0.40"]
-mcp = []
+mcp = ["mcp>=1.0"]
 hermes = []
 
 [project.scripts]
 capsule-emit = "capsule_emit.cli:main"
+capsule-emit-server = "capsule_emit.server:main"
 
 [project.urls]
 Homepage = "https://github.com/action-state-group/capsule-emit"
