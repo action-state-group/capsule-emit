@@ -17,6 +17,14 @@ agentgateway (Rust proxy, port 3000)
 
 **Consequential vs. read-only filter** is handled at the gateway config layer: only `tools/call` is listed in `methods`, so `tools/list`, `resources/read`, and every other read-only MCP method bypass the hook entirely — they never reach capsule-emit.
 
+> **Allow-list, not deny-all.** The `methods:` config is an explicit allow-list:
+> methods not listed pass through un-sealed. For current MCP this is safe —
+> `tools/call` is the only method that executes tool logic and mutates external
+> state. A future MCP method that is consequential would be silently unsealed
+> unless you add it to `methods:`. Review this list when the MCP spec adds new
+> methods. For the Signal 1 (command/query) rationale see
+> [whats-consequential.md](../whats-consequential.md).
+
 ## Install
 
 ```sh

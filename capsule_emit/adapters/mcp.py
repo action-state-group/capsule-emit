@@ -241,6 +241,15 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             **Privacy note:** enabling this reveals the machine identity of
             the agent host in every capsule.  Strong TEE/DCAP hardware
             attestation is NOT provided here — that belongs in the gate layer.
+        seal_reads: When ``False``, tools explicitly decorated with
+            ``action_type="fyi"`` are skipped entirely — no capsule emitted,
+            no anchor call.  This matches the gateway pattern of passing
+            queries un-sealed, for decorator-based stacks that want parity.
+            Default ``True`` (backward-compatible: every wrapped call seals).
+
+            The skip fires only on *explicit* ``"fyi"`` labels.  A tool with
+            no ``action_type`` (unknown) is still sealed — unknown defaults to
+            gated (fail-safe), never silently dropped.
     """
 
     def __init__(
@@ -254,6 +263,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         model: dict[str, str] | None = None,
         action_type: str | None = None,
         host_provenance: bool = False,
+        seal_reads: bool = True,
     ) -> None:
         super().__init__(
             operator=operator,
@@ -265,6 +275,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         )
         self._default_action_type = action_type
         self._host_provenance = host_provenance
+        self._seal_reads = seal_reads
 
     def tool(
         self,
@@ -330,11 +341,14 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
                     "extra_compute": extra or None,
                 }
 
+            _skip_reads = not self._seal_reads and _atype == "fyi"
+
             if inspect.iscoroutinefunction(fn):
                 @functools.wraps(fn)
                 async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                     output = await fn(*args, **kwargs)
-                    self.emit_capsule(_action, **_build_emit_args(args, kwargs, output))
+                    if not _skip_reads:
+                        self.emit_capsule(_action, **_build_emit_args(args, kwargs, output))
                     return output
 
                 return async_wrapper
@@ -342,7 +356,8 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             @functools.wraps(fn)
             def wrapper(*args: Any, **kwargs: Any) -> Any:
                 output = fn(*args, **kwargs)
-                self.emit_capsule(_action, **_build_emit_args(args, kwargs, output))
+                if not _skip_reads:
+                    self.emit_capsule(_action, **_build_emit_args(args, kwargs, output))
                 return output
 
             return wrapper

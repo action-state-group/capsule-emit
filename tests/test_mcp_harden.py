@@ -365,3 +365,115 @@ class TestFastMCPIntegration:
         assert len(emitter.results) == 3
         for r in records:
             assert verify(r).ok
+
+
+# ---------------------------------------------------------------------------
+# seal_reads knob
+# ---------------------------------------------------------------------------
+
+
+def test_seal_reads_false_skips_explicit_fyi_tool(tmp_path):
+    """seal_reads=False + action_type='fyi' → no capsule, no error."""
+    emitter = _emitter(tmp_path, seal_reads=False)
+
+    @emitter.tool(action_type="fyi")
+    def read_price(item: str) -> float:
+        return 9.99
+
+    result = read_price(item="widget")
+    assert result == 9.99
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 0
+
+
+def test_seal_reads_false_still_seals_unknown_action_type(tmp_path):
+    """seal_reads=False + action_type=None (unknown) → still seals (fail-safe)."""
+    emitter = _emitter(tmp_path, seal_reads=False)
+
+    @emitter.tool()  # action_type left as None — unknown
+    def maybe_write(x: str) -> str:
+        return x
+
+    maybe_write(x="hello")
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 1, (
+        "unknown action_type must seal — fail-safe, never fail-open"
+    )
+
+
+def test_seal_reads_false_still_seals_act_tool(tmp_path):
+    """seal_reads=False does not skip tools with non-fyi action_type."""
+    emitter = _emitter(tmp_path, seal_reads=False)
+
+    @emitter.tool(action_type="decide")
+    def place_order(vendor: str) -> dict:
+        return {"ok": True}
+
+    place_order(vendor="Frobozz")
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 1
+
+
+def test_seal_reads_true_seals_fyi_tool(tmp_path):
+    """Default seal_reads=True: fyi tools are sealed (backward-compat)."""
+    emitter = _emitter(tmp_path)  # seal_reads=True by default
+
+    @emitter.tool(action_type="fyi")
+    def read_status() -> str:
+        return "ok"
+
+    read_status()
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 1
+
+
+def test_seal_reads_false_emitter_level_fyi_skips_all(tmp_path):
+    """seal_reads=False with emitter-level action_type='fyi' skips every tool."""
+    emitter = _emitter(tmp_path, action_type="fyi", seal_reads=False)
+
+    @emitter.tool()  # inherits emitter's action_type="fyi"
+    def get_balance() -> float:
+        return 100.0
+
+    get_balance()
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 0
+
+
+def test_seal_reads_false_mixed_tools_seals_only_commands(tmp_path):
+    """seal_reads=False: fyi skipped, non-fyi sealed — mixed decorator set."""
+    emitter = _emitter(tmp_path, seal_reads=False)
+
+    @emitter.tool(action_type="fyi")
+    def list_items() -> list:
+        return []
+
+    @emitter.tool()
+    def submit_order(vendor: str) -> dict:
+        return {"ok": True}
+
+    list_items()
+    list_items()
+    submit_order(vendor="Acme")
+    records = read_ledger(tmp_path / "ledger.jsonl")
+    assert len(records) == 1
+    assert "submit_order" in records[0]["action_id"]
+
+
+def test_seal_reads_false_async_fyi_skips(tmp_path):
+    """seal_reads=False + async fyi tool → no capsule sealed."""
+    emitter = _emitter(tmp_path, seal_reads=False)
+
+    @emitter.tool(action_type="fyi")
+    async def async_read(x: str) -> str:
+        return x
+
+    asyncio.run(async_read(x="hello"))
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 0
+
+
+def test_seal_reads_false_async_command_still_seals(tmp_path):
+    """seal_reads=False + async non-fyi tool → capsule sealed."""
+    emitter = _emitter(tmp_path, seal_reads=False)
+
+    @emitter.tool()
+    async def async_write(x: str) -> str:
+        return x
+
+    asyncio.run(async_write(x="world"))
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 1
