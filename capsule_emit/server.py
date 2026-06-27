@@ -37,7 +37,7 @@ calls, verify capsules, and inspect the ledger.  Add to
         type: stdio
         name: capsule_emit
         description: "Record + verify Agent Action Capsules"
-        cmd: python
+        cmd: python3
         args: ["-m", "capsule_emit.server"]
         timeout: 30
         envs:
@@ -133,17 +133,23 @@ def capsule_record(
 
 @mcp.tool()
 def capsule_verify(capsule_id: str, ledger: str = _LEDGER) -> str:
-    """Verify an Agent Action Capsule by ID (full or 8-char prefix).
+    """Verify an Agent Action Capsule by ID (full or prefix, minimum 8 hex chars).
 
     Looks up the capsule in the ledger and returns ok=True/False plus any
     structural or digest findings.
 
     Args:
-        capsule_id: Full or prefix capsule ID (at least 8 hex chars).
+        capsule_id: Full or prefix capsule ID (minimum 8 hex chars required
+            to avoid ambiguous prefix matches across large ledgers).
         ledger: Path to the JSONL ledger file.
     """
     if not _VERIFY_OK:
         return "error: agent-action-capsule not installed; pip install agent-action-capsule"
+    if len(capsule_id) < 8:
+        return (
+            f"error: capsule_id prefix too short ({len(capsule_id)} chars); "
+            "provide at least 8 hex characters to avoid ambiguous matches"
+        )
     records = read_ledger(ledger)
     match = next(
         (r for r in records if r.get("capsule_id", "").startswith(capsule_id)),
@@ -164,11 +170,13 @@ def capsule_ledger(ledger: str = _LEDGER, limit: int = 20) -> str:
 
     Args:
         ledger: Path to the JSONL ledger file.
-        limit: Maximum number of rows to return (default 20).
+        limit: Maximum number of rows to return (default 20, minimum 1).
     """
     records = read_ledger(ledger)
     if not records:
         return f"empty ledger: {ledger}"
+    # Clamp limit: Python's -N[:] silently drops the first rows; 0 returns everything.
+    limit = max(1, limit)
     rows = records[-limit:]
     lines = [f"ledger: {ledger} — {len(records)} capsule(s), showing last {len(rows)}"]
     for r in rows:

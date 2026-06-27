@@ -51,7 +51,7 @@ extensions:
     type: stdio
     name: po_agent
     description: "Purchase-order tools with capsule audit trail"
-    cmd: python
+    cmd: python3
     args: ["/path/to/your/server.py"]
     timeout: 30
     envs:
@@ -84,7 +84,7 @@ extensions:
     type: stdio
     name: capsule_emit
     description: "Record + verify Agent Action Capsules"
-    cmd: python
+    cmd: python3
     args: ["-m", "capsule_emit.server"]
     timeout: 30
     envs:

@@ -14,7 +14,7 @@ Add to ~/.config/goose/config.yaml:
         type: stdio
         name: po_agent
         description: "Purchase-order tools with capsule audit trail"
-        cmd: python
+        cmd: python3
         args: ["/path/to/examples/goose-capsule/server.py"]
         timeout: 30
         envs:
