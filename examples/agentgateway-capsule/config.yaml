@@ -1,0 +1,34 @@
+# agentgateway config — capsule-emit mcpGuardrails extension
+#
+# Add to agentgateway's config.yaml to seal every tools/call into an
+# Agent Action Capsule.  Read-only methods (tools/list, resources/read)
+# are NOT listed → they bypass the hook entirely.
+#
+# Start the capsule-emit gRPC service first:
+#   pip install "capsule-emit[agentgateway]"
+#   capsule-emit-agentgateway
+#
+# Then start agentgateway:
+#   agentgateway -f config.yaml
+
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+binds:
+  - port: 3000
+    listeners:
+      - routes:
+          - policies:
+              mcpGuardrails:
+                processors:
+                  - kind: remote
+                    host: "localhost:50051"   # capsule-emit ExtMcp gRPC service
+                    methods:
+                      "tools/call": full      # hook request + response for tool calls ONLY
+                    failureMode: failOpen     # capsule outage degrades gracefully
+            backends:
+              - mcp:
+                  targets:
+                    - name: your-mcp-server
+                      stdio:
+                        cmd: npx
+                        args: ["@modelcontextprotocol/server-everything"]
+                        # or: any other MCP server (stdio or HTTP)
