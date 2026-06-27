@@ -27,16 +27,28 @@ def append_to_ledger(capsule: dict, path: str | os.PathLike = "ledger.jsonl") ->
 
 
 def read_ledger(path: str | os.PathLike) -> list[dict]:
-    """Read all capsule records from a JSONL ledger file."""
+    """Read all capsule records from a JSONL ledger file.
+
+    Corrupt lines (truncated writes, disk errors) are skipped with a warning so
+    that one bad line never makes the entire ledger unreadable.
+    """
+    import logging
+
     p = Path(path)
     if not p.exists():
         return []
     records = []
     with open(p, encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if line:
+        for lineno, raw in enumerate(fh, start=1):
+            line = raw.strip()
+            if not line:
+                continue
+            try:
                 records.append(json.loads(line))
+            except json.JSONDecodeError:
+                logging.getLogger(__name__).warning(
+                    "read_ledger: skipping corrupt line %d in %s: %r", lineno, p, line[:80]
+                )
     return records
 
 

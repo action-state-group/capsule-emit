@@ -116,18 +116,21 @@ def capsule_record(
     except Exception:
         out = tool_output
 
-    result = emit(
-        action=action,
-        operator=operator,
-        developer=developer,
-        agent_input=inp,
-        agent_output=out,
-        verdict="executed",
-        effect={"type": action, "status": "dispatched"},
-        anchor=False,
-        ledger=ledger,
-        runtime="mcp",
-    )
+    try:
+        result = emit(
+            action=action,
+            operator=operator,
+            developer=developer,
+            agent_input=inp,
+            agent_output=out,
+            verdict="executed",
+            effect={"type": action, "status": "dispatched"},
+            anchor=False,
+            ledger=ledger,
+            runtime="mcp",
+        )
+    except Exception as exc:
+        return f"error: emit failed — {exc}"
     return f"sealed capsule_id={result.capsule_id}"
 
 
@@ -157,7 +160,10 @@ def capsule_verify(capsule_id: str, ledger: str = _LEDGER) -> str:
     )
     if match is None:
         return f"not_found capsule_id={capsule_id!r} ledger={ledger}"
-    vr = _aac_verify(match)
+    try:
+        vr = _aac_verify(match)
+    except Exception as exc:
+        return f"error: verify raised — {exc}"
     if vr.ok:
         return f"ok=True capsule_id={match['capsule_id']}"
     findings = "; ".join(f.detail for f in vr.findings)

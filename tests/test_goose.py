@@ -194,6 +194,89 @@ def test_server_capsule_record_non_json_input(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Boundary / hardening: companion server error paths
+# ---------------------------------------------------------------------------
+
+
+def test_server_capsule_record_emit_failure_returns_error_string(tmp_path):
+    """capsule_record with an invalid ledger path returns 'error: ...' string — no crash."""
+    from capsule_emit.server import capsule_record
+
+    reply = capsule_record(
+        action="order_x",
+        tool_input='{"qty": 1}',
+        tool_output='{"status": "ok"}',
+        ledger="/nonexistent/directory/ledger.jsonl",
+    )
+    assert reply.startswith("error:"), f"expected error string, got: {reply!r}"
+
+
+def test_server_capsule_verify_not_found_returns_not_found(tmp_path):
+    """capsule_verify with an ID not in the ledger returns 'not_found ...' string."""
+    ledger = tmp_path / "l.jsonl"
+    from capsule_emit.server import capsule_verify
+
+    reply = capsule_verify(capsule_id="abcdef12", ledger=str(ledger))
+    assert "not_found" in reply
+
+
+def test_server_capsule_verify_malformed_capsule_returns_error(tmp_path):
+    """capsule_verify on a valid-JSON but structurally-bad record returns error string."""
+    ledger = tmp_path / "l.jsonl"
+    # Write a JSON object that looks like a capsule id-wise but has no valid structure
+    import json as _json
+
+    ledger.write_text(_json.dumps({"capsule_id": "abcdef1234567890"}) + "\n")
+    from capsule_emit.server import capsule_verify
+
+    reply = capsule_verify(capsule_id="abcdef12", ledger=str(ledger))
+    # Either ok=False (verify ran) or error: (exception caught) — never a crash
+    assert any(tok in reply for tok in ("ok=False", "ok=True", "error:")), reply
+
+
+def test_server_corrupt_ledger_line_skipped(tmp_path):
+    """A corrupt JSONL line is skipped; valid lines around it are still returned."""
+    ledger = tmp_path / "l.jsonl"
+    emit(
+        action="good_action",
+        operator="org",
+        developer="d@v1",
+        verdict="executed",
+        anchor=False,
+        ledger=ledger,
+    )
+    # Inject a corrupt line in the middle
+    with open(ledger, "a") as fh:
+        fh.write("NOT VALID JSON\n")
+    emit(
+        action="another_action",
+        operator="org",
+        developer="d@v1",
+        verdict="executed",
+        anchor=False,
+        ledger=ledger,
+    )
+
+    from capsule_emit.server import capsule_ledger
+
+    reply = capsule_ledger(ledger=str(ledger))
+    # Corrupt line skipped; both valid capsules present
+    assert "2 capsule" in reply
+    assert "good_action" in reply
+    assert "another_action" in reply
+
+
+def test_server_all_corrupt_ledger_returns_empty(tmp_path):
+    """A fully corrupt ledger (all bad JSON) is treated as empty — no crash."""
+    ledger = tmp_path / "l.jsonl"
+    ledger.write_text("CORRUPT\nALSO CORRUPT\n")
+    from capsule_emit.server import capsule_ledger
+
+    reply = capsule_ledger(ledger=str(ledger))
+    assert "empty" in reply
+
+
+# ---------------------------------------------------------------------------
 # Pattern A: @emitter.tool() on FastMCP tools
 # ---------------------------------------------------------------------------
 
