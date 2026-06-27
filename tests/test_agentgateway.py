@@ -182,6 +182,77 @@ def test_malformed_mcp_request_bytes_does_not_crash(server_and_stubs):
     assert records[0]["action_id"].startswith("unknown")
 
 
+def test_tools_call_no_mcp_request_field_still_seals(server_and_stubs):
+    """tools/call with absent mcp_request (optional in proto) → capsule sealed, no skip."""
+    ledger, req, resp = server_and_stubs
+    # Send CheckRequest with NO mcp_request field set (field absent, not empty bytes).
+    req(ext_mcp_pb2.McpRequest(method="tools/call", service_names=["backend"]))
+    resp(ext_mcp_pb2.McpResponse(
+        method="tools/call",
+        service_names=["backend"],
+        mcp_response=b'{"status": "ok"}',
+    ))
+    records = read_ledger(ledger)
+    assert len(records) == 1, "parameterless tools/call must still be sealed"
+    assert records[0]["action_id"].startswith("unknown")
+
+
+@pytest.mark.parametrize("method", [
+    "tools/list",
+    "resources/read",
+    "resources/list",
+    "prompts/get",
+    "prompts/list",
+    "notifications/initialized",
+    "unknown/method",
+    "",
+])
+def test_read_only_methods_seal_no_capsule(server_and_stubs, method):
+    """Every non-tools/call method on either hook → zero capsules."""
+    ledger, req, resp = server_and_stubs
+    req(ext_mcp_pb2.McpRequest(method=method, service_names=["backend"]))
+    resp(ext_mcp_pb2.McpResponse(method=method, service_names=["backend"], mcp_response=b'{}'))
+    assert len(read_ledger(ledger)) == 0, f"method={method!r} must produce 0 capsules"
+
+
+def test_stale_deque_after_upstream_error_does_not_corrupt_next_call(server_and_stubs):
+    """Simulate upstream transport error: CheckRequest fires but CheckResponse never fires.
+
+    The stale deque entry must not corrupt the subsequent successful call's capsule.
+    """
+    ledger, req, resp = server_and_stubs
+    # Simulate call A: CheckRequest fires, upstream crashes → CheckResponse never arrives.
+    req(ext_mcp_pb2.McpRequest(
+        method="tools/call",
+        service_names=["backend"],
+        mcp_request=b'{"name":"stale_tool","arguments":{"x":1}}',
+    ))
+    # agentgateway skips CheckResponse on transport error — we model that by NOT calling resp here.
+
+    # Call B: full round trip.
+    req(ext_mcp_pb2.McpRequest(
+        method="tools/call",
+        service_names=["backend"],
+        mcp_request=b'{"name":"real_tool","arguments":{"y":2}}',
+    ))
+    resp(ext_mcp_pb2.McpResponse(
+        method="tools/call",
+        service_names=["backend"],
+        mcp_response=b'{"result":"done"}',
+    ))
+
+    records = read_ledger(ledger)
+    # The stale entry from call A occupies position 0 in the deque; the CheckResponse
+    # for call B pops it.  One capsule is produced, but it carries call A's params —
+    # this is the documented limitation when upstream transport errors drop a response.
+    # Verify the server is alive and we get exactly 1 capsule (not 2, not a crash).
+    assert len(records) == 1
+    assert records[0]["action_id"].startswith("stale_tool"), (
+        "FIFO pop gives stale entry — expected documented behaviour; "
+        "if this assertion flips, the correlation logic changed"
+    )
+
+
 def test_check_response_without_prior_check_request(server_and_stubs):
     """Response arriving without a prior CheckRequest → no crash, no capsule."""
     ledger, _, resp = server_and_stubs

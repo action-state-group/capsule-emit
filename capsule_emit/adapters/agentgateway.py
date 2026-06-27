@@ -102,14 +102,21 @@ class CapsuleEmitServicer:
     def CheckRequest(
         self, request: ext_mcp_pb2.McpRequest, context: grpc.ServicerContext
     ) -> ext_mcp_pb2.McpRequestResult:
-        if request.method == "tools/call" and request.HasField("mcp_request"):
-            try:
-                params = json.loads(request.mcp_request)
-                tool_name = str(params.get("name", "unknown"))
-                arguments = params.get("arguments") or {}
-                if not isinstance(arguments, dict):
-                    arguments = {}
-            except Exception:
+        if request.method == "tools/call":
+            # Always push for any tools/call so the deque stays in sync with CheckResponse,
+            # even when mcp_request is absent (proto marks it optional; tools with no
+            # params can omit it).  Without this, a parameterless call silently skips the
+            # seal in CheckResponse.
+            if request.HasField("mcp_request"):
+                try:
+                    params = json.loads(request.mcp_request)
+                    tool_name = str(params.get("name", "unknown"))
+                    arguments = params.get("arguments") or {}
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+                except Exception:
+                    tool_name, arguments = "unknown", {}
+            else:
                 tool_name, arguments = "unknown", {}
             with self._lock:
                 self._pending.append((tool_name, arguments))
