@@ -25,7 +25,7 @@ jobs:
           "git+https://github.com/action-state-group/agent-action-capsule.git#subdirectory=python"
 
       - name: install capsule-emit
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,agentgateway]"
 
       - name: ruff
         run: python -m ruff check .
