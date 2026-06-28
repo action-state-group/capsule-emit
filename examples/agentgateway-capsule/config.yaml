@@ -4,6 +4,13 @@
 # Agent Action Capsule.  Read-only methods (tools/list, resources/read)
 # are NOT listed → they bypass the hook entirely.
 #
+# ALLOW-LIST NOTE: methods: is an explicit allow-list, not a deny-all.
+# Methods not listed here pass through un-sealed.  For current MCP this
+# is safe — tools/call is the only method that mutates external state.
+# If the MCP spec adds new consequential methods in the future, add them
+# to this list so they are sealed.  Signal 1 (command/query) rationale:
+# docs/whats-consequential.md.
+#
 # Start the capsule-emit gRPC service first:
 #   pip install "capsule-emit[agentgateway]"
 #   capsule-emit-agentgateway

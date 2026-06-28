@@ -57,7 +57,7 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 
 **Then climb, one rung at a time:**
 
-- **Capture more, write less** — a framework [adapter](docs/adapters/) (MCP / LangChain / CrewAI / Hermes) emits for every tool call instead of hand-placing `emit()`.
+- **Capture more, write less** — a decorator [adapter](docs/adapters/) (MCP / LangChain / CrewAI / Hermes / Goose) seals each wrapped tool call automatically; the [agentgateway](docs/adapters/agentgateway.md) adapter seals all consequential traffic at the gateway chokepoint — no per-tool changes needed.
 - **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence — and a *different* agent can chain to yours by id alone. → `emit(..., confirms=parent_id)` · [within & across agents](docs/chaining.md)
 - **Declare now, enforce later** — a `manifest.md` declares your rules; a compatible gateway enforces the *same file*, with no change to your `emit()` calls.
 
@@ -103,7 +103,7 @@ emitter = MCPCapsuleEmitter(operator="acme-co", developer="my-agent@v1")
 def write_order(vendor: str, total: float) -> dict: ...
 ```
 
-MCP, LangChain, CrewAI, and Hermes are all supported. **Each adapter page has a paste-ready prompt for your coding agent** — drop it into Claude Code (or similar) and it wires emission into your tools for you: **[docs/adapters/](docs/adapters/)**.
+**Decorator adapters** (per-tool seal): MCP, LangChain, CrewAI, Hermes, and Goose. **Gateway adapter** (seals all `tools/call` traffic at the chokepoint, no per-tool changes): agentgateway. **Each adapter page has a paste-ready prompt for your coding agent** — drop it into Claude Code (or similar) and it wires emission into your tools for you: **[docs/adapters/](docs/adapters/)**.
 
 ## Declare now, enforce later — same file
 
@@ -119,7 +119,7 @@ New here? Written to be read top-to-bottom, no standards background needed:
 - **[Chaining — within one agent, and across agents](docs/chaining.md)** — capsules link by content address into verifiable trails, including **cross-organizational** chains; why the ledger is a DAG, not one line.
 - **[Why anchoring makes it trustworthy](docs/why-anchoring.md)** — why a record *you* keep isn't proof to anyone else, and how a shared append-only log fixes it. The heart of it.
 - **[The public log, explained](docs/the-public-log-explained.md)** — plain-English + FAQ: the transparency log, how Merkle proofs work, what's visible vs hidden, what you can progressively share. For when someone asks *"you're putting our data on a public log?"*
-- **[Adapters](docs/adapters/)** — let MCP / LangChain / CrewAI / Hermes emit capsules for you (paste-to-your-coding-agent prompt on each page).
+- **[Adapters](docs/adapters/)** — decorator adapters (MCP / LangChain / CrewAI / Hermes / [Goose](docs/adapters/goose.md)) seal each wrapped tool call; [agentgateway](docs/adapters/agentgateway.md) seals all `tools/call` traffic at the gateway layer. Paste-to-your-coding-agent prompt on each page.
 - **[Going deeper — and popping out](docs/going-deeper.md)** — *down* into the spec + `scitt-cose` substrate to verify it yourself; *up* to a compatible enforcement gateway when you want capsules to **block**, not just record.
 
 ## How it fits
