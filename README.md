@@ -45,7 +45,7 @@ These layers answer **different questions** — a capsule fills the gap of what 
 | Layer | Examples | Answers | Doesn't answer |
 |---|---|---|---|
 | **Identity** | DIDs, SPIFFE, Agent Cards | *Who* is the agent? | What it did |
-| **Authorization** | OPA, policy, permits | What is it *may* to do? | What it actually _did_, or the outcome |
+| **Authorization** | OPA, policy, permits | What *may* it do? | What it actually _did_, or the outcome |
 | **Observability** | Datadog, audit logs, your DB | What *you say* happened | Nothing to a party who doesn't trust you — mutable, self-attested |
 | **Agent Action Capsule** | `capsule-emit` | **What it *did*, provably** | (composes with layers above) |
 
@@ -71,7 +71,7 @@ The unit is the **capsule** (one action). What you keep and grow is the **ledger
 
 ## Anchoring — where the proof lives
 
-**Anchor is on by default.** On `emit()`, the capsule's **digest only** is submitted — async, non-blocking — to an [RFC 9162](https://www.rfc-editor.org/rfc/rfc9162) SCITT transparency log, so this exact capsule's existence is recorded at that time and independently checkable against the log. (`cap.anchored` reports the submission; surfacing the log's inclusion **receipt** back onto the result is on the near-term roadmap — today the digest is on the log and checkable there.)
+**Anchor is on by default.** On `emit()`, the capsule's **digest only** is submitted — async, non-blocking — to an [RFC 9162](https://www.rfc-editor.org/rfc/rfc9162) SCITT transparency log, so this exact capsule's existence is recorded at that time and independently checkable against the log. `cap.anchored` indicates the submission was started; call `cap.wait_receipt(timeout=10)` to block for the log's inclusion response. Anchor failures are logged as `WARNING` (failOpen — the action always continues) and never swallowed silently.
 
 - **What's logged:** a SHA-256 digest — nothing else. Your payloads never leave your machine.
 - **Where:** the free hosted log at `https://anchor.agentactioncapsule.org/v1/digest` (no signup, no key).

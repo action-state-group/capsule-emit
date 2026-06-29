@@ -5,9 +5,10 @@ This is the adoption-surface API described in capsule-emit-quickstart.md.
 It wraps ``agent_action_capsule.emit()`` with:
 - A friendlier signature (action, operator, developer, agent_input, agent_output, model, verdict, effect)
 - Digest-only commitment of agent_input / agent_output (content stays local)
+- Per-emit random salt on digest fields by default (prevents cross-capsule correlation)
 - Async anchor on by default (digest-only; no business content crosses the wire)
 - Automatic JSONL ledger append
-- A typed EmitResult with .capsule_id and .anchored
+- A typed EmitResult with .capsule_id, .anchored, .receipt and .wait_receipt()
 
 The ``confirms`` parameter threads a "did → confirmed" chain without a scheduler.
 
@@ -18,12 +19,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
-from dataclasses import dataclass
+import secrets
+import threading
+from dataclasses import dataclass, field
 from typing import Any
+from urllib.request import Request, urlopen
 
 from agent_action_capsule import emit as _base_emit
-from agent_action_capsule.anchor import anchor as _simple_anchor
+from agent_action_capsule.anchor import DEFAULT_ANCHOR_ENDPOINT
 from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError
 
 from .ledger import append_to_ledger
@@ -31,24 +36,139 @@ from .ledger import append_to_ledger
 __all__ = ["emit", "EmitResult"]
 
 _DEFAULT_LEDGER = "ledger.jsonl"
+_log = logging.getLogger(__name__)
 
 
-def _digest(value: Any) -> str:
-    """SHA-256 of the canonical JSON serialization of value."""
+# ---------------------------------------------------------------------------
+# Digest helper
+# ---------------------------------------------------------------------------
+
+
+def _digest(value: Any, salt: str | None = None) -> str:
+    """SHA-256 of the canonical JSON serialization of value, with optional salt.
+
+    When *salt* is provided, the digest is ``SHA256(salt + "|" + json(value))``.
+    This prevents cross-capsule correlation: two capsules with the same logical
+    input produce different digests when their salts differ.  The salt is stored
+    in ``compute_attestation["digest_salt"]`` so the emitting operator can
+    always recompute and verify their own capsules.
+    """
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    if salt:
+        raw = salt + "|" + raw
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Async anchor with receipt capture + failOpen warning
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _AnchorFuture:
+    """Internal: captures the anchor HTTP response asynchronously."""
+    _event: threading.Event = field(default_factory=threading.Event, repr=False)
+    receipt: dict | None = None
+    error: Exception | None = None
+
+    def wait(self, timeout: float = 10.0) -> dict | None:
+        """Block until the anchor response arrives (or *timeout* seconds elapse)."""
+        self._event.wait(timeout=timeout)
+        return self.receipt
+
+
+def _anchor_async(capsule_id: str, endpoint: str) -> _AnchorFuture:
+    """Fire an async anchor POST; capture receipt; log WARNING on failure (failOpen).
+
+    Returns immediately.  The HTTP POST runs in a daemon thread.  When the thread
+    finishes, it sets ``future.receipt`` (success) or logs a WARNING and sets
+    ``future.error`` (failure).  The capsule is already sealed locally regardless
+    of the anchor outcome — the anchor failure is **not** an exception (failOpen).
+
+    To block until the receipt arrives: ``future.wait(timeout=10)``.
+    """
+    future = _AnchorFuture()
+    body = json.dumps({"capsule_id": capsule_id}, separators=(",", ":")).encode()
+
+    def _post() -> None:
+        try:
+            req = Request(
+                endpoint,
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlopen(req, timeout=10.0) as resp:
+                raw = resp.read()
+                try:
+                    future.receipt = json.loads(raw) if raw else {}
+                except Exception:
+                    future.receipt = {}
+        except Exception as exc:
+            future.error = exc
+            _log.warning(
+                "capsule-emit: anchor submission FAILED for capsule %.16s… — "
+                "capsule is sealed locally but NOT committed to the transparency "
+                "log (failOpen: the action continues). Error: %s",
+                capsule_id,
+                exc,
+            )
+        finally:
+            future._event.set()
+
+    threading.Thread(target=_post, daemon=True, name="anchor-post").start()
+    return future
+
+
+# ---------------------------------------------------------------------------
+# EmitResult
+# ---------------------------------------------------------------------------
 
 
 @dataclass
 class EmitResult:
-    """The result of a capsule-emit emit() call."""
+    """The result of a capsule-emit emit() call.
+
+    Attributes:
+        capsule_id: 64-character hex SHA-256 content address of the capsule.
+        anchored: ``True`` when an anchor submission was *started* (``anchor=True``
+            was passed).  Does **not** mean the submission succeeded — watch
+            ``logging.WARNING`` for ``"anchor submission FAILED"`` messages, or
+            call :meth:`wait_receipt` to confirm.
+        capsule: The full capsule dict (plain JSON; storable / shareable).
+        receipt: The anchor's inclusion response dict, once available.  ``None``
+            until :meth:`wait_receipt` resolves it, or when ``anchor=False``.
+    """
 
     capsule_id: str
     anchored: bool
     capsule: dict
+    receipt: dict | None = None
+
+    def __post_init__(self) -> None:
+        # Not a dataclass field — set after construction by emit()
+        self._anchor_future: _AnchorFuture | None = None
+
+    def wait_receipt(self, timeout: float = 10.0) -> dict | None:
+        """Block until the anchor receipt arrives (up to *timeout* seconds).
+
+        Returns the receipt dict on success, ``None`` on timeout or when
+        ``anchor=False`` was passed to :func:`emit`.  The result is also
+        stored on :attr:`receipt`.
+        """
+        if self._anchor_future is not None:
+            result = self._anchor_future.wait(timeout=timeout)
+            if result is not None:
+                self.receipt = result
+        return self.receipt
 
     def __repr__(self) -> str:
         return f"EmitResult(capsule_id={self.capsule_id!r}, anchored={self.anchored})"
+
+
+# ---------------------------------------------------------------------------
+# emit()
+# ---------------------------------------------------------------------------
 
 
 def emit(
@@ -72,6 +192,7 @@ def emit(
     decision: str = "accept",
     action_type: str | None = None,
     extra_compute: dict[str, Any] | None = None,
+    salt_digests: bool = True,
 ) -> EmitResult:
     """Emit a sealed, optionally anchored Agent Action Capsule.
 
@@ -90,6 +211,7 @@ def emit(
         relation: Chain relation (``"confirms"`` | ``"supersedes"`` | ``"escalates"`` | …).
             Raises ``ValueError`` when ``confirms`` is None. Default ``"confirms"``.
         anchor: When True (default), fire-and-forget async digest-only anchor submission.
+            Failures are logged as ``WARNING`` (failOpen) — the action always continues.
         ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
         anchor_url: Override the anchor endpoint (else reads ``AAC_ANCHOR_URL`` env var).
         human_disposed: Whether a human made the disposition decision. When True,
@@ -102,9 +224,23 @@ def emit(
             ``"decide"``; anything else maps to ``"fyi"``.
         extra_compute: Extra key/value pairs merged into ``compute_attestation``.
             Use for framework-specific context (MCP request ID, host info, etc.).
+        salt_digests: When ``True`` (default), prepend a random 16-byte hex salt to
+            each input/output before hashing, stored as ``digest_salt`` in
+            ``compute_attestation``.  This prevents cross-capsule correlation of
+            low-entropy inputs (an adversary cannot build a single rainbow table
+            that works across capsules).  Pass ``False`` only when you need
+            deterministic digests for testing or cross-call comparison.
 
     Returns:
-        :class:`EmitResult` with ``.capsule_id`` and ``.anchored``.
+        :class:`EmitResult` with ``.capsule_id``, ``.anchored``, ``.receipt``,
+        and ``.wait_receipt()``.
+
+    failOpen behaviour:
+        When ``anchor=True`` and the transparency log is unreachable, the capsule
+        is still sealed and written to the ledger.  A ``WARNING`` is emitted via
+        Python's ``logging`` module so the silent outage is never invisible.
+        To assert on anchor health, call ``cap.wait_receipt(timeout=N)`` and check
+        whether the returned dict is non-None.
     """
     if human_disposed and approver != "human":
         raise InvariantError(
@@ -117,11 +253,20 @@ def emit(
             "a chain relation needs a chain target"
         )
 
+    # Per-emit random salt for digest privacy (prevents cross-capsule correlation).
+    emit_salt: str | None = secrets.token_hex(16) if salt_digests else None
+
     compute_att: dict[str, Any] = {}
+    _had_digest = False
     if agent_input is not None:
-        compute_att["agent_input_digest"] = _digest(agent_input)
+        compute_att["agent_input_digest"] = _digest(agent_input, salt=emit_salt)
+        _had_digest = True
     if agent_output is not None:
-        compute_att["agent_output_digest"] = _digest(agent_output)
+        compute_att["agent_output_digest"] = _digest(agent_output, salt=emit_salt)
+        _had_digest = True
+    # Only store the salt when there is at least one digest to which it was applied.
+    if emit_salt is not None and _had_digest:
+        compute_att["digest_salt"] = emit_salt
     if runtime is not None:
         compute_att["runtime"] = runtime
     if extra_compute:
@@ -142,12 +287,11 @@ def emit(
         response_digest: str | None = None
         if eff_status == "confirmed":
             # §5.2 confirmed-effect invariant: must supply response_digest.
-            # Auto-derive from agent_output when available; else from the
-            # confirms capsule_id (the "observed response" in a confirm chain).
+            # Use the salted digest here too so it matches what's stored.
             if agent_output is not None:
-                response_digest = _digest(agent_output)
+                response_digest = _digest(agent_output, salt=emit_salt)
             elif confirms is not None:
-                response_digest = _digest({"confirmed_capsule_id": confirms})
+                response_digest = _digest({"confirmed_capsule_id": confirms}, salt=emit_salt)
         effect_record = EffectRecord(
             type=effect.get("type", action),
             status=eff_status,
@@ -186,16 +330,16 @@ def emit(
     append_to_ledger(capsule, ledger)
 
     anchored = False
+    _future: _AnchorFuture | None = None
     if anchor:
-        endpoint = anchor_url or os.environ.get("AAC_ANCHOR_URL", None)
-        _simple_anchor(
-            capsule["capsule_id"],
-            **({"endpoint": endpoint} if endpoint else {}),
-        )
+        endpoint = anchor_url or os.environ.get("AAC_ANCHOR_URL") or DEFAULT_ANCHOR_ENDPOINT
+        _future = _anchor_async(capsule["capsule_id"], endpoint)
         anchored = True
 
-    return EmitResult(
+    result = EmitResult(
         capsule_id=capsule["capsule_id"],
         anchored=anchored,
         capsule=capsule,
     )
+    result._anchor_future = _future
+    return result

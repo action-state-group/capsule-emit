@@ -136,12 +136,14 @@ def test_mcp_sync_wrapper_is_not_coroutine_function(tmp_path):
 
 def test_mcp_positional_call_produces_named_dict(tmp_path):
     """Positional call f(v, t) produces input digest identical to kwargs call."""
-    emitter_pos = _emitter(tmp_path)
+    # salt_digests=False: testing input-normalization, not privacy salting
+    emitter_pos = _emitter(tmp_path, salt_digests=False)
     emitter_kw = MCPCapsuleEmitter(
         operator="test-org",
         developer="agent@v1",
         ledger=tmp_path / "ledger_kw.jsonl",
         anchor=False,
+        salt_digests=False,
     )
 
     @emitter_pos.tool("fn")
@@ -164,12 +166,14 @@ def test_mcp_positional_call_produces_named_dict(tmp_path):
 
 def test_mcp_mixed_positional_kwargs_same_digest(tmp_path):
     """Mixed call f(v, total=t) produces the same input digest as pure kwargs."""
-    emitter_mixed = _emitter(tmp_path)
+    # salt_digests=False: testing input-normalization, not privacy salting
+    emitter_mixed = _emitter(tmp_path, salt_digests=False)
     emitter_kw = MCPCapsuleEmitter(
         operator="test-org",
         developer="agent@v1",
         ledger=tmp_path / "ledger_kw.jsonl",
         anchor=False,
+        salt_digests=False,
     )
 
     @emitter_mixed.tool("fn")
@@ -192,12 +196,14 @@ def test_mcp_mixed_positional_kwargs_same_digest(tmp_path):
 
 def test_mcp_signature_defaults_filled_in(tmp_path):
     """apply_defaults() includes default-valued params omitted by the caller."""
-    emitter_explicit = _emitter(tmp_path)
+    # salt_digests=False: testing input-normalization, not privacy salting
+    emitter_explicit = _emitter(tmp_path, salt_digests=False)
     emitter_omitted = MCPCapsuleEmitter(
         operator="test-org",
         developer="agent@v1",
         ledger=tmp_path / "ledger_omitted.jsonl",
         anchor=False,
+        salt_digests=False,
     )
 
     @emitter_explicit.tool("fn")

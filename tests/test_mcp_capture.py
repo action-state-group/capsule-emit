@@ -180,10 +180,11 @@ def test_mcp_context_param_excluded_from_input_digest(tmp_path):
     pytest.importorskip("mcp", reason="mcp not installed")
     from mcp.server.fastmcp import Context
 
-    emitter_with_ctx = _emitter(tmp_path)
+    # salt_digests=False: testing context-exclusion from digest, not privacy salting
+    emitter_with_ctx = _emitter(tmp_path, salt_digests=False)
     ledger_no_ctx = tmp_path / "no_ctx.jsonl"
     emitter_no_ctx = MCPCapsuleEmitter(
-        operator="test-org", developer="agent@v1", ledger=ledger_no_ctx, anchor=False
+        operator="test-org", developer="agent@v1", ledger=ledger_no_ctx, anchor=False, salt_digests=False
     )
 
     @emitter_with_ctx.tool("order")
