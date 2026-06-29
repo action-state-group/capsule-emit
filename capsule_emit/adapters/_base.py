@@ -75,6 +75,7 @@ class CapsuleEmitterBase:
         action_type: str | None = None,
         runtime: str | None = None,
         extra_compute: dict[str, Any] | None = None,
+        salt_digests: bool = True,
     ) -> EmitResult:
         """Emit one capsule for a completed tool call.
 
@@ -102,6 +103,7 @@ class CapsuleEmitterBase:
             action_type=action_type,
             runtime=runtime,
             extra_compute=extra_compute,
+            salt_digests=salt_digests,
         )
         self._last = result
         self._results.append(result)
