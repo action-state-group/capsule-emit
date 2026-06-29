@@ -31,15 +31,15 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_ROOT))
 
-from capsule_emit import emit
-
-from a2a_sandbox import (
+from a2a_sandbox import (  # noqa: E402
     A2ATask,
     AP2CartMandate,
     Money,
     execute_payment,
     is_sandbox,
 )
+
+from capsule_emit import emit  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
@@ -208,7 +208,7 @@ def verify_ledger() -> None:
     from agent_action_capsule import verify_store
 
     with open(LEDGER_PATH) as f:
-        capsules = [json.loads(l) for l in f if l.strip()]
+        capsules = [json.loads(line) for line in f if line.strip()]
 
     results = verify_store(capsules)
     all_ok = True
@@ -245,16 +245,16 @@ def main() -> int:
     print(f"\n{_SEP}")
     print("  Summary")
     print(_SEP)
-    print(f"  Scenario A — approved payment")
+    print("  Scenario A — approved payment")
     print(f"    dispatch capsule_id : {dispatch_id}")
     print(f"    confirm  capsule_id : {confirm_id}")
-    print(f"  Scenario B — refusal")
+    print("  Scenario B — refusal")
     print(f"    refusal  capsule_id : {refusal_id}")
-    print(f"\n  Compose framing:")
-    print(f"    AP2 CartMandate  → agent_input_digest  (the 'may')")
-    print(f"    Payment outcome  → response_digest     (the 'did')")
-    print(f"    SCITT receipt    → independent proof that the capsule was registered")
-    print(f"\n  Verify yourself:")
+    print("\n  Compose framing:")
+    print("    AP2 CartMandate  → agent_input_digest  (the 'may')")
+    print("    Payment outcome  → response_digest     (the 'did')")
+    print("    SCITT receipt    → independent proof that the capsule was registered")
+    print("\n  Verify yourself:")
     print(f"    agent-action-capsule verify --store {LEDGER_PATH}")
     return 0
 

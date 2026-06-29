@@ -13,9 +13,8 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-
 
 # ---------------------------------------------------------------------------
 # AP2 types (subset of A2A Payment Profile v2)
@@ -136,8 +135,8 @@ def _real_payment(mandate: AP2CartMandate, amount: Money) -> PaymentResult:
     try:
         import stripe  # type: ignore[import]
         stripe.api_key = _STRIPE_KEY
-    except ImportError:
-        raise RuntimeError("pip install stripe  (or set DRY_RUN=1)")
+    except ImportError as exc:
+        raise RuntimeError("pip install stripe  (or set DRY_RUN=1)") from exc
 
     cents = int(float(amount.value) * 100)
     pi = stripe.PaymentIntent.create(

@@ -91,7 +91,7 @@ curl https://anchor.agentactioncapsule.org/v1/inclusion/<capsule_id>
 
 - No standalone A2A adapter (agentgateway proxies A2A at the wire)
 - No AP2 adapter (map to AP2, don't be AP2)
-- No Authority/moat code (that lives in private repos)
+- No Authority-layer code (that lives in private repos)
 
 ## Boundary
 
