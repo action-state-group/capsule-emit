@@ -1,0 +1,33 @@
+{
+    "spec_version": "draft-mih-scitt-agent-action-capsule-01",
+    "format_version": "2",
+    "capsule_id": "a1dfb7375422c656929c09b08e92ac8c65f9fb8c02694d6d0d7cca7e023e31df",
+    "action_id": "submit_order/c8e979e1-014c-4abb-9c82-52bfc8f08f84",
+    "action_type": "decide",
+    "operator": "acme-co",
+    "developer": "goose-agent@v1",
+    "timestamp": "2026-06-30T00:09:13.179004Z",
+    "model_attestation": {
+        "compute_attestation": {
+            "agent_input_digest": "007d2adff95932a774b1d88d95deb110e778c0e1b9e4870f155ed43a068a5094",
+            "agent_output_digest": "d5bca388e622b2922cfd27fddc8a48d656fd8c3bbef72d6d1a9f9b783b1201ab",
+            "runtime": "mcp"
+        }
+    },
+    "effect": {
+        "status": "dispatched",
+        "type": "submit_order",
+        "effect_attestation": "runtime_claimed"
+    },
+    "assurance": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "dispatched_unconfirmed",
+        "ledger_mode": "standalone"
+    },
+    "disposition": {
+        "decision": "accept",
+        "approver": "policy",
+        "human_disposed": false,
+        "verdict_class": "executed"
+    }
+}
