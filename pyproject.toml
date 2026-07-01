@@ -28,6 +28,7 @@ crewai = ["crewai>=0.40"]
 mcp = ["mcp>=1.0"]
 agentgateway = ["grpcio>=1.60", "protobuf>=5.0"]
 hermes = []
+adk = ["google-adk>=2.0"]
 
 [project.scripts]
 capsule-emit = "capsule_emit.cli:main"
