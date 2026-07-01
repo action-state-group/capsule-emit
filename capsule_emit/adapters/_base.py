@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """Shared base for all capsule-emit framework adapters.
 
-All framework adapters (LangChain, CrewAI, Hermes, MCP) extend this base.
-It holds operator/developer/ledger config and exposes a single
+All framework adapters (MCP, LangChain, CrewAI, Hermes, Goose, ADK) extend this
+base. It holds operator/developer/ledger config and exposes a single
 ``emit_capsule()`` helper that calls the top-level ``capsule_emit.emit()``.
 """
 from __future__ import annotations
 
 import os
+from collections import deque
 from typing import Any
 
 from capsule_emit.core import EmitResult, emit
@@ -27,6 +28,12 @@ class CapsuleEmitterBase:
         model: Default ``{"provider": ..., "model_id": ...}`` applied to every capsule
             when the adapter cannot auto-capture the model from the framework. Can be
             overridden per-emit by passing ``model=`` to :meth:`emit_capsule`.
+        max_results: Cap on how many recent :class:`EmitResult` objects :attr:`results`
+            retains. ``None`` (default) keeps every result — fine for short-lived use,
+            but a long-running streaming adapter (e.g. ADK's event tap) should set a cap
+            so the in-memory history does not grow without bound. ``0`` retains nothing.
+            ``last`` is tracked independently and is always the most recent emit
+            regardless of this cap.
     """
 
     def __init__(
@@ -38,6 +45,7 @@ class CapsuleEmitterBase:
         anchor: bool = True,
         anchor_url: str | None = None,
         model: dict[str, str] | None = None,
+        max_results: int | None = None,
     ) -> None:
         self._operator = operator
         self._developer = developer
@@ -46,7 +54,12 @@ class CapsuleEmitterBase:
         self._anchor_url = anchor_url
         self._default_model = model
         self._last: EmitResult | None = None
-        self._results: list[EmitResult] = []
+        # A bounded deque when a cap is set (streaming adapters), else an unbounded
+        # list (backward-compatible default). Both support append + list().
+        # `is not None` so max_results=0 means "retain nothing", not "unbounded".
+        self._results: deque[EmitResult] | list[EmitResult] = (
+            deque(maxlen=max_results) if max_results is not None else []
+        )
 
     @property
     def last(self) -> EmitResult | None:
