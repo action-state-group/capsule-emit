@@ -1,6 +1,6 @@
 # agentgateway ExtMcp gRPC protocol-boundary evidence transcript
 
-**Date:** 2026-07-01  
+**Date:** 2026-07-02  
 **capsule-emit:** 0.1.1  
 **agent-action-capsule:** 0.1.0  
 **Python:** 3.13.7  
@@ -65,6 +65,10 @@ tests/test_agentgateway.py::test_ext_mcp_pb2_importable PASSED           [100%]
 
 ## 2. Demo run — tools/list → 0 capsules, tools/call → sealed, tamper → ok=False
 
+The transcript below and `capsule.json` in this directory are from a single atomic
+run.  The `capsule_id` visible in steps 2, 4, 5, and 6 (`bbaf995d8e38a518…`)
+matches the `capsule_id` in `capsule.json`.
+
 ```
 $ python3 examples/agentgateway-capsule/demo.py
 ============================================================
@@ -75,17 +79,17 @@ agentgateway capsule demo — gRPC → sealed capsule → verify
   ledger unchanged (0 capsules). ✓
 
 [step 2] tools/call submit_order (consequential) → capsule sealed
-  capsule_id: 2330a5f1398bfd25921a…
+  capsule_id: bbaf995d8e38a5184673…
 
 [step 3] tools/call get_price (second call) → second capsule
 
 [step 4] Ledger: 2 capsule(s) sealed
-  2330a5f1398bfd25… submit_order [executed] runtime=agentgateway
-  40fa4cce07d6eee2… get_price [executed] runtime=agentgateway
+  bbaf995d8e38a518… submit_order [executed] runtime=agentgateway
+  a663f33230e60ba3… get_price [executed] runtime=agentgateway
 
 [step 5] Verify all capsules (offline — no network needed)
-  2330a5f1398bfd25… ok=True  ✓
-  40fa4cce07d6eee2… ok=True  ✓
+  bbaf995d8e38a518… ok=True  ✓
+  a663f33230e60ba3… ok=True  ✓
   All capsules verified ok=True.
 
 [step 6] Tamper test: flip one byte in output digest → verify fails
@@ -105,14 +109,14 @@ Demo complete.
 
 ## 3. Sealed capsule (capsule.json in this directory)
 
-The capsule sealed in step 2 above (`submit_order`, `vendor: Frobozz Supply`,
-`amount: 1240.19`, `po_number: PO-7777`) is saved as `capsule.json` in this
-directory.  Key fields:
+`capsule.json` is the `submit_order` capsule from step 2 of the run above
+(`vendor: Frobozz Supply`, `amount: 1240.19`, `po_number: PO-7777`).
 
 | Field | Value |
 |---|---|
-| `capsule_id` | `81900574dba4ec34…` |
-| `action_id` | `submit_order/c9506b9f-…` |
+| `capsule_id` | `bbaf995d8e38a518…` |
+| `action_id` | `submit_order/1be5bea9-…` |
+| `timestamp` | `2026-07-02T02:01:30.751435Z` |
 | `runtime` | `agentgateway` |
 | `verdict_class` | `executed` |
 | `verify ok` | `True` |
