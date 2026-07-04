@@ -1,0 +1,33 @@
+{
+  "spec_version": "draft-mih-scitt-agent-action-capsule-01",
+  "format_version": "2",
+  "capsule_id": "bbaf995d8e38a51846739705737de00e311cb2e46a22df6fd0ffa3616a04293c",
+  "action_id": "submit_order/1be5bea9-561f-4859-a37a-a0ebe8b5aa49",
+  "action_type": "decide",
+  "operator": "acme-co",
+  "developer": "agentgateway-agent@v1",
+  "timestamp": "2026-07-02T02:01:30.751435Z",
+  "model_attestation": {
+    "compute_attestation": {
+      "agent_input_digest": "d624fa7e5a6698e6eedc010f5cf7c39c69f00a5cf5178a147916d6b8796065c5",
+      "agent_output_digest": "d5bca388e622b2922cfd27fddc8a48d656fd8c3bbef72d6d1a9f9b783b1201ab",
+      "runtime": "agentgateway"
+    }
+  },
+  "effect": {
+    "status": "dispatched",
+    "type": "submit_order",
+    "effect_attestation": "runtime_claimed"
+  },
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "dispatched_unconfirmed",
+    "ledger_mode": "standalone"
+  },
+  "disposition": {
+    "decision": "accept",
+    "approver": "policy",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  }
+}
