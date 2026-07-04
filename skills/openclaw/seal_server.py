@@ -21,12 +21,12 @@ env var.  Set AAC_ANCHOR_URL=off to disable anchoring for offline use.
 """
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
-import capsule_emit
 import agent_action_capsule
+
+import capsule_emit
 
 try:
     from fastapi import FastAPI, HTTPException
