@@ -57,12 +57,22 @@ def test_io_digests_with_model(tmp_ledger):
 
 
 def test_input_digest_stability(tmp_ledger):
+    # salt_digests=False: same input → same digest (deterministic, for explicit opt-out)
     inp = {"vendor": "Acme", "total": "1200"}
-    cap_a = emit(action="order", operator="org", developer="agent@v1", agent_input=inp, anchor=False, ledger=tmp_ledger)
-    cap_b = emit(action="order", operator="org", developer="agent@v1", agent_input=inp, anchor=False, ledger=tmp_ledger)
+    cap_a = emit(action="order", operator="org", developer="agent@v1", agent_input=inp, anchor=False, ledger=tmp_ledger, salt_digests=False)
+    cap_b = emit(action="order", operator="org", developer="agent@v1", agent_input=inp, anchor=False, ledger=tmp_ledger, salt_digests=False)
     ma_a = cap_a.capsule["model_attestation"]["compute_attestation"]
     ma_b = cap_b.capsule["model_attestation"]["compute_attestation"]
     assert ma_a["agent_input_digest"] == ma_b["agent_input_digest"]
+    # Default (salt_digests=True): same input → DIFFERENT digests (per-emit random salt)
+    cap_c = emit(action="order", operator="org", developer="agent@v1", agent_input=inp, anchor=False, ledger=tmp_ledger)
+    cap_d = emit(action="order", operator="org", developer="agent@v1", agent_input=inp, anchor=False, ledger=tmp_ledger)
+    ma_c = cap_c.capsule["model_attestation"]["compute_attestation"]
+    ma_d = cap_d.capsule["model_attestation"]["compute_attestation"]
+    assert ma_c["agent_input_digest"] != ma_d["agent_input_digest"], (
+        "default salt_digests=True must produce unique digests per call (prevents correlation)"
+    )
+    assert "digest_salt" in ma_c
 
 
 def test_mutating_input_changes_capsule_id(tmp_ledger):

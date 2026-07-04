@@ -250,6 +250,10 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             The skip fires only on *explicit* ``"fyi"`` labels.  A tool with
             no ``action_type`` (unknown) is still sealed — unknown defaults to
             gated (fail-safe), never silently dropped.
+        salt_digests: When ``True`` (default), each tool call generates a
+            fresh random salt so the input/output digests cannot be correlated
+            across capsules.  Pass ``False`` only when cross-call digest
+            comparison is needed (e.g. test assertions on normalization).
     """
 
     def __init__(
@@ -264,6 +268,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         action_type: str | None = None,
         host_provenance: bool = False,
         seal_reads: bool = True,
+        salt_digests: bool = True,
     ) -> None:
         super().__init__(
             operator=operator,
@@ -276,6 +281,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         self._default_action_type = action_type
         self._host_provenance = host_provenance
         self._seal_reads = seal_reads
+        self._salt_digests = salt_digests
 
     def tool(
         self,
@@ -342,13 +348,14 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
                 }
 
             _skip_reads = not self._seal_reads and _atype == "fyi"
+            _salt = self._salt_digests
 
             if inspect.iscoroutinefunction(fn):
                 @functools.wraps(fn)
                 async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                     output = await fn(*args, **kwargs)
                     if not _skip_reads:
-                        self.emit_capsule(_action, **_build_emit_args(args, kwargs, output))
+                        self.emit_capsule(_action, **_build_emit_args(args, kwargs, output), salt_digests=_salt)
                     return output
 
                 return async_wrapper
@@ -357,7 +364,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             def wrapper(*args: Any, **kwargs: Any) -> Any:
                 output = fn(*args, **kwargs)
                 if not _skip_reads:
-                    self.emit_capsule(_action, **_build_emit_args(args, kwargs, output))
+                    self.emit_capsule(_action, **_build_emit_args(args, kwargs, output), salt_digests=_salt)
                 return output
 
             return wrapper
