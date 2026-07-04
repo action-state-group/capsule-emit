@@ -30,10 +30,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-import capsule_emit
 from nest_core.scenario import ScenarioConfig
 from nest_core.sim.agent import AgentContext, StateMachineAgent
 from nest_core.types import AgentId
+
+import capsule_emit
 
 # Ledger written by biz_capsule (read by auditor for verification)
 CAPSULE_LEDGER = Path("tax_audit_capsule_ledger.jsonl")
@@ -408,7 +409,7 @@ class AuditorAgent(StateMachineAgent):
             f"audit:biz_capsule:{status}:{cap_fine:.0f}".encode()
         )
         await ctx.broadcast(
-            f"audit:biz_control:undetectable:0".encode()
+            b"audit:biz_control:undetectable:0"
         )
         await ctx.broadcast(
             f"reasoning:{self._id}:{result.capsule_id}:{cap_reason[:80]}".encode()

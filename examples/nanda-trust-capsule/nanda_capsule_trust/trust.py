@@ -42,14 +42,14 @@ from typing import Any, cast
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from nest_core.types import AgentId, Attestation, Claim, Evidence, ReputationScore
 
 import capsule_emit
-from nest_core.types import AgentId, Attestation, Claim, Evidence, ReputationScore
+
 # Private helpers from nest-plugins-reference — may break if NANDA refactors
 # agent_receipts.  Sentinel test: tests/test_capsule_emit_trust.py::test_private_import_still_works
 try:
     from nest_plugins_reference.trust.agent_receipts import (
-        NORMALIZATION_K,
         DEFAULT_CATEGORY_WEIGHTS,
         _action_field,
         _counterparty,
@@ -183,7 +183,7 @@ class CapsuleEmitTrust:
         issuer_did = str(receipt.get("issuer_did", ""))
         category = str(_action_field(receipt, "category") or _DEFAULT_CAPSULE_ACTION)
         cp_did = _counterparty(receipt) or ""
-        action_id = str(_action_field(receipt, "action_id") or "")
+        _action_id = str(_action_field(receipt, "action_id") or "")
         corroborated = is_corroborated(receipt)
 
         try:

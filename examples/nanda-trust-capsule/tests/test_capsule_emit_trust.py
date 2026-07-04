@@ -4,18 +4,15 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
-
+from nanda_capsule_trust.trust import CapsuleEmitTrust
 from nest_core.types import AgentId, Evidence
 from nest_plugins_reference.trust.agent_receipts import (
     cosign_receipt,
     sign_receipt,
 )
-
-from nanda_capsule_trust.trust import CapsuleEmitTrust
 
 
 def _seed(agent: AgentId) -> bytes:
@@ -187,16 +184,13 @@ def test_private_import_still_works() -> None:
     NANDA update to catch breakage early.
     """
     from nest_plugins_reference.trust.agent_receipts import (
-        NORMALIZATION_K,
         DEFAULT_CATEGORY_WEIGHTS,
+        NORMALIZATION_K,
         _action_field,
         _counterparty,
         _effective_receipts,
-        _normalize,
         _raw_reputation,
         _verify_receipt,
-        did_for_pubkey,
-        is_corroborated,
     )
     assert callable(_action_field)
     assert callable(_counterparty)

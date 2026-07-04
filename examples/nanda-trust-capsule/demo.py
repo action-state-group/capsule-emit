@@ -27,7 +27,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from nest_core.plugins import PluginRegistry
 from nest_core.runner import ScenarioRunner
 from nest_core.scenario import ScenarioConfig
 

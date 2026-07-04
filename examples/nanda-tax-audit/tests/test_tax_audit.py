@@ -15,22 +15,20 @@ import json
 from pathlib import Path
 
 import pytest
-
-from nest_core.runner import ScenarioRunner
-from nest_core.scenario import ScenarioConfig
-from nest_core.scenarios import register_scenario
-
 from nanda_tax_audit.scenario import (
     CAPSULE_LEDGER,
     CHEAT_FRACTION,
     FINE_MULTIPLIER,
+    AuditorAgent,
     BizCapsuleAgent,
     BizControlAgent,
-    AuditorAgent,
     _digest,
     _tx_amount,
     tax_audit_factory,
 )
+from nest_core.runner import ScenarioRunner
+from nest_core.scenario import ScenarioConfig
+from nest_core.scenarios import register_scenario
 
 _SCENARIO_YAML = Path(__file__).parent.parent / "scenarios" / "tax_audit.yaml"
 _AUDITOR_LEDGER = Path("tax_audit_auditor_reasoning.jsonl")
@@ -203,7 +201,7 @@ def test_capsule_ledger_has_capsules(scenario_trace) -> None:
     """biz_capsule emits at least one capsule per run."""
     assert CAPSULE_LEDGER.exists(), "biz_capsule ledger not created"
     capsules = [
-        l for l in CAPSULE_LEDGER.read_text().splitlines() if l.strip()
+        ln for ln in CAPSULE_LEDGER.read_text().splitlines() if ln.strip()
     ]
     assert len(capsules) > 0, "biz_capsule ledger is empty"
     # Each line must be valid JSON with capsule_id
@@ -216,7 +214,7 @@ def test_capsule_ledger_has_capsules(scenario_trace) -> None:
 def test_auditor_reasoning_capsules_emitted(scenario_trace) -> None:
     """Auditor emits one reasoning capsule per audit cycle."""
     assert _AUDITOR_LEDGER.exists(), "Auditor reasoning ledger not created"
-    lines = [l for l in _AUDITOR_LEDGER.read_text().splitlines() if l.strip()]
+    lines = [ln for ln in _AUDITOR_LEDGER.read_text().splitlines() if ln.strip()]
     assert len(lines) > 0, "Auditor reasoning ledger is empty"
     for line in lines[:3]:
         cap = json.loads(line)
@@ -227,8 +225,9 @@ def test_auditor_reasoning_capsules_emitted(scenario_trace) -> None:
 
 def test_capsule_digest_detects_tampering() -> None:
     """Core mechanic: verify_input_digest returns False for tampered amount."""
-    import capsule_emit
     import tempfile
+
+    import capsule_emit
 
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
         ledger_path = Path(f.name)

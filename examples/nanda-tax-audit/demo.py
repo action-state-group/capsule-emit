@@ -22,11 +22,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from nanda_tax_audit.scenario import CAPSULE_LEDGER, tax_audit_factory
 from nest_core.runner import ScenarioRunner
 from nest_core.scenario import ScenarioConfig
 from nest_core.scenarios import register_scenario
-
-from nanda_tax_audit.scenario import CAPSULE_LEDGER, tax_audit_factory
 
 _SCENARIO_YAML = Path(__file__).parent / "scenarios" / "tax_audit.yaml"
 _TRACE_PATH = Path(__file__).parent / "traces" / "tax_audit.jsonl"
@@ -172,7 +171,7 @@ def _print_report(data: dict, capsule_ledger: Path, auditor_ledger: Path) -> Non
     print(f"    Caught:            0 of {cheats_control}  (0% — auditor has no anchor)")
     if ctrl_suspicion_count > 0:
         print(f"    Suspected:         {ctrl_suspicion_count} cycles flagged as anomalous")
-        print(f"                       (pattern detected, no proof — no fine issued)")
+        print("                       (pattern detected, no proof — no fine issued)")
     print()
     print("  biz_capsule (anchored capsule ledger)")
     print(f"    Cheated:           {cheats_capsule} of {cheats_capsule+honest_capsule} cycles")
@@ -197,12 +196,12 @@ def _print_report(data: dict, capsule_ledger: Path, auditor_ledger: Path) -> Non
     v1_pass = catch_pct >= 99.0 or cheats_capsule == 0
     v2_pass = false_positives == 0
 
-    print(f"  Validator 1: auditor caught ≥99% of biz_capsule tampering")
+    print("  Validator 1: auditor caught ≥99% of biz_capsule tampering")
     print(f"    → {catch_pct:.0f}%  {'PASS ✅' if v1_pass else 'FAIL ❌'}")
-    print(f"  Validator 2: 0% false positives on biz_capsule")
+    print("  Validator 2: 0% false positives on biz_capsule")
     print(f"    → {false_positives} false positives  {'PASS ✅' if v2_pass else 'FAIL ❌'}")
-    print(f"  Validator 3: biz_control tampering undetected")
-    print(f"    → 0 caught  PASS ✅")
+    print("  Validator 3: biz_control tampering undetected")
+    print("    → 0 caught  PASS ✅")
 
     if reasoning:
         print(f"\n  Auditor reasoning capsules (last {min(3, len(reasoning))}):")
