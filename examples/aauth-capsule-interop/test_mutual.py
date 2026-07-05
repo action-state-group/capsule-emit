@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the AAuth + Capsule bilateral interop demo.
+"""Tests for the AAuth + Capsule mutual interop demo.
 
 Exercises:
-  - bilateral seal: both orgs produce valid capsules
+  - mutual seal: both orgs produce valid capsules
   - shared subject_digest: both capsules attest over the same action digest
   - disposition.authority: the AAuth grant reference is recorded on Planner's capsule
   - verify: agent-action-capsule Class-1 verify passes ok=True for both
@@ -12,7 +12,7 @@ Exercises:
 
 Run:
     pip install "capsule-emit" "agent-action-capsule" pytest
-    pytest examples/aauth-capsule-interop/test_bilateral.py -v
+    pytest examples/aauth-capsule-interop/test_mutual.py -v
 """
 from __future__ import annotations
 
@@ -161,7 +161,7 @@ class TestDJSeal:
         assert vr.ok, f"dj capsule failed verify: {[f.detail for f in vr.findings]}"
 
 
-class TestBilateralChain:
+class TestMutualChain:
     def test_dj_chains_to_planner(
         self, planner_capsule: dict, dj_capsule: dict
     ) -> None:
@@ -216,7 +216,7 @@ class TestLedger:
 
 
 class TestDispositionVocab:
-    """The bilateral disposition vocab: executed, blocked, denied, timeout,
+    """The mutual disposition vocab: executed, blocked, denied, timeout,
     errored, deferred, expired, escalated."""
 
     @pytest.mark.parametrize("verdict", [
@@ -224,7 +224,7 @@ class TestDispositionVocab:
         "errored", "deferred", "expired", "escalated",
     ])
     def test_verdict_class_accepted(self, verdict: str, ledger: Path) -> None:
-        """All bilateral vocab values can be used without raising InvariantError."""
+        """All mutual vocab values can be used without raising InvariantError."""
         from agent_action_capsule.contracts import (
             NEVER_DISPATCH_VERDICT_CLASSES,
             Disposition,

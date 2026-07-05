@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""AAuth + Capsule bilateral interop demo — Planner Agent (Org A) ↔ DJ Agent (Org B).
+"""AAuth + Capsule mutual interop demo — Planner Agent (Org A) ↔ DJ Agent (Org B).
 
 Demonstrates:
   1. AAuth = the "may": a cross-org authorization grant captured as an opaque
      reference in disposition.authority. In this demo the grant is a stub (clearly
      labeled); see "What runs live vs. stubbed" in README.md.
-  2. Bilateral seal = the "did" (both directions): both orgs' agents independently
+  2. Mutual seal = the "did" (both directions): both orgs' agents independently
      seal a capsule over the SAME shared action digest
      subject_digest = SHA-256(JCS(action)), each bound to its own part.
   3. Anchor (default) → verify: a third party trusting NEITHER org can run
@@ -134,7 +134,7 @@ def seal_planner(
     should_anchor: bool,
     anchor_endpoint: str | None,
 ) -> dict:
-    """Planner Agent (Org A) seals its side of the bilateral handshake.
+    """Planner Agent (Org A) seals its side of the mutual handshake.
 
     disposition.authority carries the AAuth grant JTI as an OPAQUE reference.
     agent_input is the shared action dict; its digest == subject_digest.
@@ -183,7 +183,7 @@ def seal_dj(
     should_anchor: bool,
     anchor_endpoint: str | None,
 ) -> dict:
-    """DJ Agent (Org B) seals its side of the bilateral handshake.
+    """DJ Agent (Org B) seals its side of the mutual handshake.
 
     Chains onto the Planner's capsule_id. Uses the SAME subject_digest so a
     third party can confirm both parties attested over the same action.
@@ -258,7 +258,7 @@ def main() -> int:
     ledger = Path(tempfile.mkdtemp()) / "aauth_capsule_interop_ledger.jsonl"
     should_anchor, anchor_endpoint = _resolve_anchor()
 
-    _banner("AAuth + Capsule bilateral interop demo")
+    _banner("AAuth + Capsule mutual interop demo")
     print(f"  Ledger:  {ledger}")
     print(f"  Anchor:  {'off (AAC_ANCHOR_URL=off)' if not should_anchor else anchor_endpoint or 'default (anchor.agentactioncapsule.org)'}")
     print("  AAuth:   STUB — grant JTI simulated (real bind point documented in README)")
@@ -314,7 +314,7 @@ def main() -> int:
     all_ok = verify_ledger(ledger)
 
     if all_ok:
-        _ok("All capsules ok=True — bilateral interop verified.")
+        _ok("All capsules ok=True — mutual interop verified.")
     else:
         _warn("Verification FAILED — see findings above.")
         return 1
@@ -326,7 +326,7 @@ def main() -> int:
     print("    bind point: disposition.authority on the planner's capsule")
     print("    real token: jti from aa-auth+jwt received at the PS token endpoint")
     print()
-    print("  Bilateral seal (did, both directions):")
+    print("  Mutual seal (did, both directions):")
     print(f"    Planner (Org A): {cap_a['capsule_id'][:20]}...")
     print(f"    DJ     (Org B): {cap_b['capsule_id'][:20]}...")
     print(f"    Shared subject_digest: {subject_digest}")
