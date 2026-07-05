@@ -26,10 +26,7 @@ Reputation leg: omitted per 2026-07-05 ruling (dropped for focus).
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import os
-import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -264,7 +261,7 @@ def main() -> int:
     _banner("AAuth + Capsule bilateral interop demo")
     print(f"  Ledger:  {ledger}")
     print(f"  Anchor:  {'off (AAC_ANCHOR_URL=off)' if not should_anchor else anchor_endpoint or 'default (anchor.agentactioncapsule.org)'}")
-    print(f"  AAuth:   STUB — grant JTI simulated (real bind point documented in README)")
+    print("  AAuth:   STUB — grant JTI simulated (real bind point documented in README)")
 
     # ── Step 1: Compute shared subject_digest ────────────────────────────────
     print("\n[step 1] Compute shared action digest (subject_digest = SHA-256(JCS(action)))")
@@ -326,7 +323,7 @@ def main() -> int:
     _banner("Summary")
     print("  AAuth (may):")
     print(f"    grant_jti (stub): {grant_jti}")
-    print(f"    bind point: disposition.authority on the planner's capsule")
+    print("    bind point: disposition.authority on the planner's capsule")
     print("    real token: jti from aa-auth+jwt received at the PS token endpoint")
     print()
     print("  Bilateral seal (did, both directions):")

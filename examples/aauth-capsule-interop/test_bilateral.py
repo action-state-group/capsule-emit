@@ -16,21 +16,16 @@ Run:
 """
 from __future__ import annotations
 
-import tempfile
+# Import helpers from the demo module
+import sys
 from pathlib import Path
 
 import pytest
-
 from agent_action_capsule import verify
 from agent_action_capsule.canonical import json_digest
 
-# Import helpers from the demo module
-import sys
-import os
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from demo import ACTION, _stub_aauth_grant, seal_planner, seal_dj
-
+from demo import ACTION, _stub_aauth_grant, seal_dj, seal_planner
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -231,9 +226,11 @@ class TestDispositionVocab:
     def test_verdict_class_accepted(self, verdict: str, ledger: Path) -> None:
         """All bilateral vocab values can be used without raising InvariantError."""
         from agent_action_capsule.contracts import (
-            Disposition,
-            EffectRecord as _ER,
             NEVER_DISPATCH_VERDICT_CLASSES,
+            Disposition,
+        )
+        from agent_action_capsule.contracts import (
+            EffectRecord as _ER,
         )
         from agent_action_capsule.emit import emit as aac_emit
 
