@@ -1,0 +1,2 @@
+# Allow the sample ledger — it is an intentional committed artifact.
+!sample_ledger.jsonl
