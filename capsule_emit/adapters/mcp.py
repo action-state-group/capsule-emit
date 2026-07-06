@@ -91,10 +91,14 @@ from __future__ import annotations
 
 import functools
 import inspect
+import logging
 import os
 import platform
 import socket
+import warnings
 from typing import Any, Callable
+
+_log = logging.getLogger(__name__)
 
 from ._base import CapsuleEmitterBase
 
@@ -343,12 +347,26 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
 
             _skip_reads = not self._seal_reads and _atype == "fyi"
 
+            def _safe_emit(action: str, emit_kwargs: dict) -> None:
+                """Emit a capsule; emit errors are warned, never propagated.
+
+                The record layer must never crash the tool call.  A failed
+                emit is a data-quality issue, not a tool failure — the tool
+                has already returned successfully.
+                """
+                try:
+                    self.emit_capsule(action, **emit_kwargs)
+                except Exception as exc:
+                    msg = f"capsule-emit: failed to seal capsule for '{action}': {exc}"
+                    warnings.warn(msg, RuntimeWarning, stacklevel=4)
+                    _log.warning(msg, exc_info=exc)
+
             if inspect.iscoroutinefunction(fn):
                 @functools.wraps(fn)
                 async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                     output = await fn(*args, **kwargs)
                     if not _skip_reads:
-                        self.emit_capsule(_action, **_build_emit_args(args, kwargs, output))
+                        _safe_emit(_action, _build_emit_args(args, kwargs, output))
                     return output
 
                 return async_wrapper
@@ -357,7 +375,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             def wrapper(*args: Any, **kwargs: Any) -> Any:
                 output = fn(*args, **kwargs)
                 if not _skip_reads:
-                    self.emit_capsule(_action, **_build_emit_args(args, kwargs, output))
+                    _safe_emit(_action, _build_emit_args(args, kwargs, output))
                 return output
 
             return wrapper
