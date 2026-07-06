@@ -101,6 +101,9 @@ from typing import Any, Callable
 _log = logging.getLogger(__name__)
 
 from ._base import CapsuleEmitterBase
+from ..gate import GateBlockedError, run_gate
+
+_log = logging.getLogger(__name__)
 
 __all__ = ["MCPCapsuleEmitter"]
 
@@ -289,6 +292,8 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         verdict: str = "executed",
         action_type: str | None = None,
         model: dict[str, str] | None = None,
+        constraints: list | None = None,
+        on_block: Any = None,
     ) -> Callable:
         """Decorator: wraps a tool function and emits a capsule on each call.
 
@@ -312,6 +317,18 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             model: Per-tool model override.  ``None`` (default) falls back
                 to the constructor ``model=``.  The adapter does NOT
                 auto-capture the model; supply it explicitly.
+            constraints: Optional list of :class:`~capsule_emit.gate.Constraint`
+                objects.  When provided, the gate runs after the tool call.
+                All-pass → emit with ``verdict="executed"`` and
+                ``gate_checks`` in ``compute_attestation``.
+                Any-fail + ``on_block`` → call ``on_block(action, gate_result)``
+                and emit with ``verdict="blocked"``.
+                Any-fail, no ``on_block`` → raise
+                :class:`~capsule_emit.gate.GateBlockedError`.
+                ``None`` (default): existing path, 100% unchanged.
+            on_block: Optional escalation callback when a gated tool is
+                blocked.  Signature: ``(action: str, gate_result: GateResult)
+                -> None``.  Only consulted when ``constraints`` is provided.
         """
 
         def decorator(fn: Callable) -> Callable:
@@ -347,7 +364,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
 
             _skip_reads = not self._seal_reads and _atype == "fyi"
 
-            def _safe_emit(action: str, emit_kwargs: dict) -> None:
+            def _safe_emit(action_name: str, emit_kwargs: dict) -> None:
                 """Emit a capsule; emit errors are warned, never propagated.
 
                 The record layer must never crash the tool call.  A failed
@@ -355,18 +372,74 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
                 has already returned successfully.
                 """
                 try:
-                    self.emit_capsule(action, **emit_kwargs)
+                    self.emit_capsule(action_name, **emit_kwargs)
                 except Exception as exc:
-                    msg = f"capsule-emit: failed to seal capsule for '{action}': {exc}"
+                    msg = f"capsule-emit: failed to seal capsule for '{action_name}': {exc}"
                     warnings.warn(msg, RuntimeWarning, stacklevel=4)
                     _log.warning(msg, exc_info=exc)
+
+            def _emit_with_gate(
+                args: tuple, kwargs: dict, output: Any
+            ) -> None:
+                """Run gate checks and emit the appropriate capsule verdict."""
+                full_input = _bind_inputs(sig, args, kwargs)
+                tool_input = (
+                    {k: v for k, v in full_input.items() if k != ctx_param}
+                    if ctx_param else full_input
+                )
+                extra: dict[str, Any] = {}
+                if ctx_param:
+                    ctx_val = full_input.get(ctx_param)
+                    if ctx_val is not None:
+                        extra.update(_extract_mcp_context(ctx_val))
+                if self._host_provenance:
+                    extra.update(_host_block())
+
+                gate_result = run_gate(constraints, tool_input, output)
+                gate_checks = gate_result.to_gate_checks()
+                extra["gate_checks"] = gate_checks
+
+                if gate_result.passed:
+                    self.emit_capsule(
+                        _action,
+                        tool_input=tool_input,
+                        tool_output=output,
+                        verdict="executed",
+                        effect={"type": _effect_type, "status": "dispatched"},
+                        model=model,
+                        runtime="mcp",
+                        action_type=_atype,
+                        extra_compute=extra,
+                    )
+                    return
+
+                # Gate blocked.
+                if on_block is not None:
+                    on_block(_action, gate_result)
+                    self.emit_capsule(
+                        _action,
+                        tool_input=tool_input,
+                        tool_output=output,
+                        verdict="blocked",
+                        effect={"type": _effect_type, "status": "planned"},
+                        model=model,
+                        runtime="mcp",
+                        action_type=_atype,
+                        extra_compute=extra,
+                    )
+                    return
+
+                raise GateBlockedError(_action, gate_result)
 
             if inspect.iscoroutinefunction(fn):
                 @functools.wraps(fn)
                 async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                     output = await fn(*args, **kwargs)
                     if not _skip_reads:
-                        _safe_emit(_action, _build_emit_args(args, kwargs, output))
+                        if constraints is not None:
+                            _emit_with_gate(args, kwargs, output)
+                        else:
+                            _safe_emit(_action, _build_emit_args(args, kwargs, output))
                     return output
 
                 return async_wrapper
@@ -375,7 +448,10 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             def wrapper(*args: Any, **kwargs: Any) -> Any:
                 output = fn(*args, **kwargs)
                 if not _skip_reads:
-                    _safe_emit(_action, _build_emit_args(args, kwargs, output))
+                    if constraints is not None:
+                        _emit_with_gate(args, kwargs, output)
+                    else:
+                        _safe_emit(_action, _build_emit_args(args, kwargs, output))
                 return output
 
             return wrapper
