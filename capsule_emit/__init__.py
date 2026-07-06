@@ -21,6 +21,15 @@ Anchor is on by default (async, digest-only). Ledger is written to
 ``ledger.jsonl`` by default. Both are configurable.
 """
 from .core import EmitResult, emit
+from .gate import (
+    CheckResult,
+    Constraint,
+    EscalationCallback,
+    GateBlockedError,
+    GateResult,
+    gate_and_emit,
+    run_gate,
+)
 from .ledger import append_to_ledger, read_ledger
 from .ledger import show as ledger_show
 from .ledger import view as ledger_view
@@ -35,6 +44,14 @@ __all__ = [
     # Core
     "emit",
     "EmitResult",
+    # Gate / wicket
+    "Constraint",
+    "CheckResult",
+    "GateResult",
+    "GateBlockedError",
+    "EscalationCallback",
+    "run_gate",
+    "gate_and_emit",
     # Ledger
     "append_to_ledger",
     "read_ledger",
