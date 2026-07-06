@@ -12,6 +12,8 @@ Covers:
 - signature binding: positional and kwargs calls produce identical input digest
 - output serialization: non-JSON-serializable output digested safely
 - output serialization: bytes output digested safely
+- emit resilience: tool returns normally when emit_capsule() raises (sync + async)
+- constructor default: anchor=True by default
 - FastMCP integration: functools.wraps preserves signature for schema gen
 - FastMCP integration: sync tool emits capsule with correct I/O digests
 - FastMCP integration: async tool works end-to-end through double-decorator
@@ -20,6 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import warnings
+from unittest.mock import patch
 
 import pytest
 from agent_action_capsule import verify
@@ -477,3 +481,62 @@ def test_seal_reads_false_async_command_still_seals(tmp_path):
 
     asyncio.run(async_write(x="world"))
     assert len(read_ledger(tmp_path / "ledger.jsonl")) == 1
+
+
+# ---------------------------------------------------------------------------
+# Emit-error resilience
+# ---------------------------------------------------------------------------
+
+
+def test_emit_error_does_not_propagate_sync_tool(tmp_path):
+    """emit_capsule() raising must not propagate — tool returns normally."""
+    emitter = _emitter(tmp_path)
+
+    @emitter.tool("safe_action")
+    def safe_fn(x: int) -> int:
+        return x * 2
+
+    with patch.object(emitter, "emit_capsule", side_effect=RuntimeError("storage full")):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = safe_fn(x=5)
+
+    assert result == 10, "tool must return its value even when emit fails"
+    assert any(
+        issubclass(w.category, RuntimeWarning) and "storage full" in str(w.message)
+        for w in caught
+    ), "a RuntimeWarning naming the cause must be issued"
+
+
+def test_emit_error_does_not_propagate_async_tool(tmp_path):
+    """emit_capsule() raising in an async tool must not propagate."""
+    emitter = _emitter(tmp_path)
+
+    @emitter.tool("safe_async_action")
+    async def safe_async_fn(x: int) -> int:
+        return x + 1
+
+    with patch.object(emitter, "emit_capsule", side_effect=OSError("disk error")):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = asyncio.run(safe_async_fn(x=7))
+
+    assert result == 8, "async tool must return its value even when emit fails"
+    assert any(
+        issubclass(w.category, RuntimeWarning) and "disk error" in str(w.message)
+        for w in caught
+    ), "a RuntimeWarning naming the cause must be issued"
+
+
+# ---------------------------------------------------------------------------
+# Constructor defaults
+# ---------------------------------------------------------------------------
+
+
+def test_anchor_true_is_constructor_default():
+    """MCPCapsuleEmitter must default anchor=True."""
+    emitter = MCPCapsuleEmitter(
+        operator="test-org",
+        developer="agent@v1",
+    )
+    assert emitter._anchor is True, "anchor must default to True"
