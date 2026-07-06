@@ -145,3 +145,5 @@ Developed by **Action State Group, Inc.** and published as **open-source softwar
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE).
+
+**Patent posture:** All six provisional patent applications related to this specification were expressly abandoned on July 6, 2026. No license is required. See [agentactioncapsule.org/ip](https://agentactioncapsule.org/ip) for details.
