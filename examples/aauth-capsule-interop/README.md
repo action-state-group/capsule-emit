@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-# AAuth → Capsule mutual interop
+# AAuth → Capsule bilateral interop
 
 **Planner Agent (Org A) ↔ DJ Agent (Org B).** Two agents with distinct
 organizational identities take one cross-org action; **both** seal a capsule
@@ -15,7 +15,7 @@ depend on any particular anchor operator.
    agent ask Org B's DJ agent to act. The grant is captured only as an **opaque
    reference** on the record — `disposition.authority` carries the grant's `jti`
    (identifier), never the token body.
-2. **Mutual seal = the "did", both directions.** Both agents independently
+2. **Bilateral seal = the "did", both directions.** Both agents independently
    seal a capsule over the **same shared action digest**
    `subject_digest = SHA-256(JCS(action))`. Each capsule is bound to that one
    action and signed by its own org, so the two records are joined by the digest
@@ -46,14 +46,14 @@ agent-action-capsule verify --store /tmp/aauth_capsule_interop_ledger.jsonl
 Tests:
 
 ```bash
-python -m pytest examples/aauth-capsule-interop/test_mutual.py -q
+python -m pytest examples/aauth-capsule-interop/test_bilateral.py -q
 ```
 
 ## What runs live vs. stubbed
 
 | Piece | Status |
 |-------|--------|
-| Mutual seal over the shared `subject_digest` (both orgs) | **live** — real capsules produced by `capsule-emit` |
+| Bilateral seal over the shared `subject_digest` (both orgs) | **live** — real capsules produced by `capsule-emit` |
 | Anchor (digest-only) + `agent-action-capsule verify` | **live** (online mode; skipped with `AAC_ANCHOR_URL=off`) |
 | The AAuth authorization grant | **stubbed** — a clearly-labeled placeholder `jti` stands in at the exact seam where a real `aa-auth+jwt` grant id would flow |
 
@@ -66,9 +66,8 @@ claims the AAuth handshake itself ran.
 
 ## Reputation leg
 
-Omitted (decision 2026-07-05) — dropped to keep the demo focused on
-authorize → both-seal → anchor → verify. It is not required for the compose
-story.
+Omitted — not required for the compose story. This demo focuses on
+authorize → both-seal → anchor → verify.
 
 ## Scope
 
