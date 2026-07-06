@@ -20,16 +20,37 @@ import json
 
 def _cmd_ledger_view(args: argparse.Namespace) -> int:
     from .ledger import read_ledger
-    from .ledger import view as _view
     from .ledger import view_chains as _view_chains
+    from .viewer import render_html, render_table
+
+    records = read_ledger(args.path)
 
     if args.as_json:
-        records = read_ledger(args.path)
         print(json.dumps(records, indent=2, default=str))
-    elif args.chains:
+        return 0
+
+    if args.chains:
         _view_chains(args.path)
-    else:
-        _view(args.path)
+        return 0
+
+    # Run verify for the verify column (fast — hash-only, no network)
+    verify_results: list | None = None
+    if records:
+        try:
+            from agent_action_capsule import verify_store
+            verify_results = verify_store(records)
+        except Exception:
+            pass  # viewer degrades gracefully if verify unavailable
+
+    if args.html:
+        html_str = render_html(records, verify_results=verify_results, ledger_path=args.path)
+        out_path = args.html
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(html_str)
+        print(f"wrote {len(records)} record(s) → {out_path}")
+        return 0
+
+    render_table(records, verify_results=verify_results, path=args.path)
     return 0
 
 
@@ -59,6 +80,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="L2: chain-tree view — groups capsules by parent (approved→executed→confirmed)",
     )
     view.add_argument("--json", dest="as_json", action="store_true", help="L4: raw JSON output")
+    view.add_argument(
+        "--html",
+        metavar="OUTPUT.html",
+        default=None,
+        help="write single-file static HTML ledger browse to OUTPUT.html",
+    )
 
     # ledger show
     show = ledger_sub.add_parser("show", help="L3: full detail for one capsule")
