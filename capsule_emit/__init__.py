@@ -20,6 +20,7 @@ The adoption surface for the Agent Action Capsule standard:
 Anchor is on by default (async, digest-only). Ledger is written to
 ``ledger.jsonl`` by default. Both are configurable.
 """
+from .approval import list_pending, seal_approval
 from .core import EmitResult, emit
 from .gate import (
     CheckResult,
@@ -44,6 +45,9 @@ __all__ = [
     # Core
     "emit",
     "EmitResult",
+    # Approval record + pending
+    "seal_approval",
+    "list_pending",
     # Gate / wicket
     "Constraint",
     "CheckResult",

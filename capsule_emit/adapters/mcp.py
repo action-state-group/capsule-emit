@@ -98,8 +98,6 @@ import socket
 import warnings
 from typing import Any, Callable
 
-_log = logging.getLogger(__name__)
-
 from ._base import CapsuleEmitterBase
 from ..gate import GateBlockedError, run_gate
 
