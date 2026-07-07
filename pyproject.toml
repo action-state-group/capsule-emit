@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "capsule-emit"
-version = "0.2.0"
+version = "0.3.0"
 description = "One-call emit() for Agent Action Capsules — anchor on by default, ledger view CLI, thin framework adapters."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Security :: Cryptography",
     "Development Status :: 3 - Alpha",
 ]
-dependencies = ["agent-action-capsule>=0.0.3"]
+dependencies = ["agent-action-capsule>=0.1.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.4"]

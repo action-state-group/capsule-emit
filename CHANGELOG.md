@@ -6,6 +6,27 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-07-06
+
+### Added
+- **Bilateral attestation** (`capsule_emit/bilateral.py`): `BilateralHandshake` state machine,
+  canonical payload functions, `seal_request`/`seal_action`/`seal_bilateral`, and a
+  `dict_verifier`/`dict_signer` HMAC demo; four-move Org A ↔ Org B example under `examples/bilateral/`.
+- **Engine-free ledger viewer** (`capsule_emit/viewer.py`): `render_table()` (refusal markers,
+  actor lineage labels, verify column) and `render_html()` (single-file dark theme);
+  `ledger view --html <path>` added to the CLI.
+- **Approval record + pending-action pattern** (`capsule_emit/approval.py`): `seal_approval()`
+  (approver identity, `human_disposed`, `chain.relation="resolves"`) and crash-safe `list_pending()`
+  that reads only from the JSONL ledger.
+- **Verified-flow wicket**: constraint → check → gate → seal, with a `constraints=` kwarg on the MCP adapter.
+- **MCP flagship**: adapter hardening plus a stranger-runnable 5-minute quickstart.
+- **AAuth bilateral interop example** and the **Amaury receipt pack** (`examples/amaury-receipt-pack/` —
+  four sample capsules with an anchor + pyscitt verification walkthrough).
+
+### Changed
+- Pinned `agent-action-capsule>=0.1.0` (the bilateral `verify_pair`, `history`, and
+  selective-disclosure modules ship in the 0.1.0 CORE).
+
 ## [0.1.1] — 2026-06-21
 
 ### Fixed
