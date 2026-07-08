@@ -26,6 +26,7 @@ Reputation leg: omitted (not required for the compose story).
 """
 from __future__ import annotations
 
+import dataclasses
 import os
 import tempfile
 import uuid
@@ -38,6 +39,7 @@ from agent_action_capsule.contracts import Disposition, EffectRecord
 from agent_action_capsule.emit import emit as _aac_emit
 
 from capsule_emit import read_ledger
+from capsule_emit.gate import run_gate
 from capsule_emit.ledger import append_to_ledger
 
 _SEP = "=" * 64
@@ -83,6 +85,46 @@ def _stub_aauth_grant() -> str:
     return f"aauth-grant-jti:stub-{uuid.uuid4().hex[:16]}"
 
 
+def _stub_aauth_grant_with_terms() -> dict:
+    """Stub grant that carries explicit authorization terms.
+
+    STUB: In a live AAuth deployment the grant terms would be embedded as
+    claims in the aa-auth+jwt. Here we use a plain dict to represent the
+    authorized scope and budget cap. The jti is the opaque reference
+    stored in disposition.authority.
+    """
+    return {
+        "jti": f"aauth-grant-jti:stub-{uuid.uuid4().hex[:16]}",
+        "scope": ["book_dj_slot"],
+        "max_budget_eur": 500,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Wicket constraint: BudgetCapConstraint
+# ---------------------------------------------------------------------------
+
+@dataclasses.dataclass
+class BudgetCapConstraint:
+    """Wicket constraint: action total must not exceed the grant's budget cap."""
+
+    max_eur: int
+
+    @property
+    def name(self) -> str:
+        return "budget_cap_eur"
+
+    def check(self, inputs: dict, output: object) -> tuple[bool, str | None]:
+        total = inputs.get("total_eur", 0)
+        passed = total <= self.max_eur
+        reason = (
+            None
+            if passed
+            else f"total_eur {total} exceeds grant cap {self.max_eur}"
+        )
+        return passed, reason
+
+
 # ---------------------------------------------------------------------------
 # Shared action — the object both parties attest over
 # ---------------------------------------------------------------------------
@@ -94,6 +136,11 @@ ACTION: dict = {
     "set_duration_min": 90,
     "requester_id": "aauth:planner-v1@planner-org.example",
     "recipient_id": "aauth:dj-v1@dj-org.example",
+}
+
+ACTION_OVER_LIMIT: dict = {
+    **ACTION,
+    "total_eur": 1_200,  # intentionally exceeds max_budget_eur=500
 }
 
 
@@ -224,6 +271,62 @@ def seal_dj(
 
 
 # ---------------------------------------------------------------------------
+# DJ Agent (Org B) seals a BLOCKED capsule (out-of-grant)
+# ---------------------------------------------------------------------------
+
+def seal_dj_blocked(
+    action: dict,
+    subject_digest: str,
+    grant: dict,
+    ledger: Path,
+    should_anchor: bool,
+    anchor_endpoint: str | None,
+) -> dict:
+    """DJ Agent (Org B) seals a BLOCKED capsule when the action exceeds grant terms.
+
+    Runs a BudgetCapConstraint derived from the grant's max_budget_eur.
+    On gate failure: sealed as verdict='blocked', effect.status='planned',
+    gate_checks recorded, disposition.authority = grant jti (opaque ref).
+    """
+    constraints = [BudgetCapConstraint(max_eur=grant["max_budget_eur"])]
+    gate_result = run_gate(constraints, action, None)
+    # gate_result.passed is False — that is the whole point of this case
+
+    gate_checks = [
+        {"name": r.name, "passed": r.passed, "reason": r.reason}
+        for r in gate_result.results
+    ]
+
+    dispo = Disposition(
+        decision="deny",
+        approver="policy",
+        verdict_class="blocked",
+        authority=grant["jti"],  # opaque grant ref — not the token body
+    )
+    effect = EffectRecord(
+        type="book_dj_slot",
+        status="planned",
+    )
+    capsule = _aac_emit(
+        action_type="decide",
+        operator="dj-org",
+        developer="dj-agent@v1",
+        tool_name="book_dj_slot",
+        compute_attestation={
+            "subject_digest": subject_digest,
+            "role": "recipient",
+            "gate_checks": gate_checks,
+        },
+        effect=effect,
+        disposition=dispo,
+    )
+    append_to_ledger(capsule, ledger)
+    if should_anchor:
+        _fire_anchor(capsule["capsule_id"], anchor_endpoint)
+    return capsule
+
+
+# ---------------------------------------------------------------------------
 # Verify pass
 # ---------------------------------------------------------------------------
 
@@ -262,6 +365,9 @@ def main() -> int:
     print(f"  Ledger:  {ledger}")
     print(f"  Anchor:  {'off (AAC_ANCHOR_URL=off)' if not should_anchor else anchor_endpoint or 'default (anchor.agentactioncapsule.org)'}")
     print("  AAuth:   STUB — grant JTI simulated (real bind point documented in README)")
+
+    # ── Case 1: Within-grant (executed) ──────────────────────────────────────
+    print("\n[Case 1] Within-grant action — budget cap satisfied (executed)")
 
     # ── Step 1: Compute shared subject_digest ────────────────────────────────
     print("\n[step 1] Compute shared action digest (subject_digest = SHA-256(JCS(action)))")
@@ -318,6 +424,31 @@ def main() -> int:
     else:
         _warn("Verification FAILED — see findings above.")
         return 1
+
+    # ── Case 2: Out-of-grant action (budget cap exceeded) ──────────────────
+    print("\n[Case 2] Out-of-grant action — budget cap exceeded")
+    grant_with_terms = _stub_aauth_grant_with_terms()
+    subject_digest_over = json_digest(ACTION_OVER_LIMIT)
+    capsule_blocked = seal_dj_blocked(
+        action=ACTION_OVER_LIMIT,
+        subject_digest=subject_digest_over,
+        grant=grant_with_terms,
+        ledger=ledger,
+        should_anchor=should_anchor,
+        anchor_endpoint=anchor_endpoint,
+    )
+    print(f"  blocked capsule_id : {capsule_blocked['capsule_id']}")
+    print(f"  verdict            : {capsule_blocked['disposition']['verdict_class']}")
+    blocked_gate_checks = capsule_blocked["model_attestation"]["compute_attestation"]["gate_checks"]
+    print(f"  gate_checks        : {blocked_gate_checks}")
+    print(f"  grant ref (jti)    : {capsule_blocked['disposition']['authority']}")
+
+    ok_blocked = verify_ledger(ledger)
+    print(f"  ledger verify      : ok={ok_blocked}")
+
+    print(
+        "\n  Case 1 (executed) and Case 2 (blocked) are both independently verifiable"
+    )
 
     # ── Summary ───────────────────────────────────────────────────────────────
     _banner("Summary")

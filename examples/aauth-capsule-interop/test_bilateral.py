@@ -25,7 +25,15 @@ from agent_action_capsule import verify
 from agent_action_capsule.canonical import json_digest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from demo import ACTION, _stub_aauth_grant, seal_dj, seal_planner
+from demo import (
+    ACTION,
+    ACTION_OVER_LIMIT,
+    _stub_aauth_grant,
+    _stub_aauth_grant_with_terms,
+    seal_dj,
+    seal_dj_blocked,
+    seal_planner,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -251,3 +259,71 @@ class TestDispositionVocab:
         )
         vr = verify(cap)
         assert vr.ok, f"verdict={verdict} failed verify: {[f.detail for f in vr.findings]}"
+
+
+# ---------------------------------------------------------------------------
+# Out-of-grant BLOCKED case
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def grant_with_terms() -> dict:
+    return _stub_aauth_grant_with_terms()
+
+
+@pytest.fixture
+def blocked_capsule(grant_with_terms: dict, ledger: Path) -> dict:
+    subject_digest = json_digest(ACTION_OVER_LIMIT)
+    return seal_dj_blocked(
+        action=ACTION_OVER_LIMIT,
+        subject_digest=subject_digest,
+        grant=grant_with_terms,
+        ledger=ledger,
+        should_anchor=False,
+        anchor_endpoint=None,
+    )
+
+
+class TestOutOfGrantBlocked:
+    def test_blocked_capsule_verdict(self, blocked_capsule: dict) -> None:
+        """Blocked capsule has verdict_class == 'blocked'."""
+        assert blocked_capsule["disposition"]["verdict_class"] == "blocked"
+
+    def test_blocked_capsule_effect_planned(self, blocked_capsule: dict) -> None:
+        """Effect status is 'planned' when gate blocks the action."""
+        assert blocked_capsule["effect"]["status"] == "planned"
+
+    def test_blocked_capsule_gate_checks(self, blocked_capsule: dict) -> None:
+        """gate_checks recorded in compute_attestation; budget_cap_eur failed."""
+        ca = blocked_capsule["model_attestation"]["compute_attestation"]
+        gate_checks = ca.get("gate_checks", [])
+        assert len(gate_checks) >= 1, "expected at least one gate_check"
+        budget_check = next(
+            (c for c in gate_checks if c["name"] == "budget_cap_eur"), None
+        )
+        assert budget_check is not None, "budget_cap_eur check missing"
+        assert budget_check["passed"] is False
+        assert budget_check["reason"] is not None
+
+    def test_blocked_capsule_authority_is_grant_jti(
+        self, blocked_capsule: dict, grant_with_terms: dict
+    ) -> None:
+        """disposition.authority carries the grant JTI as an opaque reference."""
+        authority = blocked_capsule["disposition"].get("authority")
+        assert authority == grant_with_terms["jti"]
+        assert authority is not None
+        # Must be an opaque identifier, never a JWT body (no two dots)
+        assert authority.count(".") < 2, "authority must not be a JWT body"
+
+    def test_blocked_capsule_verifies_ok(
+        self, blocked_capsule: dict, ledger: Path
+    ) -> None:
+        """A blocked capsule is a valid sealed record — verify returns ok=True."""
+        from capsule_emit import read_ledger
+        records = read_ledger(ledger)
+        blocked = next(
+            (r for r in records if r["capsule_id"] == blocked_capsule["capsule_id"]),
+            None,
+        )
+        assert blocked is not None, "blocked capsule not found in ledger"
+        vr = verify(blocked)
+        assert vr.ok, f"blocked capsule failed verify: {[f.detail for f in vr.findings]}"
