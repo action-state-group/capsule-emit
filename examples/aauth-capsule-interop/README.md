@@ -75,3 +75,20 @@ Neutral mechanism only: an authorization grant reference, two capsules over a
 shared action digest, and transparency-log verification with generic
 roots/issuers. It does not nominate any particular identity root, anchor
 operator, or scoring service.
+
+## Out-of-grant enforcement
+
+A grant without enforcement is a suggestion. This demo also shows the case
+where the DJ agent's **wicket gate** runs a constraint derived directly from
+the grant terms:
+
+| Grant term | Action value | Result |
+|---|---|---|
+| `max_budget_eur: 500` | `total_eur: 1 200` | BLOCKED — capsule sealed |
+
+When `total_eur` exceeds `max_budget_eur`, `run_gate` fails: the DJ agent seals
+a **blocked** capsule (`verdict="blocked"`, `effect.status="planned"`) carrying
+the gate check results and the same `disposition.authority` (grant JTI) as
+the within-grant case. Both the executed record and the blocked record are
+independently anchored and verifiable — the refusal is as provable as the
+performance.
