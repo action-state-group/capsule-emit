@@ -72,6 +72,7 @@ def emit(
     decision: str = "accept",
     action_type: str | None = None,
     extra_compute: dict[str, Any] | None = None,
+    disposition_authority: str | None = None,
 ) -> EmitResult:
     """Emit a sealed, optionally anchored Agent Action Capsule.
 
@@ -102,6 +103,10 @@ def emit(
             ``"decide"``; anything else maps to ``"fyi"``.
         extra_compute: Extra key/value pairs merged into ``compute_attestation``.
             Use for framework-specific context (MCP request ID, host info, etc.).
+        disposition_authority: Opaque grant reference stored in
+            ``disposition.authority`` (e.g. an AAuth JTI). Never the token body —
+            only the stable identifier that lets a verifier confirm the authorization
+            out-of-band.
 
     Returns:
         :class:`EmitResult` with ``.capsule_id`` and ``.anchored``.
@@ -159,6 +164,7 @@ def emit(
         approver=approver,
         human_disposed=human_disposed,
         verdict_class=verdict,
+        authority=disposition_authority,
     )
 
     chain_relation: str | None = None

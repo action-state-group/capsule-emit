@@ -38,7 +38,7 @@ from .ledger import view_chains as ledger_view_chains
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
 from .verify import verify_input_digest
 
-__version__ = "0.1.1"
+__version__ = "0.3.1"
 
 __all__ = [
     "__version__",

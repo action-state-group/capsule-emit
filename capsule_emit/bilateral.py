@@ -63,6 +63,7 @@ __all__ = [
     "seal_request",
     "seal_action",
     "seal_bilateral",
+    "seal_ghost",
 ]
 
 # Callable contract: given org_id, payload bytes, and the signature — return True if valid.
@@ -91,10 +92,11 @@ class BilateralSig:
 class BilateralState(str, Enum):
     """Handshake state machine states."""
 
-    REQUESTED = "requested"    # A signed the request; awaiting B
-    ACTED = "acted"            # B evaluated constraints + signed the action
-    BILATERAL = "bilateral"    # both parties confirmed — non-repudiable
-    ONE_SIDED = "one_sided"    # counterparty not reachable (graceful degradation)
+    REQUESTED = "requested"             # A signed the request; awaiting B
+    ACTED = "acted"                     # B evaluated constraints + signed the action
+    BILATERAL = "bilateral"             # both parties confirmed — non-repudiable
+    ONE_SIDED = "one_sided"             # counterparty not reachable (graceful degradation)
+    COUNTERSIGN_REFUSED = "countersign_refused"  # B present but refused to countersign (ghost)
 
 
 @dataclass
@@ -406,6 +408,31 @@ class BilateralHandshake:
             self._records[handshake_id] = updated
         return updated
 
+    def ghost(self, handshake_id: str) -> BilateralRecord:
+        """Record that the responder refused to countersign (REQUESTED → COUNTERSIGN_REFUSED).
+
+        Legal only from REQUESTED.  The requester calls this after exhausting
+        retry policy: the counterparty was present but went dark.  Unlike
+        ONE_SIDED (where the counterparty was unreachable from the start),
+        COUNTERSIGN_REFUSED means A sent a valid request, B received it,
+        and B chose not to respond.  The asymmetry is the evidence.
+
+        See ``seal_ghost()`` to emit the provable-asymmetry capsule.
+        """
+        with self._lock:
+            rec = self._records.get(handshake_id)
+            if rec is None:
+                raise BilateralError(f"handshake {handshake_id!r} not found")
+            if rec.state is not BilateralState.REQUESTED:
+                raise IllegalTransition(
+                    f"ghost requires REQUESTED, got {rec.state.value}"
+                )
+            updated = BilateralRecord(
+                **{**rec.__dict__, "state": BilateralState.COUNTERSIGN_REFUSED}
+            )
+            self._records[handshake_id] = updated
+        return updated
+
     def get(self, handshake_id: str) -> BilateralRecord | None:
         with self._lock:
             return self._records.get(handshake_id)
@@ -528,6 +555,56 @@ def seal_bilateral(
         effect={"type": action, "status": "confirmed"},
         confirms=prior_capsule_id,
         relation="confirms",
+        anchor=anchor,
+        extra_compute=compute,
+    )
+    if ledger is not None:
+        kw["ledger"] = ledger
+    return emit(**kw)
+
+
+def seal_ghost(
+    requester_org: str,
+    developer: str,
+    action: str,
+    action_digest: str,
+    request_capsule_id: str,
+    *,
+    ledger: str | None = None,
+    anchor: bool = False,
+    extra_compute: dict | None = None,
+) -> "EmitResult":  # type: ignore[name-defined]
+    """Emit a countersign_refused capsule — seals the provable asymmetry.
+
+    Called by the requester after the counterparty goes dark.  The capsule
+    chains to the original request capsule and records that the requester
+    attempted the action but did not receive a countersignature.
+
+    ``verdict_class="countersign_refused"`` per draft-mih-agent-bilateral-
+    attestation-01.  ``effect.status="planned"`` reflects that the action was
+    intended but did not land — no false completion signal.
+
+    A ghost is NOT a both-assert: the requester holds two capsules (request +
+    ghost), the counterparty holds zero.  A verifier sees: requester committed;
+    counterparty countersignature absent.  The asymmetry is the evidence.
+    """
+    from capsule_emit.core import emit
+
+    compute: dict = {
+        "action_digest": action_digest,
+        "role": "requester",
+        "asymmetry": "countersign_refused",
+    }
+    if extra_compute:
+        compute.update(extra_compute)
+    kw: dict = dict(
+        action=f"{action}:ghost",
+        operator=requester_org,
+        developer=developer,
+        verdict="countersign_refused",
+        effect={"type": action, "status": "planned"},
+        confirms=request_capsule_id,
+        relation="supersedes",
         anchor=anchor,
         extra_compute=compute,
     )
