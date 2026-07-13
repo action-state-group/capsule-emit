@@ -24,6 +24,7 @@ from typing import Any
 
 from agent_action_capsule import emit as _base_emit
 from agent_action_capsule.anchor import anchor as _simple_anchor
+from agent_action_capsule.canonical import FloatInDigestError, json_digest
 from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError
 
 from .ledger import append_to_ledger
@@ -34,9 +35,29 @@ _DEFAULT_LEDGER = "ledger.jsonl"
 
 
 def _digest(value: Any) -> str:
-    """SHA-256 of the canonical JSON serialization of value."""
-    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    """SHA-256 over the RFC 8785 (JCS) canonicalization of ``value``.
+
+    Uses the same ``json_digest`` (JCS) as :func:`verify_input_digest`, so a
+    faithfully-sealed ``agent_input`` / ``agent_output`` re-verifies.
+
+    Before 0.3.2 this used ``json.dumps(sort_keys=True)``, which diverged from
+    the JCS verifier for any value containing a null, an empty container, or a
+    non-ASCII field — a faithfully-sealed such receipt then failed
+    :func:`verify_input_digest` (returned ``False``). JCS now closes that gap.
+
+    Values JCS cannot canonicalize — raw floats (§5.1) and non-JSON-native
+    types the old encoder tolerated via ``default=str`` (e.g. tuples, arbitrary
+    objects) — fall back to the legacy sorted-key encoding rather than breaking
+    at seal time, preserving pre-0.3.2 behavior for such emitters. A fallback
+    digest is *not* JCS, so that input remains a known non-verifiable case (it
+    will not match ``verify_input_digest``) until it is expressed as
+    JCS-canonical JSON (e.g. monetary values as exact decimal strings).
+    """
+    try:
+        return json_digest(value)
+    except (FloatInDigestError, TypeError):
+        raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 @dataclass

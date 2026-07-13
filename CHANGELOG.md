@@ -6,6 +6,29 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-07-13
+
+### Fixed
+- **Seal/verify digest canonicalization mismatch** (`core._digest`): `emit()` sealed
+  `agent_input_digest` / `agent_output_digest` / `response_digest` with
+  `json.dumps(sort_keys=True)`, while `verify_input_digest()` recomputes with RFC 8785
+  (JCS). For "clean" values (all-ASCII, no null, no empty container) the two coincide,
+  but for any value carrying a `null`, an empty `{}`/`[]`, or a non-ASCII field they
+  diverged — so a **faithfully-sealed** input could fail `verify_input_digest()`
+  (returned `False`) and any downstream anchored-receipt check would wrongly reject it.
+  `_digest` now delegates to the same `json_digest` (JCS) the verifier uses, so
+  seal and verify always agree. Capsule IDs for clean inputs are unchanged
+  (JCS ≡ sorted-key JSON there), so this is backward-compatible for existing
+  clean-receipt ledgers.
+
+### Notes
+- **Floats remain tolerated at `emit()` (backward-compatible).** JCS cannot digest a
+  raw JSON float (§5.1), so for float-bearing inputs `_digest` falls back to the legacy
+  sorted-key encoding rather than raising — existing float-emitting callers are
+  unaffected. Such an input is a known non-verifiable case (its digest is not JCS and
+  will not match `verify_input_digest`) until monetary/quantity values are encoded as
+  exact decimal strings. A future major version may reject floats outright.
+
 ## [0.3.0] — 2026-07-06
 
 ### Added
