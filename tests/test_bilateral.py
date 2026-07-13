@@ -310,3 +310,48 @@ def test_e2e_full_handshake_and_verify(tmp_path):
     pvr = verify_pair(cap_a.capsule, cap_b.capsule)
     assert pvr.ok, pvr.findings
     assert pvr.shared_digest == DIGEST
+
+
+# ---------------------------------------------------------------------------
+# Asymmetry dispositions: lapse() and ghost()
+# (draft-mih-agent-bilateral-attestation §asymmetry-dispositions)
+# ---------------------------------------------------------------------------
+
+def test_lapse_delivery_confirmed_is_counterparty_timeout():
+    hs = BilateralHandshake()
+    rec = _open(hs)  # REQUESTED
+    out = hs.lapse(rec.handshake_id, delivery_confirmed=True)
+    assert out.state is BilateralState.COUNTERPARTY_TIMEOUT
+
+
+def test_lapse_delivery_unconfirmed_is_delivery_unconfirmed():
+    hs = BilateralHandshake()
+    rec = _open(hs)  # REQUESTED
+    out = hs.lapse(rec.handshake_id, delivery_confirmed=False)
+    assert out.state is BilateralState.DELIVERY_UNCONFIRMED
+
+
+def test_lapse_requires_requested_state():
+    hs = BilateralHandshake()
+    rec = _open(hs)
+    hs.respond(rec.handshake_id, _sign("org-b", b"x"))  # -> ACTED
+    with pytest.raises(IllegalTransition):
+        hs.lapse(rec.handshake_id, delivery_confirmed=True)
+
+
+def test_ghost_is_countersign_refused_and_distinct_from_timeout():
+    hs = BilateralHandshake()
+    rec = _open(hs)  # REQUESTED
+    out = hs.ghost(rec.handshake_id)
+    # explicit refusal is its own state, not the silent timeout/unconfirmed lapse
+    assert out.state is BilateralState.COUNTERSIGN_REFUSED
+    assert out.state is not BilateralState.COUNTERPARTY_TIMEOUT
+    assert out.state is not BilateralState.DELIVERY_UNCONFIRMED
+
+
+def test_ghost_requires_requested_state():
+    hs = BilateralHandshake()
+    rec = _open(hs)
+    hs.respond(rec.handshake_id, _sign("org-b", b"x"))  # -> ACTED
+    with pytest.raises(IllegalTransition):
+        hs.ghost(rec.handshake_id)

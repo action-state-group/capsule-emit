@@ -96,7 +96,12 @@ class BilateralState(str, Enum):
     ACTED = "acted"                     # B evaluated constraints + signed the action
     BILATERAL = "bilateral"             # both parties confirmed — non-repudiable
     ONE_SIDED = "one_sided"             # counterparty not reachable (graceful degradation)
-    COUNTERSIGN_REFUSED = "countersign_refused"  # B present but refused to countersign (ghost)
+    # --- asymmetry dispositions (draft-mih-agent-bilateral-attestation §asymmetry-dispositions) ---
+    # These record what happened to the EXCHANGE (not the action) when it does not
+    # complete symmetrically. Weaker than, and kept distinct from, a declined action.
+    COUNTERSIGN_REFUSED = "countersign_refused"    # B reached, explicitly refused to countersign (ghost)
+    COUNTERPARTY_TIMEOUT = "counterparty_timeout"  # delivery confirmed, B silent past the validity window
+    DELIVERY_UNCONFIRMED = "delivery_unconfirmed"  # delivery to B could not be confirmed — weakest outcome
 
 
 @dataclass
@@ -430,6 +435,36 @@ class BilateralHandshake:
             updated = BilateralRecord(
                 **{**rec.__dict__, "state": BilateralState.COUNTERSIGN_REFUSED}
             )
+            self._records[handshake_id] = updated
+        return updated
+
+    def lapse(self, handshake_id: str, *, delivery_confirmed: bool) -> BilateralRecord:
+        """Record that the request's validity window closed with no countersignature.
+
+        Legal only from REQUESTED. This is the *silent* asymmetry — distinct from
+        ``ghost()`` (COUNTERSIGN_REFUSED), where B was reached and explicitly refused:
+
+        - ``delivery_confirmed=True``  -> COUNTERPARTY_TIMEOUT: B provably received the
+          request but did not respond before the window closed.
+        - ``delivery_confirmed=False`` -> DELIVERY_UNCONFIRMED: delivery to B could not be
+          confirmed at all — the weakest outcome, as B may never have received it.
+
+        In both cases A's anchored half remains admissible evidence of the attempt.
+        """
+        target = (
+            BilateralState.COUNTERPARTY_TIMEOUT
+            if delivery_confirmed
+            else BilateralState.DELIVERY_UNCONFIRMED
+        )
+        with self._lock:
+            rec = self._records.get(handshake_id)
+            if rec is None:
+                raise BilateralError(f"handshake {handshake_id!r} not found")
+            if rec.state is not BilateralState.REQUESTED:
+                raise IllegalTransition(
+                    f"lapse requires REQUESTED, got {rec.state.value}"
+                )
+            updated = BilateralRecord(**{**rec.__dict__, "state": target})
             self._records[handshake_id] = updated
         return updated
 
