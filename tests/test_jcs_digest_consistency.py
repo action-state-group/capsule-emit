@@ -58,12 +58,28 @@ def test_tamper_after_seal_is_caught() -> None:
     assert capsule_emit.verify_input_digest(capsule, tampered) is False
 
 
-def test_float_input_still_emits_backward_compatible() -> None:
-    """Backward-compat: a raw float does NOT break emit (falls back to the
-    legacy encoding). Per §5.1 it can't be JCS-digested, so it is a known
-    non-verifiable case until encoded as an exact decimal string — but existing
-    float-emitting callers must not start crashing at seal time on 0.3.2."""
-    capsule = _emit_and_read({"amount": 19.99})
+def test_float_input_fails_closed_at_emit() -> None:
+    """Per §5.1 a raw float can't be reproducibly digested. emit() must fail
+    CLOSED — raise rather than silently seal an input its own verifier could
+    never confirm. Encode monetary/quantity values as exact decimal strings."""
+    from agent_action_capsule.canonical import FloatInDigestError
+
+    with pytest.raises(FloatInDigestError):
+        _emit_and_read({"amount": 19.99})
+
+
+def test_verify_never_throws_on_float_candidate() -> None:
+    """The profile requires a verifier to return a structured result, never
+    throw. A float-bearing candidate must yield False, not FloatInDigestError —
+    this is the crash/DoS surface the seal-side fix alone did NOT close."""
+    capsule = _emit_and_read({"a": "x"})
+    # must return a bool, not raise:
+    assert capsule_emit.verify_input_digest(capsule, {"amount": 19.99}) is False
+
+
+def test_non_json_native_types_still_emit() -> None:
+    """Non-JSON-native types (e.g. tuples) the legacy encoder tolerated still
+    seal via fallback — only floats fail closed."""
+    capsule = _emit_and_read({"pair": (1, 2)})
     ca = capsule.get("model_attestation", {}).get("compute_attestation", {})
-    assert "agent_input_digest" in ca  # sealed without raising
     assert len(ca["agent_input_digest"]) == 64

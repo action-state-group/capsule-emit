@@ -149,15 +149,15 @@ def test_mcp_positional_call_produces_named_dict(tmp_path):
     )
 
     @emitter_pos.tool("fn")
-    def fn_pos(vendor: str, total: float) -> dict:
+    def fn_pos(vendor: str, total: str) -> dict:
         return {}
 
     @emitter_kw.tool("fn")
-    def fn_kw(vendor: str, total: float) -> dict:
+    def fn_kw(vendor: str, total: str) -> dict:
         return {}
 
-    fn_pos("ACME", 1240.19)
-    fn_kw(vendor="ACME", total=1240.19)
+    fn_pos("ACME", "1240.19")
+    fn_kw(vendor="ACME", total="1240.19")
 
     ca_pos = emitter_pos.last.capsule["model_attestation"]["compute_attestation"]
     ca_kw = emitter_kw.last.capsule["model_attestation"]["compute_attestation"]
@@ -177,15 +177,15 @@ def test_mcp_mixed_positional_kwargs_same_digest(tmp_path):
     )
 
     @emitter_mixed.tool("fn")
-    def fn_mixed(vendor: str, total: float) -> dict:
+    def fn_mixed(vendor: str, total: str) -> dict:
         return {}
 
     @emitter_kw.tool("fn")
-    def fn_kw(vendor: str, total: float) -> dict:
+    def fn_kw(vendor: str, total: str) -> dict:
         return {}
 
-    fn_mixed("ACME", total=1240.19)
-    fn_kw(vendor="ACME", total=1240.19)
+    fn_mixed("ACME", total="1240.19")
+    fn_kw(vendor="ACME", total="1240.19")
 
     ca_mixed = emitter_mixed.last.capsule["model_attestation"]["compute_attestation"]
     ca_kw = emitter_kw.last.capsule["model_attestation"]["compute_attestation"]
@@ -295,7 +295,7 @@ class TestFastMCPIntegration:
 
         @app.tool()
         @emitter.tool()
-        def write_order(vendor: str, total: float) -> dict:
+        def write_order(vendor: str, total: str) -> dict:
             return {"po_id": "PO-001"}
 
         sig = inspect.signature(write_order)
@@ -313,10 +313,10 @@ class TestFastMCPIntegration:
 
         @app.tool()
         @emitter.tool()
-        def write_order(vendor: str, total: float) -> dict:
+        def write_order(vendor: str, total: str) -> dict:
             return {"po_id": "PO-001", "vendor": vendor, "total": total}
 
-        result = write_order(vendor="ACME", total=1240.19)
+        result = write_order(vendor="ACME", total="1240.19")
         assert result["vendor"] == "ACME"
 
         assert emitter.last is not None
@@ -335,7 +335,7 @@ class TestFastMCPIntegration:
 
         @app.tool()
         @emitter.tool()
-        async def async_write_order(vendor: str, total: float) -> dict:
+        async def async_write_order(vendor: str, total: str) -> dict:
             return {"po_id": "PO-ASYNC", "vendor": vendor, "total": total}
 
         result = asyncio.run(async_write_order(vendor="ACME", total=99.0))

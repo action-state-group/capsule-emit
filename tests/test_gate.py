@@ -22,7 +22,6 @@ from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 from capsule_emit.constraints.apache import AmountUnderCap, VendorKnown
 from capsule_emit.gate import (
-    CheckResult,
     Constraint,
     GateBlockedError,
     GateResult,
@@ -450,10 +449,10 @@ def test_mcp_tool_with_passing_constraints_gate_checks_in_capsule(tmp_path):
     emitter = _emitter(tmp_path)
 
     @emitter.tool(constraints=[AmountUnderCap(5000)])
-    def submit_order(vendor: str, amount: float) -> dict:
+    def submit_order(vendor: str, amount: int) -> dict:
         return {"status": "ok"}
 
-    submit_order(vendor="Acme", amount=100.0)
+    submit_order(vendor="Acme", amount=100)
 
     assert emitter.last is not None
     ca = _ca(emitter)
@@ -470,11 +469,11 @@ def test_mcp_tool_with_failing_constraints_raises_gate_blocked_error(tmp_path):
     emitter = _emitter(tmp_path)
 
     @emitter.tool(constraints=[AmountUnderCap(100)])
-    def submit_order(vendor: str, amount: float) -> dict:
+    def submit_order(vendor: str, amount: int) -> dict:
         return {"status": "ok"}
 
     with pytest.raises(GateBlockedError) as exc_info:
-        submit_order(vendor="Acme", amount=999.0)
+        submit_order(vendor="Acme", amount=999)
 
     err = exc_info.value
     assert err.action == "submit_order"
@@ -510,10 +509,10 @@ def test_mcp_tool_with_on_block_callback_blocked_capsule(tmp_path):
         constraints=[AmountUnderCap(100)],
         on_block=lambda action, gr: calls.append((action, gr)),
     )
-    def submit_order(vendor: str, amount: float) -> dict:
+    def submit_order(vendor: str, amount: int) -> dict:
         return {"status": "ok"}
 
-    result = submit_order(vendor="EvilCorp", amount=9999.0)
+    result = submit_order(vendor="EvilCorp", amount=9999)
     assert result == {"status": "ok"}  # pass-through
 
     # Callback fired
@@ -535,10 +534,10 @@ def test_mcp_tool_multiple_constraints_all_pass(tmp_path):
     @emitter.tool(
         constraints=[AmountUnderCap(5000), VendorKnown({"Acme", "Globex"})]
     )
-    def place_order(vendor: str, amount: float) -> dict:
+    def place_order(vendor: str, amount: int) -> dict:
         return {"ok": True}
 
-    place_order(vendor="Acme", amount=1200.0)
+    place_order(vendor="Acme", amount=1200)
 
     ca = _ca(emitter)
     checks = ca["gate_checks"]
@@ -554,10 +553,10 @@ def test_mcp_tool_multiple_constraints_one_fails(tmp_path):
         constraints=[AmountUnderCap(5000), VendorKnown({"Acme"})],
         on_block=lambda a, gr: None,
     )
-    def place_order(vendor: str, amount: float) -> dict:
+    def place_order(vendor: str, amount: int) -> dict:
         return {"ok": True}
 
-    place_order(vendor="EvilCorp", amount=100.0)
+    place_order(vendor="EvilCorp", amount=100)
 
     ca = _ca(emitter)
     checks = ca["gate_checks"]
@@ -573,10 +572,10 @@ def test_mcp_tool_gate_checks_in_ledger(tmp_path):
     emitter = _emitter(tmp_path)
 
     @emitter.tool(constraints=[AmountUnderCap(5000)])
-    def submit(vendor: str, amount: float) -> dict:
+    def submit(vendor: str, amount: int) -> dict:
         return {}
 
-    submit(vendor="Acme", amount=100.0)
+    submit(vendor="Acme", amount=100)
 
     records = read_ledger(tmp_path / "ledger.jsonl")
     assert len(records) == 1

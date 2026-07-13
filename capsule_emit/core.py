@@ -24,7 +24,7 @@ from typing import Any
 
 from agent_action_capsule import emit as _base_emit
 from agent_action_capsule.anchor import anchor as _simple_anchor
-from agent_action_capsule.canonical import FloatInDigestError, json_digest
+from agent_action_capsule.canonical import json_digest
 from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError
 
 from .ledger import append_to_ledger
@@ -45,17 +45,22 @@ def _digest(value: Any) -> str:
     non-ASCII field — a faithfully-sealed such receipt then failed
     :func:`verify_input_digest` (returned ``False``). JCS now closes that gap.
 
-    Values JCS cannot canonicalize — raw floats (§5.1) and non-JSON-native
-    types the old encoder tolerated via ``default=str`` (e.g. tuples, arbitrary
-    objects) — fall back to the legacy sorted-key encoding rather than breaking
-    at seal time, preserving pre-0.3.2 behavior for such emitters. A fallback
-    digest is *not* JCS, so that input remains a known non-verifiable case (it
-    will not match ``verify_input_digest``) until it is expressed as
-    JCS-canonical JSON (e.g. monetary values as exact decimal strings).
+    Floats fail closed: a raw JSON float is a §5.1 error (it cannot be
+    reproducibly digested), so ``emit()`` raises ``FloatInDigestError`` here
+    rather than silently sealing an ``agent_input`` / ``agent_output`` that
+    :func:`verify_input_digest` could never confirm. Encode monetary/quantity
+    values as exact decimal strings before sealing.
+
+    Non-JSON-native types the legacy encoder tolerated via ``default=str``
+    (e.g. tuples, arbitrary objects) still fall back to the legacy sorted-key
+    encoding, so those emitters do not break at seal time.
     """
     try:
         return json_digest(value)
-    except (FloatInDigestError, TypeError):
+    except TypeError:
+        # Non-JSON-native types (e.g. tuples, arbitrary objects) — tolerated as
+        # before. FloatInDigestError is intentionally NOT caught: a raw float is
+        # a spec-defined error, so emit() fails closed at the door.
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 

@@ -31,13 +31,20 @@ All notable changes to `capsule-emit` are documented here. The format follows
   (JCS ≡ sorted-key JSON there), so this is backward-compatible for existing
   clean-receipt ledgers.
 
-### Notes
-- **Floats remain tolerated at `emit()` (backward-compatible).** JCS cannot digest a
-  raw JSON float (§5.1), so for float-bearing inputs `_digest` falls back to the legacy
-  sorted-key encoding rather than raising — existing float-emitting callers are
-  unaffected. Such an input is a known non-verifiable case (its digest is not JCS and
-  will not match `verify_input_digest`) until monetary/quantity values are encoded as
-  exact decimal strings. A future major version may reject floats outright.
+- **`verify_input_digest` never throws** (`verify.py`): per the profile's structured-result
+  contract ("a verifier MUST return a structured result, never throw"), a candidate that
+  cannot be JCS-canonicalized — e.g. one carrying a raw float (§5.1) — now returns `False`
+  instead of propagating `FloatInDigestError`. This closes a crash/DoS surface where a single
+  float-bearing receipt could abort a caller's scoring/verification loop.
+
+### Changed (behavior)
+- **Floats now fail closed at `emit()`.** A raw JSON float in `agent_input` / `agent_output`
+  is a §5.1 error (it cannot be reproducibly digested), so `emit()` raises `FloatInDigestError`
+  at seal time rather than silently sealing a receipt its own verifier could never confirm.
+  **Encode monetary/quantity values as exact decimal strings** (or integer minor units) before
+  sealing. Non-JSON-native types the legacy encoder tolerated (e.g. tuples) still fall back and
+  seal. This is a behavior change from 0.3.1, which accepted floats and sealed a non-verifiable
+  (non-JCS) digest.
 
 ## [0.3.0] — 2026-07-06
 

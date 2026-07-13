@@ -81,7 +81,7 @@ def test_tools_call_seals_capsule(server_and_stubs):
     ledger, req, resp = server_and_stubs
     _call(req, resp,
           tool_name="submit_order",
-          arguments={"vendor": "Frobozz", "amount": 99.9},
+          arguments={"vendor": "Frobozz", "amount": "99.9"},
           tool_result={"status": "dispatched"})
     records = read_ledger(ledger)
     assert len(records) == 1
