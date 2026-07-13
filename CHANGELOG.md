@@ -8,6 +8,16 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [0.3.2] — 2026-07-13
 
+### Added
+- **Bilateral asymmetry — the ghost** (`capsule_emit/bilateral.py`):
+  `BilateralState.COUNTERSIGN_REFUSED`, `BilateralHandshake.ghost()`
+  (REQUESTED → COUNTERSIGN_REFUSED), and `seal_ghost()` (emits
+  `verdict_class="countersign_refused"`, `effect.status="planned"`,
+  `chain.relation="supersedes"`, chained to the request capsule). A ghost is not
+  a both-assert: the honest party holds two capsules (request + ghost), the
+  counterparty holds zero — the asymmetry is provable end-to-end. Three-arc demo
+  (authorized, blocked, ghost) under `examples/bilateral-ghost/`.
+
 ### Fixed
 - **Seal/verify digest canonicalization mismatch** (`core._digest`): `emit()` sealed
   `agent_input_digest` / `agent_output_digest` / `response_digest` with
