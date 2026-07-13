@@ -191,20 +191,38 @@ def action_payload(
     handshake_id: str,
     responder_org: str,
     request_sig_digest: str,
+    constraint_set_digest: str | None = None,
+    input_commitment_digest: str | None = None,
 ) -> bytes:
     """Bytes org B signs after evaluating constraints (action attestation).
 
     Binds B's action to A's request by the request signature digest so B's
     action attestation cannot be replayed against a different request.
+
+    Per draft-mih-agent-bilateral-attestation §constraint-records:
+
+    - ``constraint_set_digest`` (change 1, MUST for a conformant attestation):
+      the digest pinning the constraint set in effect at evaluation time
+      (see :func:`capsule_emit.gate.constraint_set_digest`). Bound here so the
+      *which-constraints* commitment cannot be restated after signing.
+    - ``input_commitment_digest`` (change 2, SHOULD): a digest over the inputs
+      the constraints consulted, anchored as a disclosable commitment.
+
+    Both are optional parameters for backward compatibility; a conformant
+    performer supplies at least ``constraint_set_digest``. Absent fields are
+    omitted from the signed bytes rather than bound as null.
     """
-    return _canon(
-        {
-            "phase": "action",
-            "handshake_id": handshake_id,
-            "responder_org": responder_org,
-            "request_sig_digest": request_sig_digest,
-        }
-    )
+    obj: dict = {
+        "phase": "action",
+        "handshake_id": handshake_id,
+        "responder_org": responder_org,
+        "request_sig_digest": request_sig_digest,
+    }
+    if constraint_set_digest is not None:
+        obj["constraint_set_digest"] = constraint_set_digest
+    if input_commitment_digest is not None:
+        obj["input_commitment_digest"] = input_commitment_digest
+    return _canon(obj)
 
 
 def confirm_payload(

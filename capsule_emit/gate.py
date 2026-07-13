@@ -21,8 +21,24 @@ Usage::
 """
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol, runtime_checkable
+
+
+def constraint_set_digest(names: Sequence[str]) -> str:
+    """SHA-256 over the ordered constraint-set snapshot (the pinned identities).
+
+    Change 1 of draft-mih-agent-bilateral-attestation §constraint-records: the
+    action attestation MUST bind a content digest of the constraint set in effect
+    at evaluation time, so a verifier can establish *which* constraints were in
+    force as of the anchored time. Digested with the same canonicalization the
+    rest of this module uses (sorted keys, compact separators, UTF-8).
+    """
+    canon = json.dumps({"constraint_set": list(names)}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
 __all__ = [
     "Constraint",
@@ -72,20 +88,44 @@ class Constraint(Protocol):
 class CheckResult:
     """The outcome of running a single :class:`Constraint`.
 
+    The result vocabulary is ``pass`` | ``fail`` | ``not-evaluated`` — the
+    completeness obligation of draft-mih-agent-bilateral-attestation
+    (§constraint-records): an attestation carries a result for every constraint
+    in the pinned set, so a constraint that was declared but not run is an
+    explicit ``not-evaluated`` (with a reason) rather than a silent omission.
+
     Attributes:
         name: The constraint's stable name.
-        passed: Whether the constraint passed.
-        reason: Failure explanation when ``passed`` is ``False``;
-            ``None`` when the constraint passed.
+        passed: Whether the constraint passed. Meaningful only when
+            ``evaluated`` is ``True``.
+        reason: Explanation when ``passed`` is ``False`` or the constraint was
+            not evaluated; ``None`` when the constraint passed.
+        evaluated: ``False`` when the constraint was declared in the pinned set
+            but not run (degraded / skipped); ``True`` otherwise.
     """
 
     name: str
     passed: bool
     reason: str | None = None
+    evaluated: bool = True
+
+    @property
+    def result(self) -> str:
+        """The §constraint-records result vocabulary: ``pass`` | ``fail`` | ``not-evaluated``."""
+        if not self.evaluated:
+            return "not-evaluated"
+        return "pass" if self.passed else "fail"
+
+    @classmethod
+    def not_evaluated(cls, name: str, reason: str) -> "CheckResult":
+        """A declared-but-skipped constraint. Reason is REQUIRED so the omission is legible."""
+        return cls(name=name, passed=False, reason=reason, evaluated=False)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a plain dict suitable for ``extra_compute``."""
-        d: dict[str, Any] = {"name": self.name, "passed": self.passed}
+        d: dict[str, Any] = {"name": self.name, "passed": self.passed, "result": self.result}
+        if not self.evaluated:
+            d["evaluated"] = False
         if self.reason is not None:
             d["reason"] = self.reason
         return d
@@ -103,11 +143,20 @@ class GateResult:
 
     @property
     def passed(self) -> bool:
-        """``True`` iff every constraint passed."""
-        return all(r.passed for r in self.results)
+        """``True`` iff every *evaluated* constraint passed."""
+        return all(r.passed for r in self.results if r.evaluated)
+
+    @property
+    def constraint_set_digest(self) -> str:
+        """Digest pinning the constraint set that produced these results (change 1)."""
+        return constraint_set_digest([r.name for r in self.results])
 
     def to_gate_checks(self) -> list[dict[str, Any]]:
-        """Return a list of dicts for embedding in ``extra_compute``."""
+        """Return a list of dicts for embedding in ``extra_compute``.
+
+        Completeness (change 3): one entry per constraint in the pinned set —
+        including any ``not-evaluated`` — so a missing entry is a verifiable omission.
+        """
         return [r.to_dict() for r in self.results]
 
 

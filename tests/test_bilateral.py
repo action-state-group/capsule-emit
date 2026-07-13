@@ -355,3 +355,36 @@ def test_ghost_requires_requested_state():
     hs.respond(rec.handshake_id, _sign("org-b", b"x"))  # -> ACTED
     with pytest.raises(IllegalTransition):
         hs.ghost(rec.handshake_id)
+
+
+# ---------------------------------------------------------------------------
+# Action attestation carries the constraint-record fields
+# (draft-mih-agent-bilateral-attestation §constraint-records, changes 1 & 2)
+# ---------------------------------------------------------------------------
+
+def test_action_payload_binds_constraint_set_and_input_commitment():
+    sig = _sign("org-a", b"req")
+    rsd = sig_digest(sig)
+    p = json.loads(action_payload(
+        "hid-1", "org-b", rsd,
+        constraint_set_digest="a" * 64,
+        input_commitment_digest="b" * 64,
+    ))
+    assert p["constraint_set_digest"] == "a" * 64
+    assert p["input_commitment_digest"] == "b" * 64
+
+
+def test_action_payload_omits_absent_constraint_fields_backcompat():
+    sig = _sign("org-a", b"req")
+    p = json.loads(action_payload("hid-1", "org-b", sig_digest(sig)))
+    # absent fields are omitted (not bound as null) — old callers unaffected
+    assert "constraint_set_digest" not in p
+    assert "input_commitment_digest" not in p
+
+
+def test_action_payload_changes_when_constraint_set_digest_changes():
+    sig = _sign("org-a", b"req")
+    rsd = sig_digest(sig)
+    a = action_payload("hid-1", "org-b", rsd, constraint_set_digest="a" * 64)
+    b = action_payload("hid-1", "org-b", rsd, constraint_set_digest="c" * 64)
+    assert a != b  # the pinned set is bound into the signed bytes

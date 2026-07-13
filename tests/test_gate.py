@@ -582,3 +582,56 @@ def test_mcp_tool_gate_checks_in_ledger(tmp_path):
     assert len(records) == 1
     ca = records[0]["model_attestation"]["compute_attestation"]
     assert "gate_checks" in ca
+
+
+# ---------------------------------------------------------------------------
+# Constraint records — draft-mih-agent-bilateral-attestation §constraint-records
+# (constraint-set pinning, completeness vocabulary)
+# ---------------------------------------------------------------------------
+
+def test_constraint_set_digest_deterministic_and_order_sensitive():
+    from capsule_emit.gate import constraint_set_digest
+    d1 = constraint_set_digest(["amount_under_cap", "vendor_known"])
+    d2 = constraint_set_digest(["amount_under_cap", "vendor_known"])
+    d3 = constraint_set_digest(["vendor_known", "amount_under_cap"])
+    assert d1 == d2                       # deterministic
+    assert d1 != d3                       # order pins the snapshot
+    assert len(d1) == 64                  # sha-256 hex
+
+
+def test_check_result_vocabulary_pass_fail_not_evaluated():
+    assert CheckResult("c", passed=True).result == "pass"
+    assert CheckResult("c", passed=False, reason="over cap").result == "fail"
+    ne = CheckResult.not_evaluated("c", reason="degraded: source offline")
+    assert ne.result == "not-evaluated"
+    assert ne.evaluated is False
+    assert ne.reason == "degraded: source offline"
+
+
+def test_check_result_to_dict_carries_result_and_backcompat_passed():
+    d = CheckResult("c", passed=True).to_dict()
+    assert d["result"] == "pass"
+    assert d["passed"] is True            # backward-compatible key retained
+    ne = CheckResult.not_evaluated("c", "skipped").to_dict()
+    assert ne["result"] == "not-evaluated"
+    assert ne["evaluated"] is False
+    assert ne["reason"] == "skipped"
+
+
+def test_gate_result_pins_digest_and_reports_every_constraint():
+    gr = GateResult(results=[
+        CheckResult("amount_under_cap", passed=True),
+        CheckResult("vendor_known", passed=False, reason="unknown vendor"),
+        CheckResult.not_evaluated("sanctions_screen", reason="feed down"),
+    ])
+    # completeness: one entry per constraint in the pinned set, including not-evaluated
+    checks = gr.to_gate_checks()
+    assert [c["result"] for c in checks] == ["pass", "fail", "not-evaluated"]
+    # a not-evaluated constraint does not flip .passed for the evaluated ones,
+    # but the fail does
+    assert gr.passed is False
+    # pinned digest matches the standalone helper over the same ordered names
+    from capsule_emit.gate import constraint_set_digest
+    assert gr.constraint_set_digest == constraint_set_digest(
+        ["amount_under_cap", "vendor_known", "sanctions_screen"]
+    )
