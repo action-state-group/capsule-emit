@@ -483,3 +483,28 @@ def test_mcp_emit_capsule_human_disposed_wrong_approver_raises(tmp_ledger):
             human_disposed=True,
             approver="policy",
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression: IO digests present even when no model= is supplied
+# ---------------------------------------------------------------------------
+
+
+def test_mcp_io_digests_present_without_model(tmp_ledger):
+    """Regression: agent_input_digest + agent_output_digest must be committed
+    regardless of whether a ``model`` is supplied.
+
+    Previously a silent-drop bug caused digests to be omitted when the caller
+    did not pass ``model=``.  This test pins the fixed behaviour.
+    """
+    emitter = make_emitter(MCPCapsuleEmitter, tmp_ledger)  # no model=
+
+    @emitter.tool("no_model_action")
+    def fn(query: str) -> dict:
+        return {"result": query.upper()}
+
+    fn(query="hello")
+
+    ca = emitter.last.capsule["model_attestation"]["compute_attestation"]
+    assert "agent_input_digest" in ca, "input digest missing without model="
+    assert "agent_output_digest" in ca, "output digest missing without model="
