@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     _banner("Bilateral attestation demo — Org A ↔ Org B")
     print(f"  Ledger:  {ledger}")
     print(f"  Anchor:  {'off (--no-anchor)' if no_anchor else 'default'}")
-    print(f"  Verifier: HMAC-SHA256 (demo only — use Ed25519 in production)")
+    print("  Verifier: HMAC-SHA256 (demo only — use Ed25519 in production)")
 
     action_dig = _action_digest(ACTION)
     print(f"\n  Action:  {ACTION['type']} — {ACTION['vendor']} ${ACTION['amount_usd']}")
@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     # A acks B's action sig
     rq_pay = confirm_payload(hid, "org-a", sig_digest(rec2.action_sig))
     rq_confirm = _sign("org-a", rq_pay)
-    rec3 = hs.confirm(hid, "org-a", rq_confirm)
+    hs.confirm(hid, "org-a", rq_confirm)
 
     # B acks A's request sig
     rs_pay = confirm_payload(hid, "org-b", sig_digest(rec2.request_sig))
@@ -170,8 +170,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── Verify ────────────────────────────────────────────────────────────────
     print("\n[6] Class-1 verify — both capsules")
-    from capsule_emit.ledger import read_ledger
     from agent_action_capsule import verify
+
+    from capsule_emit.ledger import read_ledger
 
     all_ok = True
     for r in read_ledger(ledger):

@@ -25,26 +25,23 @@ or equivalently:
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Resolve paths — works both from repo root and from this file's directory.
-# ---------------------------------------------------------------------------
-HERE = Path(__file__).parent.resolve()
-LEDGER = HERE / "sample_ledger.jsonl"
-
-# ---------------------------------------------------------------------------
-# Imports
-# ---------------------------------------------------------------------------
 from agent_action_capsule import emit as base_emit
 from agent_action_capsule.contracts import (
     ConstraintRecord,
     Disposition,
     EffectRecord,
 )
+
 from capsule_emit import emit
 from capsule_emit.ledger import append_to_ledger
+
+# ---------------------------------------------------------------------------
+# Resolve paths — works both from repo root and from this file's directory.
+# ---------------------------------------------------------------------------
+HERE = Path(__file__).parent.resolve()
+LEDGER = HERE / "sample_ledger.jsonl"
 
 # ---------------------------------------------------------------------------
 # Reset ledger on each run
@@ -122,7 +119,7 @@ _raw_c2 = base_emit(
 append_to_ledger(_raw_c2, LEDGER)
 cap2_id = _raw_c2["capsule_id"]
 print(f"  capsule_id: {cap2_id}")
-print(f"  verdict:    blocked (transfer_limit_eur_check: fail)\n")
+print("  verdict:    blocked (transfer_limit_eur_check: fail)\n")
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +171,7 @@ _raw_c3 = base_emit(
 append_to_ledger(_raw_c3, LEDGER)
 cap3_id = _raw_c3["capsule_id"]
 print(f"  capsule_id: {cap3_id}")
-print(f"  verdict:    executed (value_grounded: pass, invoice_reconciles: pass)\n")
+print("  verdict:    executed (value_grounded: pass, invoice_reconciles: pass)\n")
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +212,7 @@ print(f"{cap3_id[:16]:<29}  {'gate_checks':<14}  {'executed':<10}  —")
 print(f"{cap4.capsule_id[:16]:<29}  {'chained':<14}  {'confirmed':<10}  {cap1.capsule_id[:16]}…")
 print("=" * 78)
 
-print(f"\nFull capsule IDs:")
+print("\nFull capsule IDs:")
 print(f"  [1] approve_purchase  : {cap1.capsule_id}")
 print(f"  [2] transfer_funds    : {cap2_id}")
 print(f"  [3] generate_report   : {cap3_id}")

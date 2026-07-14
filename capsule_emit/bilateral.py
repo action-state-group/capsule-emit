@@ -41,9 +41,12 @@ import hmac
 import json
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from capsule_emit.core import EmitResult
 
 __all__ = [
     "BilateralSig",
@@ -142,10 +145,9 @@ class UnknownParty(BilateralError):
 # They are transport-agnostic: the signed bytes are pinned here; wire encoding
 # of the four exchange objects is TBD for a future revision of the I-D.
 #
-# The design mirrors as_authority.handshake.payloads (moat-scrubbed):
-#   - Commitment (blind custody) is replaced by action_digest (SHA-256 hex)
-#   - Four phases bind progressively more context
-#   - Later signatures bind earlier signature digests so they cannot be lifted
+# The signed payloads bind progressively more context across four phases;
+# later signatures bind earlier signature digests so they cannot be lifted.
+#   - a blind-custody commitment is represented by action_digest (SHA-256 hex)
 # ---------------------------------------------------------------------------
 
 
@@ -157,7 +159,7 @@ def _canon(obj: dict) -> bytes:
 def sig_digest(sig: BilateralSig) -> str:
     """Stable digest of a signature, used to bind later phases to earlier ones."""
     return hashlib.sha256(
-        f"{sig.alg}:{sig.key_id}:{sig.signature}".encode("utf-8")
+        f"{sig.alg}:{sig.key_id}:{sig.signature}".encode()
     ).hexdigest()
 
 
@@ -452,7 +454,7 @@ def seal_request(
     ledger: str | None = None,
     anchor: bool = False,
     extra_compute: dict | None = None,
-) -> "EmitResult":  # type: ignore[name-defined]
+) -> EmitResult:  # type: ignore[name-defined]
     """Emit a capsule recording Org A's request attestation.
 
     The capsule carries the action_digest in compute_attestation so a
@@ -492,7 +494,7 @@ def seal_action(
     anchor: bool = False,
     gate_checks: list | None = None,
     extra_compute: dict | None = None,
-) -> "EmitResult":  # type: ignore[name-defined]
+) -> EmitResult:  # type: ignore[name-defined]
     """Emit a capsule recording Org B's action attestation.
 
     Chains onto the requester's capsule.  ``verdict`` reflects B's
@@ -532,7 +534,7 @@ def seal_bilateral(
     ledger: str | None = None,
     anchor: bool = False,
     extra_compute: dict | None = None,
-) -> "EmitResult":  # type: ignore[name-defined]
+) -> EmitResult:  # type: ignore[name-defined]
     """Emit a capsule recording bilateral completion (both parties confirmed).
 
     This is the completion capsule that records the BILATERAL state: both
@@ -573,7 +575,7 @@ def seal_ghost(
     ledger: str | None = None,
     anchor: bool = False,
     extra_compute: dict | None = None,
-) -> "EmitResult":  # type: ignore[name-defined]
+) -> EmitResult:  # type: ignore[name-defined]
     """Emit a countersign_refused capsule — seals the provable asymmetry.
 
     Called by the requester after the counterparty goes dark.  The capsule
