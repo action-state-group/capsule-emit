@@ -286,10 +286,10 @@ def test_goose_pattern_a_seals_capsule(tmp_path):
     emitter = _emitter(tmp_path)
 
     @emitter.tool(effect_type="write_order")
-    def submit_order(vendor: str, amount: float) -> dict:
+    def submit_order(vendor: str, amount: str) -> dict:
         return {"status": "ok", "vendor": vendor}
 
-    submit_order(vendor="Frobozz", amount=1240.19)
+    submit_order(vendor="Frobozz", amount="1240.19")
 
     records = read_ledger(tmp_path / "ledger.jsonl")
     assert len(records) == 1
@@ -348,8 +348,8 @@ def test_goose_pattern_a_two_calls_two_rows(tmp_path):
     emitter = _emitter(tmp_path)
 
     @emitter.tool()
-    def get_price(item: str) -> float:
-        return 42.0
+    def get_price(item: str) -> int:
+        return 42
 
     get_price(item="widget")
     get_price(item="gadget")
@@ -363,8 +363,8 @@ def test_goose_pattern_a_fyi_action_type(tmp_path):
     emitter = _emitter(tmp_path)
 
     @emitter.tool(action_type="fyi")
-    def read_price(item: str) -> float:
-        return 9.99
+    def read_price(item: str) -> str:
+        return "9.99"
 
     read_price(item="doohickey")
     records = read_ledger(tmp_path / "ledger.jsonl")

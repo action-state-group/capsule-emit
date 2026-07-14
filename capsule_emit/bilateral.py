@@ -147,7 +147,7 @@ class UnknownParty(BilateralError):
 #
 # The signed payloads bind progressively more context across four phases;
 # later signatures bind earlier signature digests so they cannot be lifted.
-#   - a blind-custody commitment is represented by action_digest (SHA-256 hex)
+#   - the committing party's pre-agreed action reference is action_digest (SHA-256 hex)
 # ---------------------------------------------------------------------------
 
 
