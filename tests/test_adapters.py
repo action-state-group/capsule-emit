@@ -271,11 +271,11 @@ def test_mcp_tool_decorator_emits(tmp_path):
     emitter = MCPCapsuleEmitter(operator="org", developer="agent@v1", ledger=ledger, anchor=False)
 
     @emitter.tool("fetch_price")
-    def fetch_price(ticker: str) -> float:
-        return 42.0
+    def fetch_price(ticker: str) -> int:
+        return 42
 
     result = fetch_price(ticker="AAPL")
-    assert result == 42.0
+    assert result == 42
 
     records = read_ledger(ledger)
     assert len(records) == 1

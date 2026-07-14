@@ -338,7 +338,7 @@ class TestFastMCPIntegration:
         async def async_write_order(vendor: str, total: str) -> dict:
             return {"po_id": "PO-ASYNC", "vendor": vendor, "total": total}
 
-        result = asyncio.run(async_write_order(vendor="ACME", total=99.0))
+        result = asyncio.run(async_write_order(vendor="ACME", total="99.0"))
         assert result["po_id"] == "PO-ASYNC"
 
         assert emitter.last is not None
@@ -357,12 +357,12 @@ class TestFastMCPIntegration:
 
         @app.tool()
         @emitter.tool()
-        def submit_order(vendor: str, amount: float) -> dict:
+        def submit_order(vendor: str, amount: str) -> dict:
             return {"status": "ok"}
 
-        submit_order(vendor="A", amount=100.0)
-        submit_order(vendor="B", amount=200.0)
-        submit_order(vendor="C", amount=300.0)
+        submit_order(vendor="A", amount="100.0")
+        submit_order(vendor="B", amount="200.0")
+        submit_order(vendor="C", amount="300.0")
 
         records = read_ledger(tmp_path / "ledger.jsonl")
         assert len(records) == 3

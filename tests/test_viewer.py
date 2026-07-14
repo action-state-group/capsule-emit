@@ -15,12 +15,10 @@ from __future__ import annotations
 import io
 import json
 import os
-import tempfile
 
 import pytest
 
 from capsule_emit.viewer import _actor, _category, render_html, render_table
-
 
 # ---------------------------------------------------------------------------
 # _category

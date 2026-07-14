@@ -480,7 +480,7 @@ def main() -> int:
     print("\n  Asymmetry proof:")
     print(f"    request    capsule: {cap_request['capsule_id'][:20]}...  verdict=executed  effect=dispatched")
     print(f"    ghost      capsule: {ghost_result.capsule_id[:20]}...  verdict=countersign_refused  effect=planned")
-    print(f"    DJ               : [0 capsules — no countersignature]")
+    print("    DJ               : [0 capsules — no countersignature]")
     print()
     print("  A verifier trusting neither org can confirm:")
     print("    · Planner committed (request sealed, AAuth grant ref in disposition.authority)")

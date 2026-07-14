@@ -8,12 +8,10 @@ Covers:
 - list_pending: shows unresolved blocked capsule
 - list_pending: crash-resume — blocked capsule persists after ledger re-read
 - seal_approval with decision="deny" → verdict_class="denied"
-- Zero engine imports (no gopher_ai references in approval.py)
+- Zero engine imports (no closed-source engine references in approval.py)
 """
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
 
 import pytest
@@ -21,8 +19,7 @@ from agent_action_capsule import verify
 
 from capsule_emit.approval import list_pending, seal_approval
 from capsule_emit.core import emit
-from capsule_emit.ledger import read_ledger, append_to_ledger
-
+from capsule_emit.ledger import read_ledger
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -339,16 +336,38 @@ def test_seal_approval_invalid_decision(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Zero engine imports — approval.py must not import gopher_ai
+# Zero engine imports — approval.py must only import from public capsule packages
 # ---------------------------------------------------------------------------
 
 
 def test_no_engine_imports():
-    """approval.py must not reference gopher_ai (the private engine)."""
+    """approval.py must not import from closed-source engine packages."""
+    import ast
     import pathlib
 
     approval_src = pathlib.Path(__file__).parent.parent / "capsule_emit" / "approval.py"
-    text = approval_src.read_text(encoding="utf-8")
-    assert "gopher_ai" not in text, (
-        "approval.py must not import gopher_ai — this is a public-safe module"
-    )
+    tree = ast.parse(approval_src.read_text(encoding="utf-8"))
+
+    _PUBLIC = frozenset({"capsule_emit", "agent_action_capsule", "scitt_cose"})
+    _STDLIB = frozenset({
+        "__future__", "abc", "collections", "contextlib", "copy", "dataclasses",
+        "datetime", "enum", "functools", "hashlib", "itertools", "json", "math",
+        "os", "pathlib", "re", "sys", "typing", "uuid",
+    })
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.level and node.level > 0:
+                continue  # relative imports are always internal
+            if not node.module:
+                continue
+            root = node.module.split(".")[0]
+            assert root in _PUBLIC or root in _STDLIB, (
+                f"approval.py must not import from {root!r} — only public capsule packages are allowed"
+            )
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                assert root in _PUBLIC or root in _STDLIB, (
+                    f"approval.py must not import {alias.name!r} — only public capsule packages are allowed"
+                )

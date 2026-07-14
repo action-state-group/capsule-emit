@@ -13,8 +13,8 @@ Run:
 from __future__ import annotations
 
 import json
-import sys
 import os
+import sys
 import tempfile
 
 from agent_action_capsule import verify
@@ -169,7 +169,7 @@ print(f"gate_checks: {json.dumps(mcp_ca['gate_checks'], indent=2)}")
 assert "gate_checks" in mcp_ca
 assert all(c["passed"] for c in mcp_ca["gate_checks"])
 assert verify(mcp_emitter.last.capsule).ok
-print(f"verify: ok")
+print("verify: ok")
 
 print()
 print("=" * 60)
