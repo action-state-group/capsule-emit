@@ -1,5 +1,7 @@
 # capsule-emit
 
+[![CI](https://github.com/action-state-group/capsule-emit/actions/workflows/python.yml/badge.svg)](https://github.com/action-state-group/capsule-emit/actions/workflows/python.yml)
+
 **Know what your AI agent did — and let anyone verify it.**
 
 One `emit()` call at each consequential action builds an **anchored, verifiable ledger** of what your agent did — each entry sealed (content-addressed by hash) and checkable by anyone, *without trusting you*.
