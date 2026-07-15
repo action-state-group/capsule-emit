@@ -51,6 +51,14 @@ a tool *returns*, so a tool that raises produces no capsule on Path 1; call
 :meth:`emit_errored` from your own ``except`` block to seal the failed attempt. On
 Path 2 an error-shaped ``function_response`` is sealed like any other output.
 
+**Observation mode is stamped on every capsule** (per the profile's
+`observation_mode` compute-attestation member): the callback path and the
+manual seals (`guard`/`emit_blocked`/`emit_denied`/`emit_errored`) stamp
+``in_path`` — the emitter sits in the action's call path; the event tap
+stamps ``event_stream`` — the emitter observes the runtime's narration,
+where id-less pairing is best-effort. Provenance, not a quality score:
+the capsule states how it observed; the consumer decides the weight.
+
 **Emit-error policy (matches the MCP adapter).** On the auto-instrumented paths
 (``after_tool_callback`` / ``tap_event``) a failed emit is warned (RuntimeWarning)
 and logged, never propagated — the record layer must not crash the agent's tool
@@ -246,7 +254,8 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
             tool_output=tool_response,
             effect=self._effect_for(name),
             runtime="adk",
-            extra_compute=_compute_from_context(tool_context) or None,
+            extra_compute={"observation_mode": "in_path",
+                           **_compute_from_context(tool_context)},
         )
         if call_id and sealed:
             self._seen.add(call_id)
@@ -312,7 +321,8 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
                 tool_output=response,
                 effect=self._effect_for(pname),
                 runtime="adk",
-                extra_compute=({"adk_function_call_id": call_id} if call_id else None),
+                extra_compute={"observation_mode": "event_stream",
+                               **({"adk_function_call_id": call_id} if call_id else {})},
             )
             if call_id and sealed:
                 self._seen.add(call_id)
@@ -385,7 +395,8 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
             tool_output=({"reason": reason} if reason else None),
             verdict="blocked",
             runtime="adk",
-            extra_compute=_compute_from_context(tool_context) or None,
+            extra_compute={"observation_mode": "in_path",
+                           **_compute_from_context(tool_context)},
         )
 
     def emit_denied(
@@ -398,7 +409,8 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
             tool_output=({"reason": reason} if reason else None),
             verdict="denied",
             runtime="adk",
-            extra_compute=_compute_from_context(tool_context) or None,
+            extra_compute={"observation_mode": "in_path",
+                           **_compute_from_context(tool_context)},
         )
 
     def emit_errored(
@@ -420,7 +432,8 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
             tool_input=args,
             tool_output={"error": str(error)},
             runtime="adk",
-            extra_compute=_compute_from_context(tool_context) or None,
+            extra_compute={"observation_mode": "in_path",
+                           **_compute_from_context(tool_context)},
         )
         call_id = getattr(tool_context, "function_call_id", None)
         if call_id:
