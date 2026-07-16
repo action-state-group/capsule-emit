@@ -3,9 +3,8 @@
 
 Implements the four-move protocol described in
 draft-mih-agent-bilateral-attestation-00: request attestation → constraint
-evaluation → action attestation → acknowledgment.  Extracted from the
-Action State Authority handshake package with Authority-specific types
-removed (no KYB, no identity registry, no blind custody, no pricing).
+evaluation → action attestation → acknowledgment.  The implementation
+carries only the protocol mechanics; Authority-specific coupling is absent.
 
 Public API
 ----------
