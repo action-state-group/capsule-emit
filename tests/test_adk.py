@@ -441,3 +441,31 @@ def test_max_results_zero_retains_nothing(tmp_path):
     assert e.results == []          # nothing retained
     assert e.last is not None       # `last` tracked independently of the cap
     assert verify(e.last.capsule).ok
+
+
+# --------------------------------------------------------------------------
+# observation_mode — provenance stamp per path (profile compute-attestation)
+# --------------------------------------------------------------------------
+
+def test_callback_capsules_stamp_in_path(tmp_path):
+    e = _emitter(tmp_path)
+    e.after_tool_callback(_FakeTool("t"), {"x": 1}, _FakeToolContext("fc-om1"), {"ok": True})
+    assert '"observation_mode": "in_path"' in json.dumps(e.last.capsule) or \
+           "in_path" in json.dumps(e.last.capsule)
+    assert verify(e.last.capsule).ok
+
+
+def test_tap_capsules_stamp_event_stream(tmp_path):
+    e = _emitter(tmp_path)
+    e.tap_event(_FakeEvent(calls=[_FC("t", "fc-om2", {"x": 1})],
+                           responses=[_FR("t", "fc-om2", {"ok": True})]))
+    assert "event_stream" in json.dumps(e.last.capsule)
+    assert verify(e.last.capsule).ok
+
+
+def test_manual_seals_stamp_in_path(tmp_path):
+    e = _emitter(tmp_path)
+    b = e.emit_blocked(_FakeTool("t"), {"x": 1}, _FakeToolContext(), reason="policy")
+    r = e.emit_errored(_FakeTool("t"), {"x": 1}, ValueError("boom"), _FakeToolContext())
+    assert "in_path" in json.dumps(b.capsule)
+    assert "in_path" in json.dumps(r.capsule)
