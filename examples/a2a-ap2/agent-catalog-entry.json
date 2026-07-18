@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0",
+  "name": "Enterprise Event Planner Agent",
+  "description": "Autonomous corporate event-planning agent. Discovers vendors across registry boundaries (NANDA Index, AgentFacts), negotiates on behalf of the enterprise, and seals bilaterally-signed records that cite both registry identities by digest. Described in the company's AI Catalog / ADS entry (ARD world); counterparties discovered via the NANDA Index world.",
+  "version": "1.0.0",
+  "url": "https://accountable-dealroom-1020437450833.us-central1.run.app",
+  "provider": {
+    "organization": "Enterprise (NandaHack 2026 demo — synthetic)"
+  },
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": true
+  },
+  "skills": [
+    {
+      "id": "cake-procurement",
+      "name": "Custom Cake Procurement",
+      "description": "Procures custom cakes for corporate events. Discovers vendors on the NANDA Index, negotiates price and terms, and seals a bilateral capsule cited by digest.",
+      "tags": ["procurement", "negotiation", "custom-cakes", "events"]
+    }
+  ],
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "authentication": {
+    "schemes": ["none"]
+  },
+  "identity": {
+    "registry": "ai-catalog",
+    "registry_type": "ARD",
+    "note": "Synthetic entry for NandaHack 2026 cross-registry demo"
+  }
+}
