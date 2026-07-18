@@ -1,0 +1,58 @@
+{
+  "_note": "SYNTHETIC — produced for IETF 126 hackathon testability; not a production artifact. Labels prefixed 'synth-' throughout. See README.md.",
+  "_draft_basis": "draft-sato-soos-gar-01 (GAR = Governance Audit Record, SOOS protocol family). Structure follows Section 6.2 SAR fields. 'kernel-attested' = GEC-originated; 'KIA-signed' = signed by GEC keypair per draft-sato-soos-kia.",
+  "gar_version": "draft-sato-soos-gar-01",
+  "sar_id": "019063e7-0000-7000-8000-synth0000001a",
+  "session_id": "synth-ietf126-session-001",
+  "mandate_id": "synth-mandate-jti-ietf126-001",
+  "mission_ref": "IETF-126-Vienna-Hackathon-2026-07-18",
+  "open_timestamp": "2026-07-18T09:00:00Z",
+  "close_timestamp": "2026-07-18T10:30:00Z",
+  "close_reason": "NORMAL_COMPLETION",
+  "kernel_attestation": {
+    "_note": "SYNTHETIC — in production this field is populated from the GEC attestation chain (RATS Evidence per RFC 9334, extended with SOOS fields). See draft-sato-soos-kia.",
+    "type": "synthetic",
+    "kernel_id": "synth-gec-kernel-001",
+    "conformance_level": "L1",
+    "claim": "kernel-attested-session-state",
+    "measurement": "a3f2c1d9e4b50623fa84710c9de23b6f5a17c490e83b2d14780f65a21c3d9e7b"
+  },
+  "idp_submissions": [
+    {
+      "idp_id": "synth-idp-001",
+      "cedar_policy_outcome": "PERMIT",
+      "action_ref": "IETF::Action::\"HackathonDemoRun\""
+    }
+  ],
+  "hem_events": [],
+  "state_transitions": [
+    {
+      "prior_state": "IDLE",
+      "resulting_state": "ACTIVE",
+      "cedar_action": "StartSession",
+      "timestamp": "2026-07-18T09:00:00Z"
+    },
+    {
+      "prior_state": "ACTIVE",
+      "resulting_state": "COMPLETED",
+      "cedar_action": "CloseSession",
+      "timestamp": "2026-07-18T10:30:00Z"
+    }
+  ],
+  "cap_violations": [],
+  "audit_summary": {
+    "total_transitions": 2,
+    "hem_events": 0,
+    "terminations": 0,
+    "policy_gaps": 0,
+    "cap_violations": 0,
+    "jurisdictional_conflicts": 0
+  },
+  "kia_signed": {
+    "_note": "SYNTHETIC — in production this is an Ed25519 signature by the GEC keypair whose authority is established by the KIA chain (draft-sato-soos-kia). Key material here is a non-functional placeholder.",
+    "key_id": "synth-kia-gec-key-001",
+    "algorithm": "EdDSA",
+    "key_publication": "jwks",
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

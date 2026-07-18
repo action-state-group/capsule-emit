@@ -1,0 +1,44 @@
+{
+  "_note": "SYNTHETIC \u2014 SCITT Signed Statement envelope (capsule-emit format). The payload is the GAR SAR committed by canonical-JSON SHA-256 digest. IETF 126 Vienna hackathon testability artifact.",
+  "_draft_basis": "draft-sato-soos-gar-01 Section 10.1 SCITT submission profile",
+  "capsule_id": "19b4a06d78cff29ed84f787873665a48c9582f48de3ca1ca375272a5fab0c4ee",
+  "sar_id": "019063e7-0000-7000-8000-synth0000001a",
+  "gar_version": "draft-sato-soos-gar-01",
+  "content_type": "application/soos.gar.sar+json",
+  "agent_input_digest": "c33cd41e849524120340f26e9a6da3c5cb3b621f6cf66490c917a8ccf2006fe1",
+  "agent_output_digest": "d4ad6465b54d946975a59281d6f9638d2733a6221e140b2c6472c9e1b2b5a953",
+  "capsule": {
+    "spec_version": "draft-mih-scitt-agent-action-capsule-02",
+    "format_version": "2",
+    "capsule_id": "19b4a06d78cff29ed84f787873665a48c9582f48de3ca1ca375272a5fab0c4ee",
+    "action_id": "gar.session_audit_record/838b1b39-b9c2-42ad-b9b1-00b3c566b615",
+    "action_type": "decide",
+    "operator": "synth-soos-gec-operator",
+    "developer": "synth-gec-kernel@draft-sato-soos-gar-01",
+    "timestamp": "2026-07-18T13:14:06.350522Z",
+    "model_attestation": {
+      "model_id": "synth-gec-kernel-001",
+      "provider": "synthetic",
+      "compute_attestation": {
+        "agent_input_digest": "c33cd41e849524120340f26e9a6da3c5cb3b621f6cf66490c917a8ccf2006fe1",
+        "agent_output_digest": "d4ad6465b54d946975a59281d6f9638d2733a6221e140b2c6472c9e1b2b5a953",
+        "runtime": "draft-sato-soos-gar-01"
+      }
+    },
+    "effect": {
+      "status": "planned",
+      "type": "gar_sar_scitt_submission"
+    },
+    "assurance": {
+      "attestation_mode": "self_attested",
+      "effect_mode": "not_applicable",
+      "ledger_mode": "standalone"
+    },
+    "disposition": {
+      "decision": "accept",
+      "approver": "policy",
+      "human_disposed": false,
+      "verdict_class": "executed"
+    }
+  }
+}
