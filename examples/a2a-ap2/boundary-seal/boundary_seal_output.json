@@ -1,0 +1,64 @@
+{
+  "_note": "Positive case \u2014 boundary seal PASS. capsule.digest gate: PASS (digest matches sealed content). capsule.resolve gate: PASS (capsule_id resolvable on live anchor). a2a-sdk: 1.1.1@86c6b0d. Shims: none.",
+  "_sdk_version": "a2a-sdk==1.1.1",
+  "_sdk_commit": "86c6b0d",
+  "_sdk_shims": "none",
+  "task_id": "task-boundary-seal-001",
+  "capsule_id": "553b0a2352a25be70d5400434525172e104021f27b8879b1348dc4a53821f046",
+  "anchored": true,
+  "input_digest": "a47245f63ea431a974e3192913d24ba6ea88ab8a830da7d0cb88c38a5a0e2fd5",
+  "output_digest": "141e722d94e3f3410ae59eb282ff99b75ac0da68b714b221810361adfde5d05d",
+  "gate_results": {
+    "capsule.digest": "PASS",
+    "capsule.resolve": "PASS"
+  },
+  "a2a_response_extension": {
+    "uri": "https://agentactioncapsule.org/a2a-extension/v1",
+    "capsule_id": "553b0a2352a25be70d5400434525172e104021f27b8879b1348dc4a53821f046",
+    "anchor": "https://anchor.agentactioncapsule.org",
+    "verify_url": "https://anchor.agentactioncapsule.org/v1/inclusion/553b0a2352a25be70d5400434525172e104021f27b8879b1348dc4a53821f046"
+  },
+  "capsule": {
+    "spec_version": "draft-mih-scitt-agent-action-capsule-02",
+    "format_version": "2",
+    "capsule_id": "553b0a2352a25be70d5400434525172e104021f27b8879b1348dc4a53821f046",
+    "action_id": "a2a.boundary_seal/2b1e15d0-04dd-4d2f-a77d-e0b2e13bac9e",
+    "action_type": "decide",
+    "operator": "action-state-group",
+    "developer": "a2a-sdk==1.1.1@86c6b0d",
+    "timestamp": "2026-07-22T20:37:34.362389Z",
+    "model_attestation": {
+      "model_id": "boundary-seal-reference",
+      "provider": "synthetic",
+      "compute_attestation": {
+        "agent_input_digest": "a47245f63ea431a974e3192913d24ba6ea88ab8a830da7d0cb88c38a5a0e2fd5",
+        "agent_output_digest": "141e722d94e3f3410ae59eb282ff99b75ac0da68b714b221810361adfde5d05d",
+        "runtime": "draft-mih-scitt-agent-action-capsule-02"
+      }
+    },
+    "effect": {
+      "status": "confirmed",
+      "type": "a2a.task_completed",
+      "response_digest": "141e722d94e3f3410ae59eb282ff99b75ac0da68b714b221810361adfde5d05d",
+      "effect_attestation": "runtime_claimed"
+    },
+    "assurance": {
+      "attestation_mode": "self_attested",
+      "effect_mode": "confirmed",
+      "ledger_mode": "standalone"
+    },
+    "disposition": {
+      "decision": "accept",
+      "approver": "policy",
+      "human_disposed": false,
+      "verdict_class": "executed"
+    }
+  },
+  "anchor_receipt": {
+    "entry_hash": "41ff4118ffdbf4d14ab00bfe2a8ebe4179bb4b23c2176e3ac44c7106f42babbb",
+    "leaf_index": 167,
+    "tree_size": 168,
+    "log_id": "did:web:anchor.agentactioncapsule.org",
+    "receipt_b64": "0oRHogEnGQGLAaEZAYyhIIFYsIMYqBinhVggxoGeIcW96g07cjmHYASFjnKD31pQJpZXriUV1hDsDv5YIBikp2svAmIEeJpHIrQFlJyUnEKus7Q6+6MNR5IaugR7WCBwFo5kvQ58XsmauTj0p9OpPS7r5/HytnMf9CEoJvSbplggkUfHrYs1bDf9aFSB31QZu2MDUPVE0WZSJPddQWk0EXNYIK1+L3jHp7XQQ1kU1y8oXK+DFV0zAMODO6GM1M4mlwyP9lhAau2ZoASwGg5PsFtSw+61Q/cFsIFFxlnzzJ8RlrdPcQlAlvyioc4pBsgY0Szoz7KQmI3II7RLuugqySKgPaoqDQ=="
+  }
+}

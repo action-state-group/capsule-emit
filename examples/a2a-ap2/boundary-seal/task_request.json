@@ -1,0 +1,20 @@
+{
+  "_note": "Deterministic A2A SendMessage request — boundary seal test vector. All IDs are fixed (no system time, no randomness). Generated on action-state-group machines using a2a-sdk 1.1.1.",
+  "_sdk_version": "a2a-sdk==1.1.1",
+  "_sdk_commit": "86c6b0d",
+  "jsonrpc": "2.0",
+  "id": "rpc-boundary-seal-001",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "messageId": "msg-boundary-seal-001",
+      "taskId": "task-boundary-seal-001",
+      "role": "ROLE_USER",
+      "parts": [
+        {
+          "text": "Retrieve current public equity data for: AAPL (Apple Inc.) — boundary seal test vector"
+        }
+      ]
+    }
+  }
+}

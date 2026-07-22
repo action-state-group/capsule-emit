@@ -1,0 +1,42 @@
+{
+  "_note": "Negative variant — shows expected DENY behavior at capsule.digest and capsule.resolve gates.",
+  "_construction": "A fabricated capsule_id (all-zeros, 64 hex chars) is inserted into the a2a_response_extension. The capsule never existed on the anchor, so capsule.resolve fails (anchor returns 404). Because the capsule cannot be fetched, capsule.digest also fails. Both gates DENY for the same root cause: the capsule_id does not resolve.",
+
+  "variant_id": "negative-boundary-seal-001",
+  "task_id": "task-boundary-seal-001",
+  "description": "Same task_request.json as the positive case. Callee response has been tampered: the capsule_id in the extension is fabricated (not the one actually sealed for this task).",
+
+  "a2a_response_extension_tampered": {
+    "uri": "https://agentactioncapsule.org/a2a-extension/v1",
+    "capsule_id": "0000000000000000000000000000000000000000000000000000000000000000",
+    "anchor": "https://anchor.agentactioncapsule.org",
+    "verify_url": "https://anchor.agentactioncapsule.org/v1/inclusion/0000000000000000000000000000000000000000000000000000000000000000"
+  },
+
+  "expected_gate_results": {
+    "capsule.resolve": {
+      "result": "DENY",
+      "reason": "capsule_id 0000...0000 not found in anchor log (anchor returns 404). The capsule was never registered."
+    },
+    "capsule.digest": {
+      "result": "DENY",
+      "reason": "Cannot verify digest — no capsule to fetch. Dependent on capsule.resolve passing."
+    }
+  },
+
+  "verifier_procedure": {
+    "step_1": "Attempt GET https://anchor.agentactioncapsule.org/v1/inclusion/<capsule_id>",
+    "step_1_result": "404 Not Found — capsule_id is not in the anchor log",
+    "step_2": "capsule.resolve = DENY (no capsule returned)",
+    "step_3": "capsule.digest = DENY (no capsule bytes to hash and compare against input_digest / output_digest)",
+    "final": "Both gates DENY. TCK should classify this task response as non-conformant: capsule extension present but unresolvable."
+  },
+
+  "distinguish_from_positive": {
+    "positive_capsule_id": "553b0a2352a25be70d5400434525172e104021f27b8879b1348dc4a53821f046",
+    "positive_entry_hash": "41ff4118ffdbf4d14ab00bfe2a8ebe4179bb4b23c2176e3ac44c7106f42babbb",
+    "positive_leaf_index": 167,
+    "positive_anchor": "https://anchor.agentactioncapsule.org",
+    "note": "The positive capsule_id above is the correctly sealed capsule for task-boundary-seal-001. Verifiers MUST use the positive_capsule_id to pass both gates — the fabricated ID in a2a_response_extension_tampered will always DENY."
+  }
+}

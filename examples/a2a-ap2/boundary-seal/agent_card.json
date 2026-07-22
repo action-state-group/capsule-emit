@@ -1,0 +1,40 @@
+{
+  "_note": "A2A Agent Card for the AAC boundary seal reference implementation. Generated via a2a-sdk 1.1.1 (a2a-sdk PyPI). Extended with the AAC capsule extension declaration.",
+  "name": "AAC Boundary Seal Agent",
+  "description": "Reference agent for the A2A ↔ AAC boundary seal (draft-mih-scitt-agent-action-capsule-02). Every A2A task input/output is sealed as a SCITT Signed Statement and anchored on the capsule transparency log.",
+  "version": "0.1.0",
+  "supportedInterfaces": [
+    {
+      "url": "https://agent.agentactioncapsule.org/a2a",
+      "protocolBinding": "a2a/json-rpc",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "skills": [
+    {
+      "id": "boundary-seal",
+      "name": "Boundary Seal",
+      "description": "Seals A2A task input and output as an AAC capsule. Every response includes a capsule extension carrying capsule_id and the anchor URL for independent SCITT verification.",
+      "tags": ["aac", "capsule", "scitt", "audit", "a2a"]
+    }
+  ],
+  "extensions": [
+    {
+      "uri": "https://agentactioncapsule.org/a2a-extension/v1",
+      "required": false,
+      "description": "Each SendMessage response task artifact carries a capsule extension with capsule_id and anchor URL. The capsule_id is the content-address (SHA-256 of JCS(capsule body)) per -02 §4.2."
+    }
+  ],
+  "provider": {
+    "organization": "action-state-group",
+    "url": "https://agentactioncapsule.org"
+  },
+  "documentationUrl": "https://github.com/action-state-group/capsule-emit/tree/main/examples/a2a-ap2/boundary-seal"
+}
