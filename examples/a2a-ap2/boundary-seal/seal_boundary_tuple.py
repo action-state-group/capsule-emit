@@ -16,13 +16,18 @@ SDK note (a2a-sdk 1.1.1 @ 86c6b0d):
   shims address server-side message routing (out of scope for a producer-only
   tuple); they are not applicable here.
 
-Output: boundary_seal_output.json (positive case — PASS at all gates).
+Output: boundary_seal_output.json. The capsule.resolve gate is set from a REAL
+idempotent round-trip to the live anchor (POST /v1/digest), not assumed; the
+process exits non-zero if resolve does not reproduce.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -145,22 +150,76 @@ def main() -> int:
         return 1
     print("  verify_input_digest       = True  [PASS]")
 
-    _banner("Step 4 — Write boundary_seal_output.json")
+    _banner("Step 4 — Resolve on the live anchor (capsule.resolve gate)")
 
-    # A2A response extension — the capsule reference the callee would attach
+    # capsule.resolve is a REAL round-trip to the anchor, not an assumption:
+    # POST /v1/digest is idempotent, so re-submitting the just-anchored
+    # capsule_id returns its existing CT-log coordinates + COSE Receipt without
+    # creating a duplicate. entry_hash MUST equal SHA-256(bytes.fromhex(
+    # capsule_id)) — the offline-verify contract. The gate is PASS only if the
+    # anchor returns 200 AND that entry_hash matches.
+    anchor_base = os.environ.get("AAC_ANCHOR_URL", "https://anchor.agentactioncapsule.org").rstrip("/")
+    resolve_endpoint = f"{anchor_base}/v1/digest"
+    expected_entry_hash = hashlib.sha256(bytes.fromhex(capsule_id)).hexdigest()
+
+    resolve_ok = False
+    entry_hash = leaf_index = tree_size = None
+    inclusion_proof_url = None
+    try:
+        req = urllib.request.Request(
+            resolve_endpoint,
+            data=json.dumps({"capsule_id": capsule_id}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            status = resp.status
+            body = json.loads(resp.read())
+        entry_hash = body.get("entry_hash")
+        leaf_index = body.get("leaf_index")
+        tree_size = body.get("tree_size")
+        resolve_ok = status == 200 and entry_hash == expected_entry_hash
+        if leaf_index is not None and tree_size is not None:
+            inclusion_proof_url = (
+                f"{anchor_base}/anchor/inclusion-proof-ct"
+                f"?leaf_index={leaf_index}&tree_size={tree_size}"
+            )
+        print(f"  resolve HTTP  : {status}")
+        print(f"  entry_hash    : {entry_hash}")
+        print(f"  expected      : {expected_entry_hash}")
+        print(f"  leaf_index    : {leaf_index}   tree_size : {tree_size}")
+    except Exception as exc:  # noqa: BLE001 — record the failure, don't fake a PASS
+        print(f"  resolve FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
+
+    resolve_gate = "PASS" if resolve_ok else "DENY"
+    print(f"  capsule.resolve gate = {resolve_gate}")
+
+    _banner("Step 5 — Write boundary_seal_output.json")
+
+    # A2A response extension — the capsule reference the callee would attach.
+    # Every URL below points at a live anchor route (no phantom endpoints):
+    #   resolve_endpoint    POST /v1/digest         (idempotent resolve + Receipt)
+    #   inclusion_proof_url GET  /anchor/inclusion-proof-ct?leaf_index=&tree_size=
+    #   resolve_by_id_url   GET  /v1/inclusion/{capsule_id}  (read-only; live after
+    #                       the anchor deploy that adds the route)
     a2a_response_extension = {
         "uri": "https://agentactioncapsule.org/a2a-extension/v1",
         "capsule_id": capsule_id,
-        "anchor": "https://anchor.agentactioncapsule.org",
-        "verify_url": f"https://anchor.agentactioncapsule.org/v1/inclusion/{capsule_id}",
+        "anchor": anchor_base,
+        "resolve_endpoint": resolve_endpoint,
+        "inclusion_proof_url": inclusion_proof_url,
+        "resolve_by_id_url": f"{anchor_base}/v1/inclusion/{capsule_id}",
+        "entry_hash": entry_hash,
+        "leaf_index": leaf_index,
+        "tree_size": tree_size,
     }
 
     out_doc = {
         "_note": (
-            "Positive case — boundary seal PASS. "
-            "capsule.digest gate: PASS (digest matches sealed content). "
-            "capsule.resolve gate: PASS (capsule_id resolvable on live anchor). "
-            "a2a-sdk: 1.1.1@86c6b0d. Shims: none."
+            f"Positive case — boundary seal. "
+            f"capsule.digest gate: PASS (digest matches sealed content). "
+            f"capsule.resolve gate: {resolve_gate} "
+            f"(reproduced via POST /v1/digest; entry_hash match = {resolve_ok}). "
+            f"a2a-sdk: 1.1.1@86c6b0d. Shims: none."
         ),
         "_sdk_version": "a2a-sdk==1.1.1",
         "_sdk_commit": "86c6b0d",
@@ -172,7 +231,7 @@ def main() -> int:
         "output_digest": output_digest,
         "gate_results": {
             "capsule.digest": "PASS",
-            "capsule.resolve": "PASS",
+            "capsule.resolve": resolve_gate,
         },
         "a2a_response_extension": a2a_response_extension,
         "capsule": result.capsule,
@@ -191,8 +250,8 @@ def main() -> int:
     print()
     print("  Gate results (positive case):")
     print("    capsule.digest  : PASS")
-    print("    capsule.resolve : PASS")
-    return 0
+    print(f"    capsule.resolve : {resolve_gate}")
+    return 0 if resolve_ok else 1
 
 
 if __name__ == "__main__":
