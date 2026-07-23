@@ -103,6 +103,11 @@ def main() -> int:
 
     ledger = Path(tempfile.mkdtemp(prefix="a2a-boundary-")) / "ledger.jsonl"
 
+    # NOTE: anchor=False here on purpose. Step 4 anchors + resolves the
+    # capsule_id in a SINGLE POST /v1/digest. Submitting the same new
+    # capsule_id twice (emit's fire-and-forget anchor AND the resolve) can
+    # double-append it on the anchor, whose register dedup is not atomic —
+    # one statement would then occupy two CT leaves. One submission, one leaf.
     result = emit(
         action="a2a.boundary_seal",
         operator="action-state-group",
@@ -120,7 +125,7 @@ def main() -> int:
             "status": "confirmed",
             "task_id": task_id,
         },
-        anchor=True,
+        anchor=False,
         ledger=ledger,
     )
 
@@ -130,7 +135,7 @@ def main() -> int:
     capsule_id = result.capsule_id
 
     print(f"  capsule_id    : {capsule_id}")
-    print(f"  anchored      : {result.anchored}")
+    print(f"  anchored      : {result.anchored} (anchor deferred to Step 4)")
     print(f"  input_digest  : {input_digest}")
     print(f"  output_digest : {output_digest}")
 
@@ -150,14 +155,14 @@ def main() -> int:
         return 1
     print("  verify_input_digest       = True  [PASS]")
 
-    _banner("Step 4 — Resolve on the live anchor (capsule.resolve gate)")
+    _banner("Step 4 — Anchor + resolve on the live anchor (capsule.resolve gate)")
 
-    # capsule.resolve is a REAL round-trip to the anchor, not an assumption:
-    # POST /v1/digest is idempotent, so re-submitting the just-anchored
-    # capsule_id returns its existing CT-log coordinates + COSE Receipt without
-    # creating a duplicate. entry_hash MUST equal SHA-256(bytes.fromhex(
-    # capsule_id)) — the offline-verify contract. The gate is PASS only if the
-    # anchor returns 200 AND that entry_hash matches.
+    # capsule.resolve is a REAL round-trip, not an assumption. This single
+    # POST /v1/digest anchors the capsule_id (Step 2 sealed with anchor=False)
+    # AND returns its CT-log coordinates + COSE Receipt. entry_hash MUST equal
+    # SHA-256(bytes.fromhex(capsule_id)) — the offline-verify contract. The gate
+    # is PASS only if the anchor returns 200 AND that entry_hash matches.
+    # Exactly one submission => exactly one CT leaf (no double-append).
     anchor_base = os.environ.get("AAC_ANCHOR_URL", "https://anchor.agentactioncapsule.org").rstrip("/")
     resolve_endpoint = f"{anchor_base}/v1/digest"
     expected_entry_hash = hashlib.sha256(bytes.fromhex(capsule_id)).hexdigest()
@@ -226,7 +231,7 @@ def main() -> int:
         "_sdk_shims": "none",
         "task_id": task_id,
         "capsule_id": capsule_id,
-        "anchored": result.anchored,
+        "anchored": resolve_ok,
         "input_digest": input_digest,
         "output_digest": output_digest,
         "gate_results": {
@@ -246,7 +251,7 @@ def main() -> int:
     print(f"  capsule_id    : {capsule_id}")
     print(f"  input_digest  : {input_digest}")
     print(f"  output_digest : {output_digest}")
-    print(f"  anchored      : {result.anchored}")
+    print(f"  anchored      : {resolve_ok}")
     print()
     print("  Gate results (positive case):")
     print("    capsule.digest  : PASS")
