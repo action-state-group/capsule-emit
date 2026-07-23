@@ -105,6 +105,23 @@ def write_order(vendor: str, total: float) -> dict: ...
 
 **Decorator adapters** (per-tool seal): MCP, LangChain, CrewAI, Hermes, Goose, and ADK. **Gateway adapter** (seals all `tools/call` traffic at the chokepoint, no per-tool changes): agentgateway. **Each adapter page has a paste-ready prompt for your coding agent** — drop it into Claude Code (or similar) and it wires emission into your tools for you: **[docs/adapters/](docs/adapters/)**.
 
+**MCP is the flagship adapter.** → **[`examples/mcp-capsule/demo.py`](examples/mcp-capsule/demo.py)** — a runnable 5-minute demo: one consequential tool, wrapped, called, and verified end-to-end (`python examples/mcp-capsule/demo.py --no-anchor`). Copy-paste the pattern into your MCP server.
+
+**Compose posture — where capsule-emit fits (answers "does the capsule go inside MCP?"):**
+
+```
+MCP client (LLM or agent)
+  ↓  tool_call { name, arguments }
+MCP server (your Python code)
+  ↓  @server.tool  +  @emitter.tool     ← both decorators, one function
+tool handler
+  → capsule-emit records INPUT + OUTPUT by digest, returns result
+  ↑  tool_result { content }
+MCP client
+```
+
+The capsule does **not** live inside the MCP message and the MCP protocol is unchanged — `capsule-emit` is the **record layer you compose into** your MCP server: the capsule references the tool call by digest; you hold the raw values.
+
 ## Declare now, enforce later — same file
 
 A `flows/<action>/manifest.md` *declares* autonomy + constraints; `capsule-emit` reads it to **declare** (no enforcement). A compatible gateway reads the **same file** and **enforces** — with **no change** to your `emit()` calls. → [docs/going-deeper.md](docs/going-deeper.md).
