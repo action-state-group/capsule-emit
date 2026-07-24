@@ -1,0 +1,10 @@
+# Upload scope for `gcloud run deploy --source .` — keep it to the server only.
+# NOTE: run the deploy from THIS directory. Running it from a parent (e.g. the
+# workspace root) would package unrelated — and private — repositories into the
+# Cloud Build upload.
+__pycache__/
+*.pyc
+.venv/
+# Client-side rehearsal harness; not part of the served image.
+rehearse_loopback.py
+README.md

@@ -34,8 +34,14 @@ This runs as a **separate** service; it never touches the anchor's service. It
 holds **no credentials** — its only outbound call is HTTPS to the public
 transparency log (`AAC_ANCHOR_URL`).
 
+> **Run it from THIS directory.** `--source .` uploads the current directory.
+> From a parent (e.g. a multi-repo workspace root) it would package unrelated —
+> possibly private — repositories into the Cloud Build upload, and would miss
+> the Dockerfile here and silently fall back to Buildpacks. The `cd` is part of
+> the command for that reason.
+
 ```bash
-# from this directory
+cd "$(git rev-parse --show-toplevel)/examples/a2a-ap2/boundary-seal/server" && \
 gcloud run deploy a2a-boundary-agent \
   --source . \
   --project=PROJECT_ID \
