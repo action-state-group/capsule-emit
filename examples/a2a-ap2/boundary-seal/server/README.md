@@ -28,6 +28,36 @@ Expected: task `TASK_STATE_COMPLETED`; `verify_receipt ok=True`;
 `verify_inclusion True`; the rehearsal prints its coordinates (record these
 **separately** from any close).
 
+## Deploy (Cloud Run — its own service)
+
+This runs as a **separate** service; it never touches the anchor's service. It
+holds **no credentials** — its only outbound call is HTTPS to the public
+transparency log (`AAC_ANCHOR_URL`).
+
+```bash
+# from this directory
+gcloud run deploy a2a-boundary-agent \
+  --source . \
+  --project=PROJECT_ID \
+  --region=us-central1 \
+  --port=8080 \
+  --allow-unauthenticated \
+  --memory=512Mi \
+  --set-env-vars AAC_ANCHOR_URL=https://anchor.agentactioncapsule.org
+```
+
+The Agent Card is rendered per-request from the forwarded scheme+host, so the
+advertised interface URL is correct on the first deploy — **no second deploy to
+inject the assigned URL**. To pin an explicit address instead (e.g. a custom
+domain), set `A2A_PUBLIC_URL=https://<host>` or pass `--public-url`.
+
+After deploy:
+```bash
+SERVICE_URL=$(gcloud run services describe a2a-boundary-agent \
+  --region=us-central1 --project=PROJECT_ID --format='value(status.url)')
+curl -s "$SERVICE_URL/.well-known/agent-card.json" | jq '.supportedInterfaces[0].url'
+```
+
 ## Notes
 - **Submit exactly once.** The server seals with `emit(anchor=False)` and anchors
   in the single `POST /v1/digest`. Submitting the same new `capsule_id` twice can

@@ -34,12 +34,14 @@ from a2a.server.routes import (
 )
 from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
 from a2a.types import a2a_pb2 as pb
-from fastapi import FastAPI
-from google.protobuf.json_format import ParseDict
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from google.protobuf.json_format import MessageToDict, ParseDict
 
 ANCHOR_BASE = os.environ.get("AAC_ANCHOR_URL", "https://anchor.agentactioncapsule.org").rstrip("/")
 EXT_URI = "https://agentactioncapsule.org/a2a-extension/v1"
 RPC_URL = "/a2a"
+AGENT_CARD_PATH = "/.well-known/agent-card.json"
 
 _ROLE_NAME = {0: "ROLE_UNSPECIFIED", 1: "ROLE_USER", 2: "ROLE_AGENT"}
 
@@ -244,26 +246,75 @@ class BoundarySealExecutor(AgentExecutor):
         raise NotImplementedError("boundary-seal agent does not support cancel")
 
 
-def build_app(public_url: str) -> FastAPI:
-    card = build_agent_card(public_url)
+def _request_base_url(request: Request) -> str:
+    """External base URL for this request, honouring the proxy's forwarded headers.
+
+    Cloud Run (and any TLS-terminating proxy) forwards the original scheme in
+    ``X-Forwarded-Proto`` and the external host in ``Host``; ``request.base_url``
+    alone would advertise ``http`` and the container port.
+    """
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("host", request.url.netloc)
+    return f"{proto}://{host}"
+
+
+def build_app(public_url: str | None = None) -> FastAPI:
+    """Build the ASGI app.
+
+    ``public_url`` pins the URL advertised in the Agent Card. When it is None
+    the card is rendered per-request from the caller's scheme+host, so the
+    service advertises its own address on a platform (Cloud Run) that only
+    assigns the URL after deployment — no second deploy to inject it.
+    """
+    card = build_agent_card(public_url or "http://localhost")
     handler = DefaultRequestHandler(BoundarySealExecutor(), InMemoryTaskStore(), card)
     app = FastAPI(title="AAC Boundary Seal A2A Agent")
+
+    if public_url:
+        agent_card_routes = create_agent_card_routes(card)
+    else:
+        # Serve the card ourselves so the advertised interface URL tracks the
+        # request's external origin. Same proto->JSON shape the SDK emits.
+        agent_card_routes = []
+
+        @app.get(AGENT_CARD_PATH, include_in_schema=False)
+        def agent_card(request: Request) -> JSONResponse:
+            live = build_agent_card(_request_base_url(request))
+            return JSONResponse(MessageToDict(live))
+
     add_a2a_routes_to_fastapi(
         app,
-        agent_card_routes=create_agent_card_routes(card),
+        agent_card_routes=agent_card_routes,
         jsonrpc_routes=create_jsonrpc_routes(handler, RPC_URL),
     )
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
     return app
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8080)
-    ap.add_argument("--public-url", default=None, help="externally reachable base URL (defaults to http://host:port)")
+    ap.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    # Cloud Run injects $PORT; honour it so the container binds correctly.
+    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8080")))
+    ap.add_argument(
+        "--public-url",
+        default=os.environ.get("A2A_PUBLIC_URL"),
+        help="externally reachable base URL; if omitted the Agent Card is rendered "
+             "per-request from the caller's scheme+host (correct behind Cloud Run)",
+    )
     args = ap.parse_args()
-    public_url = args.public_url or f"http://{args.host}:{args.port}"
-    uvicorn.run(build_app(public_url), host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(
+        build_app(args.public_url),
+        host=args.host,
+        port=args.port,
+        log_level="warning",
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )
 
 
 if __name__ == "__main__":

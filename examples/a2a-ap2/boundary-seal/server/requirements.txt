@@ -1,0 +1,8 @@
+# AAC boundary-seal A2A server — pinned runtime deps.
+# The SDK pin matches the interop coordinate on capsule-emit issue #29.
+a2a-sdk==1.1.1
+capsule-emit==0.3.2
+agent-action-capsule==0.1.0
+fastapi==0.121.2
+uvicorn==0.38.0
+protobuf==6.33.6
