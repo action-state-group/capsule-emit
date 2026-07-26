@@ -14,7 +14,7 @@ What this shows
    (check_type), the evidence digest the check ran on, and whether
    it was blocking.
 3. The capsule records WHICH manifest (declared ruleset) applied —
-   ``extra_compute.manifest_ref`` commits the manifest file by SHA-256
+   ``compute_attestation.manifest_ref`` commits the manifest file by SHA-256
    so an auditor can retrieve and re-read the exact policy version.
 4. The overall verdict (executed / blocked) is in
    ``disposition.verdict_class``.
@@ -37,10 +37,15 @@ _REPO_ROOT = _HERE.parent.parent
 
 sys.path.insert(0, str(_REPO_ROOT))
 
-from agent_action_capsule.contracts import ConstraintRecord  # type: ignore[import-untyped]
-from agent_action_capsule.emit import emit as _base_emit  # type: ignore[import-untyped]
-from agent_action_capsule.verify import verify  # type: ignore[import-untyped]
-from capsule_emit.ledger import append_to_ledger
+from agent_action_capsule.contracts import (  # noqa: E402  # type: ignore[import-untyped]
+    ConstraintRecord,  # noqa: E402  # type: ignore[import-untyped]
+    Disposition,
+    EffectRecord,
+)
+from agent_action_capsule.emit import emit as _base_emit  # noqa: E402  # type: ignore[import-untyped]
+from agent_action_capsule.verify import verify  # noqa: E402  # type: ignore[import-untyped]
+
+from capsule_emit.ledger import append_to_ledger  # noqa: E402
 
 try:
     from agent_action_capsule.anchor import anchor as _anchor  # type: ignore[import-untyped]
@@ -48,7 +53,7 @@ try:
 except ImportError:
     _HAS_ANCHOR = False
 
-from invoice_checks import (
+from invoice_checks import (  # noqa: E402
     amount_under_policy_cap,
     formal_arithmetic_verified,
     invoice_reconciles,
@@ -85,14 +90,13 @@ SOURCE_DOC = {
 
 def _file_digest(path: Path) -> str:
     """SHA-256 of a file's contents."""
-    h = hashlib.sha256(path.read_bytes())
-    return h.hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _pretty(label: str, value: object) -> None:
     print(f"\n{'='*60}")
     print(f"  {label}")
-    print('='*60)
+    print("=" * 60)
     if isinstance(value, (dict, list)):
         print(json.dumps(value, indent=2, default=str))
     else:
@@ -112,13 +116,13 @@ def run() -> None:
     passed_std1, reason_std1, digest_std1 = invoice_reconciles(INVOICE)
     passed_std2, reason_std2, digest_std2 = value_grounded(INVOICE, SOURCE_DOC)
     passed_pol,  reason_pol,  digest_pol  = amount_under_policy_cap(INVOICE)
-    passed_frm,  reason_frm,  digest_frm  = formal_arithmetic_verified(INVOICE)
+    passed_frm,  _reason_frm, digest_frm  = formal_arithmetic_verified(INVOICE)
 
     check_results = [
-        ("invoice_reconciles",       "standard", True,  passed_std1, reason_std1, digest_std1),
-        ("value_grounded",           "standard", True,  passed_std2, reason_std2, digest_std2),
-        ("amount_under_policy_cap",  "policy",   True,  passed_pol,  reason_pol,  digest_pol),
-        ("formal_arithmetic_verified","formal",  False, passed_frm,  reason_frm,  digest_frm),
+        ("invoice_reconciles",        "standard", True,  passed_std1, reason_std1, digest_std1),
+        ("value_grounded",            "standard", True,  passed_std2, reason_std2, digest_std2),
+        ("amount_under_policy_cap",   "policy",   True,  passed_pol,  reason_pol,  digest_pol),
+        ("formal_arithmetic_verified","formal",   False, passed_frm,  None,        digest_frm),
     ]
 
     gate_passed = all(ok for _, _, blocking, ok, _, _ in check_results if blocking)
@@ -131,23 +135,24 @@ def run() -> None:
             line += f"\n           reason: {reason}"
         print(line)
 
-    print(f"\nGate: {'PASS — capsule will record verdict=executed' if gate_passed else 'BLOCK — capsule will record verdict=blocked'}")
+    verdict_label = "PASS — capsule will record verdict=executed" if gate_passed else "BLOCK — capsule will record verdict=blocked"
+    print(f"\nGate: {verdict_label}")
 
     # ------------------------------------------------------------------
     # Step 2 — build ConstraintRecord entries (§8.1)
     # ------------------------------------------------------------------
     constraints: list[ConstraintRecord] = []
-    for cid, tier, blocking, ok, reason, ev_digest in check_results:
+    for cid, tier, blocking, ok, _reason, ev_digest in check_results:
         constraints.append(ConstraintRecord(
             id=cid,
             result="pass" if ok else "fail",
             check_type=tier,
             blocking=blocking,
             method={
-                "invoice_reconciles":        "arithmetic_sum",
-                "value_grounded":            "exact_match",
-                "amount_under_policy_cap":   "threshold",
-                "formal_arithmetic_verified":"symbolic_proof",
+                "invoice_reconciles":         "arithmetic_sum",
+                "value_grounded":             "exact_match",
+                "amount_under_policy_cap":    "threshold",
+                "formal_arithmetic_verified": "symbolic_proof",
             }[cid],
             evidence_digest=ev_digest,
         ))
@@ -162,7 +167,6 @@ def run() -> None:
     # Step 4 — emit the capsule (base AAC emit, composing capsule-emit ledger)
     # ------------------------------------------------------------------
     print("\n[2] Emitting capsule...")
-    from agent_action_capsule.contracts import Disposition, EffectRecord
 
     verdict = "executed" if gate_passed else "blocked"
     effect_status = "dispatched" if gate_passed else "planned"
@@ -223,7 +227,7 @@ def run() -> None:
     print(f"  verdict:      {capsule['disposition']['verdict_class']}")
     print(f"  manifest_ref: {capsule['model_attestation']['compute_attestation']['manifest_ref']}")
     print(f"  anchored:     {anchored}")
-    print(f"\n  Per-check results (constraints[]):")
+    print("\n  Per-check results (constraints[]):")
     for cr in capsule.get("constraints", []):
         tier = cr.get("check_type", "?")
         result = cr.get("result", "?")
