@@ -3,9 +3,8 @@
 
 Implements the four-move protocol described in
 draft-mih-agent-bilateral-attestation-00: request attestation → constraint
-evaluation → action attestation → acknowledgment.  Extracted from the
-Action State Authority handshake package with Authority-specific types
-removed (no KYB, no identity registry, no blind custody, no pricing).
+evaluation → action attestation → acknowledgment.  The implementation
+carries only the protocol mechanics; Authority-specific coupling is absent.
 
 Public API
 ----------
@@ -147,8 +146,8 @@ class UnknownParty(BilateralError):
 # They are transport-agnostic: the signed bytes are pinned here; wire encoding
 # of the four exchange objects is TBD for a future revision of the I-D.
 #
-# The design mirrors as_authority.handshake.payloads (moat-scrubbed):
-#   - Commitment (blind custody) is replaced by action_digest (SHA-256 hex)
+# Payload design properties:
+#   - action_digest (SHA-256 hex) binds each phase to its commitment
 #   - Four phases bind progressively more context
 #   - Later signatures bind earlier signature digests so they cannot be lifted
 # ---------------------------------------------------------------------------
