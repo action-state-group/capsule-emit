@@ -103,8 +103,19 @@ emitter = MCPCapsuleEmitter(operator="acme-co", developer="my-agent@v1")
 def write_order(vendor: str, total: float) -> dict: ...
 ```
 
-**Decorator adapters** (per-tool seal): MCP, LangChain, CrewAI, Hermes, Goose, and ADK. **Gateway adapter** (seals all `tools/call` traffic at the chokepoint, no per-tool changes): agentgateway. **Each adapter page has a paste-ready prompt for your coding agent** — drop it into Claude Code (or similar) and it wires emission into your tools for you: **[docs/adapters/](docs/adapters/)**.
+| Adapter | What it wraps |
+|---------|---------------|
+| **MCP** | Model Context Protocol tool endpoints — any Python callable, decorator-based |
+| **Google ADK** | Google Agent Development Kit tool calls, one capsule per completed tool invocation |
+| **agentgateway** | Rust proxy for MCP/A2A/LLM traffic; seals all `tools/call` at the gateway chokepoint |
+| **LangChain** | LangChain callback handler; fires on `on_tool_start`/`on_tool_end` automatically |
+| **CrewAI** | Wraps a CrewAI tool object; emits one capsule per call, input and output captured |
+| **Goose** | Block's open-source AI agent; Goose tools are MCP tools, so the MCP adapter applies |
+| **Hermes** | Custom agent loops; call `after_tool(...)` explicitly after any tool finishes |
+| **Dapr** | Dapr actor and service invocation; wraps Dapr tool calls as capsule-emitting steps |
 
+**Each adapter page has a paste-ready prompt for a coding agent** to wire emission into your
+tools: **[docs/adapters/](docs/adapters/)**.
 ## Declare now, enforce later — same file
 
 A `flows/<action>/manifest.md` *declares* autonomy + constraints; `capsule-emit` reads it to **declare** (no enforcement). A compatible gateway reads the **same file** and **enforces** — with **no change** to your `emit()` calls. → [docs/going-deeper.md](docs/going-deeper.md).
