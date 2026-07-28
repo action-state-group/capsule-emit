@@ -44,6 +44,7 @@ calls, verify capsules, and inspect the ledger.  Add to
           CAPSULE_LEDGER: "/tmp/goose-capsules.jsonl"
           CAPSULE_OPERATOR: "my-org"
           CAPSULE_DEVELOPER: "goose-agent@v1"
+          CAPSULE_ANCHOR: "true"
 
 Or with uvx (requires capsule-emit[mcp] installed):
 
@@ -55,6 +56,8 @@ Environment variables
     CAPSULE_LEDGER    Path to JSONL ledger (default: ledger.jsonl)
     CAPSULE_OPERATOR  Tenant / org identifier stamped on every capsule
     CAPSULE_DEVELOPER Agent name + version
+    CAPSULE_ANCHOR    "true" (default) to fire-and-forget anchor each capsule
+                      against anchor.agentactioncapsule.org; "false" for offline
 
 Requires: pip install "capsule-emit[mcp]"
 """
@@ -77,6 +80,7 @@ except ImportError:
 _LEDGER = os.environ.get("CAPSULE_LEDGER", "ledger.jsonl")
 _OPERATOR = os.environ.get("CAPSULE_OPERATOR", "goose-user")
 _DEVELOPER = os.environ.get("CAPSULE_DEVELOPER", "goose-agent@v1")
+_ANCHOR = os.environ.get("CAPSULE_ANCHOR", "true").lower() not in ("0", "false", "no")
 
 mcp = FastMCP(
     "capsule-emit",
@@ -125,7 +129,7 @@ def capsule_record(
             agent_output=out,
             verdict="executed",
             effect={"type": action, "status": "dispatched"},
-            anchor=False,
+            anchor=_ANCHOR,
             ledger=ledger,
             runtime="mcp",
         )
