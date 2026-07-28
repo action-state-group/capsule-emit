@@ -25,7 +25,6 @@ from agent_action_capsule import verify
 
 from capsule_emit.adapters.dapr_agents import DaprAgentsCapsuleEmitter
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
