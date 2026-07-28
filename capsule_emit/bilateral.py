@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""OSS bilateral attestation handshake — engine-free, Authority-free.
+"""Reference implementation of the bilateral attestation protocol (draft-mih-agent-bilateral-attestation-00).
 
-Implements the four-move protocol described in
-draft-mih-agent-bilateral-attestation-00: request attestation → constraint
-evaluation → action attestation → acknowledgment.  The implementation
-carries only the protocol mechanics; Authority-specific coupling is absent.
+Implements the four-move protocol: request attestation → constraint
+evaluation → action attestation → acknowledgment.
 
 Public API
 ----------
