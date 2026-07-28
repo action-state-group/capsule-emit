@@ -71,7 +71,7 @@ What this does:
    in a background thread to the public SCITT transparency log at
    `anchor.agentactioncapsule.org`. Anchoring is non-blocking and does not delay
    the return. `cap.anchored = True` means the submission was dispatched; use the
-   verify permalink below to confirm inclusion.
+   anchor receipt verification in Step 3 to confirm inclusion.
 4. **Appends to a local ledger.** Every `emit()` appends the capsule to
    `ledger.jsonl` in the current directory. View it:
    ```bash
@@ -101,9 +101,8 @@ agent-action-capsule verify --store ./ledger.jsonl
 Or verify a single capsule directly from its JSON:
 
 ```python
-cap_dict = cap.to_dict()   # the capsule as a plain Python dict
-# pass to: agent-action-capsule verify <path/to/capsule.json>
 import json, pathlib
+cap_dict = cap.capsule          # EmitResult.capsule holds the raw dict
 pathlib.Path("capsule.json").write_text(json.dumps(cap_dict))
 ```
 
@@ -121,26 +120,65 @@ What verification proves:
 
 ---
 
-## Step 3 — Open the verify permalink
+## Step 3 — Confirm anchor registration and verify the receipt (3 minutes)
 
-```
-https://verify.actionstate.ai/v/<capsule_id>
-```
-
-Replace `<capsule_id>` with the 64-character hex string from `cap.capsule_id`.
-
-For direct anchor inspection (the raw SCITT Transparency Service entry):
-
-```
-https://anchor.agentactioncapsule.org/v1/entries/<capsule_id>
-```
-
-The anchor runs at `anchor.agentactioncapsule.org` and its health endpoint is:
+After `emit()` dispatches the background anchor POST, confirm your capsule is in
+the public log and verify the cryptographic inclusion proof offline:
 
 ```bash
-curl https://anchor.agentactioncapsule.org/health
-# -> {"ok":true, "tree_size": <N>, ...}
+CAPSULE_ID=<your-capsule_id>   # the 64-char hex from cap.capsule_id
+
+# 1. Fetch receipt (POST is idempotent — same capsule_id always returns same receipt)
+curl -s -X POST https://anchor.agentactioncapsule.org/v1/digest \
+  -H 'Content-Type: application/json' \
+  -d "{\"capsule_id\": \"${CAPSULE_ID}\"}" > anchor_resp.json
+
+# 2. Save receipt file and display proof summary
+python3 -c "
+import json, base64
+d = json.load(open('anchor_resp.json'))
+open('receipt.cose', 'wb').write(base64.b64decode(d['receipt_b64']))
+open('entry_hash.txt', 'w').write(d['entry_hash'])
+print('entry_hash :', d['entry_hash'])
+print('leaf_index :', d['leaf_index'], '/ tree_size:', d['tree_size'])
+"
+
+# 3. Fetch the anchor log public key (PEM)
+python3 -c "
+import urllib.request, json, base64
+d = json.loads(urllib.request.urlopen(
+    'https://anchor.agentactioncapsule.org/anchor/authority-pubkey').read())
+raw = bytes.fromhex(d['pubkey_hex'])
+der = bytes.fromhex('302a300506032b6570032100') + raw
+b64 = base64.encodebytes(der).decode().strip()
+open('anchor_pub.pem','w').write(
+    '-----BEGIN PUBLIC KEY-----\n' + b64 + '\n-----END PUBLIC KEY-----')
+print('anchor key_id:', d['key_id'])
+"
+
+# 4. Verify the receipt offline (zero-trust — no call back to the log operator)
+pip install scitt-cose
+scitt-cose \
+  --receipt receipt.cose \
+  --receipt-log-pubkey anchor_pub.pem \
+  --leaf-entry-hex "$(cat entry_hash.txt)"
 ```
+
+`Receipt ok: True` means the anchor's Ed25519 key signed a Merkle root that
+provably contains your capsule digest — without trusting the anchor service
+to tell you anything.
+
+> **Anchor health check:**
+> ```bash
+> curl https://anchor.agentactioncapsule.org/health
+> # -> {"ok":true, "tree_size": <N>, ...}
+> ```
+
+> **Verify permalink (landing with verify-surface deploy).** Once
+> `https://verify.agentactioncapsule.org` is live, you can open
+> `https://verify.agentactioncapsule.org/v/<capsule_id>` in a browser for a
+> rendered view of your capsule alongside its anchor proof. Until then,
+> the receipt verification above is the canonical proof path.
 
 ---
 
@@ -267,7 +305,7 @@ async for event in runner.run_async(...):
 >
 > To point at a different anchor endpoint:
 > ```bash
-> export AAC_ANCHOR_URL=https://your-anchor.example.com/v1/entries
+> export AAC_ANCHOR_URL=https://your-anchor.example.com/v1/digest
 > ```
 > or pass `anchor_url=...` to `emit()`.
 
