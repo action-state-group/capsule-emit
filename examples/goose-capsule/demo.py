@@ -62,8 +62,8 @@ with tempfile.TemporaryDirectory() as _tmp:
     #    In this standalone demo we skip @server.tool() (no MCP server needed).
 
     @emitter.tool(effect_type="write_order")
-    def submit_order(vendor: str, amount: float, po_number: str) -> dict:
-        """Submit a purchase order."""
+    def submit_order(vendor: str, amount: str, po_number: str) -> dict:
+        """Submit a purchase order. amount must be an exact decimal string (e.g. '1240.19')."""
         return {
             "status": "dispatched",
             "po_number": po_number,
@@ -75,8 +75,9 @@ with tempfile.TemporaryDirectory() as _tmp:
     @emitter.tool(action_type="fyi")
     def get_price(vendor: str, item: str) -> dict:
         """Look up item price."""
-        prices = {"widget": 42.00, "gadget": 128.50, "doohickey": 9.99}
-        unit_price = prices.get(item.lower(), 0.00)
+        # §5.1 requires exact decimal strings for monetary values in digest fields
+        prices = {"widget": "42.00", "gadget": "128.50", "doohickey": "9.99"}
+        unit_price = prices.get(item.lower(), "0.00")
         return {"vendor": vendor, "item": item, "unit_price_usd": unit_price, "currency": "USD"}
 
     # ── 3. Simulate Goose tool calls ──────────────────────────────────────
@@ -90,11 +91,11 @@ with tempfile.TemporaryDirectory() as _tmp:
     print(f"  tool returned: {price_result}")
 
     print("\n[step 2] Goose calls submit_order (consequential, write_order)")
-    order_result = submit_order(vendor="Frobozz Supply", amount=1240.19, po_number="PO-7777")
+    order_result = submit_order(vendor="Frobozz Supply", amount="1240.19", po_number="PO-7777")
     print(f"  tool returned: {order_result}")
 
     print("\n[step 3] Second order (chained — same session)")
-    submit_order(vendor="Globex Corp", amount=550.00, po_number="PO-7778")
+    submit_order(vendor="Globex Corp", amount="550.00", po_number="PO-7778")
 
     # ── 4. Inspect the ledger ─────────────────────────────────────────────
 
