@@ -17,6 +17,7 @@ Shows two capsule types with real anchor inclusion evidence:
 Both capsules are:
   - sealed offline (capsule_id committed)
   - submitted synchronously to the live SCITT anchor (POST /v1/digest)
+  - confirmed via GET /v1/inclusion/<capsule_id> → HTTP 200
   - verified offline (agent_action_capsule.verify + scitt_cose.verify_receipt)
   - inclusion-proven (GET /anchor/inclusion-proof-ct per leaf_index)
 
@@ -58,6 +59,13 @@ def _anchor_sync(capsule_id: str) -> dict:
         headers={"Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read())
+
+
+def _inclusion_lookup(capsule_id: str) -> dict:
+    """GET /v1/inclusion/<capsule_id>; return response dict."""
+    url = f"{ANCHOR}/v1/inclusion/{capsule_id}"
+    with urllib.request.urlopen(url, timeout=30) as resp:
         return json.loads(resp.read())
 
 
@@ -129,7 +137,6 @@ def run_demo() -> None:
         print(f"  action_type : {fyi_cap['action_type']}")
         print(f"  verdict     : {fyi_cap['disposition']['verdict_class']}")
 
-        # Offline verify
         vr1 = verify(fyi_cap)
         print(f"  verify().ok : {vr1.ok}")
 
@@ -140,27 +147,30 @@ def run_demo() -> None:
         fyi_tree = reg1["tree_size"]
         fyi_entry_hash = reg1["entry_hash"]
         expected1 = hashlib.sha256(bytes.fromhex(fyi_id)).hexdigest()
-        assert fyi_entry_hash == expected1, f"entry_hash mismatch: {fyi_entry_hash} != {expected1}"
-        print("  POST /v1/digest          HTTP 200")
-        print(f"  entry_hash               : {fyi_entry_hash}")
-        print(f"  expected (sha256(id))    : {expected1}")
-        print(f"  leaf_index               : {fyi_leaf}")
-        print(f"  tree_size                : {fyi_tree}")
-        print("  entry_hash matches       : True")
+        assert fyi_entry_hash == expected1
+        print("  POST /v1/digest                  HTTP 200")
+        print(f"  entry_hash                       : {fyi_entry_hash}")
+        print(f"  leaf_index                       : {fyi_leaf}")
+        print(f"  tree_size                        : {fyi_tree}")
 
-        # CT inclusion proof
+        # Convenience inclusion lookup
+        il1 = _inclusion_lookup(fyi_id)
+        print("\n  GET /v1/inclusion/<fyi_id>       HTTP 200")
+        print(f"  leaf_index                       : {il1['leaf_index']}")
+        print(f"  tree_size                        : {il1['tree_size']}")
+        print(f"  root_hash                        : {il1['root_hash']}")
+
+        # CT Merkle audit path
         ip1 = _inclusion_proof(fyi_leaf, fyi_tree)
-        print(f"\n  GET /anchor/inclusion-proof-ct?leaf_index={fyi_leaf}&tree_size={fyi_tree}")
-        print("                           HTTP 200")
-        print(f"  leaf_hash    : {ip1['leaf_hash']}")
-        print(f"  audit_path   : {ip1['audit_path']}")
-        print(f"  root_hash    : {ip1['root_hash']}")
+        print("\n  GET /anchor/inclusion-proof-ct   HTTP 200")
+        print(f"  audit_path                       : {ip1['audit_path']}")
 
-        # Offline receipt verify
         receipt1 = base64.b64decode(reg1["receipt_b64"])
-        vr1_receipt = verify_receipt(receipt1, leaf_entry_hex=fyi_entry_hash, log_public_key_pem=log_pem)
-        print(f"\n  verify_receipt (scitt-cose offline) : ok={vr1_receipt.ok}")
-        assert vr1_receipt.ok, f"receipt verify failed: {vr1_receipt.errors}"
+        vr1_receipt = verify_receipt(
+            receipt1, leaf_entry_hex=fyi_entry_hash, log_public_key_pem=log_pem
+        )
+        print(f"\n  verify_receipt (offline)         : ok={vr1_receipt.ok}")
+        assert vr1_receipt.ok
 
         # ── Capsule 2: decide (HITL decision) ────────────────────────────
         _section("Step 3 — seal decide capsule (HITL approval)")
@@ -201,34 +211,39 @@ def run_demo() -> None:
         decide_tree = reg2["tree_size"]
         decide_entry_hash = reg2["entry_hash"]
         expected2 = hashlib.sha256(bytes.fromhex(decide_id)).hexdigest()
-        assert decide_entry_hash == expected2, f"entry_hash mismatch: {decide_entry_hash} != {expected2}"
-        print("  POST /v1/digest          HTTP 200")
-        print(f"  entry_hash               : {decide_entry_hash}")
-        print(f"  expected (sha256(id))    : {expected2}")
-        print(f"  leaf_index               : {decide_leaf}")
-        print(f"  tree_size                : {decide_tree}")
-        print("  entry_hash matches       : True")
+        assert decide_entry_hash == expected2
+        print("  POST /v1/digest                  HTTP 200")
+        print(f"  entry_hash                       : {decide_entry_hash}")
+        print(f"  leaf_index                       : {decide_leaf}")
+        print(f"  tree_size                        : {decide_tree}")
+
+        il2 = _inclusion_lookup(decide_id)
+        print("\n  GET /v1/inclusion/<decide_id>    HTTP 200")
+        print(f"  leaf_index                       : {il2['leaf_index']}")
+        print(f"  tree_size                        : {il2['tree_size']}")
+        print(f"  root_hash                        : {il2['root_hash']}")
 
         ip2 = _inclusion_proof(decide_leaf, decide_tree)
-        print(f"\n  GET /anchor/inclusion-proof-ct?leaf_index={decide_leaf}&tree_size={decide_tree}")
-        print("                           HTTP 200")
-        print(f"  leaf_hash    : {ip2['leaf_hash']}")
-        print(f"  audit_path   : {ip2['audit_path']}")
-        print(f"  root_hash    : {ip2['root_hash']}")
+        print("\n  GET /anchor/inclusion-proof-ct   HTTP 200")
+        print(f"  audit_path                       : {ip2['audit_path']}")
 
         receipt2 = base64.b64decode(reg2["receipt_b64"])
-        vr2_receipt = verify_receipt(receipt2, leaf_entry_hex=decide_entry_hash, log_public_key_pem=log_pem)
-        print(f"\n  verify_receipt (scitt-cose offline) : ok={vr2_receipt.ok}")
-        assert vr2_receipt.ok, f"receipt verify failed: {vr2_receipt.errors}"
+        vr2_receipt = verify_receipt(
+            receipt2, leaf_entry_hex=decide_entry_hash, log_public_key_pem=log_pem
+        )
+        print(f"\n  verify_receipt (offline)         : ok={vr2_receipt.ok}")
+        assert vr2_receipt.ok
 
         # ── Summary ──────────────────────────────────────────────────────
         _section("Summary")
         print(f"  fyi    capsule_id : {fyi_id}")
         print(f"         leaf_index : {fyi_leaf}   tree_size : {fyi_tree}")
+        print("         /v1/inclusion/<id> : HTTP 200")
         print(f"         verify().ok: {vr1.ok}   receipt ok: {vr1_receipt.ok}")
         print()
         print(f"  decide capsule_id : {decide_id}")
         print(f"         leaf_index : {decide_leaf}   tree_size : {decide_tree}")
+        print("         /v1/inclusion/<id> : HTTP 200")
         print(f"         verify().ok: {vr2.ok}   receipt ok: {vr2_receipt.ok}")
         print()
         assert vr1.ok and vr2.ok and vr1_receipt.ok and vr2_receipt.ok
@@ -237,16 +252,8 @@ def run_demo() -> None:
         return {
             "fyi_capsule_id": fyi_id,
             "fyi_leaf_index": fyi_leaf,
-            "fyi_tree_size": fyi_tree,
-            "fyi_entry_hash": fyi_entry_hash,
-            "fyi_audit_path": ip1["audit_path"],
-            "fyi_root_hash": ip1["root_hash"],
             "decide_capsule_id": decide_id,
             "decide_leaf_index": decide_leaf,
-            "decide_tree_size": decide_tree,
-            "decide_entry_hash": decide_entry_hash,
-            "decide_audit_path": ip2["audit_path"],
-            "decide_root_hash": ip2["root_hash"],
         }
 
 

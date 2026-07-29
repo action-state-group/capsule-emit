@@ -1,112 +1,112 @@
-# Dapr Agents demo transcript — real anchor inclusion evidence
+# Dapr Agents Demo — Run Transcript
 
-Generated: 2026-07-28  
-Command: `python3 examples/dapr-agents-capsule/demo.py`  
-Anchor: `https://anchor.agentactioncapsule.org` (production)
+Run: `python3 examples/dapr-agents-capsule/demo.py`  
+Anchor: `https://anchor.agentactioncapsule.org` (production)  
+Branch: `feat/dapr-agents-adapter` (post-rebase)
+
+---
+
+## Live capsule IDs
+
+| Capsule | capsule_id | leaf_index | tree_size |
+|---------|-----------|-----------|-----------|
+| fyi (check_invoice) | `56a0c398335c624cb7271108d0d9c8cad6b8912238c625985d9e3c36af7e61d5` | 227 | 228 |
+| decide (approve_payment) | `e30436a6f60fb6882b3deda10f6f644a4f5d5ffac06b94d93233de58b0cbcda9` | 228 | 229 |
+
+Both registered idempotently via `POST /v1/digest` and confirmed at:
+- `GET https://anchor.agentactioncapsule.org/v1/inclusion/<capsule_id>` → HTTP 200
+
+---
 
 ## Full output
 
 ```
 ─── Step 1 — seal fyi capsule (tool call) ─────────────────────────────
-  capsule_id  : 594167fdd62a4adc273fc65542a59ede3382bc0dc06fab604db21c9aa6a8d339
+  capsule_id  : 56a0c398335c624cb7271108d0d9c8cad6b8912238c625985d9e3c36af7e61d5
   action_type : fyi
   verdict     : executed
   verify().ok : True
 
 ─── Step 2 — anchor fyi capsule → POST /v1/digest ─────────────────────
-  POST /v1/digest          HTTP 200
-  entry_hash               : bfe330c67067f8419ff1d4bc21f53f84078ceb6bb10025a4cccab6203c17b945
-  expected (sha256(id))    : bfe330c67067f8419ff1d4bc21f53f84078ceb6bb10025a4cccab6203c17b945
-  leaf_index               : 208
-  tree_size                : 209
-  entry_hash matches       : True
+  POST /v1/digest                  HTTP 200
+  entry_hash                       : 45b8a3d9dac1c654fc93f00a17fa851b9e9302f4793e6acb506b1cd836c3d7a8
+  leaf_index                       : 227
+  tree_size                        : 228
 
-  GET /anchor/inclusion-proof-ct?leaf_index=208&tree_size=209
-                           HTTP 200
-  leaf_hash    : b9c4be476ccf1d249be53c5ca9303f8db715cefc9b45c573a59267ec06e1e6e0
-  audit_path   : ['8b2928b5b98aba2f41c677d5fbddc414d60d7fb5a1a6db2997a2dc4b88eea5bd',
-                  '85b3ea14211229865084fe06ce82926ef717517fc5ab71596333d491d06347e5',
-                  'ad7e2f78c7a7b5d0435914d72f285caf83155d3300c3833ba18cd4ce26970c8f']
-  root_hash    : 449d17a9b5288d2c3109915c853ef59c50d0f84c211d774e7b442aff10461057
+  GET /v1/inclusion/<fyi_id>       HTTP 200
+  leaf_index                       : 227
+  tree_size                        : 228
+  root_hash                        : 9ffa89557318dcf3623d37eb5b7cf9873de6bf96dbf7a1043d484d1211ccddcc
 
-  verify_receipt (scitt-cose offline) : ok=True
+  GET /anchor/inclusion-proof-ct   HTTP 200
+  audit_path                       : ['a9ec55119f452659387ce995d01b3888ede32cc0284aa3c4de91c3ffa5852574', 'e85d768d3365235227182cccae66ddc8fe74d6dc5c6361743e46d0d1c58e8550', '7eb6f50d7f7b9dafd3f536a00cef3f17a4e7c54f8b55d15d8498c863df432f46', '85b3ea14211229865084fe06ce82926ef717517fc5ab71596333d491d06347e5', 'ad7e2f78c7a7b5d0435914d72f285caf83155d3300c3833ba18cd4ce26970c8f']
+
+  verify_receipt (offline)         : ok=True
 
 ─── Step 3 — seal decide capsule (HITL approval) ──────────────────────
-  capsule_id     : 7fb500b959a4f7d009c56bd01f56412e10167fe7108063cc73325c25a9fc05da
+  capsule_id     : e30436a6f60fb6882b3deda10f6f644a4f5d5ffac06b94d93233de58b0cbcda9
   action_type    : decide
   verdict        : executed
   human_disposed : True
   decision       : accept
-  chained to     : 594167fdd62a4adc273fc65542a59ede3382bc0dc06fab604db21c9aa6a8d339
+  chained to     : 56a0c398335c624cb7271108d0d9c8cad6b8912238c625985d9e3c36af7e61d5
   verify().ok    : True
 
 ─── Step 4 — anchor decide capsule → POST /v1/digest ──────────────────
-  POST /v1/digest          HTTP 200
-  entry_hash               : bd58faba560b79afad6401cd813fed1f065a446224984c58faac2648de7d25e6
-  expected (sha256(id))    : bd58faba560b79afad6401cd813fed1f065a446224984c58faac2648de7d25e6
-  leaf_index               : 209
-  tree_size                : 210
-  entry_hash matches       : True
+  POST /v1/digest                  HTTP 200
+  entry_hash                       : fb78f8993d4ed064a64496bce4f9eaf9010766f2dae384141dedb4c9ba1e29ce
+  leaf_index                       : 228
+  tree_size                        : 229
 
-  GET /anchor/inclusion-proof-ct?leaf_index=209&tree_size=210
-                           HTTP 200
-  leaf_hash    : 547e1dcb8f8e4de9587e5a7387df866c9781dcceefba10001ea813a30b6a068d
-  audit_path   : ['b9c4be476ccf1d249be53c5ca9303f8db715cefc9b45c573a59267ec06e1e6e0',
-                  '8b2928b5b98aba2f41c677d5fbddc414d60d7fb5a1a6db2997a2dc4b88eea5bd',
-                  '85b3ea14211229865084fe06ce82926ef717517fc5ab71596333d491d06347e5',
-                  'ad7e2f78c7a7b5d0435914d72f285caf83155d3300c3833ba18cd4ce26970c8f']
-  root_hash    : 3c6e0d9011d1b1a15e9c7272faa0a826689a79929a3ce8fed01724ea3a9b98cf
+  GET /v1/inclusion/<decide_id>    HTTP 200
+  leaf_index                       : 228
+  tree_size                        : 229
+  root_hash                        : 215f2f3cbf29368cc426b96781d39a9994f947fa2ba1e583dc832bf63c2254bb
 
-  verify_receipt (scitt-cose offline) : ok=True
+  GET /anchor/inclusion-proof-ct   HTTP 200
+  audit_path                       : ['f4d824e1b16015134e92cde6c1975094423770e042c81f9459c1c8592e221378', '7eb6f50d7f7b9dafd3f536a00cef3f17a4e7c54f8b55d15d8498c863df432f46', '85b3ea14211229865084fe06ce82926ef717517fc5ab71596333d491d06347e5', 'ad7e2f78c7a7b5d0435914d72f285caf83155d3300c3833ba18cd4ce26970c8f']
+
+  verify_receipt (offline)         : ok=True
 
 ─── Summary ───────────────────────────────────────────────────────────
-  fyi    capsule_id : 594167fdd62a4adc273fc65542a59ede3382bc0dc06fab604db21c9aa6a8d339
-         leaf_index : 208   tree_size : 209
+  fyi    capsule_id : 56a0c398335c624cb7271108d0d9c8cad6b8912238c625985d9e3c36af7e61d5
+         leaf_index : 227   tree_size : 228
+         /v1/inclusion/<id> : HTTP 200
          verify().ok: True   receipt ok: True
 
-  decide capsule_id : 7fb500b959a4f7d009c56bd01f56412e10167fe7108063cc73325c25a9fc05da
-         leaf_index : 209   tree_size : 210
+  decide capsule_id : e30436a6f60fb6882b3deda10f6f644a4f5d5ffac06b94d93233de58b0cbcda9
+         leaf_index : 228   tree_size : 229
+         /v1/inclusion/<id> : HTTP 200
          verify().ok: True   receipt ok: True
 
   All checks PASS.
 ```
 
-## Live capsule_ids on anchor.agentactioncapsule.org
+---
 
-| Type | capsule_id | leaf_index | tree_size |
-|---|---|---|---|
-| fyi (execution record, check_invoice) | `594167fdd62a4adc273fc65542a59ede3382bc0dc06fab604db21c9aa6a8d339` | 208 | 209 |
-| decide (HITL decision, approve_payment) | `7fb500b959a4f7d009c56bd01f56412e10167fe7108063cc73325c25a9fc05da` | 209 | 210 |
+## What the evidence means
 
-The decide capsule chains to the fyi capsule via `chain.parent_capsule_id`.
+**POST /v1/digest** (`HTTP 200`) registers the capsule_id (a SHA-256 content address) on the
+public SCITT transparency log. The endpoint is idempotent — the same capsule_id always maps to
+the same `leaf_index` and `entry_hash`.
 
-## Inclusion proof verification
+**entry_hash** = SHA-256 of the raw capsule_id bytes. This is the offline-verify contract:
+any party with the capsule_id can independently compute `sha256(bytes.fromhex(capsule_id))` and
+compare it to what the anchor returned.
 
-For each capsule_id, inclusion is confirmed by:
+**GET /v1/inclusion/\<capsule_id\>** (`HTTP 200`) is the convenience lookup: given a
+`capsule_id`, returns `leaf_index`, `tree_size`, `root_hash`, `audit_path`, and the signed
+COSE receipt in one call. This is what the manager can curl to confirm registration.
 
-1. **`POST /v1/digest {"capsule_id": "<id>"}`** — idempotent register; returns
-   `entry_hash`, `leaf_index`, `tree_size`, `receipt_b64`.  The `entry_hash`
-   must equal `SHA-256(bytes.fromhex(capsule_id))` — the offline-verify contract.
+**GET /anchor/inclusion-proof-ct** returns the RFC 6962 Merkle audit path for the given
+`leaf_index` and `tree_size`. The `audit_path` hashes can be walked up to reproduce the
+`root_hash` independently.
 
-2. **`GET /anchor/inclusion-proof-ct?leaf_index=<N>&tree_size=<M>`** — returns
-   the RFC6962 Merkle audit path and root hash confirming leaf position in the tree.
+**verify_receipt (offline)** calls `scitt_cose.verify_receipt(receipt_bytes,
+leaf_entry_hex=entry_hash, log_public_key_pem=pem)`. The Ed25519 log public key is fetched from
+`/.well-known/did.json`. A `True` result means the COSE receipt is cryptographically valid and
+the entry_hash is committed in the signed Merkle tree — no trust in the anchor server required.
 
-3. **`scitt_cose.verify_receipt(receipt, leaf_entry_hex=entry_hash, log_public_key_pem=pem)`**
-   — offline Ed25519 signature verification of the COSE Receipt over the reconstructed
-   Merkle root.  Both returned `ok=True`.
-
-All three checks pass for both capsules.
-
-## What this shows
-
-- **Capsule 1 (fyi, leaf_index=208)**: emitted by `@emitter.tool("check_invoice")` —
-  records that the agent's tool was called.  `action_type="fyi"` because the adapter
-  observes what ran; the upstream LLM decision is not visible at this seam.
-
-- **Capsule 2 (decide, leaf_index=209)**: emitted by `emitter.record_hitl()` —
-  records Alice's approval of the invoice payment.  `action_type="decide"`,
-  `human_disposed=True`, `decision="accept"`.  Chained to capsule 1 via
-  `chain.parent_capsule_id`.
-
-Both capsules are in the same sequential batch (leaf_index 208, 209), verifiably
-adjacent in the append-only Merkle tree.
+**Decide chains to fyi** via `chain.parent_capsule_id` — the decide capsule's chain field carries
+the fyi capsule_id, so a verifier can follow the full sequence: tool call → human approval → both
+anchored, both verified.
