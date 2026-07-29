@@ -2,5 +2,6 @@
 """capsule-emit framework adapters.
 
 MCP-first: ``capsule_emit.adapters.mcp.MCPCapsuleEmitter``
-Thin shells: ``langchain``, ``crewai``, ``hermes`` (all over _base.CapsuleEmitterBase).
+Thin shells: ``langchain``, ``crewai``, ``hermes``, ``adk``, ``dapr_agents``
+(all over _base.CapsuleEmitterBase).
 """

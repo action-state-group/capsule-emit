@@ -289,6 +289,56 @@ async for event in runner.run_async(...):
     # your own event handling continues unchanged
 ```
 
+### Dapr Agents
+
+`DaprAgentsCapsuleEmitter` records capsules at **live decision points** inside a Dapr Agents
+workflow — distinct from the `capsule-emit-dapr` Go adapter, which extracts post-hoc execution
+records from signed Dapr Workflow history.
+
+**Two seam points:**
+
+**1 — Tool calls** (`@emitter.tool()`): wraps any Dapr Agents tool callable. One capsule with
+`action_type="fyi"` per invocation.
+
+**2 — HITL approval gates** (`emitter.record_hitl()`): called after `ctx.wait_for_external_event()`
+resolves. Records the real human decision as `action_type="decide"` with a non-fabricated
+disposition block.
+
+```python
+from capsule_emit.adapters.dapr_agents import DaprAgentsCapsuleEmitter
+
+emitter = DaprAgentsCapsuleEmitter(
+    operator="acme-co",
+    developer="invoice-agent@v1",
+    agent_name="invoice-checker",     # identifies this agent in the capsule
+    app_id="invoice-app",             # Dapr sidecar app-id
+    workflow_instance_id="wf-abc123", # set per workflow run
+)
+
+@emitter.tool("check_invoice")
+def check_invoice(invoice_id: str, amount: str) -> dict:
+    ...  # your tool logic; one fyi capsule sealed per call
+
+# After the HITL event resolves — supply REAL approver and decision:
+decide = emitter.record_hitl(
+    "approve_payment",
+    approver_id="alice@example.com",  # from your auth layer (never fabricated)
+    decision="accept",                # "accept" or "reject" as it happened
+    tool_request={"invoice_id": "INV-001", "amount": "1240.00"},
+    outcome=approval_event_payload,
+    prior_capsule_id=fyi_capsule_id,  # chains the decide to the fyi
+)
+```
+
+`decision` must be `"accept"` or `"reject"` — anything else raises `ValueError` at the call site.
+The `dapr_agents` block in `compute_attestation` carries `agent_name`, `tool_name`,
+`workflow_instance_id`, `app_id`, and `approver_id` as exact strings (§5.1 compliant, Class-1
+ignored by receivers that don't recognise the extension).
+
+See [`docs/adapters/dapr_agents.md`](docs/adapters/dapr_agents.md) for the full API reference,
+known limitations (L1–L7), and a side-by-side comparison with the Go adapter.
+
+
 ---
 
 ## Open registration policy notice
