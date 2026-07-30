@@ -87,3 +87,7 @@ Paste this into Claude Code (or any coding agent) in your repo:
   explicit `emit(..., confirms=..., effect={..., "status": "confirmed"})`. The
   *dispatched → confirmed* chain is the boundary/gate layer, not the adapter layer.
 - For a refusal or a custom verdict, use Option B and pass `verdict=`/`effect=` explicitly.
+- `emitter.capture_toolset(tools)` seals a digest of the tool manifest **as presented to the
+  model** into every subsequent capsule (`ext.mcp.toolset_digest`) — so a server that swaps a
+  tool's description after gaining trust shows up as a visible digest change in the chain,
+  not silence. See [`ext.mcp` — tool-manifest digest](../extensions/mcp-toolset-digest.md).

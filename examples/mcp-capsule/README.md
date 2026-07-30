@@ -42,9 +42,15 @@ Expected output:
 === capsule-emit + MCP demo ===
 wrap any MCP tool → verifiable record trail, in one decorator
 
+Tool manifest captured — ext.mcp.toolset_digest=c6598bb133c22bc7…
+
   PO-2026-0047: effect.status='dispatched'  capsule_id=3a7f1c…
   PO-2026-0048: effect.status='dispatched'  capsule_id=8d2b4e…
   PO-2026-0049: effect.status='dispatched'  capsule_id=c1f9a3…
+
+Simulating a post-trust tool-description swap (NSA CSI attack shape)…
+  post-swap capsule: ext.mcp.toolset_digest=ab7c6c4f3ec25a6b… (was c6598bb133c22bc7…)
+  ✓ digest changed — the swap boundary is visible between adjacent capsules
 
 Latest capsule:
   action_id       : submit_order/2026-07-05T…
@@ -58,6 +64,11 @@ Latest capsule:
     agent_input_digest  : e4a3…
     agent_output_digest : 7b2d…
 
+  ext.mcp — tool-manifest digest (namespaced payload extension):
+    toolset_digest : ab7c6c4f3ec25a6b…
+    digest_alg     : SHA-256
+    manifest_ref   : {'type': 'MCPToolManifest', 'digest_alg': 'SHA-256', 'digest': 'ab7c6c4f3ec25a6b…'}
+
   ✓ verify(capsule).ok — tamper any byte and this fails
 
 CLI verify (offline — from the ledger bytes, no network needed):
@@ -65,9 +76,15 @@ CLI verify (offline — from the ledger bytes, no network needed):
   VALID  PO-2026-0047 …
   VALID  PO-2026-0048 …
   VALID  PO-2026-0049 …
+  VALID  PO-2026-0050 …
 
 ✓ Done. Copy this pattern into your MCP server.
 ```
+
+See [`docs/extensions/mcp-toolset-digest.md`](../../docs/extensions/mcp-toolset-digest.md)
+for what `ext.mcp` commits to and why — it closes the gap the NSA CSI
+*"MCP: Security Design Considerations"* (May 2026) documents: a capsule proves what
+the agent did, not which tool descriptions the model was shown.
 
 ## 3. Add it to your server
 
@@ -153,6 +170,7 @@ Every capsule commits the following — all by SHA-256 digest:
 | `developer` | your agent name + version | capsule payload |
 | `timestamp` | UTC seal time | capsule payload |
 | `runtime` | `"mcp"` — set automatically | `compute_attestation` |
+| `ext.mcp.toolset_digest` | SHA-256(canonical tool manifest shown to the model) — after `capture_toolset()` | `compute_attestation` |
 | `capsule_id` | SHA-256 of the entire payload | top-level |
 
 **Raw values stay local.** Only digests leave the process. The capsule can be
@@ -261,9 +279,10 @@ testing.
 
 | | |
 |---|---|
-| Constructor | `MCPCapsuleEmitter(operator, developer, ledger="ledger.jsonl", anchor=True, anchor_url=None, model=None, action_type=None, host_provenance=False, seal_reads=True)` |
+| Constructor | `MCPCapsuleEmitter(operator, developer, ledger="ledger.jsonl", anchor=True, anchor_url=None, model=None, action_type=None, host_provenance=False, seal_reads=True, emit_manifest_artifact=True, manifest_artifact_dir=None)` |
 | Decorator | `@emitter.tool(action=None, *, effect_type=None, verdict="executed", action_type=None, model=None)` |
 | Direct emit | `emitter.emit_capsule(action, tool_input, tool_output, *, verdict, effect, ...)` |
+| Toolset digest | `emitter.capture_toolset(tools)` — see [`docs/extensions/mcp-toolset-digest.md`](../../docs/extensions/mcp-toolset-digest.md) |
 | Env var | `AAC_ANCHOR_URL` — override the anchor endpoint |
 | Last capsule | `emitter.last` — the most recent `EmitResult` |
 | All capsules | `emitter.results` — list of all `EmitResult`s this session |
