@@ -184,6 +184,7 @@ class DaprAgentsCapsuleEmitter(CapsuleEmitterBase):
         agent_name: str | None = None,
         workflow_instance_id: str | None = None,
         app_id: str | None = None,
+        prior_capsule_id: str | None = None,
     ) -> Any:
         """Decorator: wraps a Dapr Agents tool callable; emits a capsule per call.
 
@@ -200,6 +201,11 @@ class DaprAgentsCapsuleEmitter(CapsuleEmitterBase):
             agent_name: Per-decoration override for the agent_name extension field.
             workflow_instance_id: Per-decoration override for the workflow id field.
             app_id: Per-decoration override for the app_id extension field.
+            prior_capsule_id: Optional capsule_id to chain this tool's capsule
+                to (e.g. a preceding HITL decide capsule) — chains the whole
+                run, not just fyi-after-fyi.  Static per decoration; for a
+                chain built across multiple live calls, decorate right before
+                the call once the prior capsule_id is known.
         """
 
         def decorator(fn: Any) -> Any:
@@ -225,6 +231,7 @@ class DaprAgentsCapsuleEmitter(CapsuleEmitterBase):
                         action_type="fyi",
                         runtime="dapr_agents",
                         extra_compute=extra,
+                        prior_capsule_id=prior_capsule_id,
                     )
                 except Exception as exc:
                     msg = (
