@@ -20,11 +20,20 @@ Add to ~/.config/goose/config.yaml:
         envs:
           CAPSULE_OPERATOR: "acme-co"
           CAPSULE_DEVELOPER: "goose-agent@v1"
+          CAPSULE_ANCHOR: "true"
 
 After adding, every time Goose calls submit_order or get_price the call is
 sealed into ledger.jsonl — verifiable with:
 
     agent-action-capsule verify --store ledger.jsonl
+
+Environment variables
+----------------------
+    CAPSULE_OPERATOR  Tenant / org identifier stamped on every capsule
+    CAPSULE_DEVELOPER Agent name + version
+    CAPSULE_LEDGER    Path to JSONL ledger (default: ledger.jsonl)
+    CAPSULE_ANCHOR    "true" (default) to fire-and-forget anchor each capsule
+                      against anchor.agentactioncapsule.org; "false" for offline
 
 Compose posture:
 
@@ -60,6 +69,7 @@ from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 _OPERATOR = os.environ.get("CAPSULE_OPERATOR", "acme-co")
 _DEVELOPER = os.environ.get("CAPSULE_DEVELOPER", "goose-agent@v1")
 _LEDGER = os.environ.get("CAPSULE_LEDGER", "ledger.jsonl")
+_ANCHOR = os.environ.get("CAPSULE_ANCHOR", "true").lower() not in ("0", "false", "no")
 
 server = FastMCP("po-agent", instructions="Purchase-order agent with capsule audit trail.")
 
@@ -67,7 +77,7 @@ emitter = MCPCapsuleEmitter(
     operator=_OPERATOR,
     developer=_DEVELOPER,
     ledger=_LEDGER,
-    anchor=False,  # set anchor=True to fire-and-forget digest to a transparency log
+    anchor=_ANCHOR,  # fire-and-forget digest anchor; CAPSULE_ANCHOR=false for offline
 )
 
 
