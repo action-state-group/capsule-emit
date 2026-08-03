@@ -289,6 +289,39 @@ def test_hitl_chains_to_prior_tool_capsule(tmp_path):
     assert verify(cap).ok
 
 
+def test_tool_chains_to_prior_decide_capsule(tmp_path):
+    """A tool() capsule can chain onto a preceding decide capsule (e.g. a
+    fyi escalation emitted after a HITL denial) — the chain isn't limited to
+    fyi-then-decide; decide-then-fyi must round-trip too."""
+    e = _emitter(tmp_path)
+
+    @e.tool("check_invoice")
+    def check_invoice(invoice_id: str) -> dict:
+        return {"risk": "high"}
+
+    check_invoice(invoice_id="INV-004")
+    fyi_id = e.last.capsule_id
+
+    decide = e.record_hitl(
+        "approve_payment",
+        approver_id="alice@example.com",
+        decision="reject",
+        prior_capsule_id=fyi_id,
+    )
+    decide_id = decide.capsule_id
+
+    @e.tool("escalate_to_manager", prior_capsule_id=decide_id)
+    def escalate_to_manager(invoice_id: str) -> dict:
+        return {"escalated": True}
+
+    escalate_to_manager(invoice_id="INV-004")
+    escalate_cap = e.last.capsule
+
+    assert escalate_cap["chain"]["parent_capsule_id"] == decide_id
+    assert escalate_cap["action_type"] == "fyi"
+    assert verify(escalate_cap).ok
+
+
 # ---------------------------------------------------------------------------
 # 7.  Emit error in @emitter.tool() warns but does not crash
 # ---------------------------------------------------------------------------

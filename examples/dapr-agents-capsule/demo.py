@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Dapr Agents adapter demo — execution capsule + decide capsule side by side.
+"""Dapr Agents adapter demo — 3-capsule chain incl. a real HITL denial.
 
-Shows two capsule types with real anchor inclusion evidence:
+Shows the full chain with real anchor inclusion evidence:
 
   Capsule 1 — fyi (execution record)
     Produced by @emitter.tool() as the agent calls a tool.
     Analogous to what the capsule-emit-dapr Go adapter produces from signed
     Dapr Workflow history — an observation of what the agent executed.
 
-  Capsule 2 — decide (HITL decision record)
-    Produced by emitter.record_hitl() at the approval gate.
-    Records the REAL human decision (accept/reject, approver identity) as it
-    happened — the live decision-point layer this adapter owns.
+  Capsule 2 — decide (HITL denial)
+    Produced by emitter.record_hitl(decision="reject") at the approval gate.
+    Records a REAL human REJECTION as it happened — verdict="blocked",
+    effect.status="planned" (the action was gated; it never dispatched).
+    Chained to capsule 1 via prior_capsule_id.
 
-Both capsules are:
+  Capsule 3 — fyi (escalation, chained past the denial)
+    Produced by @emitter.tool(prior_capsule_id=...) after the denial — the
+    agent escalates to a manager instead of retrying the blocked payment.
+    Chained to capsule 2, proving the chain continues past a blocked action.
+
+Both fyi capsules and the decide capsule are:
   - sealed offline (capsule_id committed)
   - submitted synchronously to the live SCITT anchor (POST /v1/digest)
-  - confirmed via GET /v1/inclusion/<capsule_id> → HTTP 200
+  - confirmed via GET /v1/inclusion/<capsule_id> -> HTTP 200
   - verified offline (agent_action_capsule.verify + scitt_cose.verify_receipt)
   - inclusion-proven (GET /anchor/inclusion-proof-ct per leaf_index)
 
@@ -93,7 +99,51 @@ def _section(title: str) -> None:
     print(f"\n─── {title} " + "─" * max(0, 66 - len(title)))
 
 
-def run_demo() -> None:
+def _seal_and_anchor(label: str, capsule_id: str, capsule: dict, log_pem: bytes) -> dict:
+    """Anchor one capsule synchronously and verify every layer. Returns a
+    record dict suitable for the report (leaf_index, tree_size, permalink data)."""
+    vr = verify(capsule)
+    print(f"  [{label}] capsule_id  : {capsule_id}")
+    print(f"  [{label}] action_type : {capsule['action_type']}")
+    print(f"  [{label}] verdict     : {capsule['disposition']['verdict_class']}")
+    print(f"  [{label}] verify().ok : {vr.ok}")
+    assert vr.ok
+
+    reg = _anchor_sync(capsule_id)
+    leaf = reg["leaf_index"]
+    tree = reg["tree_size"]
+    entry_hash = reg["entry_hash"]
+    expected = hashlib.sha256(bytes.fromhex(capsule_id)).hexdigest()
+    assert entry_hash == expected
+    print(f"  [{label}] POST /v1/digest        HTTP 200  leaf={leaf} tree={tree}")
+
+    incl = _inclusion_lookup(capsule_id)
+    print(f"  [{label}] GET /v1/inclusion/<id> HTTP 200  root={incl['root_hash'][:16]}...")
+
+    proof = _inclusion_proof(leaf, tree)
+    print(f"  [{label}] GET /anchor/inclusion-proof-ct HTTP 200")
+
+    receipt = base64.b64decode(reg["receipt_b64"])
+    vr_receipt = verify_receipt(receipt, leaf_entry_hex=entry_hash, log_public_key_pem=log_pem)
+    print(f"  [{label}] verify_receipt (offline) : ok={vr_receipt.ok}")
+    assert vr_receipt.ok
+
+    return {
+        "label": label,
+        "capsule_id": capsule_id,
+        "capsule": capsule,
+        "leaf_index": leaf,
+        "tree_size": tree,
+        "entry_hash": entry_hash,
+        "root_hash": incl["root_hash"],
+        "audit_path": proof["audit_path"],
+        "receipt_b64": reg["receipt_b64"],
+        "verify_ok": vr.ok,
+        "receipt_ok": vr_receipt.ok,
+    }
+
+
+def run_demo() -> dict:
     log_pem = _log_pubkey_pem()
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -106,13 +156,15 @@ def run_demo() -> None:
             developer="invoice-agent@v1",
             agent_name="invoice-checker",
             app_id="invoice-app",
-            workflow_instance_id="wf-demo-2026-07-28",
+            workflow_instance_id="wf-demo-2026-07-30",
             ledger=ledger,
             anchor=False,
         )
 
+        records = []
+
         # ── Capsule 1: execution record (fyi) ────────────────────────────
-        _section("Step 1 — seal fyi capsule (tool call)")
+        _section("Step 1 — seal fyi capsule (tool call: check_invoice)")
 
         @emitter.tool("check_invoice")
         def check_invoice(invoice_id: str, amount: str, vendor: str) -> dict:
@@ -120,141 +172,81 @@ def run_demo() -> None:
                 "invoice_id": invoice_id,
                 "amount": amount,
                 "vendor": vendor,
-                "risk_score": "low",
-                "flag": False,
+                "risk_score": "high",
+                "flag": True,
             }
 
         check_invoice(
-            invoice_id="INV-2026-001",
-            amount="1240.00",
-            vendor="Frobozz Supply Co.",
+            invoice_id="INV-2026-002",
+            amount="48500.00",
+            vendor="Grue & Snark Freight Ltd.",
         )
-        fyi = emitter.last
-        fyi_cap = fyi.capsule
-        fyi_id = fyi.capsule_id
+        fyi1 = emitter.last
+        fyi1_id = fyi1.capsule_id
+        records.append(_seal_and_anchor("1 fyi/check_invoice", fyi1_id, fyi1.capsule, log_pem))
 
-        print(f"  capsule_id  : {fyi_id}")
-        print(f"  action_type : {fyi_cap['action_type']}")
-        print(f"  verdict     : {fyi_cap['disposition']['verdict_class']}")
-
-        vr1 = verify(fyi_cap)
-        print(f"  verify().ok : {vr1.ok}")
-
-        # Anchor synchronously
-        _section("Step 2 — anchor fyi capsule → POST /v1/digest")
-        reg1 = _anchor_sync(fyi_id)
-        fyi_leaf = reg1["leaf_index"]
-        fyi_tree = reg1["tree_size"]
-        fyi_entry_hash = reg1["entry_hash"]
-        expected1 = hashlib.sha256(bytes.fromhex(fyi_id)).hexdigest()
-        assert fyi_entry_hash == expected1
-        print("  POST /v1/digest                  HTTP 200")
-        print(f"  entry_hash                       : {fyi_entry_hash}")
-        print(f"  leaf_index                       : {fyi_leaf}")
-        print(f"  tree_size                        : {fyi_tree}")
-
-        # Convenience inclusion lookup
-        il1 = _inclusion_lookup(fyi_id)
-        print("\n  GET /v1/inclusion/<fyi_id>       HTTP 200")
-        print(f"  leaf_index                       : {il1['leaf_index']}")
-        print(f"  tree_size                        : {il1['tree_size']}")
-        print(f"  root_hash                        : {il1['root_hash']}")
-
-        # CT Merkle audit path
-        ip1 = _inclusion_proof(fyi_leaf, fyi_tree)
-        print("\n  GET /anchor/inclusion-proof-ct   HTTP 200")
-        print(f"  audit_path                       : {ip1['audit_path']}")
-
-        receipt1 = base64.b64decode(reg1["receipt_b64"])
-        vr1_receipt = verify_receipt(
-            receipt1, leaf_entry_hex=fyi_entry_hash, log_public_key_pem=log_pem
-        )
-        print(f"\n  verify_receipt (offline)         : ok={vr1_receipt.ok}")
-        assert vr1_receipt.ok
-
-        # ── Capsule 2: decide (HITL decision) ────────────────────────────
-        _section("Step 3 — seal decide capsule (HITL approval)")
+        # ── Capsule 2: decide (HITL DENIAL) ──────────────────────────────
+        _section("Step 2 — seal decide capsule (HITL approval: REJECTED)")
 
         hitl = emitter.record_hitl(
             "approve_payment",
-            approver_id="alice@acme.com",
-            decision="accept",
+            approver_id="bob@acme.com",
+            decision="reject",
             tool_request={
-                "invoice_id": "INV-2026-001",
-                "amount": "1240.00",
-                "vendor": "Frobozz Supply Co.",
+                "invoice_id": "INV-2026-002",
+                "amount": "48500.00",
+                "vendor": "Grue & Snark Freight Ltd.",
                 "requested_by": "invoice-agent@v1",
             },
             outcome={
-                "approved_at": "2026-07-28T10:00:00Z",
-                "approval_reference": "APPR-7788",
+                "reviewed_at": "2026-07-30T14:00:00Z",
+                "reason": "amount exceeds vendor's approved contract ceiling",
             },
-            prior_capsule_id=fyi_id,
+            prior_capsule_id=fyi1_id,
         )
         decide_cap = hitl.capsule
         decide_id = hitl.capsule_id
+        assert decide_cap["disposition"]["verdict_class"] == "blocked"
+        assert decide_cap["effect"]["status"] == "planned"
+        assert decide_cap["chain"]["parent_capsule_id"] == fyi1_id
+        records.append(_seal_and_anchor("2 decide/approve_payment(REJECTED)", decide_id, decide_cap, log_pem))
+        print(f"  [2] chained to  : {decide_cap['chain']['parent_capsule_id']}")
 
-        print(f"  capsule_id     : {decide_id}")
-        print(f"  action_type    : {decide_cap['action_type']}")
-        print(f"  verdict        : {decide_cap['disposition']['verdict_class']}")
-        print(f"  human_disposed : {decide_cap['disposition']['human_disposed']}")
-        print(f"  decision       : {decide_cap['disposition']['decision']}")
-        print(f"  chained to     : {decide_cap['chain']['parent_capsule_id']}")
-        assert decide_cap["chain"]["parent_capsule_id"] == fyi_id
+        # ── Capsule 3: fyi (escalation, chained past the denial) ─────────
+        _section("Step 3 — seal fyi capsule (tool call: escalate_to_manager)")
 
-        vr2 = verify(decide_cap)
-        print(f"  verify().ok    : {vr2.ok}")
+        @emitter.tool("escalate_to_manager", prior_capsule_id=decide_id)
+        def escalate_to_manager(invoice_id: str, reason: str) -> dict:
+            return {
+                "invoice_id": invoice_id,
+                "escalated_to": "ap-manager@acme.com",
+                "reason": reason,
+            }
 
-        _section("Step 4 — anchor decide capsule → POST /v1/digest")
-        reg2 = _anchor_sync(decide_id)
-        decide_leaf = reg2["leaf_index"]
-        decide_tree = reg2["tree_size"]
-        decide_entry_hash = reg2["entry_hash"]
-        expected2 = hashlib.sha256(bytes.fromhex(decide_id)).hexdigest()
-        assert decide_entry_hash == expected2
-        print("  POST /v1/digest                  HTTP 200")
-        print(f"  entry_hash                       : {decide_entry_hash}")
-        print(f"  leaf_index                       : {decide_leaf}")
-        print(f"  tree_size                        : {decide_tree}")
-
-        il2 = _inclusion_lookup(decide_id)
-        print("\n  GET /v1/inclusion/<decide_id>    HTTP 200")
-        print(f"  leaf_index                       : {il2['leaf_index']}")
-        print(f"  tree_size                        : {il2['tree_size']}")
-        print(f"  root_hash                        : {il2['root_hash']}")
-
-        ip2 = _inclusion_proof(decide_leaf, decide_tree)
-        print("\n  GET /anchor/inclusion-proof-ct   HTTP 200")
-        print(f"  audit_path                       : {ip2['audit_path']}")
-
-        receipt2 = base64.b64decode(reg2["receipt_b64"])
-        vr2_receipt = verify_receipt(
-            receipt2, leaf_entry_hex=decide_entry_hash, log_public_key_pem=log_pem
+        escalate_to_manager(
+            invoice_id="INV-2026-002",
+            reason="payment blocked at approval gate; routing for manager review",
         )
-        print(f"\n  verify_receipt (offline)         : ok={vr2_receipt.ok}")
-        assert vr2_receipt.ok
+        fyi3 = emitter.last
+        fyi3_id = fyi3.capsule_id
+        assert fyi3.capsule["chain"]["parent_capsule_id"] == decide_id
+        records.append(_seal_and_anchor("3 fyi/escalate_to_manager", fyi3_id, fyi3.capsule, log_pem))
+        print(f"  [3] chained to  : {fyi3.capsule['chain']['parent_capsule_id']}")
 
         # ── Summary ──────────────────────────────────────────────────────
         _section("Summary")
-        print(f"  fyi    capsule_id : {fyi_id}")
-        print(f"         leaf_index : {fyi_leaf}   tree_size : {fyi_tree}")
-        print("         /v1/inclusion/<id> : HTTP 200")
-        print(f"         verify().ok: {vr1.ok}   receipt ok: {vr1_receipt.ok}")
-        print()
-        print(f"  decide capsule_id : {decide_id}")
-        print(f"         leaf_index : {decide_leaf}   tree_size : {decide_tree}")
-        print("         /v1/inclusion/<id> : HTTP 200")
-        print(f"         verify().ok: {vr2.ok}   receipt ok: {vr2_receipt.ok}")
-        print()
-        assert vr1.ok and vr2.ok and vr1_receipt.ok and vr2_receipt.ok
-        print("  All checks PASS.")
+        for r in records:
+            print(f"  {r['label']:34s} capsule_id={r['capsule_id']}  leaf={r['leaf_index']}  verify={r['verify_ok']}  receipt={r['receipt_ok']}")
+        assert all(r["verify_ok"] and r["receipt_ok"] for r in records)
+        print("\n  All checks PASS. Chain: fyi -> decide(BLOCKED) -> fyi (escalation).")
 
-        return {
-            "fyi_capsule_id": fyi_id,
-            "fyi_leaf_index": fyi_leaf,
-            "decide_capsule_id": decide_id,
-            "decide_leaf_index": decide_leaf,
-        }
+        dump_path = os.environ.get("DAPR_DEMO_DUMP")
+        if dump_path:
+            with open(dump_path, "w") as f:
+                json.dump(records, f, indent=2, default=str)
+            print(f"\n  Full record dump written to {dump_path}")
+
+        return {"records": records}
 
 
 if __name__ == "__main__":
