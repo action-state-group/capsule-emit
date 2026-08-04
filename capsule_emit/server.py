@@ -56,8 +56,9 @@ Environment variables
     CAPSULE_LEDGER    Path to JSONL ledger (default: ledger.jsonl)
     CAPSULE_OPERATOR  Tenant / org identifier stamped on every capsule
     CAPSULE_DEVELOPER Agent name + version
-    CAPSULE_ANCHOR    "true" (default) to fire-and-forget anchor each capsule
-                      against anchor.agentactioncapsule.org; "false" for offline
+    CAPSULE_ANCHOR    "true" to fire-and-forget anchor each capsule (sends only
+                      the capsule_id digest, never payload) against
+                      anchor.agentactioncapsule.org; "false" (default) for offline
 
 Requires: pip install "capsule-emit[mcp]"
 """
@@ -80,7 +81,7 @@ except ImportError:
 _LEDGER = os.environ.get("CAPSULE_LEDGER", "ledger.jsonl")
 _OPERATOR = os.environ.get("CAPSULE_OPERATOR", "goose-user")
 _DEVELOPER = os.environ.get("CAPSULE_DEVELOPER", "goose-agent@v1")
-_ANCHOR = os.environ.get("CAPSULE_ANCHOR", "true").lower() not in ("0", "false", "no")
+_ANCHOR = os.environ.get("CAPSULE_ANCHOR", "false").lower() not in ("0", "false", "no")
 
 mcp = FastMCP(
     "capsule-emit",

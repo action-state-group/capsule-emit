@@ -74,7 +74,11 @@ from scitt_cose import verify_receipt
 from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 
-_ANCHOR = "--no-anchor" not in sys.argv
+# The demo anchors live by default (CAPSULE_ANCHOR="true" here, unlike the
+# shipped extension's off-by-default in server.py) — --no-anchor still wins.
+_ANCHOR = "--no-anchor" not in sys.argv and os.environ.get(
+    "CAPSULE_ANCHOR", "true"
+).lower() not in ("0", "false", "no")
 
 ANCHOR = os.environ.get("AAC_ANCHOR_URL", "https://anchor.agentactioncapsule.org").rstrip("/")
 VERIFY = os.environ.get("AAC_VERIFY_URL", "https://verify.agentactioncapsule.org").rstrip("/")
@@ -254,6 +258,12 @@ with tempfile.TemporaryDirectory() as _tmp:
         "reviewed_at": "2026-08-03T00:00:00Z",
         "reason": "order value exceeds vendor's approved PO ceiling",
     }
+    # NOTE: chain.relation for this refusal is left at the emit() default
+    # ("confirms") rather than fixed here. None of the three documented
+    # relation values (confirms | supersedes | escalates, core.py:117)
+    # genuinely describes a denial chained to a prior, unrelated dispatch —
+    # flagged upstream in outbox.md [goose-demo-merge-fixes] rather than
+    # minting a fourth value at the demo level.
     decide1 = emitter.emit_capsule(
         "approve_large_order",
         tool_input=approval_request,
@@ -298,6 +308,7 @@ with tempfile.TemporaryDirectory() as _tmp:
         action_type="fyi",
         runtime="mcp",
         prior_capsule_id=decide1_id,
+        relation="escalates",
     )
     escalate1_id = escalate1.capsule_id
     assert escalate1.capsule["chain"]["parent_capsule_id"] == decide1_id

@@ -32,8 +32,9 @@ Environment variables
     CAPSULE_OPERATOR  Tenant / org identifier stamped on every capsule
     CAPSULE_DEVELOPER Agent name + version
     CAPSULE_LEDGER    Path to JSONL ledger (default: ledger.jsonl)
-    CAPSULE_ANCHOR    "true" (default) to fire-and-forget anchor each capsule
-                      against anchor.agentactioncapsule.org; "false" for offline
+    CAPSULE_ANCHOR    "true" to fire-and-forget anchor each capsule (sends only
+                      the capsule_id digest, never payload) against
+                      anchor.agentactioncapsule.org; "false" (default) for offline
 
 Compose posture:
 
@@ -69,7 +70,7 @@ from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 _OPERATOR = os.environ.get("CAPSULE_OPERATOR", "acme-co")
 _DEVELOPER = os.environ.get("CAPSULE_DEVELOPER", "goose-agent@v1")
 _LEDGER = os.environ.get("CAPSULE_LEDGER", "ledger.jsonl")
-_ANCHOR = os.environ.get("CAPSULE_ANCHOR", "true").lower() not in ("0", "false", "no")
+_ANCHOR = os.environ.get("CAPSULE_ANCHOR", "false").lower() not in ("0", "false", "no")
 
 server = FastMCP("po-agent", instructions="Purchase-order agent with capsule audit trail.")
 
