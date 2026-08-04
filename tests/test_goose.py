@@ -8,9 +8,12 @@ Covers:
 - Pattern A: tamper one byte → verify fails
 - Pattern A: two calls → two capsule rows in ledger
 - server.py module is importable (FastMCP server instantiates without error)
+- CAPSULE_ANCHOR env parsing (default off; 0/false/no strings) and that
+  anchor= actually reaches (or skips) the anchor call
 """
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 
@@ -369,3 +372,79 @@ def test_goose_pattern_a_fyi_action_type(tmp_path):
     read_price(item="doohickey")
     records = read_ledger(tmp_path / "ledger.jsonl")
     assert records[0].get("action_type") == "fyi"
+
+
+# ---------------------------------------------------------------------------
+# CAPSULE_ANCHOR — default-off, env parsing, and anchor= reaching the emitter
+# ---------------------------------------------------------------------------
+# capsule_emit/server.py evaluates CAPSULE_ANCHOR at import time, so these
+# tests reload the module after mutating the env var and restore the default
+# (unset → off) afterward so later tests see a clean module.
+
+
+@pytest.fixture
+def _server_reload(monkeypatch):
+    yield lambda: importlib.reload(_server_module)
+    monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
+    importlib.reload(_server_module)
+
+
+def test_capsule_anchor_defaults_false_when_unset(monkeypatch, _server_reload):
+    """No CAPSULE_ANCHOR set → _ANCHOR is False (the new safe default)."""
+    monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
+    mod = _server_reload()
+    assert mod._ANCHOR is False
+
+
+@pytest.mark.parametrize("value", ["0", "false", "False", "FALSE", "no", "NO"])
+def test_capsule_anchor_env_off_values(monkeypatch, _server_reload, value):
+    """"0"/"false"/"no" (any case) parse to _ANCHOR = False."""
+    monkeypatch.setenv("CAPSULE_ANCHOR", value)
+    mod = _server_reload()
+    assert mod._ANCHOR is False
+
+
+@pytest.mark.parametrize("value", ["true", "True", "1", "yes"])
+def test_capsule_anchor_env_on_values(monkeypatch, _server_reload, value):
+    """Anything outside the off-list (e.g. "true"/"1"/"yes") parses to True."""
+    monkeypatch.setenv("CAPSULE_ANCHOR", value)
+    mod = _server_reload()
+    assert mod._ANCHOR is True
+
+
+def test_capsule_anchor_true_reaches_anchor_call(tmp_path, monkeypatch, _server_reload):
+    """CAPSULE_ANCHOR=true → capsule_record's emit() invokes the anchor call.
+
+    Patches capsule_emit.core._simple_anchor so no real network request is
+    made; only whether it was invoked is asserted.
+    """
+    calls: list = []
+    monkeypatch.setattr("capsule_emit.core._simple_anchor", lambda *a, **kw: calls.append((a, kw)))
+    monkeypatch.setenv("CAPSULE_ANCHOR", "true")
+    mod = _server_reload()
+
+    reply = mod.capsule_record(
+        action="buy_widget",
+        tool_input='{"qty": 1}',
+        tool_output='{"status": "ok"}',
+        ledger=str(tmp_path / "l.jsonl"),
+    )
+    assert "sealed capsule_id=" in reply
+    assert len(calls) == 1
+
+
+def test_capsule_anchor_false_skips_anchor_call(tmp_path, monkeypatch, _server_reload):
+    """CAPSULE_ANCHOR=false (or unset) → the anchor call is never invoked."""
+    calls: list = []
+    monkeypatch.setattr("capsule_emit.core._simple_anchor", lambda *a, **kw: calls.append((a, kw)))
+    monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
+    mod = _server_reload()
+
+    reply = mod.capsule_record(
+        action="buy_widget",
+        tool_input='{"qty": 1}',
+        tool_output='{"status": "ok"}',
+        ledger=str(tmp_path / "l.jsonl"),
+    )
+    assert "sealed capsule_id=" in reply
+    assert calls == []
