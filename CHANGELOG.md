@@ -6,6 +6,63 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-05
+
+### Fixed — BREAKING: `EmitResult.anchored` is now honestly derived (capsule-emit#43)
+
+**What `anchored` used to mean:** `True` whenever `emit(anchor=True)` was called
+(the default), *regardless of whether the anchor submission ever succeeded*.
+`core.py` fired the digest off to `agent_action_capsule.anchor.anchor()` (a
+fire-and-forget helper that swallows every exception with no error path) and
+then hardcoded `anchored = True` on the next line — unconditionally. Unreachable
+endpoint, DNS failure, HTTP 500, no `AAC_ANCHOR_URL` set at all: still `True`.
+This directly contradicted this same library family's own MUST — "`anchored`
+is reported ONLY when a receipt actually verifies" (`agent_action_capsule`'s
+`transparent.py` / `verify.py` / `cli.py`) — a conformance defect in the
+flagship SDK against a rule enforced everywhere else in the same package.
+**`capsule-emit` 0.3.2, published on PyPI, carries this old, incorrect
+semantics** — anyone who installed `capsule-emit` before this release and
+relied on `anchored=True` as evidence of a successful submission was told
+something the library never verified.
+
+**What `anchored` means now:** `True` if, and only if, a real `AnchorResult`
+confirmed the submission via `agent_action_capsule.anchor.async_anchor()`
+(the `AnchorFuture`/`AnchorResult`/`AnchorError` surface). The default
+non-blocking anchor path — still the default — can never observe that outcome
+by the time `emit()` returns, so `anchored` is now `False` in the common case.
+This is correct, not a regression: the old `True` was never true.
+
+- `EmitResult` gains `anchor_status: "confirmed" | "submitted" | "failed" |
+  "skipped"` for callers who want the weaker "was it submitted" fact without
+  it being confused for actual confirmation.
+- `emit()` gains `anchor_wait: float | None = None` — block up to N seconds
+  for the real outcome and get an honest `anchored` back synchronously.
+- An `atexit` handler now joins outstanding anchor futures (bounded, shared
+  timeout, default 5s, overridable via `CAPSULE_EMIT_ATEXIT_ANCHOR_TIMEOUT`)
+  so a short-lived process (script, CLI, notebook, test) no longer silently
+  drops an in-flight submission on exit — the exact race independently
+  reported three times by @thisjody, including in a real signing ceremony.
+  On timeout or failure the handler emits a `RuntimeWarning` naming the
+  `capsule_id` and endpoint; a genuine success is never warned about.
+- `agent-action-capsule` dependency now pins `[anchor]` (pulls in
+  `scitt-cose`/`cryptography`) so the default `anchor=True` path actually
+  works out of the box — it previously depended on the bare package, which
+  does not include what `async_anchor()` needs.
+- Swept every re-export of the old always-`True` claim onto the corrected
+  semantics: `skills/openclaw/seal_server.py`'s `/seal` and `/verify`
+  endpoints, `examples/mcp-capsule/demo.py`, `examples/nanda-tax-audit`
+  (which never branched on `.anchored` but used "anchored" narratively to
+  mean "capsule-sealed" — corrected to avoid the same ambiguity), and
+  `examples/nanda-trust-capsule`'s reputation-gate docstrings (gate 3 checks
+  local-ledger presence, not public-anchor confirmation — was documented as
+  "the public time-anchor gate," which it was never enforcing).
+
+**If you pin `capsule-emit` and check `.anchored`:** re-audit that check. If
+you need a real synchronous confirmation, pass `anchor_wait=`. If you only
+need "was a submission attempted," use `.anchor_status`. Filed and reported
+by [@thisjody](https://github.com/thisjody) — thank you for the clean repro
+and the accurate root-cause instinct (Fixes #43).
+
 ## [0.3.2] — 2026-07-13
 
 ### Added

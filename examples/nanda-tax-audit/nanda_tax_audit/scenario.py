@@ -157,7 +157,7 @@ class BizControlAgent(StateMachineAgent):
 
 
 # ---------------------------------------------------------------------------
-# Agent: biz_capsule — anchored capsule ledger, tampering is detectable
+# Agent: biz_capsule — capsule-sealed ledger, tampering is detectable
 # ---------------------------------------------------------------------------
 
 class BizCapsuleAgent(StateMachineAgent):
@@ -249,15 +249,17 @@ class BizCapsuleAgent(StateMachineAgent):
 
 
 # ---------------------------------------------------------------------------
-# Agent: auditor — verifies biz_capsule against anchor; emits reasoning capsules
+# Agent: auditor — verifies biz_capsule's seal; emits reasoning capsules
 # ---------------------------------------------------------------------------
 
 class AuditorAgent(StateMachineAgent):
     """Third-party auditor that trusts neither business.
 
-    For biz_control: can't prove tampering (no independent anchor).
+    For biz_control: can't prove tampering (no independent digest).
     For biz_capsule: re-derives agent_input_digest from submitted amount and
-      compares to the capsule in the anchored ledger. Mismatch → fine.
+      compares to the sealed capsule. Mismatch → fine. (Detection is offline
+      tamper-evidence — the --anchor transparency-log submission is separate
+      and does not gate this check.)
 
     After each audit cycle, emits a sealed reasoning capsule explaining the
     fine/no-fine decision (self-reported; tamper-evident, not true-motive proof).

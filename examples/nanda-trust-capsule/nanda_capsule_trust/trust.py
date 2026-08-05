@@ -2,21 +2,25 @@
 """CapsuleEmitTrust — NANDA Town Trust layer plugin backed by capsule-emit.
 
 Drop-in replacement for ``agent_receipts``: every interaction a NANDA agent
-already reports via ``ctx.plugins.get("trust").report(...)`` is anchored to
+already reports via ``ctx.plugins.get("trust").report(...)`` is sealed into
 an Agent Action Capsule ledger — zero agent-code changes required.
 
 Three gates for a receipt to build reputation, same as ``agent_receipts``:
 
 1. **Valid** — Ed25519 issuer signature verifies.
 2. **Corroborated** — distinct counterparty co-signed the same interaction.
-3. **Anchored** — a capsule was emitted for this receipt and is present in the
-   capsule ledger (the public time-anchor gate ``agent_receipts`` can't enforce).
+3. **Capsule-sealed** — a capsule was emitted for this receipt and is present
+   in the local capsule ledger (a tamper-evident record ``agent_receipts``
+   can't produce). This is presence in the ledger, NOT confirmation that the
+   digest reached the public transparency log — pass ``anchor=True`` (and
+   check ``EmitResult.anchored`` / ``.anchor_status``) for that stronger,
+   separate guarantee; it is not what gate 3 measures.
 
-Gate 3 is the additive capsule contribution: an agent whose interactions are
-never anchored (because e.g. the emitter was offline) gets no reputation score
-even if their receipts are individually valid and corroborated. The capsule
-ledger is the authoritative record, independently verifiable by any party who
-ran none of the agents.
+Gate 3 is the additive capsule contribution: an agent whose interactions never
+get capsule-sealed (because e.g. the emitter was offline) gets no reputation
+score even if their receipts are individually valid and corroborated. The
+capsule ledger is the authoritative record, independently verifiable by any
+party who ran none of the agents.
 
 Plain-string ``evidence.detail`` (stock NANDA scenarios with no receipt) falls
 back to the ``score_average`` heuristic so this plugin stays a drop-in in any
@@ -77,7 +81,7 @@ _DEFAULT_CAPSULE_ACTION = "message_sent"
 
 
 class CapsuleEmitTrust:
-    """Anchored, collusion-resistant reputation implementing the ``Trust`` Protocol.
+    """Capsule-sealed, collusion-resistant reputation implementing the ``Trust`` Protocol.
 
     Mirrors ``AgentReceiptsTrust`` with one addition: every corroborated receipt
     triggers a ``capsule_emit.emit()`` call, so the reputation history is sealed
@@ -112,7 +116,9 @@ class CapsuleEmitTrust:
         # corroboration and severance. The capsule ledger is the public record.
         self._receipts: list[dict[str, Any]] = []
         # receipt_key (issuer_did, counterparty_did, action_id) → capsule_id.
-        # Tracks which receipts have been anchored so score() applies gate 3.
+        # Tracks which receipts have a corresponding sealed capsule in the
+        # local ledger so score() can apply gate 3 (NOT public-anchor status —
+        # see the module docstring).
         self._anchored: dict[tuple[str, str, str], str] = {}
         # Plain-string fallback scores (stock-scenario compatibility).
         self._fallback_scores: dict[AgentId, list[float]] = {}
@@ -202,7 +208,7 @@ class CapsuleEmitTrust:
             logger.exception("capsule emit failed for agent=%s", agent)
 
     async def score(self, agent: AgentId) -> ReputationScore:
-        """Reputation from corroborated, non-severed, anchored receipts.
+        """Reputation from corroborated, non-severed, capsule-sealed receipts.
 
         Same three-gate logic as ``agent_receipts``, plus gate 3: only receipts
         with an emitted capsule in ``_anchored`` count toward the score. Agents

@@ -131,7 +131,8 @@ def run_demo(anchor: bool) -> int:
     print("    'dispatched'  = tool ran; outcome not yet confirmed by a second party")
     print("    'confirmed'   = use emit_capsule(effect={status:'confirmed'}) after confirmation")
     print(f"  capsule_id      : {cap.capsule_id}")
-    print(f"  anchored        : {cap.anchored}")
+    print(f"  anchored        : {cap.anchored}  ← True only once a receipt confirms it")
+    print(f"  anchor_status   : {cap.anchor_status}  ← 'submitted' means dispatched, not yet confirmed")
     print()
 
     print("  Input/output committed by digest (raw values stay LOCAL):")

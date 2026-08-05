@@ -2,15 +2,23 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tax audit demo: "cook the books, get caught."
 
-Two businesses cheat the IRS the same way. The one with anchored capsule books
+Two businesses cheat the IRS the same way. The one with capsule-sealed books
 gets caught every time; the one with mutable books gets away with it. Over time,
 the capsule business learns that cheating is unprofitable and goes honest.
+
+Detection here comes from tamper-evidence: the auditor re-derives each capsule's
+agent_input_digest from the submitted amount and compares it to the sealed
+capsule, which works offline and does not depend on --anchor. Pass --anchor to
+additionally publish digests to the public transparency log ($AAC_ANCHOR_URL)
+for third-party verifiability — that is a separate, weaker-by-default guarantee
+(see EmitResult.anchored / .anchor_status in capsule-emit), not what catches
+the cheaters in this demo.
 
 Usage:
     python demo.py                    # 20 audit cycles
     python demo.py --ticks 5000       # short run (~5 cycles)
     python demo.py --verify           # run + verify both ledgers
-    python demo.py --anchor           # live-anchor to $AAC_ANCHOR_URL
+    python demo.py --anchor           # also publish digests to $AAC_ANCHOR_URL
 """
 
 from __future__ import annotations
@@ -164,16 +172,16 @@ def _print_report(data: dict, capsule_ledger: Path, auditor_ledger: Path) -> Non
     print(f"  Audit cycles:        {total_audits}")
     print(f"  Transactions sealed: {len(tx_capsule)} capsules in biz_capsule ledger")
     print()
-    print("  biz_control (mutable ledger — no anchor)")
+    print("  biz_control (mutable ledger — no capsule seal)")
     print(f"    Cheated:           {cheats_control} of {cheats_control+honest_control} cycles")
     if last_prob_ctrl is not None:
         print(f"    Final cheat rate:  {last_prob_ctrl*100:.1f}%  (no deterrent — stays high)")
-    print(f"    Caught:            0 of {cheats_control}  (0% — auditor has no anchor)")
+    print(f"    Caught:            0 of {cheats_control}  (0% — no tamper-evident digest to check)")
     if ctrl_suspicion_count > 0:
         print(f"    Suspected:         {ctrl_suspicion_count} cycles flagged as anomalous")
         print("                       (pattern detected, no proof — no fine issued)")
     print()
-    print("  biz_capsule (anchored capsule ledger)")
+    print("  biz_capsule (capsule-sealed ledger)")
     print(f"    Cheated:           {cheats_capsule} of {cheats_capsule+honest_capsule} cycles")
     if last_prob_cap is not None:
         print(f"    Final cheat rate:  {last_prob_cap*100:.1f}%  (declining — learned penalty)")
