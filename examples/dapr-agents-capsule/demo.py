@@ -46,8 +46,10 @@ from cryptography.hazmat.primitives.serialization import (
 from scitt_cose import verify_receipt
 
 from capsule_emit.adapters.dapr_agents import DaprAgentsCapsuleEmitter
+from capsule_emit.permalink import build_url, summarize
 
 ANCHOR = os.environ.get("AAC_ANCHOR_URL", "https://anchor.agentactioncapsule.org").rstrip("/")
+VERIFY = os.environ.get("AAC_VERIFY_URL", "https://verify.agentactioncapsule.org").rstrip("/")
 
 
 def _anchor_sync(capsule_id: str) -> dict:
@@ -249,11 +251,22 @@ def run_demo() -> None:
         assert vr1.ok and vr2.ok and vr1_receipt.ok and vr2_receipt.ok
         print("  All checks PASS.")
 
+        # ── Verify permalink (bundle — same `capsule_emit.permalink` the CLI's
+        # `capsule-emit permalink` subcommand uses; bundle is the DEFAULT here
+        # because 2 capsules are supplied, so the chain-navigation table always
+        # renders instead of silently degrading to a single-capsule view) ─────
+        _section("Step 5 — verify permalink (bundle)")
+        chain_capsules = [fyi_cap, decide_cap]
+        bundle_url = build_url(chain_capsules, base_url=VERIFY, bundle=True)
+        print(f"  {summarize(chain_capsules)}")
+        print(f"  {bundle_url}")
+
         return {
             "fyi_capsule_id": fyi_id,
             "fyi_leaf_index": fyi_leaf,
             "decide_capsule_id": decide_id,
             "decide_leaf_index": decide_leaf,
+            "bundle_permalink": bundle_url,
         }
 
 
