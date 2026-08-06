@@ -228,6 +228,10 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             Pass ``anchor=False`` for offline/sandbox use.  Never poke
             ``emitter._anchor`` directly.
         anchor_url: Override the anchor endpoint.
+        anchor_wait: When set, block up to this many seconds per tool call for
+            the real anchor outcome, so ``.last.anchored`` / ``.anchor_status``
+            reflect a genuine confirmed/failed result instead of the default
+            non-blocking "submitted". ``None`` (default) never blocks.
         model: Default ``{"provider": ..., "model_id": ...}`` applied to
             every capsule.  The MCP adapter does NOT auto-capture the model
             — what you supply is what gets sealed.  Can be overridden
@@ -265,6 +269,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         ledger: str | os.PathLike = "ledger.jsonl",
         anchor: bool = True,
         anchor_url: str | None = None,
+        anchor_wait: float | None = None,
         model: dict[str, str] | None = None,
         action_type: str | None = None,
         host_provenance: bool = False,
@@ -276,6 +281,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             ledger=ledger,
             anchor=anchor,
             anchor_url=anchor_url,
+            anchor_wait=anchor_wait,
             model=model,
         )
         self._default_action_type = action_type

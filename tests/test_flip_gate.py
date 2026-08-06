@@ -457,14 +457,20 @@ def main() -> int:
 
             # AAC_ANCHOR_URL override (bad URL → emit still completes without raising).
             # As of capsule-emit 0.4.0 (capsule-emit#43), anchored is honestly derived:
-            # the non-blocking default path never confirms a submission it hasn't waited
-            # on, so anchored MUST be False here. This gate tests whatever is currently
-            # live on PyPI, so it tolerates a pre-0.4.0 published package still reporting
-            # anchored=True unconditionally (the bug this fix addresses).
+            # the non-blocking default path (no anchor_wait) can never confirm a
+            # submission it hasn't waited on, so anchored MUST be False here — a
+            # published package that still reports True unconditionally is the exact
+            # pre-0.4.0 bug this gate exists to catch, so this assertion is meant to
+            # fail against a stale PyPI publish rather than paper over it.
             import os
             cap2 = emit(action="test2", operator="o", developer="d@v1",
                         anchor_url="http://127.0.0.1:0/v1/digest",
                         anchor=True, ledger=ledger)
+            assert not cap2.anchored, (
+                f"expected anchored=False on the non-blocking default path against a "
+                f"bad anchor_url, got anchored={cap2.anchored} — either capsule-emit's "
+                f"honesty fix (#43) is missing or the published version predates it"
+            )
             print(f"OK anchor_url_override anchored={cap2.anchored}")
         """))
         if r.returncode == 0 and "OK" in r.stdout:

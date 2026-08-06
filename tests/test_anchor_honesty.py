@@ -271,3 +271,51 @@ def test_subprocess_exit_warns_when_endpoint_is_unreachable(tmp_path):
         f"never a silent drop. stderr={proc.stderr!r}"
     )
     assert "failed" in proc.stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# (d) _pending_anchors must not leak forever on the default non-blocking path
+# ---------------------------------------------------------------------------
+
+
+def test_track_pending_anchor_sweeps_completed_entries():
+    """Every emit(anchor=True) on the default (non-anchor_wait) path registers
+    a future in the module-level _pending_anchors dict, and nothing else ever
+    untracks it on that path — only anchor_wait's blocking branch and the
+    atexit handler do. A long-running process (e.g. seal_server.py) that never
+    calls anchor_wait would accumulate one entry per emit() forever.
+
+    _track_pending_anchor sweeps already-.done() entries out of the dict on
+    every new submission, so completed futures (success OR failure — .done()
+    goes True on both paths inside async_anchor's worker thread) get reclaimed
+    without needing a blocking wait or an on_result callback."""
+    from agent_action_capsule.anchor import AnchorError, AnchorFuture
+
+    from capsule_emit import core
+
+    core._pending_anchors.clear()
+    try:
+        f1 = AnchorFuture()
+        f2 = AnchorFuture()
+        f3 = AnchorFuture()
+
+        core._track_pending_anchor("cap-1", f1, None)
+        core._track_pending_anchor("cap-2", f2, None)
+        assert set(core._pending_anchors) == {"cap-1", "cap-2"}
+
+        # cap-1's submission completes (failure path — .done() goes True the
+        # same way a success would, exercising the case on_result misses).
+        f1._set(AnchorError(capsule_id="cap-1", error="boom", ts_url="http://x"))
+        assert f1.done()
+        assert not f2.done()
+
+        # Tracking a third anchor must sweep the completed cap-1 entry, but
+        # leave the still-pending cap-2 entry alone.
+        core._track_pending_anchor("cap-3", f3, None)
+
+        assert set(core._pending_anchors) == {"cap-2", "cap-3"}, (
+            f"expected cap-1 (done) swept and cap-2 (pending) retained, "
+            f"got {set(core._pending_anchors)}"
+        )
+    finally:
+        core._pending_anchors.clear()

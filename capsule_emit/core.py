@@ -58,7 +58,23 @@ _pending_anchors: dict[str, tuple[AnchorFuture, str | None]] = {}
 
 
 def _track_pending_anchor(capsule_id: str, future: AnchorFuture, endpoint: str | None) -> None:
+    """Track a newly-submitted anchor future, sweeping completed ones first.
+
+    ``AnchorFuture`` has no completion callback (only non-blocking ``.done()``
+    and blocking ``.result(timeout=)``), so this opportunistic sweep — run on
+    every new submission — is what reclaims memory on the default
+    non-blocking path. ``.done()`` goes True on both the success path and the
+    internal-exception path inside ``async_anchor``'s worker thread, so this
+    is correct for anchor failures too, unlike relying on ``on_result``
+    (which ``agent_action_capsule`` 0.1.0 only invokes on success). This
+    bounds growth to "entries between the last two emit() calls," not
+    "forever" — a capsule anchored right before the process goes idle with no
+    further emit() calls still relies on the atexit handler as the backstop.
+    """
     with _pending_anchors_lock:
+        for pending_id, (pending_future, _) in list(_pending_anchors.items()):
+            if pending_future.done():
+                del _pending_anchors[pending_id]
         _pending_anchors[capsule_id] = (future, endpoint)
 
 

@@ -6,6 +6,35 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `_pending_anchors` (the module-level dict backing the atexit anchor-join
+  handler added in 0.4.0) no longer leaks one entry per `emit()` call forever
+  on the default non-blocking path. `_track_pending_anchor` now sweeps
+  already-completed futures out of the dict on every new submission — correct
+  for both anchor success and anchor failure, since `AnchorFuture.done()`
+  goes `True` on either outcome inside `async_anchor`'s worker thread. A
+  single capsule anchored right before a process goes idle (no further
+  `emit()` calls to trigger a sweep) still relies on the `atexit` handler as
+  the final backstop — that residual, bounded case is not fully eliminated,
+  only made non-unbounded.
+- `examples/mcp-capsule/demo.py` now passes `anchor_wait=10.0` so the
+  flagship demo shows a genuine `anchored: True` / `anchor_status: confirmed`
+  against a reachable endpoint, instead of the honest-but-discouraging
+  `anchored: False` the 0.4.0 fix otherwise surfaces on every run.
+  `MCPCapsuleEmitter` and `CapsuleEmitterBase` gain an `anchor_wait=` param
+  threaded through to `emit()`.
+
+### Known limitations
+- **A failed anchor submission leaves no durable trace.** On the default
+  non-blocking path, a background anchor failure is visible only as an
+  in-memory `EmitResult` (never observed unless the caller passed
+  `anchor_wait=`) or a `RuntimeWarning` printed to stderr by the `atexit`
+  handler at interpreter shutdown — the ledger row itself records nothing
+  about the failure. A long-running service that never inspects stderr, or a
+  short-lived script whose stderr isn't captured, has no way to discover or
+  retry a dropped submission after the fact. A retry queue or a sidecar
+  failure log would close this gap; tracked as a follow-up, not fixed here.
+
 ## [0.4.0] — 2026-08-05
 
 ### Fixed — BREAKING: `EmitResult.anchored` is now honestly derived (capsule-emit#43)
