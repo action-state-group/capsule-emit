@@ -101,7 +101,13 @@ def seal(req: SealRequest) -> JSONResponse:
 
     Returns:
         capsule_id   — 64-char hex SHA-256 seal (the tamper-evident receipt)
-        anchored     — True when the digest was submitted to the transparency log
+        anchored     — True ONLY when a receipt actually confirmed the digest
+                       reached the transparency log. The anchor submission is
+                       non-blocking by default, so this is almost always False
+                       here — use anchor_status for the weaker "was it
+                       submitted" fact, or pass anchor_wait= to capsule_emit.emit()
+                       directly if you need a synchronous confirmed/failed answer.
+        anchor_status — "confirmed" | "submitted" | "failed" | "skipped"
         reveal       — present only when reveal=True; contains raw input/output
     """
     try:
@@ -128,6 +134,7 @@ def seal(req: SealRequest) -> JSONResponse:
     body: dict[str, Any] = {
         "capsule_id": result.capsule_id,
         "anchored": result.anchored,
+        "anchor_status": result.anchor_status,
     }
     if req.reveal:
         body["reveal"] = {
@@ -154,8 +161,12 @@ def verify(id: str, ledger: str = _DEFAULT_LEDGER) -> JSONResponse:
         capsule_id — full 64-char id
         action     — the action name sealed in this capsule
         verdict    — 'executed' | 'confirmed' | 'blocked'
-        anchored   — True when the capsule was submitted to the anchor
         findings   — list of detail strings when ok=False
+
+    Anchor status is a property of /seal's EmitResult, not the ledger record,
+    so it is intentionally not reported here (a prior version returned an
+    "anchored" field read from a ledger key capsule_emit never writes — always
+    False, a claim this endpoint had no basis for).
     """
     if len(id) < 8:
         raise HTTPException(
@@ -180,7 +191,6 @@ def verify(id: str, ledger: str = _DEFAULT_LEDGER) -> JSONResponse:
         "capsule_id": match["capsule_id"],
         "action": match.get("action_id", "").split("/")[0],
         "verdict": match.get("disposition", {}).get("verdict_class", ""),
-        "anchored": bool(match.get("compute_attestation", {}).get("anchored")),
         "findings": [f.detail for f in vr.findings] if not vr.ok else [],
     })
 

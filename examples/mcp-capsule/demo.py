@@ -65,7 +65,11 @@ def run_demo(anchor: bool) -> int:
         operator="acme-co",
         developer="order-agent@v1",
         ledger=LEDGER_PATH,
-        anchor=anchor,  # True → fire-and-forget digest to public log
+        anchor=anchor,  # True → submit a digest to the public log
+        # anchor_wait blocks for a real confirmed/failed outcome instead of
+        # the default non-blocking "submitted" — so this flagship demo shows
+        # a genuine anchored=True, not an apology for anchored=False.
+        anchor_wait=10.0 if anchor else None,
         # action_type defaults to None → auto-derives "decide" for
         # verdict="executed" — correct for consequential tool calls (§5.1)
     )
@@ -84,8 +88,14 @@ def run_demo(anchor: bool) -> int:
     # the real typed params and generates the correct JSON schema.
 
     @emitter.tool(effect_type="write_order")  # seeded registry value (§12 / REGISTRY.md §3)
-    def submit_order(vendor: str, amount: float, po_number: str) -> dict:
-        """Submit a purchase order (consequential action)."""
+    def submit_order(vendor: str, amount: str, po_number: str) -> dict:
+        """Submit a purchase order (consequential action).
+
+        ``amount`` is an exact decimal string (e.g. ``"1240.19"``), not a
+        float — a raw JSON float in a digest-bearing field is a §5.1 error
+        (see ``capsule_emit.core._digest``); capsule-emit fails closed rather
+        than sealing a value that could never reproducibly re-verify.
+        """
         return {
             "status": "dispatched",
             "po_number": po_number,
@@ -98,12 +108,17 @@ def run_demo(anchor: bool) -> int:
     # Step 2 — call the tool (three times for a ledger trail)
     # -----------------------------------------------------------------------
     print("=== capsule-emit + MCP demo ===")
-    print("wrap any MCP tool → verifiable record trail, in one decorator\n")
+    print("wrap any MCP tool → verifiable record trail, in one decorator")
+    if anchor:
+        print("(each call blocks up to 10s for a real anchor confirmation — "
+              "pass --no-anchor to skip)\n")
+    else:
+        print()
 
     orders = [
-        ("Frobozz Supply", 4_210.00, "PO-2026-0047"),
-        ("Acme Widgets",   1_380.50, "PO-2026-0048"),
-        ("Zork Industries", 975.00,  "PO-2026-0049"),
+        ("Frobozz Supply", "4210.00", "PO-2026-0047"),
+        ("Acme Widgets",   "1380.50", "PO-2026-0048"),
+        ("Zork Industries", "975.00", "PO-2026-0049"),
     ]
 
     for vendor, amount, po in orders:
@@ -131,7 +146,8 @@ def run_demo(anchor: bool) -> int:
     print("    'dispatched'  = tool ran; outcome not yet confirmed by a second party")
     print("    'confirmed'   = use emit_capsule(effect={status:'confirmed'}) after confirmation")
     print(f"  capsule_id      : {cap.capsule_id}")
-    print(f"  anchored        : {cap.anchored}")
+    print(f"  anchored        : {cap.anchored}  ← True only once a receipt confirms it")
+    print(f"  anchor_status   : {cap.anchor_status}  ← 'submitted' means dispatched, not yet confirmed")
     print()
 
     print("  Input/output committed by digest (raw values stay LOCAL):")
