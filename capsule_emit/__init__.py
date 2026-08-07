@@ -22,6 +22,7 @@ Anchor is on by default (async, digest-only). Ledger is written to
 """
 from .approval import list_pending, seal_approval
 from .core import EmitResult, emit
+from .disclosure import DisclosureError, build_disclosure_envelope
 from .gate import (
     CheckResult,
     Constraint,
@@ -68,4 +69,7 @@ __all__ = [
     "ManifestDeclaration",
     # Verify
     "verify_input_digest",
+    # Disclosure envelope
+    "build_disclosure_envelope",
+    "DisclosureError",
 ]
