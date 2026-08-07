@@ -10,12 +10,18 @@ Four rendering levels for the ledger:
 
     capsule-emit verify --store <path>           — verify all capsules in a ledger
 
+    capsule-emit permalink <capsule.json ...>    — build a demo verify-surface
+                                                    permalink (withheld/bundle
+                                                    only; --reveal is reserved
+                                                    but not yet implemented)
+
 Exit codes: 0 = ok, 1 = error.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 
 
 def _cmd_ledger_view(args: argparse.Namespace) -> int:
@@ -96,6 +102,54 @@ def _build_parser() -> argparse.ArgumentParser:
     verify_p = sub.add_parser("verify", help="verify capsules")
     verify_p.add_argument("--store", dest="store_path", metavar="PATH", help="JSONL ledger to verify")
 
+    # permalink
+    from .permalink import DEFAULT_BASE_URL
+
+    permalink_p = sub.add_parser(
+        "permalink",
+        help="build a demo verify-surface permalink (withheld/bundle only)",
+    )
+    permalink_p.add_argument(
+        "capsule_files",
+        nargs="*",
+        metavar="CAPSULE.json",
+        help="one or more capsule JSON files (mutually exclusive with --ledger/--from-run)",
+    )
+    permalink_p.add_argument(
+        "--ledger", metavar="PATH", default=None, help="read capsules from a JSONL ledger file"
+    )
+    permalink_p.add_argument(
+        "--from-run",
+        metavar="DIR",
+        default=None,
+        help="read capsules from a run directory (its ledger.jsonl if present, else its *.json files)",
+    )
+    permalink_p.add_argument(
+        "--bundle",
+        action="store_true",
+        help="JSON-array fragment that renders the chain-navigation table; "
+        "this is the DEFAULT whenever more than one capsule is supplied",
+    )
+    permalink_p.add_argument(
+        "--base-url",
+        default=DEFAULT_BASE_URL,
+        help=f"verify-surface base URL (default: {DEFAULT_BASE_URL})",
+    )
+    permalink_p.add_argument(
+        "--check",
+        action="store_true",
+        help="run verify() on every capsule first (no network); "
+        "refuse to emit a URL if any capsule fails",
+    )
+    permalink_p.add_argument(
+        "--reveal",
+        action="append",
+        metavar="ARTIFACT",
+        default=None,
+        help="NOT YET IMPLEMENTED — reserved for the disclosure envelope "
+        "([aac-disclosure-envelope]); using this flag is an error",
+    )
+
     return parser
 
 
@@ -120,6 +174,51 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return 0 if fail_count == 0 else 1
 
 
+def _cmd_permalink(args: argparse.Namespace) -> int:
+    from .permalink import PermalinkError, build_url, check_capsules, load_capsules, summarize
+
+    if args.reveal:
+        print(
+            "permalink: --reveal is not yet implemented — it depends on the "
+            "disclosure-envelope format ([aac-disclosure-envelope], not yet built). "
+            "Only withheld/bundle permalinks are supported in this build.",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        capsules = load_capsules(
+            capsule_files=args.capsule_files or None,
+            ledger_path=args.ledger,
+            from_run=args.from_run,
+        )
+    except PermalinkError as exc:
+        print(f"permalink: {exc}", file=sys.stderr)
+        return 1
+
+    if args.check:
+        results = check_capsules(capsules)
+        failures = [(c, r) for c, r in zip(capsules, results) if not r.ok]
+        if failures:
+            print(
+                f"permalink --check: {len(failures)}/{len(capsules)} capsule(s) FAILED "
+                "verify() — refusing to emit a URL",
+                file=sys.stderr,
+            )
+            for cap, res in failures:
+                cid = (cap.get("capsule_id") or "<no-capsule_id>")[:16]
+                detail = "; ".join(f"{f.check}: {f.detail}" for f in res.errors) or "verification failed"
+                print(f"  {cid}  {detail}", file=sys.stderr)
+            return 1
+        print(f"permalink --check: {len(capsules)}/{len(capsules)} capsule(s) VALID")
+
+    bundle = args.bundle or len(capsules) > 1
+    url = build_url(capsules, base_url=args.base_url, bundle=bundle)
+    print(summarize(capsules))
+    print(url)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -132,6 +231,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "verify":
         return _cmd_verify(args)
+
+    if args.command == "permalink":
+        return _cmd_permalink(args)
 
     parser.error(f"unknown command {args.command!r}")
     return 1
