@@ -13,7 +13,7 @@
 ## Checklist
 
 - [ ] `pytest` passes locally
-- [ ] No private/moat/product content in this public repo
+- [ ] No private, strategic, or product-internal content in this public repo
 - [ ] Neutrality gate passes (`neutrality_scan.py`)
 - [ ] DCO sign-off: `git commit -s`
 
