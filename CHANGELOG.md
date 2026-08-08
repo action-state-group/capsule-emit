@@ -6,6 +6,21 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **MCP toolset digest — `ext.mcp`** (`capsule_emit/adapters/mcp.py`): closes the gap NSA CSI
+  *"MCP: Security Design Considerations"* (May 2026, U/OO/6030316-26) documents — a capsule
+  proves what the agent did, not which tool descriptions the model was shown, so a server
+  that swaps a tool's description after gaining trust was previously invisible in the record.
+  `MCPCapsuleEmitter.capture_toolset(tools)` digests the tool manifest as presented to the
+  model (name + description + input schema, JCS canonicalized, sorted by name) and carries it
+  as a namespaced payload extension (`ext.mcp.toolset_digest` + `digest_alg` + a
+  `manifest_ref` typed reference) on every capsule — the same value while the toolset is
+  stable, a visible digest change between adjacent capsules on a mid-session swap.
+  `emit_manifest_artifact=True` (default) also writes the canonical manifest bytes to disk as
+  openable evidence on first capture and on every change; `False` withholds the bytes while
+  keeping the digest visible. See `docs/extensions/mcp-toolset-digest.md` for the exact
+  digest context.
+
 ### Fixed
 - `_pending_anchors` (the module-level dict backing the atexit anchor-join
   handler added in 0.4.0) no longer leaks one entry per `emit()` call forever
@@ -23,6 +38,10 @@ All notable changes to `capsule-emit` are documented here. The format follows
   `anchored: False` the 0.4.0 fix otherwise surfaces on every run.
   `MCPCapsuleEmitter` and `CapsuleEmitterBase` gain an `anchor_wait=` param
   threaded through to `emit()`.
+- `examples/mcp-capsule/demo.py`: `submit_order`'s `amount` parameter was typed `float`,
+  which made every capsule in the demo fail to seal (`FloatInDigestError`, silently
+  swallowed by the adapter's fail-safe emit, so the demo crashed later on a `None` capsule).
+  Now `str`, per the profile's exact-decimal-string rule for monetary values (§5.1).
 
 ### Known limitations
 - **A failed anchor submission leaves no durable trace.** On the default
