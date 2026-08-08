@@ -5,6 +5,8 @@ This is the adoption-surface API described in capsule-emit-quickstart.md.
 It wraps ``agent_action_capsule.emit()`` with:
 - A friendlier signature (action, operator, developer, agent_input, agent_output, model, verdict, effect)
 - Digest-only commitment of agent_input / agent_output (content stays local)
+- Optional per-emit digest salting (``salt_digests=True``), for a privacy-sensitive
+  deployment that wants cross-capsule input correlation resistance
 - Async anchor on by default (digest-only; no business content crosses the wire)
 - Automatic JSONL ledger append
 - A typed EmitResult with .capsule_id, .anchored, and .anchor_status
@@ -27,6 +29,7 @@ import atexit
 import hashlib
 import json
 import os
+import secrets
 import threading
 import time
 import warnings
@@ -35,7 +38,7 @@ from typing import Any, Literal
 
 from agent_action_capsule import emit as _base_emit
 from agent_action_capsule.anchor import AnchorError, AnchorFuture, AnchorResult, async_anchor
-from agent_action_capsule.canonical import json_digest
+from agent_action_capsule.canonical import jcs, json_digest, normalize
 from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError
 
 from .ledger import append_to_ledger
@@ -122,7 +125,7 @@ def _join_pending_anchors_at_exit() -> None:
 atexit.register(_join_pending_anchors_at_exit)
 
 
-def _digest(value: Any) -> str:
+def _digest(value: Any, salt: str | None = None) -> str:
     """SHA-256 over the RFC 8785 (JCS) canonicalization of ``value``.
 
     Uses the same ``json_digest`` (JCS) as :func:`verify_input_digest`, so a
@@ -142,14 +145,29 @@ def _digest(value: Any) -> str:
     Non-JSON-native types the legacy encoder tolerated via ``default=str``
     (e.g. tuples, arbitrary objects) still fall back to the legacy sorted-key
     encoding, so those emitters do not break at seal time.
+
+    When *salt* is given, it is folded into the exact JCS pre-image bytes
+    (``jcs_bytes + b"|" + salt``) before hashing — the salted digest is over
+    the same canonicalization as the unsalted one, just committing an extra
+    salt suffix, so opting into ``salt_digests=True`` never reintroduces the
+    pre-0.3.2 JCS/sort_keys divergence this function's own history already
+    fixed.
     """
     try:
-        return json_digest(value)
+        if salt is None:
+            return json_digest(value)
+        # jcs(normalize(value)) raises TypeError on the same non-JSON-native
+        # inputs json_digest would, so this falls through to the identical
+        # fallback branch below on those inputs.
+        canonical_bytes = jcs(normalize(value))
+        return hashlib.sha256(canonical_bytes + b"|" + salt.encode("utf-8")).hexdigest()
     except TypeError:
         # Non-JSON-native types (e.g. tuples, arbitrary objects) — tolerated as
         # before. FloatInDigestError is intentionally NOT caught: a raw float is
         # a spec-defined error, so emit() fails closed at the door.
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+        if salt is not None:
+            raw = raw + "|" + salt
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -208,6 +226,7 @@ def emit(
     action_type: str | None = None,
     extra_compute: dict[str, Any] | None = None,
     disposition_authority: str | None = None,
+    salt_digests: bool = False,
 ) -> EmitResult:
     """Emit a sealed, optionally anchored Agent Action Capsule.
 
@@ -250,6 +269,16 @@ def emit(
             ``disposition.authority`` (e.g. an AAuth JTI). Never the token body —
             only the stable identifier that lets a verifier confirm the authorization
             out-of-band.
+        salt_digests: When ``True``, a fresh random 16-byte hex salt is generated
+            per ``emit()`` call and folded into ``agent_input_digest`` /
+            ``agent_output_digest`` (and a ``confirmed``-effect's
+            ``response_digest``) before hashing — stored as ``digest_salt`` in
+            ``compute_attestation`` so the emitting operator can always recompute
+            and verify their own capsules. This prevents an outside observer from
+            building a rainbow table that correlates low-entropy inputs across
+            capsules. Default ``False`` (unsalted, deterministic digests — the
+            pre-existing behavior; cross-call digest comparisons keep working
+            unchanged). Pass ``True`` for a privacy-sensitive deployment.
 
     Returns:
         :class:`EmitResult` with ``.capsule_id``, ``.anchored``, and ``.anchor_status``.
@@ -265,11 +294,20 @@ def emit(
             "a chain relation needs a chain target"
         )
 
+    # Per-emit random salt for digest privacy (opt-in — see salt_digests above).
+    emit_salt: str | None = secrets.token_hex(16) if salt_digests else None
+
     compute_att: dict[str, Any] = {}
+    _had_digest = False
     if agent_input is not None:
-        compute_att["agent_input_digest"] = _digest(agent_input)
+        compute_att["agent_input_digest"] = _digest(agent_input, salt=emit_salt)
+        _had_digest = True
     if agent_output is not None:
-        compute_att["agent_output_digest"] = _digest(agent_output)
+        compute_att["agent_output_digest"] = _digest(agent_output, salt=emit_salt)
+        _had_digest = True
+    # Only store the salt when there is at least one digest it was applied to.
+    if emit_salt is not None and _had_digest:
+        compute_att["digest_salt"] = emit_salt
     if runtime is not None:
         compute_att["runtime"] = runtime
     if extra_compute:
@@ -292,10 +330,12 @@ def emit(
             # §5.2 confirmed-effect invariant: must supply response_digest.
             # Auto-derive from agent_output when available; else from the
             # confirms capsule_id (the "observed response" in a confirm chain).
+            # Salted with the same emit_salt so it matches agent_output_digest
+            # (the common case: the same value, digested twice for two fields).
             if agent_output is not None:
-                response_digest = _digest(agent_output)
+                response_digest = _digest(agent_output, salt=emit_salt)
             elif confirms is not None:
-                response_digest = _digest({"confirmed_capsule_id": confirms})
+                response_digest = _digest({"confirmed_capsule_id": confirms}, salt=emit_salt)
         effect_record = EffectRecord(
             type=effect.get("type", action),
             status=eff_status,
