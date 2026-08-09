@@ -26,14 +26,18 @@ from .capsules import (
     SUPERSEDES,
     build_hold_decision_capsule,
     build_hold_expire_capsule,
+    build_hold_reconcile_capsule,
     build_hold_release_capsule,
     build_hold_reserve_capsule,
+    check_integer_amount,
 )
 from .errors import (
     CAP_EXCEEDED,
     HOLD_ALREADY_TERMINAL,
     HOLD_NOT_FOUND,
     HOLD_STATUS_AMBIGUOUS,
+    OVER_TOLERANCE,
+    RECONCILE_AFTER_EXPIRY,
     SEQUENCER_UNAVAILABLE,
 )
 from .scope import ScopeLocks
@@ -59,11 +63,11 @@ class HoldStatus(str, Enum):
 
 
 # Verbs a chained `supersedes` record over a reserve capsule may carry, and
-# the terminal status each one closes the hold into. hold.reconcile joins
-# this set once reconciliation lands.
+# the terminal status each one closes the hold into.
 _TERMINAL_VERBS: dict[str, HoldStatus] = {
     "hold.release": HoldStatus.RELEASED,
     "hold.expire": HoldStatus.EXPIRED,
+    "hold.reconcile": HoldStatus.RECONCILED,
 }
 
 
@@ -91,11 +95,13 @@ class HoldEngine:
         *,
         ledger_path: str | os.PathLike,
         cap_minor: dict[str, int] | None = None,
+        tolerance_minor: dict[str, int] | None = None,
         engine_available: Callable[[], bool] = lambda: True,
         scope_locks: ScopeLocks | None = None,
     ) -> None:
         self._ledger_path = ledger_path
         self._cap_minor = cap_minor or {}
+        self._tolerance_minor = tolerance_minor or {}
         self._engine_available = engine_available
         self._scope_locks = scope_locks or ScopeLocks()
 
@@ -239,6 +245,13 @@ class HoldEngine:
                 f"hold {reserve_capsule_id[:16]}… status could not be determined "
                 "(missing or unverifiable record); failing closed as terminal for this consequential class"
             )
+        elif status == HoldStatus.EXPIRED and verb == "reconcile":
+            reason_code = RECONCILE_AFTER_EXPIRY
+            reason_text = (
+                f"hold {reserve_capsule_id[:16]}… already expired; a late approval is authentication, "
+                "not authorization -- resume requires a fresh evaluate_and_reserve, not resumption/"
+                "reconciliation of the expired hold"
+            )
         else:
             reason_code = HOLD_ALREADY_TERMINAL
             reason_text = f"hold {reserve_capsule_id[:16]}… is already {status.value}; cannot {verb} it again"
@@ -251,6 +264,73 @@ class HoldEngine:
         )
         append_to_ledger(capsule, self._ledger_path)
         return HoldDecision(outcome=DENY, capsule=capsule, reason=reason_text, reason_code=reason_code, hold_status=status)
+
+    # -- reconcile ----------------------------------------------------------
+
+    def reconcile(
+        self,
+        reserve_capsule_id: str,
+        *,
+        action_class: str | None,
+        executed_amount_minor: int,
+        execution_capsule_id: str | None = None,
+    ) -> HoldDecision:
+        """Planned vs. executed: reserve at planned, convert at executed.
+        In-tolerance conversions append a ``hold.reconcile`` capsule — the
+        aggregate (``holds/aggregate.py``) then reads
+        ``executed_amount_minor`` for this hold once it lands, by delta
+        algebra alone. Over-tolerance conversions NEVER build that record —
+        they route through a plain DENY decision capsule instead, a limit
+        event: fail-closed, never a silent top-up of the aggregate."""
+        check_integer_amount(executed_amount_minor, "executed_amount_minor")
+        records = read_ledger(self._ledger_path)
+        by_id = {r["capsule_id"]: r for r in records if r.get("capsule_id")}
+        reserve_record = by_id.get(reserve_capsule_id)
+        if reserve_record is None:
+            return HoldDecision(
+                outcome=DENY, capsule=None, reason_code=HOLD_NOT_FOUND,
+                reason=f"{HOLD_NOT_FOUND}: hold {reserve_capsule_id[:16]}… not found", hold_status=None,
+            )
+
+        payload = reserve_record.get("asg_payload") or {}
+        subject = reserve_record.get("developer", "")
+        scope_action_class = (payload.get("hold_scope") or {}).get("action_class")
+        scope = (scope_action_class or "", subject)
+        with self._scope_locks.get(scope):
+            status, terminal_record = self.hold_status(reserve_capsule_id)
+            if status != HoldStatus.ACTIVE:
+                return self._deny_terminal(reserve_record, status, terminal_record, verb="reconcile")
+
+            reserved_amount = payload.get("reserved_amount_minor", 0)
+            delta = executed_amount_minor - reserved_amount
+            tolerance = self._tolerance_minor.get(action_class, 0)
+            attempt_action = _attempt_action(reserve_record, verb="reconcile", action_class=action_class)
+
+            if delta <= tolerance:
+                capsule = build_hold_reconcile_capsule(
+                    action=attempt_action, reserve_capsule_id=reserve_capsule_id,
+                    execution_capsule_id=execution_capsule_id, reserved_amount_minor=reserved_amount,
+                    executed_amount_minor=executed_amount_minor, tolerance_minor=tolerance,
+                )
+                append_to_ledger(capsule, self._ledger_path)
+                return HoldDecision(
+                    outcome=ALLOW, capsule=capsule, reason="reconciled", hold_status=HoldStatus.RECONCILED,
+                )
+
+            reason = (
+                f"executed {executed_amount_minor} exceeds reserved {reserved_amount} by {delta} "
+                f"(minor units), beyond tolerance {tolerance}"
+            )
+            capsule = build_hold_decision_capsule(
+                action=attempt_action, outcome=DENY, reason_code=OVER_TOLERANCE, reason=reason,
+                chain_parent=reserve_capsule_id, chain_relation=CONFIRMS,
+            )
+            append_to_ledger(capsule, self._ledger_path)
+            return HoldDecision(
+                outcome=DENY, capsule=capsule,
+                reason="over-tolerance conversion; routed as a limit event, aggregate not silently adjusted",
+                reason_code=OVER_TOLERANCE, hold_status=HoldStatus.ACTIVE,
+            )
 
 
 def _attempt_action(reserve_capsule: dict, *, verb: str, action_class: str | None = None) -> Action:
