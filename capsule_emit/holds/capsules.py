@@ -50,6 +50,7 @@ __all__ = [
     "ALLOW",
     "DENY",
     "SUPERSEDES",
+    "CONFIRMS",
     "check_integer_amount",
     "build_hold_reserve_capsule",
     "build_hold_release_capsule",

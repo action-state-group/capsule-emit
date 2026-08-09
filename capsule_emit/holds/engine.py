@@ -14,14 +14,36 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
+from agent_action_capsule import verify as verify_capsule
+
 from ..ledger import append_to_ledger, read_ledger
 from .action import Action
 from .aggregate import active_exposure_minor
-from .capsules import ALLOW, DENY, build_hold_decision_capsule, build_hold_reserve_capsule
-from .errors import CAP_EXCEEDED, SEQUENCER_UNAVAILABLE
+from .capsules import (
+    ALLOW,
+    CONFIRMS,
+    DENY,
+    SUPERSEDES,
+    build_hold_decision_capsule,
+    build_hold_expire_capsule,
+    build_hold_release_capsule,
+    build_hold_reserve_capsule,
+)
+from .errors import (
+    CAP_EXCEEDED,
+    HOLD_ALREADY_TERMINAL,
+    HOLD_NOT_FOUND,
+    HOLD_STATUS_AMBIGUOUS,
+    SEQUENCER_UNAVAILABLE,
+)
 from .scope import ScopeLocks
 
 __all__ = ["HoldStatus", "HoldDecision", "HoldEngine"]
+
+
+def _verb(capsule: dict) -> str:
+    action_id = capsule.get("action_id") or ""
+    return action_id.split("/", 1)[0] if action_id else ""
 
 
 class HoldStatus(str, Enum):
@@ -34,6 +56,15 @@ class HoldStatus(str, Enum):
     # treats AMBIGUOUS as terminal/deny for consequential classes — never
     # as "probably still active".
     AMBIGUOUS = "ambiguous"
+
+
+# Verbs a chained `supersedes` record over a reserve capsule may carry, and
+# the terminal status each one closes the hold into. hold.reconcile joins
+# this set once reconciliation lands.
+_TERMINAL_VERBS: dict[str, HoldStatus] = {
+    "hold.release": HoldStatus.RELEASED,
+    "hold.expire": HoldStatus.EXPIRED,
+}
 
 
 @dataclass(frozen=True)
@@ -116,3 +147,124 @@ class HoldEngine:
         )
         append_to_ledger(capsule, self._ledger_path)
         return HoldDecision(outcome=DENY, capsule=capsule, reason=reason, reason_code=reason_code)
+
+    # -- hold status (earliest chained terminal record wins) -------------
+
+    def hold_status(self, reserve_capsule_id: str) -> tuple[HoldStatus, dict | None]:
+        """(status, terminal_capsule_or_None). AMBIGUOUS if the reserve
+        record itself is missing/fails verification, or a chained terminal
+        record fails independent verification (corruption) — never
+        reported as ACTIVE in that case. The earliest chained ``supersedes``
+        record in ledger order is authoritative, mirroring the spec's own
+        concurrent-supersedes precedent.
+
+        Always a fresh, uncached ledger read: this is also what makes a
+        resume-time recheck (``approval.py``'s ``seal_approval``) meaningful
+        — a hold that expired *after* it was reserved but *before* a slow
+        approval arrives is reflected here the moment the expiry capsule
+        lands, not on some stale cached view.
+        """
+        records = read_ledger(self._ledger_path)
+        by_id = {r["capsule_id"]: r for r in records if r.get("capsule_id")}
+
+        reserve_record = by_id.get(reserve_capsule_id)
+        if reserve_record is None:
+            return HoldStatus.AMBIGUOUS, None
+        if not verify_capsule(reserve_record).ok:
+            return HoldStatus.AMBIGUOUS, None
+
+        for record in records:  # ledger order -> earliest wins
+            chain = record.get("chain") or {}
+            if chain.get("parent_capsule_id") != reserve_capsule_id or chain.get("relation") != SUPERSEDES:
+                continue
+            verb = _verb(record)
+            if verb not in _TERMINAL_VERBS:
+                continue
+            if not verify_capsule(record).ok:
+                return HoldStatus.AMBIGUOUS, record
+            return _TERMINAL_VERBS[verb], record
+
+        return HoldStatus.ACTIVE, None
+
+    # -- release / expire --------------------------------------------------
+
+    def release(self, reserve_capsule_id: str, *, reason: str | None = None) -> HoldDecision:
+        return self._close(reserve_capsule_id, verb="release", reason=reason)
+
+    def expire(self, reserve_capsule_id: str, *, reason: str | None = None) -> HoldDecision:
+        """TERMINAL for this hold — after this call succeeds, nothing may
+        dispatch citing the original reservation. Enforced by
+        ``hold_status``/``_deny_terminal`` on every later release/expire
+        attempt against the same reserve capsule, and by the caller's own
+        resume-time ``hold_status`` recheck before dispatch (``approval.py``)."""
+        return self._close(reserve_capsule_id, verb="expire", reason=reason)
+
+    def _close(self, reserve_capsule_id: str, *, verb: str, reason: str | None) -> HoldDecision:
+        records = read_ledger(self._ledger_path)
+        by_id = {r["capsule_id"]: r for r in records if r.get("capsule_id")}
+        reserve_record = by_id.get(reserve_capsule_id)
+        if reserve_record is None:
+            return HoldDecision(
+                outcome=DENY, capsule=None, reason_code=HOLD_NOT_FOUND,
+                reason=f"{HOLD_NOT_FOUND}: hold {reserve_capsule_id[:16]}… not found", hold_status=None,
+            )
+
+        payload = reserve_record.get("asg_payload") or {}
+        subject = reserve_record.get("developer", "")
+        action_class = (payload.get("hold_scope") or {}).get("action_class")
+        scope = (action_class or "", subject)
+        with self._scope_locks.get(scope):
+            status, terminal_record = self.hold_status(reserve_capsule_id)
+            if status != HoldStatus.ACTIVE:
+                return self._deny_terminal(reserve_record, status, terminal_record, verb=verb)
+
+            reserved_amount = payload.get("reserved_amount_minor", 0)
+            attempt_action = _attempt_action(reserve_record, verb=verb, action_class=action_class)
+            builder = build_hold_release_capsule if verb == "release" else build_hold_expire_capsule
+            capsule = builder(
+                action=attempt_action, reserve_capsule_id=reserve_capsule_id,
+                reserved_amount_minor=reserved_amount, reason=reason,
+            )
+            append_to_ledger(capsule, self._ledger_path)
+            new_status = HoldStatus.RELEASED if verb == "release" else HoldStatus.EXPIRED
+            return HoldDecision(outcome=ALLOW, capsule=capsule, reason=f"hold {verb}d", hold_status=new_status)
+
+    def _deny_terminal(
+        self, reserve_record: dict, status: HoldStatus, terminal_record: dict | None, *, verb: str,
+    ) -> HoldDecision:
+        reserve_capsule_id = reserve_record["capsule_id"]
+        if status == HoldStatus.AMBIGUOUS:
+            reason_code = HOLD_STATUS_AMBIGUOUS
+            reason_text = (
+                f"hold {reserve_capsule_id[:16]}… status could not be determined "
+                "(missing or unverifiable record); failing closed as terminal for this consequential class"
+            )
+        else:
+            reason_code = HOLD_ALREADY_TERMINAL
+            reason_text = f"hold {reserve_capsule_id[:16]}… is already {status.value}; cannot {verb} it again"
+
+        attempt_action = _attempt_action(reserve_record, verb=verb)
+        chain_parent = (terminal_record or {}).get("capsule_id") or reserve_capsule_id
+        capsule = build_hold_decision_capsule(
+            action=attempt_action, outcome=DENY, reason_code=reason_code, reason=reason_text,
+            chain_parent=chain_parent, chain_relation=CONFIRMS,
+        )
+        append_to_ledger(capsule, self._ledger_path)
+        return HoldDecision(outcome=DENY, capsule=capsule, reason=reason_text, reason_code=reason_code, hold_status=status)
+
+
+def _attempt_action(reserve_capsule: dict, *, verb: str, action_class: str | None = None) -> Action:
+    """A minimal ``Action`` representing an attempt (release/expire/a
+    denied-terminal retry) against an existing hold — carries the reserve
+    capsule's own operator/developer/currency/target context, not the
+    original reservation's verb."""
+    payload = reserve_capsule.get("asg_payload") or {}
+    scope = payload.get("hold_scope") or {}
+    return Action(
+        verb=verb if verb.startswith("hold.") else f"hold.{verb}",
+        operator=reserve_capsule.get("operator", ""),
+        developer=reserve_capsule.get("developer", ""),
+        action_class=action_class if action_class is not None else scope.get("action_class"),
+        currency=payload.get("currency"),
+        target=payload.get("target"),
+    )

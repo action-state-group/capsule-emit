@@ -23,7 +23,13 @@ Two public helpers:
     pending.  Nothing is ever marked resolved unless an explicit ``"resolves"``
     chain entry is found.
 
-No engine imports.  This is pure format + ledger pattern.
+No engine imports.  This is pure format + ledger pattern — ``seal_approval``'s
+``resume_ok``/``resume_reason`` params are a plain data seam a caller feeds
+from its own engine (e.g. ``capsule_emit.holds.HoldEngine.hold_status()``),
+not an import of one. This is what lets a resume-time approval re-check the
+cumulative state a hold may be gating: an approval for a blocked action is
+authentication (a human said yes), not by itself proof that dispatching now
+is still within budget — the caller is responsible for asking.
 """
 from __future__ import annotations
 
@@ -48,6 +54,8 @@ def seal_approval(
     operator: str = "",
     developer: str = "",
     effect_type: str | None = None,
+    resume_ok: bool = True,
+    resume_reason: str | None = None,
 ) -> EmitResult:
     """Seal a human-approval capsule chained to a blocked capsule.
 
@@ -66,6 +74,25 @@ def seal_approval(
         operator: Tenant/org identifier.
         developer: Agent name + version.
         effect_type: Effect type override.  Defaults to *action*.
+        resume_ok: When an action that was blocked pending approval had a
+            budget hold reserved for it, the caller re-checks the hold's
+            *current* status (e.g. ``HoldEngine.hold_status()``) and reports
+            the outcome here — ``True`` (default) when no hold applies, or
+            the hold is still active; ``False`` when it is not (expired,
+            released, or otherwise no longer valid). ``resume_ok=False``
+            overrides ``decision="approve"`` to ``"deny"``: a late approval
+            against a hold that is no longer active is authentication, not
+            authorization — a hold's own exposure may have already been
+            released and re-consumed elsewhere by the time this approval
+            arrives, so dispatching on the strength of a stale decision
+            would exceed the budget with every *integrity* check still
+            passing. The correct path forward is a fresh evaluation (e.g.
+            ``HoldEngine.evaluate_and_reserve()``), not resuming this one.
+            Never overrides ``decision="deny"`` — a human denial is never
+            silently reinterpreted as approval.
+        resume_reason: Human-readable reason for a ``resume_ok=False``
+            override, recorded in ``compute_attestation.resume_check`` for
+            the audit trail (e.g. the hold's own status string).
 
     Returns:
         :class:`~capsule_emit.core.EmitResult` with the sealed approval capsule.
@@ -77,6 +104,9 @@ def seal_approval(
         raise ValueError(
             f"decision must be 'approve' or 'deny', got {decision!r}"
         )
+
+    if decision == "approve" and not resume_ok:
+        decision = "deny"
 
     verdict = "executed" if decision == "approve" else "denied"
     _effect_type = effect_type or action
@@ -90,6 +120,14 @@ def seal_approval(
         if decision == "approve"
         else None
     )
+
+    extra_compute: dict[str, Any] = {
+        "human_disposed": True,
+        "approver_id": approver_id,
+        "action_digest": action_digest,
+    }
+    if not resume_ok:
+        extra_compute["resume_check"] = {"ok": False, "reason": resume_reason}
 
     return emit(
         action=action,
@@ -109,11 +147,7 @@ def seal_approval(
         ledger=ledger,
         anchor=anchor,
         # Approval record fields in compute_attestation
-        extra_compute={
-            "human_disposed": True,
-            "approver_id": approver_id,
-            "action_digest": action_digest,
-        },
+        extra_compute=extra_compute,
     )
 
 
