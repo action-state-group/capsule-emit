@@ -185,6 +185,44 @@ def test_relation_without_confirms_raises(tmp_ledger):
         )
 
 
+def test_relation_none_keeps_chain_without_confirms_assertion(tmp_ledger):
+    """relation=None keeps the chain link but drops the relation assertion.
+
+    The underlying agent_action_capsule library requires chain.relation to be
+    a non-empty string (§5.4.4) — it has no concept of an omitted relation on
+    an existing chain link, so it falls back to its own generic "sequence"
+    default rather than leaving the field empty. relation=None here means
+    "the caller isn't asserting a relation" (in particular, not "confirms"),
+    not that the sealed capsule ends up with a null/absent relation field.
+    """
+    parent = emit(action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap = emit(
+        action="action_b",
+        operator="org",
+        developer="agent@v1",
+        confirms=parent.capsule_id,
+        relation=None,
+        anchor=False,
+        ledger=tmp_ledger,
+    )
+    assert cap.capsule["chain"]["parent_capsule_id"] == parent.capsule_id
+    assert cap.capsule["chain"]["relation"] != "confirms"
+    assert verify(cap.capsule).ok
+
+
+def test_relation_none_does_not_raise_without_confirms(tmp_ledger):
+    cap = emit(
+        action="standalone",
+        operator="org",
+        developer="agent@v1",
+        relation=None,
+        anchor=False,
+        ledger=tmp_ledger,
+    )
+    assert "chain" not in cap.capsule
+    assert verify(cap.capsule).ok
+
+
 # ---------------------------------------------------------------------------
 # Group: disposition params
 # ---------------------------------------------------------------------------

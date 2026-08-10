@@ -90,7 +90,7 @@ class CapsuleEmitterBase:
         human_disposed: bool = False,
         approver: str = "policy",
         decision: str = "accept",
-        relation: str = "confirms",
+        relation: str | None = "confirms",
         action_type: str | None = None,
         runtime: str | None = None,
         extra_compute: dict[str, Any] | None = None,

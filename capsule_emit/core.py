@@ -215,7 +215,7 @@ def emit(
     verdict: str = "executed",
     effect: dict[str, Any] | None = None,
     confirms: str | None = None,
-    relation: str = "confirms",
+    relation: str | None = "confirms",
     anchor: bool = True,
     ledger: str | os.PathLike = _DEFAULT_LEDGER,
     anchor_url: str | None = None,
@@ -242,8 +242,13 @@ def emit(
         verdict: Disposition verdict_class (e.g. ``"executed"``, ``"confirmed"``).
         effect: Effect dict with ``"type"`` and ``"status"`` (and optional ``"autonomy"``).
         confirms: capsule_id of the prior capsule this one chains to.
-        relation: Chain relation (``"confirms"`` | ``"supersedes"`` | ``"escalates"`` | …).
-            Raises ``ValueError`` when ``confirms`` is None. Default ``"confirms"``.
+        relation: Chain relation (``"confirms"`` | ``"supersedes"`` | ``"escalates"`` | …),
+            or ``None`` to keep the chain link (``confirms``) without asserting a
+            relation value on it — e.g. a human refusal that chains to the capsule it
+            denies without claiming to "confirm" it. Passing a non-``None``, non-default
+            relation without ``confirms`` set raises ``ValueError`` (a chain relation
+            needs a chain target); ``relation=None`` never raises regardless of
+            ``confirms``. Default ``"confirms"``.
         anchor: When True (default), dispatch an async, digest-only SCITT anchor
             submission (:func:`agent_action_capsule.anchor.async_anchor`). Non-blocking
             by default — see ``anchor_wait`` to block for a confirmed outcome, and
@@ -288,7 +293,7 @@ def emit(
             "human_disposed=True requires approver='human' — "
             "pass approver='human' or set human_disposed=False"
         )
-    if relation != "confirms" and confirms is None:
+    if relation is not None and relation != "confirms" and confirms is None:
         raise ValueError(
             f"relation={relation!r} requires confirms=<capsule_id> — "
             "a chain relation needs a chain target"
