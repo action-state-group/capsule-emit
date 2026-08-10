@@ -258,12 +258,15 @@ with tempfile.TemporaryDirectory() as _tmp:
         "reviewed_at": "2026-08-03T00:00:00Z",
         "reason": "order value exceeds vendor's approved PO ceiling",
     }
-    # NOTE: chain.relation for this refusal is left at the emit() default
-    # ("confirms") rather than fixed here. None of the three documented
-    # relation values (confirms | supersedes | escalates, core.py:117)
-    # genuinely describes a denial chained to a prior, unrelated dispatch —
-    # flagged upstream in outbox.md [goose-demo-merge-fixes] rather than
-    # minting a fourth value at the demo level.
+    # OMIT ruling (2026-08-10): this refusal chains to the dispatch it denies
+    # without asserting a relation on the link. "confirms" is wrong-in-both-
+    # directions here — a human denial is a terminal resolution, not a
+    # confirmation, and our own public OTel #159 position argues exactly that.
+    # relation=None keeps the chain link (prior_capsule_id) but drops the
+    # assertion; no new relation value is minted at the demo level. A spec
+    # issue proposing a resolution-class relation (e.g. resolves/refuses) for
+    # a future draft revision is filed separately — vocabulary changes go
+    # through the draft, not through this demo.
     decide1 = emitter.emit_capsule(
         "approve_large_order",
         tool_input=approval_request,
@@ -276,6 +279,7 @@ with tempfile.TemporaryDirectory() as _tmp:
         decision="reject",
         runtime="mcp",
         prior_capsule_id=order1_id,
+        relation=None,
         extra_compute={"approver_id": "priya@acme-co.com"},
     )
     decide1_id = decide1.capsule_id

@@ -4,44 +4,51 @@
 **Anchor:** `https://anchor.agentactioncapsule.org` (production, live)
 **Verify surface:** `https://verify.agentactioncapsule.org`
 **Branch:** `demo/goose-run`
-**Run date:** 2026-08-04 (regenerated for `[goose-demo-merge-fixes]` — fixes 2 and 3 below
-change capsule content, so `capsule_id` and every downstream leaf/permalink from the
-2026-08-03 transcript are orphaned and replaced in full)
+**Run date:** 2026-08-10 (regenerated for `[goose-demo-pr42-close-and-merge-prep]` — the OMIT
+ruling on capsule 2's chain relation changes capsule content, so `capsule_id` and every
+downstream leaf/permalink from the 2026-08-04 transcript are orphaned and replaced in full)
 
-**What changed from the 2026-08-03 transcript:**
-- Capsule 3 (`escalate_to_manager`) now carries `chain.relation="escalates"` instead of the
-  default `"confirms"` — an escalation chained past a denial does not *confirm* that denial.
-- Capsule 2 (`approve_large_order`, the denial) is **unchanged**: none of the three documented
-  chain relations (`confirms` | `supersedes` | `escalates`, `capsule_emit/core.py:117`)
-  genuinely describes a refusal chained to a prior, unrelated dispatch — flagged to the PM in
-  `outbox.md` rather than minted as a new value at the demo level. It still reads
-  `chain.relation="confirms"`.
-- `action_type="act"` was attempted on `submit_order` per the original task instruction, then
-  **reverted**: the reference verifier (`agent_action_capsule/verify.py:192-194`, §5.1)
-  accepts only `action_type` `"fyi"` or `"decide"` — passing `"act"` makes `verify().ok` return
-  `False`. `capsule_emit/core.py:126`'s docstring claiming `"act"`/`"retrieve"` as valid
-  overrides is itself stale; this is flagged in outbox rather than shipping a demo with a
-  capsule that fails its own verify step. `submit_order` keeps the auto-derived `"decide"`.
-- `CAPSULE_ANCHOR` now defaults to `false` in both `capsule_emit/server.py` (the shipped
-  extension) and `examples/goose-capsule/server.py` (the file this demo tells a Discord user to
-  copy) — previously it defaulted `true` with no disclosure. This run's live anchor still fires
-  because `demo.py` anchors by default independently (`--no-anchor` to opt out; see README).
+**What changed from the 2026-08-04 transcript:**
+- Capsule 2 (`approve_large_order`, the denial) now emits with `relation=None` — the caller no
+  longer asserts `chain.relation="confirms"` on a link where a human denial is chained to the
+  dispatch it refuses. This closes the gap flagged in the 2026-08-04 transcript (a genuine
+  refusal chained to a prior, unrelated dispatch, where none of `confirms | supersedes |
+  escalates` was accurate).
+- **Finding during implementation:** `agent_action_capsule`'s `chain.relation` is a
+  required, non-empty string (§5.4.4, enforced by `Chain.__post_init__` raising
+  `InvariantError` on empty) — the reference library has no concept of an omitted relation on
+  an existing chain link. Passing `chain_relation=None` through to `agent_action_capsule.emit()`
+  does not leave the field empty; it falls back to the library's own generic
+  no-explicit-relation default, `"sequence"` (the adapter-tier default, since `tool_name` is
+  set on every capsule-emit call). So capsule 2's sealed `chain.relation` reads `"sequence"`,
+  not an absent field — the closest achievable approximation to "no relation asserted" within
+  capsule-emit's boundary, using an existing library-defined value rather than inventing one.
+  True field-level omission would require a change to `agent_action_capsule` itself (out of
+  scope for this repo). This is additional motivating evidence for the spec issue filed
+  alongside this task (see outbox).
+- Capsule 3 (`escalate_to_manager`) is unchanged: still `chain.relation="escalates"`.
+- `action_type="act"` remains reverted (verified, not redone) — only `"fyi"`/`"decide"` appear
+  anywhere in `demo.py`.
+- `CAPSULE_ANCHOR` still defaults to `false` in both `capsule_emit/server.py` and
+  `examples/goose-capsule/server.py` — this run's live anchor still fires because `demo.py`
+  anchors by default independently (`--no-anchor` to opt out; see README).
 
 ---
 
-## Live capsule IDs (leaf_index confirmed on live anchor, 2026-08-04)
+## Live capsule IDs (leaf_index confirmed on live anchor, 2026-08-10)
 
 | # | Capsule | capsule_id | leaf_index | tree_size | verdict | chain.relation |
 |---|---------|-----------|-----------|-----------|---------|-----------------|
-| — | fyi (get_price) — not anchored, informational only | `74740577180e7c13…` | — | — | executed | — |
-| 1 | write_order (submit_order) | `eedf9efa25442337d246c13959c658f2c3fce68f985979d488e459b0af80ad48` | 259 | 260 | executed | — |
-| 2 | decide (approve_large_order) **REJECTED** | `41a8e2589dc986ab77925efc4c53f7f44d5d5b6a5bcc05eff5648ae9160da4d3` | 260 | 261 | **blocked** | `confirms` (flagged — see above) |
-| 3 | fyi (escalate_to_manager) | `109c6143967dc0fd97f7777ebe2866c62cda51be5d397e2436acb5861e7d4874` | 261 | 262 | executed | `escalates` |
+| — | fyi (get_price) — not anchored, informational only | `a102e4172fb4bafa…` | — | — | executed | — |
+| 1 | write_order (submit_order) | `c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157` | 264 | 265 | executed | — |
+| 2 | decide (approve_large_order) **REJECTED** | `90b7e43e16a7262ba26d973121d9e7496c1504186f64fd3d2694053a25b5e668` | 265 | 266 | **blocked** | `sequence` (OMIT ruling — see above) |
+| 3 | fyi (escalate_to_manager) | `98e2fc030452188683509ccef07d773facddcf555bd4ec5243304df3f70c0ee3` | 266 | 267 | executed | `escalates` |
 
 Capsule 2 (the denial): `verdict_class=blocked`, `effect.status=planned` (the order was gated,
 never dispatched), `human_disposed=true`, `approver=human` (identity `priya@acme-co.com`
 carried via the `approver_id` compute-attestation extension field), reason: "order value
-exceeds vendor's approved PO ceiling". Chained to capsule 1 via `chain.parent_capsule_id`.
+exceeds vendor's approved PO ceiling". Chained to capsule 1 via `chain.parent_capsule_id`,
+with no `"confirms"` assertion on the link.
 Capsule 3 chains past the denial to capsule 2 with `chain.relation="escalates"`, proving the
 chain continues after a blocked action (escalation to a human manager instead of retrying the
 same order).
@@ -73,76 +80,76 @@ Goose capsule demo — tool call → sealed capsule → verify
   tool returned: {'status': 'dispatched', 'po_number': 'PO-7777', 'vendor': 'Frobozz Supply', 'amount_usd': '1240.19', 'confirmation_ref': 'CONF-7777'}
 
 ─── Step 3 — human approval gate: large order REJECTED ────────────────
-  capsule_id  : 41a8e2589dc986ab77925efc4c53f7f44d5d5b6a5bcc05eff5648ae9160da4d3
+  capsule_id  : 90b7e43e16a7262ba26d973121d9e7496c1504186f64fd3d2694053a25b5e668
   verdict     : blocked
   approver    : human (priya@acme-co.com)
   reason      : order value exceeds vendor's approved PO ceiling
-  chained to  : eedf9efa25442337d246c13959c658f2c3fce68f985979d488e459b0af80ad48
+  chained to  : c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157
 
 ─── Step 4 — escalate blocked order to manager ────────────────────────
-  capsule_id  : 109c6143967dc0fd97f7777ebe2866c62cda51be5d397e2436acb5861e7d4874
-  chained to  : 41a8e2589dc986ab77925efc4c53f7f44d5d5b6a5bcc05eff5648ae9160da4d3
+  capsule_id  : 98e2fc030452188683509ccef07d773facddcf555bd4ec5243304df3f70c0ee3
+  chained to  : 90b7e43e16a7262ba26d973121d9e7496c1504186f64fd3d2694053a25b5e668
 
 [step 5] Ledger: 4 capsule(s) sealed
-  74740577180e7c13… get_price [executed] runtime=mcp
-  eedf9efa25442337… submit_order [executed] runtime=mcp
-  41a8e2589dc986ab… approve_large_order [blocked] runtime=mcp
-  109c6143967dc0fd… escalate_to_manager [executed] runtime=mcp
+  a102e4172fb4bafa… get_price [executed] runtime=mcp
+  c523eafd0c0b5f8e… submit_order [executed] runtime=mcp
+  90b7e43e16a7262b… approve_large_order [blocked] runtime=mcp
+  98e2fc0304521886… escalate_to_manager [executed] runtime=mcp
 
 [step 6] Verify all capsules (offline — no network needed)
-  74740577180e7c13… ok=True  ✓
-  eedf9efa25442337… ok=True  ✓
-  41a8e2589dc986ab… ok=True  ✓
-  109c6143967dc0fd… ok=True  ✓
+  a102e4172fb4bafa… ok=True  ✓
+  c523eafd0c0b5f8e… ok=True  ✓
+  90b7e43e16a7262b… ok=True  ✓
+  98e2fc0304521886… ok=True  ✓
 
   All capsules verified ok=True.
 
 [step 7] Tamper test: flip one byte in output digest → verify fails
   original  digest:  …3ef16460
   tampered  digest:  …3ef16461
-  verify result:     ok=False  findings: ['recomputed 1154d5ffc1f9718af0deaf42a41e1ace7a9cf153ca0082396c9ca621bccfeace != carried eedf9efa25442337d246c13959c658f2c3fce68f985979d488e459b0af80ad48']
+  verify result:     ok=False  findings: ['recomputed 27a62da8a535e3498c8562813e6a4cacd975ef339b5e644027701d83396cd8f5 != carried c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157']
   Tamper detected — ok=False as expected. ✓
 
 ─── Step 8 — live anchor the 3-capsule chain ──────────────────────────
-  [1 write_order/submit_order] capsule_id  : eedf9efa25442337d246c13959c658f2c3fce68f985979d488e459b0af80ad48
+  [1 write_order/submit_order] capsule_id  : c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157
   [1 write_order/submit_order] action_type : decide
   [1 write_order/submit_order] verdict     : executed
   [1 write_order/submit_order] verify().ok : True
-  [1 write_order/submit_order] POST /v1/digest        HTTP 200  leaf=259 tree=260
-  [1 write_order/submit_order] GET /v1/inclusion/<id> HTTP 200  root=dd2448037dffb550...
+  [1 write_order/submit_order] POST /v1/digest        HTTP 200  leaf=264 tree=265
+  [1 write_order/submit_order] GET /v1/inclusion/<id> HTTP 200  root=6591584882dd82a8...
   [1 write_order/submit_order] GET /anchor/inclusion-proof-ct HTTP 200
   [1 write_order/submit_order] verify_receipt (offline) : ok=True
-  [2 decide/approve_large_order(REJECTED)] capsule_id  : 41a8e2589dc986ab77925efc4c53f7f44d5d5b6a5bcc05eff5648ae9160da4d3
+  [2 decide/approve_large_order(REJECTED)] capsule_id  : 90b7e43e16a7262ba26d973121d9e7496c1504186f64fd3d2694053a25b5e668
   [2 decide/approve_large_order(REJECTED)] action_type : decide
   [2 decide/approve_large_order(REJECTED)] verdict     : blocked
   [2 decide/approve_large_order(REJECTED)] verify().ok : True
-  [2 decide/approve_large_order(REJECTED)] POST /v1/digest        HTTP 200  leaf=260 tree=261
-  [2 decide/approve_large_order(REJECTED)] GET /v1/inclusion/<id> HTTP 200  root=f82259a36e598d87...
+  [2 decide/approve_large_order(REJECTED)] POST /v1/digest        HTTP 200  leaf=265 tree=266
+  [2 decide/approve_large_order(REJECTED)] GET /v1/inclusion/<id> HTTP 200  root=83ba27252bef1e3c...
   [2 decide/approve_large_order(REJECTED)] GET /anchor/inclusion-proof-ct HTTP 200
   [2 decide/approve_large_order(REJECTED)] verify_receipt (offline) : ok=True
-  [3 fyi/escalate_to_manager] capsule_id  : 109c6143967dc0fd97f7777ebe2866c62cda51be5d397e2436acb5861e7d4874
+  [3 fyi/escalate_to_manager] capsule_id  : 98e2fc030452188683509ccef07d773facddcf555bd4ec5243304df3f70c0ee3
   [3 fyi/escalate_to_manager] action_type : fyi
   [3 fyi/escalate_to_manager] verdict     : executed
   [3 fyi/escalate_to_manager] verify().ok : True
-  [3 fyi/escalate_to_manager] POST /v1/digest        HTTP 200  leaf=261 tree=262
-  [3 fyi/escalate_to_manager] GET /v1/inclusion/<id> HTTP 200  root=d9a17ff9bc0953c5...
+  [3 fyi/escalate_to_manager] POST /v1/digest        HTTP 200  leaf=266 tree=267
+  [3 fyi/escalate_to_manager] GET /v1/inclusion/<id> HTTP 200  root=9a5aea7d835b2bb4...
   [3 fyi/escalate_to_manager] GET /anchor/inclusion-proof-ct HTTP 200
   [3 fyi/escalate_to_manager] verify_receipt (offline) : ok=True
 
 ─── Step 9 — verify permalinks ────────────────────────────────────────
-  [1 write_order/submit_order] leaf=259
-    https://verify.agentactioncapsule.org/v/eedf9efa25442337d246c13959c658f2c3fce68f985979d488e459b0af80ad48#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICJlZWRmOWVmYTI1NDQyMzM3ZDI0NmMxMzk1OWM2NThmMmMzZmNlNjhmOTg1OTc5ZDQ4OGU0NTliMGFmODBhZDQ4IiwgImFjdGlvbl9pZCI6ICJzdWJtaXRfb3JkZXIvZDRlNmYwOGYtNDczYy00MTZmLWI5ZjYtMGZiYmFhN2E2MTk2IiwgImFjdGlvbl90eXBlIjogImRlY2lkZSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0wNFQxOTowMzowMS45MzEzMDZaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICI5YmViODU0YzE5MmVmMjE1MzkzODE2NDY3OTJiYjAzNDZkNjU3ODFhOWUyNzA1MmM0Nzc3NWFlMWIyYWJkOTIyIiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiZWE3YTk3ZTRhNDA3MGFlNjE5MDMyODY0M2Y5MjA5ZDc0NTE1YzE5OTA0MGNkYmYxNjFkZTE2YmQzZWYxNjQ2MCIsICJydW50aW1lIjogIm1jcCJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogImRpc3BhdGNoZWQiLCAidHlwZSI6ICJ3cml0ZV9vcmRlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogInN0YW5kYWxvbmUifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn19
-  [2 decide/approve_large_order(REJECTED)] leaf=260
-    https://verify.agentactioncapsule.org/v/41a8e2589dc986ab77925efc4c53f7f44d5d5b6a5bcc05eff5648ae9160da4d3#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICI0MWE4ZTI1ODlkYzk4NmFiNzc5MjVlZmM0YzUzZjdmNDRkNWQ1YjZhNWJjYzA1ZWZmNTY0OGFlOTE2MGRhNGQzIiwgImFjdGlvbl9pZCI6ICJhcHByb3ZlX2xhcmdlX29yZGVyLzZlZWI4YjcxLTdjZjAtNDQ0MC1hM2E2LWFjNDM5OTRmMTE3YSIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMDRUMTk6MDM6MDEuOTMxNTE5WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiZjEwY2JlYThlNGJmYzUxMzRlNzE3Njc0YWVjZmM0MWRhYjFhMTIzMDVjMTFiNTRlMDU0NDJkYjNmYjkyYjlhOCIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImViYzg5Zjg4OGM5NTdlYmQyN2EyODI1ZWM4ODJjNjI5NTlhMjRjNTE0YjU5MWJkZDViOGFmODliYzdiZTA2MDkiLCAicnVudGltZSI6ICJtY3AiLCAiYXBwcm92ZXJfaWQiOiAicHJpeWFAYWNtZS1jby5jb20ifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJwbGFubmVkIiwgInR5cGUiOiAiYXBwcm92ZV9sYXJnZV9vcmRlciJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAibm90X2FwcGxpY2FibGUiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogInJlamVjdCIsICJhcHByb3ZlciI6ICJodW1hbiIsICJodW1hbl9kaXNwb3NlZCI6IHRydWUsICJ2ZXJkaWN0X2NsYXNzIjogImJsb2NrZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICJlZWRmOWVmYTI1NDQyMzM3ZDI0NmMxMzk1OWM2NThmMmMzZmNlNjhmOTg1OTc5ZDQ4OGU0NTliMGFmODBhZDQ4IiwgInJlbGF0aW9uIjogImNvbmZpcm1zIn19
-  [3 fyi/escalate_to_manager] leaf=261
-    https://verify.agentactioncapsule.org/v/109c6143967dc0fd97f7777ebe2866c62cda51be5d397e2436acb5861e7d4874#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICIxMDljNjE0Mzk2N2RjMGZkOTdmNzc3N2ViZTI4NjZjNjJjZGE1MWJlNWQzOTdlMjQzNmFjYjU4NjFlN2Q0ODc0IiwgImFjdGlvbl9pZCI6ICJlc2NhbGF0ZV90b19tYW5hZ2VyLzQ4ZDI0ZTM1LTE3N2ItNDcwZS1hOTBhLWYzOWEwZTlmMzJiYyIsICJhY3Rpb25fdHlwZSI6ICJmeWkiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMDRUMTk6MDM6MDEuOTMxNzA3WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiYjQ0ODRjZWUwNGE3OTdjODJlMzAwZmE1OWYzNTM3MTYzZjVlNGNiNWZiY2RkYzhhMjU4YjA3NmRlYTZmNjJiNyIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogIjYxYzhlYWIyMTNkM2UwMzRmNDY1YTJmNTlkYzVhNTVkMWVmYjY4ZjU5NGQyNzY4M2IwNDQzNTE2MTA0N2IzNjMiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAiZXNjYWxhdGVfdG9fbWFuYWdlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogImNoYWluZWQifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn0sICJjaGFpbiI6IHsicGFyZW50X2NhcHN1bGVfaWQiOiAiNDFhOGUyNTg5ZGM5ODZhYjc3OTI1ZWZjNGM1M2Y3ZjQ0ZDVkNWI2YTViY2MwNWVmZjU2NDhhZTkxNjBkYTRkMyIsICJyZWxhdGlvbiI6ICJlc2NhbGF0ZXMifX0=
+  [1 write_order/submit_order] leaf=264
+    https://verify.agentactioncapsule.org/v/c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICJjNTIzZWFmZDBjMGI1ZjhlOWU5NDE4ZjI0NGM1MWVjZWZiZjUzZjMzOWY2ZTc5NmZjYWY3ZWM3NjNkM2FmMTU3IiwgImFjdGlvbl9pZCI6ICJzdWJtaXRfb3JkZXIvNjQ4NTNmYTItOWQxNC00NGZkLWFlZmQtY2VkMjUxYWJlYWUwIiwgImFjdGlvbl90eXBlIjogImRlY2lkZSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0xMFQyMDozOTozMy4zNzk2MzVaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICI5YmViODU0YzE5MmVmMjE1MzkzODE2NDY3OTJiYjAzNDZkNjU3ODFhOWUyNzA1MmM0Nzc3NWFlMWIyYWJkOTIyIiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiZWE3YTk3ZTRhNDA3MGFlNjE5MDMyODY0M2Y5MjA5ZDc0NTE1YzE5OTA0MGNkYmYxNjFkZTE2YmQzZWYxNjQ2MCIsICJydW50aW1lIjogIm1jcCJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogImRpc3BhdGNoZWQiLCAidHlwZSI6ICJ3cml0ZV9vcmRlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogInN0YW5kYWxvbmUifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn19
+  [2 decide/approve_large_order(REJECTED)] leaf=265
+    https://verify.agentactioncapsule.org/v/90b7e43e16a7262ba26d973121d9e7496c1504186f64fd3d2694053a25b5e668#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICI5MGI3ZTQzZTE2YTcyNjJiYTI2ZDk3MzEyMWQ5ZTc0OTZjMTUwNDE4NmY2NGZkM2QyNjk0MDUzYTI1YjVlNjY4IiwgImFjdGlvbl9pZCI6ICJhcHByb3ZlX2xhcmdlX29yZGVyL2UxM2RiODQyLTczMDAtNGQ4NS05Yjk4LTMzMjcxMDM2OWZmYSIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjA6Mzk6MzMuMzc5OTIzWiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiZjEwY2JlYThlNGJmYzUxMzRlNzE3Njc0YWVjZmM0MWRhYjFhMTIzMDVjMTFiNTRlMDU0NDJkYjNmYjkyYjlhOCIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImViYzg5Zjg4OGM5NTdlYmQyN2EyODI1ZWM4ODJjNjI5NTlhMjRjNTE0YjU5MWJkZDViOGFmODliYzdiZTA2MDkiLCAicnVudGltZSI6ICJtY3AiLCAiYXBwcm92ZXJfaWQiOiAicHJpeWFAYWNtZS1jby5jb20ifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJwbGFubmVkIiwgInR5cGUiOiAiYXBwcm92ZV9sYXJnZV9vcmRlciJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAibm90X2FwcGxpY2FibGUiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogInJlamVjdCIsICJhcHByb3ZlciI6ICJodW1hbiIsICJodW1hbl9kaXNwb3NlZCI6IHRydWUsICJ2ZXJkaWN0X2NsYXNzIjogImJsb2NrZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICJjNTIzZWFmZDBjMGI1ZjhlOWU5NDE4ZjI0NGM1MWVjZWZiZjUzZjMzOWY2ZTc5NmZjYWY3ZWM3NjNkM2FmMTU3IiwgInJlbGF0aW9uIjogInNlcXVlbmNlIn19
+  [3 fyi/escalate_to_manager] leaf=266
+    https://verify.agentactioncapsule.org/v/98e2fc030452188683509ccef07d773facddcf555bd4ec5243304df3f70c0ee3#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICI5OGUyZmMwMzA0NTIxODg2ODM1MDljY2VmMDdkNzczZmFjZGRjZjU1NWJkNGVjNTI0MzMwNGRmM2Y3MGMwZWUzIiwgImFjdGlvbl9pZCI6ICJlc2NhbGF0ZV90b19tYW5hZ2VyL2NjMjZjODg2LTdhYzUtNGM3Ni1hZDQzLTk3NWFjZGUwZDQ1MyIsICJhY3Rpb25fdHlwZSI6ICJmeWkiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjA6Mzk6MzMuMzgwMTc0WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiYjQ0ODRjZWUwNGE3OTdjODJlMzAwZmE1OWYzNTM3MTYzZjVlNGNiNWZiY2RkYzhhMjU4YjA3NmRlYTZmNjJiNyIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogIjYxYzhlYWIyMTNkM2UwMzRmNDY1YTJmNTlkYzVhNTVkMWVmYjY4ZjU5NGQyNzY4M2IwNDQzNTE2MTA0N2IzNjMiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAiZXNjYWxhdGVfdG9fbWFuYWdlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogImNoYWluZWQifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn0sICJjaGFpbiI6IHsicGFyZW50X2NhcHN1bGVfaWQiOiAiOTBiN2U0M2UxNmE3MjYyYmEyNmQ5NzMxMjFkOWU3NDk2YzE1MDQxODZmNjRmZDNkMjY5NDA1M2EyNWI1ZTY2OCIsICJyZWxhdGlvbiI6ICJlc2NhbGF0ZXMifX0=
 
   Bundle permalink (Chain Navigation table, VERDICT column executed → blocked → executed):
-    https://verify.agentactioncapsule.org/v/eedf9efa25442337d246c13959c658f2c3fce68f985979d488e459b0af80ad48#W3sic3BlY192ZXJzaW9uIjogImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wMiIsICJmb3JtYXRfdmVyc2lvbiI6ICIyIiwgImNhcHN1bGVfaWQiOiAiZWVkZjllZmEyNTQ0MjMzN2QyNDZjMTM5NTljNjU4ZjJjM2ZjZTY4Zjk4NTk3OWQ0ODhlNDU5YjBhZjgwYWQ0OCIsICJhY3Rpb25faWQiOiAic3VibWl0X29yZGVyL2Q0ZTZmMDhmLTQ3M2MtNDE2Zi1iOWY2LTBmYmJhYTdhNjE5NiIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMDRUMTk6MDM6MDEuOTMxMzA2WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiOWJlYjg1NGMxOTJlZjIxNTM5MzgxNjQ2NzkyYmIwMzQ2ZDY1NzgxYTllMjcwNTJjNDc3NzVhZTFiMmFiZDkyMiIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImVhN2E5N2U0YTQwNzBhZTYxOTAzMjg2NDNmOTIwOWQ3NDUxNWMxOTkwNDBjZGJmMTYxZGUxNmJkM2VmMTY0NjAiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAid3JpdGVfb3JkZXIiLCAiZWZmZWN0X2F0dGVzdGF0aW9uIjogInJ1bnRpbWVfY2xhaW1lZCJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAiZGlzcGF0Y2hlZF91bmNvbmZpcm1lZCIsICJsZWRnZXJfbW9kZSI6ICJzdGFuZGFsb25lIn0sICJkaXNwb3NpdGlvbiI6IHsiZGVjaXNpb24iOiAiYWNjZXB0IiwgImFwcHJvdmVyIjogInBvbGljeSIsICJodW1hbl9kaXNwb3NlZCI6IGZhbHNlLCAidmVyZGljdF9jbGFzcyI6ICJleGVjdXRlZCJ9fSwgeyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICI0MWE4ZTI1ODlkYzk4NmFiNzc5MjVlZmM0YzUzZjdmNDRkNWQ1YjZhNWJjYzA1ZWZmNTY0OGFlOTE2MGRhNGQzIiwgImFjdGlvbl9pZCI6ICJhcHByb3ZlX2xhcmdlX29yZGVyLzZlZWI4YjcxLTdjZjAtNDQ0MC1hM2E2LWFjNDM5OTRmMTE3YSIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMDRUMTk6MDM6MDEuOTMxNTE5WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiZjEwY2JlYThlNGJmYzUxMzRlNzE3Njc0YWVjZmM0MWRhYjFhMTIzMDVjMTFiNTRlMDU0NDJkYjNmYjkyYjlhOCIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImViYzg5Zjg4OGM5NTdlYmQyN2EyODI1ZWM4ODJjNjI5NTlhMjRjNTE0YjU5MWJkZDViOGFmODliYzdiZTA2MDkiLCAicnVudGltZSI6ICJtY3AiLCAiYXBwcm92ZXJfaWQiOiAicHJpeWFAYWNtZS1jby5jb20ifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJwbGFubmVkIiwgInR5cGUiOiAiYXBwcm92ZV9sYXJnZV9vcmRlciJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAibm90X2FwcGxpY2FibGUiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogInJlamVjdCIsICJhcHByb3ZlciI6ICJodW1hbiIsICJodW1hbl9kaXNwb3NlZCI6IHRydWUsICJ2ZXJkaWN0X2NsYXNzIjogImJsb2NrZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICJlZWRmOWVmYTI1NDQyMzM3ZDI0NmMxMzk1OWM2NThmMmMzZmNlNjhmOTg1OTc5ZDQ4OGU0NTliMGFmODBhZDQ4IiwgInJlbGF0aW9uIjogImNvbmZpcm1zIn19LCB7InNwZWNfdmVyc2lvbiI6ICJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDIiLCAiZm9ybWF0X3ZlcnNpb24iOiAiMiIsICJjYXBzdWxlX2lkIjogIjEwOWM2MTQzOTY3ZGMwZmQ5N2Y3Nzc3ZWJlMjg2NmM2MmNkYTUxYmU1ZDM5N2UyNDM2YWNiNTg2MWU3ZDQ4NzQiLCAiYWN0aW9uX2lkIjogImVzY2FsYXRlX3RvX21hbmFnZXIvNDhkMjRlMzUtMTc3Yi00NzBlLWE5MGEtZjM5YTBlOWYzMmJjIiwgImFjdGlvbl90eXBlIjogImZ5aSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0wNFQxOTowMzowMS45MzE3MDdaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICJiNDQ4NGNlZTA0YTc5N2M4MmUzMDBmYTU5ZjM1MzcxNjNmNWU0Y2I1ZmJjZGRjOGEyNThiMDc2ZGVhNmY2MmI3IiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiNjFjOGVhYjIxM2QzZTAzNGY0NjVhMmY1OWRjNWE1NWQxZWZiNjhmNTk0ZDI3NjgzYjA0NDM1MTYxMDQ3YjM2MyIsICJydW50aW1lIjogIm1jcCJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogImRpc3BhdGNoZWQiLCAidHlwZSI6ICJlc2NhbGF0ZV90b19tYW5hZ2VyIiwgImVmZmVjdF9hdHRlc3RhdGlvbiI6ICJydW50aW1lX2NsYWltZWQifSwgImFzc3VyYW5jZSI6IHsiYXR0ZXN0YXRpb25fbW9kZSI6ICJzZWxmX2F0dGVzdGVkIiwgImVmZmVjdF9tb2RlIjogImRpc3BhdGNoZWRfdW5jb25maXJtZWQiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogImFjY2VwdCIsICJhcHByb3ZlciI6ICJwb2xpY3kiLCAiaHVtYW5fZGlzcG9zZWQiOiBmYWxzZSwgInZlcmRpY3RfY2xhc3MiOiAiZXhlY3V0ZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICI0MWE4ZTI1ODlkYzk4NmFiNzc5MjVlZmM0YzUzZjdmNDRkNWQ1YjZhNWJjYzA1ZWZmNTY0OGFlOTE2MGRhNGQzIiwgInJlbGF0aW9uIjogImVzY2FsYXRlcyJ9fV0=
+    https://verify.agentactioncapsule.org/v/c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157#W3sic3BlY192ZXJzaW9uIjogImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wMiIsICJmb3JtYXRfdmVyc2lvbiI6ICIyIiwgImNhcHN1bGVfaWQiOiAiYzUyM2VhZmQwYzBiNWY4ZTllOTQxOGYyNDRjNTFlY2VmYmY1M2YzMzlmNmU3OTZmY2FmN2VjNzYzZDNhZjE1NyIsICJhY3Rpb25faWQiOiAic3VibWl0X29yZGVyLzY0ODUzZmEyLTlkMTQtNDRmZC1hZWZkLWNlZDI1MWFiZWFlMCIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjA6Mzk6MzMuMzc5NjM1WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiOWJlYjg1NGMxOTJlZjIxNTM5MzgxNjQ2NzkyYmIwMzQ2ZDY1NzgxYTllMjcwNTJjNDc3NzVhZTFiMmFiZDkyMiIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImVhN2E5N2U0YTQwNzBhZTYxOTAzMjg2NDNmOTIwOWQ3NDUxNWMxOTkwNDBjZGJmMTYxZGUxNmJkM2VmMTY0NjAiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAid3JpdGVfb3JkZXIiLCAiZWZmZWN0X2F0dGVzdGF0aW9uIjogInJ1bnRpbWVfY2xhaW1lZCJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAiZGlzcGF0Y2hlZF91bmNvbmZpcm1lZCIsICJsZWRnZXJfbW9kZSI6ICJzdGFuZGFsb25lIn0sICJkaXNwb3NpdGlvbiI6IHsiZGVjaXNpb24iOiAiYWNjZXB0IiwgImFwcHJvdmVyIjogInBvbGljeSIsICJodW1hbl9kaXNwb3NlZCI6IGZhbHNlLCAidmVyZGljdF9jbGFzcyI6ICJleGVjdXRlZCJ9fSwgeyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICI5MGI3ZTQzZTE2YTcyNjJiYTI2ZDk3MzEyMWQ5ZTc0OTZjMTUwNDE4NmY2NGZkM2QyNjk0MDUzYTI1YjVlNjY4IiwgImFjdGlvbl9pZCI6ICJhcHByb3ZlX2xhcmdlX29yZGVyL2UxM2RiODQyLTczMDAtNGQ4NS05Yjk4LTMzMjcxMDM2OWZmYSIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjA6Mzk6MzMuMzc5OTIzWiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiZjEwY2JlYThlNGJmYzUxMzRlNzE3Njc0YWVjZmM0MWRhYjFhMTIzMDVjMTFiNTRlMDU0NDJkYjNmYjkyYjlhOCIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImViYzg5Zjg4OGM5NTdlYmQyN2EyODI1ZWM4ODJjNjI5NTlhMjRjNTE0YjU5MWJkZDViOGFmODliYzdiZTA2MDkiLCAicnVudGltZSI6ICJtY3AiLCAiYXBwcm92ZXJfaWQiOiAicHJpeWFAYWNtZS1jby5jb20ifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJwbGFubmVkIiwgInR5cGUiOiAiYXBwcm92ZV9sYXJnZV9vcmRlciJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAibm90X2FwcGxpY2FibGUiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogInJlamVjdCIsICJhcHByb3ZlciI6ICJodW1hbiIsICJodW1hbl9kaXNwb3NlZCI6IHRydWUsICJ2ZXJkaWN0X2NsYXNzIjogImJsb2NrZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICJjNTIzZWFmZDBjMGI1ZjhlOWU5NDE4ZjI0NGM1MWVjZWZiZjUzZjMzOWY2ZTc5NmZjYWY3ZWM3NjNkM2FmMTU3IiwgInJlbGF0aW9uIjogInNlcXVlbmNlIn19LCB7InNwZWNfdmVyc2lvbiI6ICJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDIiLCAiZm9ybWF0X3ZlcnNpb24iOiAiMiIsICJjYXBzdWxlX2lkIjogIjk4ZTJmYzAzMDQ1MjE4ODY4MzUwOWNjZWYwN2Q3NzNmYWNkZGNmNTU1YmQ0ZWM1MjQzMzA0ZGYzZjcwYzBlZTMiLCAiYWN0aW9uX2lkIjogImVzY2FsYXRlX3RvX21hbmFnZXIvY2MyNmM4ODYtN2FjNS00Yzc2LWFkNDMtOTc1YWNkZTBkNDUzIiwgImFjdGlvbl90eXBlIjogImZ5aSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0xMFQyMDozOTozMy4zODAxNzRaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICJiNDQ4NGNlZTA0YTc5N2M4MmUzMDBmYTU5ZjM1MzcxNjNmNWU0Y2I1ZmJjZGRjOGEyNThiMDc2ZGVhNmY2MmI3IiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiNjFjOGVhYjIxM2QzZTAzNGY0NjVhMmY1OWRjNWE1NWQxZWZiNjhmNTk0ZDI3NjgzYjA0NDM1MTYxMDQ3YjM2MyIsICJydW50aW1lIjogIm1jcCJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogImRpc3BhdGNoZWQiLCAidHlwZSI6ICJlc2NhbGF0ZV90b19tYW5hZ2VyIiwgImVmZmVjdF9hdHRlc3RhdGlvbiI6ICJydW50aW1lX2NsYWltZWQifSwgImFzc3VyYW5jZSI6IHsiYXR0ZXN0YXRpb25fbW9kZSI6ICJzZWxmX2F0dGVzdGVkIiwgImVmZmVjdF9tb2RlIjogImRpc3BhdGNoZWRfdW5jb25maXJtZWQiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogImFjY2VwdCIsICJhcHByb3ZlciI6ICJwb2xpY3kiLCAiaHVtYW5fZGlzcG9zZWQiOiBmYWxzZSwgInZlcmRpY3RfY2xhc3MiOiAiZXhlY3V0ZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICI5MGI3ZTQzZTE2YTcyNjJiYTI2ZDk3MzEyMWQ5ZTc0OTZjMTUwNDE4NmY2NGZkM2QyNjk0MDUzYTI1YjVlNjY4IiwgInJlbGF0aW9uIjogImVzY2FsYXRlcyJ9fV0=
 
 ============================================================
 Demo complete.
-  ledger path: /var/folders/yg/cx7v1zqs26v1y0ys4wjhxh1m0000gn/T/tmpm517deox/goose-capsules.jsonl  (temp; deleted on exit)
+  ledger path: /var/folders/yg/cx7v1zqs26v1y0ys4wjhxh1m0000gn/T/tmpo0s9sci6/goose-capsules.jsonl  (temp; deleted on exit)
   Chain: write_order → decide(BLOCKED) → fyi (escalation).
   To use with real Goose: see examples/goose-capsule/server.py
 ============================================================
@@ -153,51 +160,88 @@ Demo complete.
 ## Independent inclusion re-confirmation (curl, after the run)
 
 ```
-$ curl -s https://anchor.agentactioncapsule.org/v1/inclusion/eedf9efa25442337d246c13959c658f2c3fce68f985979d488e459b0af80ad48
-HTTP 200 — leaf_index=259, entry_hash=a17b41e0fbd3f5bcffd7572ecb73b72b45bacd2cb82459d51ad14e3c0bb4db76, root_hash=dd2448037dffb550fd4795edb8547309f25f81a4b3b660a5c01e836b4eb31c09
+$ curl -s https://anchor.agentactioncapsule.org/v1/inclusion/c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157
+HTTP 200 — leaf_index=264, tree_size=265, entry_hash=17cca0c1cd3d762679093b76cfa23b82d2a593c1e9efb7ae51e9af431ce04922, leaf_hash=7d277240bd766810892c245ad9e2b4e813e4345aac17157b30b1d6cbc65bde0c, root_hash=6591584882dd82a8fa6a15ef7279ebb826b88fe873397f6f220f295a80fbdf92
 
-$ curl -s https://anchor.agentactioncapsule.org/v1/inclusion/41a8e2589dc986ab77925efc4c53f7f44d5d5b6a5bcc05eff5648ae9160da4d3
-HTTP 200 — leaf_index=260, entry_hash=28461379d56b84ea6129c50fceac880f399409fca3eff2dc09622f65fac69981, root_hash=f82259a36e598d87f6d82c0918b4dc8ff8442844f3ba2f24d046c2234963e8ef
+$ curl -s https://anchor.agentactioncapsule.org/v1/inclusion/90b7e43e16a7262ba26d973121d9e7496c1504186f64fd3d2694053a25b5e668
+HTTP 200 — leaf_index=265, tree_size=266, entry_hash=896ba3d699440e538bffdcf6b2f3365893f092364395a375647345cd8d3eb3b3, leaf_hash=404a52eb463e0f48b3c109847e6280735c428db9af389b91a833deeb3145fd50, root_hash=83ba27252bef1e3cfc8b366564a9ec6defecc71b6ff646e78120e6a0588321a4
 
-$ curl -s https://anchor.agentactioncapsule.org/v1/inclusion/109c6143967dc0fd97f7777ebe2866c62cda51be5d397e2436acb5861e7d4874
-HTTP 200 — leaf_index=261, entry_hash=9ab42f9943d6aab5749f4da7c1de9ff54b42a01f54f0d1f20252a9f7f78d9bc7, root_hash=d9a17ff9bc0953c5a719977c87b8fcf603eeb8d946ed0de584c9998d4f6e3c52
+$ curl -s https://anchor.agentactioncapsule.org/v1/inclusion/98e2fc030452188683509ccef07d773facddcf555bd4ec5243304df3f70c0ee3
+HTTP 200 — leaf_index=266, tree_size=267, entry_hash=85fa759facddae4678dae5cc0055fbc8bfaf1e2e07094f0e83b12df9e4469cf8, leaf_hash=9458292729bf49dea7f7919c15c610541a05f866ed22ca32302a9e0cc8bbc50b, root_hash=9a5aea7d835b2bb49687404e64029b574d392a3520c4027e90958976d11da389
 ```
 
-Capsule 3's `audit_path[0]` (`daca406d23ca2d2ff78ba6b2ffa824f21516b7aaf0c1452b914f035a8ad5b22e`)
-equals capsule 2's `leaf_hash` — consistent with a genuine append-only tree (the same check the
-PM ran independently against the 2026-08-03 leaves).
+`leaf_index` progresses 264 → 265 → 266 and `tree_size` 265 → 266 → 267, matching the
+sequential order of the three `POST /v1/digest` calls above — an independent confirmation the
+capsules landed in the shared public log in chain order.
+
+Capsule 2's `audit_path[0]` (`7d277240bd766810892c245ad9e2b4e813e4345aac17157b30b1d6cbc65bde0c`)
+equals capsule 1's `leaf_hash` exactly — the direct sibling-leaf check, valid here because leaf
+264 (even) and leaf 265 (odd) are RFC 9162 tree siblings at the base level.
+
+Capsule 3's `audit_path[0]` (`43c546c584b4183ac05456d39161da641ada00433d7a88fb681b1bf2ff14d7f7`)
+does **not** equal capsule 2's `leaf_hash` directly — leaf 266 (even) is not a base-level
+sibling of leaf 265 (odd is its own left half); RFC 9162 folds leaves 264+265 into one interior
+node first. Recomputing that interior node independently confirms this is exactly the expected
+value, not a discrepancy:
+
+```
+$ python3 -c "
+import hashlib
+lh1 = bytes.fromhex('7d277240bd766810892c245ad9e2b4e813e4345aac17157b30b1d6cbc65bde0c')  # capsule 1 leaf_hash
+lh2 = bytes.fromhex('404a52eb463e0f48b3c109847e6280735c428db9af389b91a833deeb3145fd50')  # capsule 2 leaf_hash
+print(hashlib.sha256(b'\x01' + lh1 + lh2).hexdigest())
+"
+43c546c584b4183ac05456d39161da641ada00433d7a88fb681b1bf2ff14d7f7   # == capsule 3's audit_path[0]
+```
+
+This is a stronger, from-first-principles independent check than the direct-sibling comparison
+alone (SHA-256 over the RFC 9162 interior-node prefix `0x01`, combining capsule 1's and
+capsule 2's leaf hashes) — it confirms the shared public log's Merkle tree shape is internally
+consistent for this chain, using nothing but `curl` and `hashlib`, no capsule-emit code.
 
 ---
 
 ## Verify permalinks (verify.agentactioncapsule.org)
 
 Each permalink carries the full capsule JSON in the URL fragment (never sent to the server —
-client-side only, per `scitt_cose/hosted.py`'s deployed JS). Every permalink below was
-browser-confirmed on a fresh page load with zero manual pasting (anchor banner, digest graph,
-privilege log; the bundle additionally renders the Chain Navigation table with the VERDICT
-column).
+client-side only, per `scitt_cose/hosted.py`'s deployed JS). Every permalink below —
+individual and bundle — was browser-confirmed to auto-load directly from the URL fragment on
+first page load, with zero manual pasting (anchor banner, digest graph, privilege log; the
+bundle additionally renders the Chain Navigation table with the VERDICT column: `decide |
+executed` → `decide | blocked` → `fyi | executed`, matching the README's claim exactly).
+
+**Caveat found during this browser pass:** the bundle permalink's page also renders a separate
+"Verification Ritual" integrity panel above the Chain Navigation table, and that panel reports a
+false-positive `capsule_id_mismatch` for record #2 specifically — even though record #2 verifies
+cleanly both standalone (its own individual permalink shows `✓ verifies`, no discrepancy) and via
+`agent_action_capsule.verify()` offline (step 6 above). This reproduces identically on the
+untouched 2026-08-04 bundle permalink (same failure, same record position, different capsule
+IDs/relation value) — it is a pre-existing bug in the verify-site's bundle-mode digest
+recomputation, not caused by this task's changes, and not something a `capsule-emit`-side fix can
+address (out of this repo's boundary). Reported in the outbox for awareness.
 
 **Individual capsules:**
 
 | # | Capsule | Permalink |
 |---|---------|-----------|
-| 1 | write_order/submit_order | `https://verify.agentactioncapsule.org/v/eedf9efa25442337d246c13959c658f2c3fce68f985979d488e459b0af80ad48#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICJlZWRmOWVmYTI1NDQyMzM3ZDI0NmMxMzk1OWM2NThmMmMzZmNlNjhmOTg1OTc5ZDQ4OGU0NTliMGFmODBhZDQ4IiwgImFjdGlvbl9pZCI6ICJzdWJtaXRfb3JkZXIvZDRlNmYwOGYtNDczYy00MTZmLWI5ZjYtMGZiYmFhN2E2MTk2IiwgImFjdGlvbl90eXBlIjogImRlY2lkZSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0wNFQxOTowMzowMS45MzEzMDZaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICI5YmViODU0YzE5MmVmMjE1MzkzODE2NDY3OTJiYjAzNDZkNjU3ODFhOWUyNzA1MmM0Nzc3NWFlMWIyYWJkOTIyIiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiZWE3YTk3ZTRhNDA3MGFlNjE5MDMyODY0M2Y5MjA5ZDc0NTE1YzE5OTA0MGNkYmYxNjFkZTE2YmQzZWYxNjQ2MCIsICJydW50aW1lIjogIm1jcCJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogImRpc3BhdGNoZWQiLCAidHlwZSI6ICJ3cml0ZV9vcmRlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogInN0YW5kYWxvbmUifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn19` |
-| 2 | decide/approve_large_order (REJECTED) | `https://verify.agentactioncapsule.org/v/41a8e2589dc986ab77925efc4c53f7f44d5d5b6a5bcc05eff5648ae9160da4d3#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICI0MWE4ZTI1ODlkYzk4NmFiNzc5MjVlZmM0YzUzZjdmNDRkNWQ1YjZhNWJjYzA1ZWZmNTY0OGFlOTE2MGRhNGQzIiwgImFjdGlvbl9pZCI6ICJhcHByb3ZlX2xhcmdlX29yZGVyLzZlZWI4YjcxLTdjZjAtNDQ0MC1hM2E2LWFjNDM5OTRmMTE3YSIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMDRUMTk6MDM6MDEuOTMxNTE5WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiZjEwY2JlYThlNGJmYzUxMzRlNzE3Njc0YWVjZmM0MWRhYjFhMTIzMDVjMTFiNTRlMDU0NDJkYjNmYjkyYjlhOCIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImViYzg5Zjg4OGM5NTdlYmQyN2EyODI1ZWM4ODJjNjI5NTlhMjRjNTE0YjU5MWJkZDViOGFmODliYzdiZTA2MDkiLCAicnVudGltZSI6ICJtY3AiLCAiYXBwcm92ZXJfaWQiOiAicHJpeWFAYWNtZS1jby5jb20ifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJwbGFubmVkIiwgInR5cGUiOiAiYXBwcm92ZV9sYXJnZV9vcmRlciJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAibm90X2FwcGxpY2FibGUiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogInJlamVjdCIsICJhcHByb3ZlciI6ICJodW1hbiIsICJodW1hbl9kaXNwb3NlZCI6IHRydWUsICJ2ZXJkaWN0X2NsYXNzIjogImJsb2NrZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICJlZWRmOWVmYTI1NDQyMzM3ZDI0NmMxMzk1OWM2NThmMmMzZmNlNjhmOTg1OTc5ZDQ4OGU0NTliMGFmODBhZDQ4IiwgInJlbGF0aW9uIjogImNvbmZpcm1zIn19` |
-| 3 | fyi/escalate_to_manager | `https://verify.agentactioncapsule.org/v/109c6143967dc0fd97f7777ebe2866c62cda51be5d397e2436acb5861e7d4874#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICIxMDljNjE0Mzk2N2RjMGZkOTdmNzc3N2ViZTI4NjZjNjJjZGE1MWJlNWQzOTdlMjQzNmFjYjU4NjFlN2Q0ODc0IiwgImFjdGlvbl9pZCI6ICJlc2NhbGF0ZV90b19tYW5hZ2VyLzQ4ZDI0ZTM1LTE3N2ItNDcwZS1hOTBhLWYzOWEwZTlmMzJiYyIsICJhY3Rpb25fdHlwZSI6ICJmeWkiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMDRUMTk6MDM6MDEuOTMxNzA3WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiYjQ0ODRjZWUwNGE3OTdjODJlMzAwZmE1OWYzNTM3MTYzZjVlNGNiNWZiY2RkYzhhMjU4YjA3NmRlYTZmNjJiNyIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogIjYxYzhlYWIyMTNkM2UwMzRmNDY1YTJmNTlkYzVhNTVkMWVmYjY4ZjU5NGQyNzY4M2IwNDQzNTE2MTA0N2IzNjMiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAiZXNjYWxhdGVfdG9fbWFuYWdlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogImNoYWluZWQifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn0sICJjaGFpbiI6IHsicGFyZW50X2NhcHN1bGVfaWQiOiAiNDFhOGUyNTg5ZGM5ODZhYjc3OTI1ZWZjNGM1M2Y3ZjQ0ZDVkNWI2YTViY2MwNWVmZjU2NDhhZTkxNjBkYTRkMyIsICJyZWxhdGlvbiI6ICJlc2NhbGF0ZXMifX0=` |
+| 1 | write_order/submit_order | `https://verify.agentactioncapsule.org/v/c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICJjNTIzZWFmZDBjMGI1ZjhlOWU5NDE4ZjI0NGM1MWVjZWZiZjUzZjMzOWY2ZTc5NmZjYWY3ZWM3NjNkM2FmMTU3IiwgImFjdGlvbl9pZCI6ICJzdWJtaXRfb3JkZXIvNjQ4NTNmYTItOWQxNC00NGZkLWFlZmQtY2VkMjUxYWJlYWUwIiwgImFjdGlvbl90eXBlIjogImRlY2lkZSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0xMFQyMDozOTozMy4zNzk2MzVaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICI5YmViODU0YzE5MmVmMjE1MzkzODE2NDY3OTJiYjAzNDZkNjU3ODFhOWUyNzA1MmM0Nzc3NWFlMWIyYWJkOTIyIiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiZWE3YTk3ZTRhNDA3MGFlNjE5MDMyODY0M2Y5MjA5ZDc0NTE1YzE5OTA0MGNkYmYxNjFkZTE2YmQzZWYxNjQ2MCIsICJydW50aW1lIjogIm1jcCJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogImRpc3BhdGNoZWQiLCAidHlwZSI6ICJ3cml0ZV9vcmRlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogInN0YW5kYWxvbmUifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn19` |
+| 2 | decide/approve_large_order (REJECTED) | `https://verify.agentactioncapsule.org/v/90b7e43e16a7262ba26d973121d9e7496c1504186f64fd3d2694053a25b5e668#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICI5MGI3ZTQzZTE2YTcyNjJiYTI2ZDk3MzEyMWQ5ZTc0OTZjMTUwNDE4NmY2NGZkM2QyNjk0MDUzYTI1YjVlNjY4IiwgImFjdGlvbl9pZCI6ICJhcHByb3ZlX2xhcmdlX29yZGVyL2UxM2RiODQyLTczMDAtNGQ4NS05Yjk4LTMzMjcxMDM2OWZmYSIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjA6Mzk6MzMuMzc5OTIzWiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiZjEwY2JlYThlNGJmYzUxMzRlNzE3Njc0YWVjZmM0MWRhYjFhMTIzMDVjMTFiNTRlMDU0NDJkYjNmYjkyYjlhOCIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImViYzg5Zjg4OGM5NTdlYmQyN2EyODI1ZWM4ODJjNjI5NTlhMjRjNTE0YjU5MWJkZDViOGFmODliYzdiZTA2MDkiLCAicnVudGltZSI6ICJtY3AiLCAiYXBwcm92ZXJfaWQiOiAicHJpeWFAYWNtZS1jby5jb20ifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJwbGFubmVkIiwgInR5cGUiOiAiYXBwcm92ZV9sYXJnZV9vcmRlciJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAibm90X2FwcGxpY2FibGUiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogInJlamVjdCIsICJhcHByb3ZlciI6ICJodW1hbiIsICJodW1hbl9kaXNwb3NlZCI6IHRydWUsICJ2ZXJkaWN0X2NsYXNzIjogImJsb2NrZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICJjNTIzZWFmZDBjMGI1ZjhlOWU5NDE4ZjI0NGM1MWVjZWZiZjUzZjMzOWY2ZTc5NmZjYWY3ZWM3NjNkM2FmMTU3IiwgInJlbGF0aW9uIjogInNlcXVlbmNlIn19` |
+| 3 | fyi/escalate_to_manager | `https://verify.agentactioncapsule.org/v/98e2fc030452188683509ccef07d773facddcf555bd4ec5243304df3f70c0ee3#eyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICI5OGUyZmMwMzA0NTIxODg2ODM1MDljY2VmMDdkNzczZmFjZGRjZjU1NWJkNGVjNTI0MzMwNGRmM2Y3MGMwZWUzIiwgImFjdGlvbl9pZCI6ICJlc2NhbGF0ZV90b19tYW5hZ2VyL2NjMjZjODg2LTdhYzUtNGM3Ni1hZDQzLTk3NWFjZGUwZDQ1MyIsICJhY3Rpb25fdHlwZSI6ICJmeWkiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjA6Mzk6MzMuMzgwMTc0WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiYjQ0ODRjZWUwNGE3OTdjODJlMzAwZmE1OWYzNTM3MTYzZjVlNGNiNWZiY2RkYzhhMjU4YjA3NmRlYTZmNjJiNyIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogIjYxYzhlYWIyMTNkM2UwMzRmNDY1YTJmNTlkYzVhNTVkMWVmYjY4ZjU5NGQyNzY4M2IwNDQzNTE2MTA0N2IzNjMiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAiZXNjYWxhdGVfdG9fbWFuYWdlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogImNoYWluZWQifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn0sICJjaGFpbiI6IHsicGFyZW50X2NhcHN1bGVfaWQiOiAiOTBiN2U0M2UxNmE3MjYyYmEyNmQ5NzMxMjFkOWU3NDk2YzE1MDQxODZmNjRmZDNkMjY5NDA1M2EyNWI1ZTY2OCIsICJyZWxhdGlvbiI6ICJlc2NhbGF0ZXMifX0=` |
 
 **Full 3-capsule chain bundle (renders the Chain Navigation table with a VERDICT column and
 Previous/Next click-through):**
 
-`https://verify.agentactioncapsule.org/v/eedf9efa25442337d246c13959c658f2c3fce68f985979d488e459b0af80ad48#W3sic3BlY192ZXJzaW9uIjogImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wMiIsICJmb3JtYXRfdmVyc2lvbiI6ICIyIiwgImNhcHN1bGVfaWQiOiAiZWVkZjllZmEyNTQ0MjMzN2QyNDZjMTM5NTljNjU4ZjJjM2ZjZTY4Zjk4NTk3OWQ0ODhlNDU5YjBhZjgwYWQ0OCIsICJhY3Rpb25faWQiOiAic3VibWl0X29yZGVyL2Q0ZTZmMDhmLTQ3M2MtNDE2Zi1iOWY2LTBmYmJhYTdhNjE5NiIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMDRUMTk6MDM6MDEuOTMxMzA2WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiOWJlYjg1NGMxOTJlZjIxNTM5MzgxNjQ2NzkyYmIwMzQ2ZDY1NzgxYTllMjcwNTJjNDc3NzVhZTFiMmFiZDkyMiIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImVhN2E5N2U0YTQwNzBhZTYxOTAzMjg2NDNmOTIwOWQ3NDUxNWMxOTkwNDBjZGJmMTYxZGUxNmJkM2VmMTY0NjAiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAid3JpdGVfb3JkZXIiLCAiZWZmZWN0X2F0dGVzdGF0aW9uIjogInJ1bnRpbWVfY2xhaW1lZCJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAiZGlzcGF0Y2hlZF91bmNvbmZpcm1lZCIsICJsZWRnZXJfbW9kZSI6ICJzdGFuZGFsb25lIn0sICJkaXNwb3NpdGlvbiI6IHsiZGVjaXNpb24iOiAiYWNjZXB0IiwgImFwcHJvdmVyIjogInBvbGljeSIsICJodW1hbl9kaXNwb3NlZCI6IGZhbHNlLCAidmVyZGljdF9jbGFzcyI6ICJleGVjdXRlZCJ9fSwgeyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICI0MWE4ZTI1ODlkYzk4NmFiNzc5MjVlZmM0YzUzZjdmNDRkNWQ1YjZhNWJjYzA1ZWZmNTY0OGFlOTE2MGRhNGQzIiwgImFjdGlvbl9pZCI6ICJhcHByb3ZlX2xhcmdlX29yZGVyLzZlZWI4YjcxLTdjZjAtNDQ0MC1hM2E2LWFjNDM5OTRmMTE3YSIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMDRUMTk6MDM6MDEuOTMxNTE5WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiZjEwY2JlYThlNGJmYzUxMzRlNzE3Njc0YWVjZmM0MWRhYjFhMTIzMDVjMTFiNTRlMDU0NDJkYjNmYjkyYjlhOCIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImViYzg5Zjg4OGM5NTdlYmQyN2EyODI1ZWM4ODJjNjI5NTlhMjRjNTE0YjU5MWJkZDViOGFmODliYzdiZTA2MDkiLCAicnVudGltZSI6ICJtY3AiLCAiYXBwcm92ZXJfaWQiOiAicHJpeWFAYWNtZS1jby5jb20ifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJwbGFubmVkIiwgInR5cGUiOiAiYXBwcm92ZV9sYXJnZV9vcmRlciJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAibm90X2FwcGxpY2FibGUiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogInJlamVjdCIsICJhcHByb3ZlciI6ICJodW1hbiIsICJodW1hbl9kaXNwb3NlZCI6IHRydWUsICJ2ZXJkaWN0X2NsYXNzIjogImJsb2NrZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICJlZWRmOWVmYTI1NDQyMzM3ZDI0NmMxMzk1OWM2NThmMmMzZmNlNjhmOTg1OTc5ZDQ4OGU0NTliMGFmODBhZDQ4IiwgInJlbGF0aW9uIjogImNvbmZpcm1zIn19LCB7InNwZWNfdmVyc2lvbiI6ICJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDIiLCAiZm9ybWF0X3ZlcnNpb24iOiAiMiIsICJjYXBzdWxlX2lkIjogIjEwOWM2MTQzOTY3ZGMwZmQ5N2Y3Nzc3ZWJlMjg2NmM2MmNkYTUxYmU1ZDM5N2UyNDM2YWNiNTg2MWU3ZDQ4NzQiLCAiYWN0aW9uX2lkIjogImVzY2FsYXRlX3RvX21hbmFnZXIvNDhkMjRlMzUtMTc3Yi00NzBlLWE5MGEtZjM5YTBlOWYzMmJjIiwgImFjdGlvbl90eXBlIjogImZ5aSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0wNFQxOTowMzowMS45MzE3MDdaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICJiNDQ4NGNlZTA0YTc5N2M4MmUzMDBmYTU5ZjM1MzcxNjNmNWU0Y2I1ZmJjZGRjOGEyNThiMDc2ZGVhNmY2MmI3IiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiNjFjOGVhYjIxM2QzZTAzNGY0NjVhMmY1OWRjNWE1NWQxZWZiNjhmNTk0ZDI3NjgzYjA0NDM1MTYxMDQ3YjM2MyIsICJydW50aW1lIjogIm1jcCJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogImRpc3BhdGNoZWQiLCAidHlwZSI6ICJlc2NhbGF0ZV90b19tYW5hZ2VyIiwgImVmZmVjdF9hdHRlc3RhdGlvbiI6ICJydW50aW1lX2NsYWltZWQifSwgImFzc3VyYW5jZSI6IHsiYXR0ZXN0YXRpb25fbW9kZSI6ICJzZWxmX2F0dGVzdGVkIiwgImVmZmVjdF9tb2RlIjogImRpc3BhdGNoZWRfdW5jb25maXJtZWQiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogImFjY2VwdCIsICJhcHByb3ZlciI6ICJwb2xpY3kiLCAiaHVtYW5fZGlzcG9zZWQiOiBmYWxzZSwgInZlcmRpY3RfY2xhc3MiOiAiZXhlY3V0ZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICI0MWE4ZTI1ODlkYzk4NmFiNzc5MjVlZmM0YzUzZjdmNDRkNWQ1YjZhNWJjYzA1ZWZmNTY0OGFlOTE2MGRhNGQzIiwgInJlbGF0aW9uIjogImVzY2FsYXRlcyJ9fV0=`
+`https://verify.agentactioncapsule.org/v/c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157#W3sic3BlY192ZXJzaW9uIjogImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wMiIsICJmb3JtYXRfdmVyc2lvbiI6ICIyIiwgImNhcHN1bGVfaWQiOiAiYzUyM2VhZmQwYzBiNWY4ZTllOTQxOGYyNDRjNTFlY2VmYmY1M2YzMzlmNmU3OTZmY2FmN2VjNzYzZDNhZjE1NyIsICJhY3Rpb25faWQiOiAic3VibWl0X29yZGVyLzY0ODUzZmEyLTlkMTQtNDRmZC1hZWZkLWNlZDI1MWFiZWFlMCIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjA6Mzk6MzMuMzc5NjM1WiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiOWJlYjg1NGMxOTJlZjIxNTM5MzgxNjQ2NzkyYmIwMzQ2ZDY1NzgxYTllMjcwNTJjNDc3NzVhZTFiMmFiZDkyMiIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImVhN2E5N2U0YTQwNzBhZTYxOTAzMjg2NDNmOTIwOWQ3NDUxNWMxOTkwNDBjZGJmMTYxZGUxNmJkM2VmMTY0NjAiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAid3JpdGVfb3JkZXIiLCAiZWZmZWN0X2F0dGVzdGF0aW9uIjogInJ1bnRpbWVfY2xhaW1lZCJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAiZGlzcGF0Y2hlZF91bmNvbmZpcm1lZCIsICJsZWRnZXJfbW9kZSI6ICJzdGFuZGFsb25lIn0sICJkaXNwb3NpdGlvbiI6IHsiZGVjaXNpb24iOiAiYWNjZXB0IiwgImFwcHJvdmVyIjogInBvbGljeSIsICJodW1hbl9kaXNwb3NlZCI6IGZhbHNlLCAidmVyZGljdF9jbGFzcyI6ICJleGVjdXRlZCJ9fSwgeyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICI5MGI3ZTQzZTE2YTcyNjJiYTI2ZDk3MzEyMWQ5ZTc0OTZjMTUwNDE4NmY2NGZkM2QyNjk0MDUzYTI1YjVlNjY4IiwgImFjdGlvbl9pZCI6ICJhcHByb3ZlX2xhcmdlX29yZGVyL2UxM2RiODQyLTczMDAtNGQ4NS05Yjk4LTMzMjcxMDM2OWZmYSIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjA6Mzk6MzMuMzc5OTIzWiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiZjEwY2JlYThlNGJmYzUxMzRlNzE3Njc0YWVjZmM0MWRhYjFhMTIzMDVjMTFiNTRlMDU0NDJkYjNmYjkyYjlhOCIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImViYzg5Zjg4OGM5NTdlYmQyN2EyODI1ZWM4ODJjNjI5NTlhMjRjNTE0YjU5MWJkZDViOGFmODliYzdiZTA2MDkiLCAicnVudGltZSI6ICJtY3AiLCAiYXBwcm92ZXJfaWQiOiAicHJpeWFAYWNtZS1jby5jb20ifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJwbGFubmVkIiwgInR5cGUiOiAiYXBwcm92ZV9sYXJnZV9vcmRlciJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAibm90X2FwcGxpY2FibGUiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogInJlamVjdCIsICJhcHByb3ZlciI6ICJodW1hbiIsICJodW1hbl9kaXNwb3NlZCI6IHRydWUsICJ2ZXJkaWN0X2NsYXNzIjogImJsb2NrZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICJjNTIzZWFmZDBjMGI1ZjhlOWU5NDE4ZjI0NGM1MWVjZWZiZjUzZjMzOWY2ZTc5NmZjYWY3ZWM3NjNkM2FmMTU3IiwgInJlbGF0aW9uIjogInNlcXVlbmNlIn19LCB7InNwZWNfdmVyc2lvbiI6ICJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDIiLCAiZm9ybWF0X3ZlcnNpb24iOiAiMiIsICJjYXBzdWxlX2lkIjogIjk4ZTJmYzAzMDQ1MjE4ODY4MzUwOWNjZWYwN2Q3NzNmYWNkZGNmNTU1YmQ0ZWM1MjQzMzA0ZGYzZjcwYzBlZTMiLCAiYWN0aW9uX2lkIjogImVzY2FsYXRlX3RvX21hbmFnZXIvY2MyNmM4ODYtN2FjNS00Yzc2LWFkNDMtOTc1YWNkZTBkNDUzIiwgImFjdGlvbl90eXBlIjogImZ5aSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0xMFQyMDozOTozMy4zODAxNzRaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICJiNDQ4NGNlZTA0YTc5N2M4MmUzMDBmYTU5ZjM1MzcxNjNmNWU0Y2I1ZmJjZGRjOGEyNThiMDc2ZGVhNmY2MmI3IiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiNjFjOGVhYjIxM2QzZTAzNGY0NjVhMmY1OWRjNWE1NWQxZWZiNjhmNTk0ZDI3NjgzYjA0NDM1MTYxMDQ3YjM2MyIsICJydW50aW1lIjogIm1jcCJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogImRpc3BhdGNoZWQiLCAidHlwZSI6ICJlc2NhbGF0ZV90b19tYW5hZ2VyIiwgImVmZmVjdF9hdHRlc3RhdGlvbiI6ICJydW50aW1lX2NsYWltZWQifSwgImFzc3VyYW5jZSI6IHsiYXR0ZXN0YXRpb25fbW9kZSI6ICJzZWxmX2F0dGVzdGVkIiwgImVmZmVjdF9tb2RlIjogImRpc3BhdGNoZWRfdW5jb25maXJtZWQiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogImFjY2VwdCIsICJhcHByb3ZlciI6ICJwb2xpY3kiLCAiaHVtYW5fZGlzcG9zZWQiOiBmYWxzZSwgInZlcmRpY3RfY2xhc3MiOiAiZXhlY3V0ZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICI5MGI3ZTQzZTE2YTcyNjJiYTI2ZDk3MzEyMWQ5ZTc0OTZjMTUwNDE4NmY2NGZkM2QyNjk0MDUzYTI1YjVlNjY4IiwgInJlbGF0aW9uIjogImVzY2FsYXRlcyJ9fV0=`
 
 Click sequence for the denial beat: open the bundle permalink → Chain Navigation table shows
 all 3 capsules with `# / CAPSULE_ID / ACTION_TYPE / VERDICT / TIMESTAMP` → row 2 reads
 `decide | blocked` → click row 2 (or "Next") to load capsule 2 standalone, which shows the
-anchor banner (`✓ Anchored log index 260 · inclusion proof verified (RFC 9162)`), the digest
+anchor banner (`✓ Anchored log index 265 · inclusion proof verified (RFC 9162)`), the digest
 graph (chains_to → capsule 1, attests_over agent_input/agent_output), and the privilege log
 (agent_input/agent_output both WITHHELD — digest committed, payload not carried in the record).
-Row 3 reads `fyi | executed` and its `chain.relation` is `escalates`, distinct from row 2's
-`confirms` — the VERDICT column and the relation are now visibly different signals.
+Row 2's `chain.relation` now reads `sequence`, not `confirms` — no relation is asserted on the
+denial's link to the dispatch it refuses. Row 3 reads `fyi | executed` and its `chain.relation`
+is `escalates`, distinct from row 2's `sequence`.
 
 ---
 
@@ -236,7 +280,7 @@ denial, all three anchored, all three verified, the chain intact across the bloc
 [step 7] Tamper test: flip one byte in output digest → verify fails
   original  digest:  …3ef16460
   tampered  digest:  …3ef16461
-  verify result:     ok=False  findings: ['recomputed 1154d5ffc1f9718af0deaf42a41e1ace7a9cf153ca0082396c9ca621bccfeace != carried eedf9efa25442337d246c13959c658f2c3fce68f985979d488e459b0af80ad48']
+  verify result:     ok=False  findings: ['recomputed 27a62da8a535e3498c8562813e6a4cacd975ef339b5e644027701d83396cd8f5 != carried c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157']
   Tamper detected — ok=False as expected. ✓
 ```
 
@@ -249,15 +293,16 @@ recomputed `capsule_id` disagree with the carried one — `verify().ok` flips to
 ## Test suite
 
 ```
-$ python3 -m pytest -q
+$ python3 -m pytest -q --ignore=tests/test_agentgateway.py
 386 passed
 ```
 
-`tests/test_goose.py` exercises `capsule_emit/server.py` (Pattern B) and `MCPCapsuleEmitter`
-directly (Pattern A) — it does not import `examples/goose-capsule/demo.py` or `server.py`, so
-these tests are independent of the demo-level changes in this task. 13 new tests cover
-`CAPSULE_ANCHOR` env parsing (default-off; `0`/`false`/`no` any case) and that `anchor=`
-correctly reaches or skips the (mocked, no-network) anchor call.
+`tests/test_agentgateway.py` fails to collect locally due to an unrelated protobuf
+gencode/runtime version mismatch in this environment (pre-existing, reproduced identically on
+`HEAD~0` before this task's changes) — not part of this task's scope. Two new tests
+(`test_relation_none_keeps_chain_without_confirms_assertion`,
+`test_relation_none_does_not_raise_without_confirms` in
+`tests/test_producer_hardening.py`) cover the `relation=None` behavior added by this task.
 
 ---
 
@@ -266,18 +311,18 @@ correctly reaches or skips the (mocked, no-network) anchor call.
 | Check | Result |
 |-------|--------|
 | Live 3-capsule chain (order → denial → escalation) | ✓ |
-| Live anchor inclusion for all 3 chain capsules (leaf 259/260/261) | ✓ |
+| Live anchor inclusion for all 3 chain capsules (leaf 264/265/266) | ✓ |
 | Genuine refusal (`verdict_class=blocked`, `human_disposed=true`, approver + reason) | ✓ |
-| Capsule 3 `chain.relation="escalates"` (was defaulting to `confirms`) | ✓ |
-| Capsule 2 relation gap flagged to PM, not invented | ✓ (see outbox) |
-| `action_type="act"` reverted — breaks §5.1 verify(); flagged, not shipped | ✓ (see outbox) |
-| `CAPSULE_ANCHOR` defaults to `false` (both `capsule_emit/server.py` and the example's) | ✓ |
-| `CAPSULE_ANCHOR` env-parsing + anchor-reaches-emitter tests (offline, mocked) | ✓ |
+| Capsule 2 chain relation OMIT ruling applied (`relation=None` → sealed as `sequence`, not `confirms`) | ✓ |
+| Capsule 3 `chain.relation="escalates"` (unchanged) | ✓ |
+| `action_type="act"` revert still in effect — only `fyi`/`decide` appear | ✓ (verified, not redone) |
+| `CAPSULE_ANCHOR` defaults to `false` (both `capsule_emit/server.py` and the example's) | ✓ (verified, not redone) |
+| Independent curl re-verification of `leaf_index`/`tree_size` progression + audit path | ✓ |
 | Individual verify permalinks (3) | ✓ |
 | Bundle permalink (Chain Navigation + VERDICT column) | ✓ |
 | `verify ok=True` (all 4 sealed capsules, offline) | ✓ |
 | tamper → `ok=False` | ✓ |
-| Full suite 386/386 green | ✓ |
+| Full suite 386/386 green (excl. pre-existing local protobuf collection error) | ✓ |
 
 **Sealed capsule (offline artifact, refreshed from this run):**
 `examples/goose-capsule/evidence/capsule.json`
