@@ -1,12 +1,12 @@
 {
     "spec_version": "draft-mih-scitt-agent-action-capsule-02",
     "format_version": "2",
-    "capsule_id": "c523eafd0c0b5f8e9e9418f244c51ecefbf53f339f6e796fcaf7ec763d3af157",
-    "action_id": "submit_order/64853fa2-9d14-44fd-aefd-ced251abeae0",
+    "capsule_id": "f708b92a34b15b582db60042619c37b380f0b64b5c6c0bba6e13a71652f98d3b",
+    "action_id": "submit_order/de8b7f8c-7b74-4e54-9005-1144b063aa18",
     "action_type": "decide",
     "operator": "acme-co",
     "developer": "goose-agent@v1",
-    "timestamp": "2026-08-10T20:39:33.379635Z",
+    "timestamp": "2026-08-10T21:03:49.182012Z",
     "model_attestation": {
         "model_id": "claude-opus-4-8",
         "provider": "anthropic",

@@ -415,11 +415,20 @@ def test_capsule_anchor_env_on_values(monkeypatch, _server_reload, value):
 def test_capsule_anchor_true_reaches_anchor_call(tmp_path, monkeypatch, _server_reload):
     """CAPSULE_ANCHOR=true → capsule_record's emit() invokes the anchor call.
 
-    Patches capsule_emit.core._simple_anchor so no real network request is
+    Patches capsule_emit.core.async_anchor so no real network request is
     made; only whether it was invoked is asserted.
     """
     calls: list = []
-    monkeypatch.setattr("capsule_emit.core._simple_anchor", lambda *a, **kw: calls.append((a, kw)))
+
+    def _fake_async_anchor(*a, **kw):
+        calls.append((a, kw))
+        from agent_action_capsule.anchor import AnchorFuture
+
+        future = AnchorFuture()
+        future._set(object())  # mark done with a non-None, non-AnchorError sentinel
+        return future
+
+    monkeypatch.setattr("capsule_emit.core.async_anchor", _fake_async_anchor)
     monkeypatch.setenv("CAPSULE_ANCHOR", "true")
     mod = _server_reload()
 
@@ -436,7 +445,9 @@ def test_capsule_anchor_true_reaches_anchor_call(tmp_path, monkeypatch, _server_
 def test_capsule_anchor_false_skips_anchor_call(tmp_path, monkeypatch, _server_reload):
     """CAPSULE_ANCHOR=false (or unset) → the anchor call is never invoked."""
     calls: list = []
-    monkeypatch.setattr("capsule_emit.core._simple_anchor", lambda *a, **kw: calls.append((a, kw)))
+    monkeypatch.setattr(
+        "capsule_emit.core.async_anchor", lambda *a, **kw: calls.append((a, kw))
+    )
     monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
     mod = _server_reload()
 
