@@ -251,6 +251,128 @@ is `escalates`, distinct from row 2's `sequence`.
 
 ---
 
+## Disclosure addendum ([goose-demo-disclose-payloads], 2026-08-11)
+
+**No re-anchor.** All three capsules are byte-identical to the PR #42 merge — same
+`capsule_id`s, same leaf indices (267/268/269), same digests. Disclosure only adds a sibling
+`disclosures` object alongside the unmodified capsule in the URL fragment; confirmed
+programmatically (`decoded["capsule"] == original_capsule_json`, all 3) before generating any
+permalink, and again by the unchanged `Anchored log index NNN` banner on every disclosed page
+load.
+
+**Mechanism:** the Disclosure Envelope (`{"capsule": <unmodified capsule>, "disclosures":
+{"agent_input": ..., "agent_output": ...}}`) already landed in the verify-surface viewer via
+`[aac-disclosure-envelope]` (scitt-cose#27, merged 2026-08-07) — `capsule_emit/permalink.py`
+(this task) is what finally *uses* it: `build_url(..., disclosures={...})` for the library,
+`capsule-emit permalink FILE --reveal agent_input=payload.json --reveal
+agent_output=payload.json` for the CLI. Bare `demo.py`'s `_permalink`/`_bundle_permalink`
+helpers are unchanged — the withheld bundle above still works exactly as merged.
+
+The exact disclosed payloads are the real values `demo.py` passed to `emit_capsule()` at seal
+time (`approval_request`/`approval_outcome` etc. — not reconstructed after the fact); each was
+independently confirmed to reproduce its capsule's committed digest via `capsule_emit.core._digest()`
+*before* being used, and again by the CLI's own `--reveal` digest-check (which refuses to emit a
+URL on any mismatch — verified with a deliberately wrong payload in
+`tests/test_permalink.py::test_cli_permalink_reveal_mismatched_payload_refused`).
+
+**Disclosed individual permalinks (all three, browser-confirmed):**
+
+| # | Capsule | Disclosed permalink |
+|---|---------|----------------------|
+| 1 | write_order/submit_order | `https://verify.agentactioncapsule.org/v/f708b92a34b15b582db60042619c37b380f0b64b5c6c0bba6e13a71652f98d3b#eyJjYXBzdWxlIjogeyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICJmNzA4YjkyYTM0YjE1YjU4MmRiNjAwNDI2MTljMzdiMzgwZjBiNjRiNWM2YzBiYmE2ZTEzYTcxNjUyZjk4ZDNiIiwgImFjdGlvbl9pZCI6ICJzdWJtaXRfb3JkZXIvZGU4YjdmOGMtN2I3NC00ZTU0LTkwMDUtMTE0NGIwNjNhYTE4IiwgImFjdGlvbl90eXBlIjogImRlY2lkZSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0xMFQyMTowMzo0OS4xODIwMTJaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICI5YmViODU0YzE5MmVmMjE1MzkzODE2NDY3OTJiYjAzNDZkNjU3ODFhOWUyNzA1MmM0Nzc3NWFlMWIyYWJkOTIyIiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiZWE3YTk3ZTRhNDA3MGFlNjE5MDMyODY0M2Y5MjA5ZDc0NTE1YzE5OTA0MGNkYmYxNjFkZTE2YmQzZWYxNjQ2MCIsICJydW50aW1lIjogIm1jcCJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogImRpc3BhdGNoZWQiLCAidHlwZSI6ICJ3cml0ZV9vcmRlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogInN0YW5kYWxvbmUifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn19LCAiZGlzY2xvc3VyZXMiOiB7ImFnZW50X2lucHV0IjogeyJ2ZW5kb3IiOiAiRnJvYm96eiBTdXBwbHkiLCAiYW1vdW50IjogIjEyNDAuMTkiLCAicG9fbnVtYmVyIjogIlBPLTc3NzcifSwgImFnZW50X291dHB1dCI6IHsic3RhdHVzIjogImRpc3BhdGNoZWQiLCAicG9fbnVtYmVyIjogIlBPLTc3NzciLCAidmVuZG9yIjogIkZyb2JvenogU3VwcGx5IiwgImFtb3VudF91c2QiOiAiMTI0MC4xOSIsICJjb25maXJtYXRpb25fcmVmIjogIkNPTkYtNzc3NyJ9fX0=` |
+| 2 | decide/approve_large_order (REJECTED) | `https://verify.agentactioncapsule.org/v/16a6ab95420291ac977011fa8620516b02a44850a11433c09e6a355e660ccefd#eyJjYXBzdWxlIjogeyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICIxNmE2YWI5NTQyMDI5MWFjOTc3MDExZmE4NjIwNTE2YjAyYTQ0ODUwYTExNDMzYzA5ZTZhMzU1ZTY2MGNjZWZkIiwgImFjdGlvbl9pZCI6ICJhcHByb3ZlX2xhcmdlX29yZGVyL2QxOWIyNGI4LWY0MzQtNGFkMy04MmY2LTczMDM4ODFhMDgyMCIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjE6MDM6NDkuMTgyMzIyWiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiZjEwY2JlYThlNGJmYzUxMzRlNzE3Njc0YWVjZmM0MWRhYjFhMTIzMDVjMTFiNTRlMDU0NDJkYjNmYjkyYjlhOCIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImViYzg5Zjg4OGM5NTdlYmQyN2EyODI1ZWM4ODJjNjI5NTlhMjRjNTE0YjU5MWJkZDViOGFmODliYzdiZTA2MDkiLCAicnVudGltZSI6ICJtY3AiLCAiYXBwcm92ZXJfaWQiOiAicHJpeWFAYWNtZS1jby5jb20ifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJwbGFubmVkIiwgInR5cGUiOiAiYXBwcm92ZV9sYXJnZV9vcmRlciJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAibm90X2FwcGxpY2FibGUiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogInJlamVjdCIsICJhcHByb3ZlciI6ICJodW1hbiIsICJodW1hbl9kaXNwb3NlZCI6IHRydWUsICJ2ZXJkaWN0X2NsYXNzIjogImJsb2NrZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICJmNzA4YjkyYTM0YjE1YjU4MmRiNjAwNDI2MTljMzdiMzgwZjBiNjRiNWM2YzBiYmE2ZTEzYTcxNjUyZjk4ZDNiIiwgInJlbGF0aW9uIjogInNlcXVlbmNlIn19LCAiZGlzY2xvc3VyZXMiOiB7ImFnZW50X2lucHV0IjogeyJwb19udW1iZXIiOiAiUE8tNzc3OCIsICJ2ZW5kb3IiOiAiR2xvYmV4IENvcnAiLCAiYW1vdW50X3VzZCI6ICIxMjUwMDAuMDAiLCAicmVxdWVzdGVkX2J5IjogImdvb3NlLWFnZW50QHYxIn0sICJhZ2VudF9vdXRwdXQiOiB7InJldmlld2VkX2F0IjogIjIwMjYtMDgtMDNUMDA6MDA6MDBaIiwgInJlYXNvbiI6ICJvcmRlciB2YWx1ZSBleGNlZWRzIHZlbmRvcidzIGFwcHJvdmVkIFBPIGNlaWxpbmcifX19` |
+| 3 | fyi/escalate_to_manager | `https://verify.agentactioncapsule.org/v/061e6bded87d3c46d642501aa1085bd87ae102c8b4459b5c952dbfae634b3a3b#eyJjYXBzdWxlIjogeyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICIwNjFlNmJkZWQ4N2QzYzQ2ZDY0MjUwMWFhMTA4NWJkODdhZTEwMmM4YjQ0NTliNWM5NTJkYmZhZTYzNGIzYTNiIiwgImFjdGlvbl9pZCI6ICJlc2NhbGF0ZV90b19tYW5hZ2VyL2IwYjBjYzBjLTllODUtNGUwOC1hOGU4LThiMWMyYjJkZjE2YyIsICJhY3Rpb25fdHlwZSI6ICJmeWkiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjE6MDM6NDkuMTgyNTkxWiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiYjQ0ODRjZWUwNGE3OTdjODJlMzAwZmE1OWYzNTM3MTYzZjVlNGNiNWZiY2RkYzhhMjU4YjA3NmRlYTZmNjJiNyIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogIjYxYzhlYWIyMTNkM2UwMzRmNDY1YTJmNTlkYzVhNTVkMWVmYjY4ZjU5NGQyNzY4M2IwNDQzNTE2MTA0N2IzNjMiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAiZXNjYWxhdGVfdG9fbWFuYWdlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogImNoYWluZWQifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn0sICJjaGFpbiI6IHsicGFyZW50X2NhcHN1bGVfaWQiOiAiMTZhNmFiOTU0MjAyOTFhYzk3NzAxMWZhODYyMDUxNmIwMmE0NDg1MGExMTQzM2MwOWU2YTM1NWU2NjBjY2VmZCIsICJyZWxhdGlvbiI6ICJlc2NhbGF0ZXMifX0sICJkaXNjbG9zdXJlcyI6IHsiYWdlbnRfaW5wdXQiOiB7InBvX251bWJlciI6ICJQTy03Nzc4IiwgInJlYXNvbiI6ICJvcmRlciBibG9ja2VkIGF0IGFwcHJvdmFsIGdhdGU7IHJvdXRpbmcgZm9yIG1hbmFnZXIgcmV2aWV3In0sICJhZ2VudF9vdXRwdXQiOiB7InBvX251bWJlciI6ICJQTy03Nzc4IiwgImVzY2FsYXRlZF90byI6ICJhcC1tYW5hZ2VyQGFjbWUtY28uY29tIn19fQ==` |
+
+Each, browser-confirmed (fresh navigation per link, URL sourced programmatically from the CLI's
+own stdout — never hand-retyped, per the `[verify-bundle-mismatch-fix]` postmortem): Integrity
+✓, Sequence ✓, anchor banner unchanged (`Anchored log index 267/268/269`), Privilege Log reads
+`REVEALED · ✓ match` for both `agent_input` and `agent_output` (was `WITHHELD` before), and no
+other artifact shows an unintended withheld/revealed label change.
+
+**Fragment size before/after** — none anywhere near the ~16KB flag threshold:
+
+| # | Capsule | Withheld fragment | Disclosed fragment | Growth |
+|---|---------|-------------------:|--------------------:|-------:|
+| 1 | write_order/submit_order | 1324 chars | 1688 chars | +364 |
+| 2 | decide/approve_large_order | 1480 chars | 1848 chars | +368 |
+| 3 | fyi/escalate_to_manager | 1504 chars | 1808 chars | +304 |
+
+**Two capsules use the SAME underlying tool** (`submit_order`/`approve_large_order` share no
+fields), so growth tracks each payload's own size, not a fixed per-capsule overhead — capsule 2
+grows the most because its disclosed `agent_input`/`agent_output` (the denial request + human's
+review reason) are the largest of the three.
+
+**Bundle stays withheld — a real, confirmed viewer limitation, not a choice.** The array-fragment
+bundle permalink (unchanged from PR #42, still valid, still the one in the README's main "Verify
+permalink" section) does **not** support per-item disclosure with the current, unmodified
+verify-surface viewer. Confirmed two ways before writing any code:
+
+1. **Code reading** (`hosted_profiles/hosted.py`): the bundle-array autoload path
+   (`renderChainTable`/`findChainGaps`/`annotateRecords`/`evaluateRitual`/`_capSummary`) reads
+   `capsule_id`/`action_type`/`disposition`/`chain` directly off each array item — no envelope
+   unwrap, unlike the single-fragment path. `computeCapsuleId` hashes every key of whatever
+   object it's given (minus `capsule_id`/`chain`) — an envelope-wrapped item includes the extra
+   `capsule`/`disclosures` keys in that hash.
+2. **Empirical test** (synthetic single-item array, live site, before touching any real
+   capsule): wrapping one array item in the envelope did **not** produce a hard Integrity
+   failure — `verifyCapsuleId` never even recognizes `envelope.capsule_id` (undefined; it's
+   nested at `envelope.capsule.capsule_id`), so `evaluateRitual`'s per-record loop (gated on
+   `isH64(c.capsule_id)`) silently **skips** that record's check entirely. The page then shows
+   "Integrity ✓ — every record matches its fingerprint" **without having verified that record at
+   all** — a vacuous pass, which is worse than a loud failure. Confirmed the same for
+   `findChainGaps`/`annotateRecords` (also gated on `isH64(capsule_id)`). The Chain Navigation
+   table's ACTION_TYPE/VERDICT/TIMESTAMP columns go blank for the wrapped item too (`_capSummary`
+   reads those fields directly, also un-unwrapped); only APPROVER showed anything, and only
+   because it defaults to the string `"policy"` when `human_disposed` is falsy/undefined —
+   coincidence, not a real read.
+
+`capsule_emit.permalink.build_url()` now raises `PermalinkError` for `bundle=True` +
+`disclosures=` specifically to make this impossible to ship by accident; the CLI's `--reveal`
+refuses the same combination with a clear message. Not a `capsule-emit` fix — flagged as a
+`scitt-cose`/hosted-verifier gap (see "Needs decision" in the outbox report for this task);
+disclose via the individual permalinks instead, which have full, correct support.
+
+**Second, related viewer finding (also empirical, also out of `capsule-emit`'s scope):** the
+same "read fields directly off the top-level fragment, no envelope unwrap" pattern breaks the
+**"Regulatory context" summary panel** for single-capsule disclosed permalinks too —
+`renderRegPanel`'s `checkHitl(data)`/`checkSd(data)` read `data.disposition`/
+`data.model_attestation` directly off `data`, which for a Disclosure-Envelope-wrapped fragment
+is the *envelope*, not the capsule (those live nested at `data.capsule.disposition`/
+`data.capsule.model_attestation`). Confirmed on all three disclosed permalinks above: the
+withheld capsule 2 permalink (PR #42, unchanged) shows `properties detected:
+disclosure-transparency-record, human-oversight-record, per-action-attribution,
+tamper-evident-log`; the *same capsule*, disclosed, shows only `per-action-attribution,
+tamper-evident-log` — losing both `human-oversight-record` (even though `disposition.approver`
+is literally `"human"` right there in the same page's digest graph) and
+`disclosure-transparency-record` (even though the Privilege Log on the *same page* shows
+`REVEALED · ✓ match`). The actual disclosure mechanism (Privilege Log, digest recompute,
+Integrity/Sequence) is unaffected and correct throughout — this is purely the top-of-page
+summary chip panel undercounting. Also flagged for the same separate `scitt-cose` task below.
+
+**Demo-data correction (PM mid-task update, 2026-08-11):** a PM update mid-task described the
+demo's denial (capsule 2) as emitted with capsule-emit's *default* disposition
+(`approver="policy"`, `human_disposed=false`) and asked for it to be re-emitted as a genuinely
+human-disposed refusal so human-oversight rows would light on the (unfixed) viewer. Checked
+against the actual merged `demo.py` (`origin/main`, post-#42) before touching anything: capsule
+2 already carries `human_disposed=True, approver="human", decision="reject"` explicitly (not the
+library default — set in the original `[goose-demo-pr42-close-and-merge-prep]` task, per
+`decide1 = emitter.emit_capsule(..., human_disposed=True, approver="human", ...)`). Confirmed
+empirically on the live, merged, withheld permalink for capsule 2 (before any change in this
+task): `human-oversight-record` was already detected and shown in the Regulatory context panel —
+the `checkHitl` OR's second branch (`disposition.approver==="human"`) already fires correctly for
+a bare capsule, exactly as the PM's own update independently noted ("detection currently works
+only via disposition.approver=='human'"). **No demo-data change made** — the premise didn't hold
+against the current code, and re-emitting would have been unnecessary churn against an
+already-correct capsule. What the PM's update *did* correctly anticipate — reading
+`cap.human_disposed` at the top level instead of `cap.disposition.human_disposed` is dead code —
+is confirmed real (`hosted_profiles/hosted.py:901-902`), just with lower impact than described,
+since the second branch already covers this demo's case. The genuinely new, higher-impact finding
+from this task is the one above: the *envelope-wrapped* case breaks even the working
+`approver`-based branch, because `checkHitl(data)` never sees `data.disposition` at all when
+`data` is a Disclosure Envelope.
+
+---
+
 ## What the evidence means
 
 **POST /v1/digest** (`HTTP 200`) registers the capsule_id (a SHA-256 content address) on the
@@ -334,6 +456,19 @@ anchor-honesty rewrite) — same assertions, new mock target.
 | `verify ok=True` (all 4 sealed capsules, offline) | ✓ |
 | tamper → `ok=False` | ✓ |
 | Full suite 445/445 green (excl. pre-existing local protobuf collection error) | ✓ |
+
+**[goose-demo-disclose-payloads] (2026-08-11) additions — capsule bytes unchanged, no re-anchor:**
+
+| Check | Result |
+|-------|--------|
+| `capsule_emit.permalink.build_url(disclosures=...)` + CLI `--reveal FIELD=payload.json` | ✓ |
+| All 3 disclosed individual permalinks: capsule bytes byte-identical to source | ✓ |
+| All 3 disclosed individual permalinks: digest-match confirmed pre-ship (CLI) and in-browser | ✓ |
+| Bundle permalink correctly refused for disclosure (`PermalinkError`) — confirmed why, not assumed | ✓ |
+| Fragment size growth (+364/+368/+304 chars) — well under the ~16KB flag threshold | ✓ |
+| New tests: `test_build_url_disclosures_*`, `test_cli_permalink_reveal_*` (450/450 total) | ✓ |
+| scitt-cose viewer gap #1 (bundle-array disclosure → vacuous Integrity pass) — found, reported, not fixed here | ⚠ (see addendum) |
+| scitt-cose viewer gap #2 (Regulatory context panel misses human-oversight/disclosure-transparency for envelope-wrapped fragments) — found, reported, not fixed here | ⚠ (see addendum) |
 
 **Sealed capsule (offline artifact, refreshed from this run):**
 `examples/goose-capsule/evidence/capsule.json`
