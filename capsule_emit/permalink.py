@@ -8,9 +8,17 @@ where the presenter meant to paste the whole chain silently degrades to the
 first case — that is the failure this module exists to make impossible: bundle
 mode is the default whenever more than one capsule is supplied, not opt-in.
 
-Disclosure (``--reveal``) is out of scope here — it depends on the not-yet-built
-disclosure-envelope format ([aac-disclosure-envelope]). Every capsule produced
-by this module is withheld-only.
+Disclosure (``--reveal``) wraps a single capsule in the Disclosure Envelope shape
+the verify-surface viewer already reads (``{"capsule": <unmodified capsule>,
+"disclosures": {"agent_input": ..., "agent_output": ...}}`` —
+draft-mih-scitt-agent-action-capsule-disclosure-envelope-00, landed in the viewer
+via scitt-cose#27/[aac-disclosure-envelope]). It is single-capsule only: the
+array-fragment bundle path reads ``capsule_id``/``action_type``/``disposition``
+directly off each array item and hashes the *whole* array item for the Integrity
+check, so a per-item envelope wrapper there doesn't fail loud — it silently
+un-recognizes the capsule_id and skips that record's Integrity/Sequence check
+entirely (confirmed empirically), which is worse than a hard failure. Don't wrap
+bundle items in the envelope; disclose via individual permalinks instead.
 """
 from __future__ import annotations
 
@@ -103,14 +111,39 @@ def summarize(capsules: list[dict]) -> str:
     return f"{len(capsules)} capsules — chain: {chain} ({ids})"
 
 
-def build_url(capsules: list[dict], *, base_url: str = DEFAULT_BASE_URL, bundle: bool) -> str:
-    """Build the withheld verify-surface permalink.
+def build_url(
+    capsules: list[dict],
+    *,
+    base_url: str = DEFAULT_BASE_URL,
+    bundle: bool,
+    disclosures: dict[str, Any] | None = None,
+) -> str:
+    """Build the verify-surface permalink.
 
     ``bundle=True`` encodes the JSON-array fragment (chain-navigation table);
     otherwise the single capsule object is encoded directly.
+
+    ``disclosures``, when given, wraps the single capsule in the Disclosure
+    Envelope shape (``{"capsule": ..., "disclosures": ...}``) instead of the
+    bare capsule — e.g. ``{"agent_input": {...}, "agent_output": {...}}``.
+    Requires ``bundle=False`` and exactly one capsule (see module docstring
+    for why bundle-level disclosure isn't offered: it silently produces a
+    vacuous, not failed, Integrity check in the current viewer).
     """
     base_url = base_url.rstrip("/")
     anchor_id = _capsule_id_of(capsules[0])
-    payload: Any = capsules if bundle else capsules[0]
+    if disclosures is not None:
+        if bundle:
+            raise PermalinkError(
+                "disclosures require bundle=False — see build_url()/module docstring: "
+                "the array-fragment bundle path doesn't read a per-item Disclosure "
+                "Envelope and silently skips that record's Integrity check instead of "
+                "failing loud. Use an individual (non-bundle) permalink per capsule."
+            )
+        if len(capsules) != 1:
+            raise PermalinkError("disclosures require exactly one capsule")
+        payload: Any = {"capsule": capsules[0], "disclosures": disclosures}
+    else:
+        payload = capsules if bundle else capsules[0]
     frag = base64.b64encode(json.dumps(payload).encode()).decode()
     return f"{base_url}/v/{anchor_id}#{frag}"

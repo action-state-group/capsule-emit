@@ -11,9 +11,9 @@ Four rendering levels for the ledger:
     capsule-emit verify --store <path>           — verify all capsules in a ledger
 
     capsule-emit permalink <capsule.json ...>    — build a demo verify-surface
-                                                    permalink (withheld/bundle
-                                                    only; --reveal is reserved
-                                                    but not yet implemented)
+                                                    permalink (withheld/bundle,
+                                                    or single-capsule disclosed
+                                                    via --reveal FIELD=payload.json)
 
 Exit codes: 0 = ok, 1 = error.
 """
@@ -144,10 +144,14 @@ def _build_parser() -> argparse.ArgumentParser:
     permalink_p.add_argument(
         "--reveal",
         action="append",
-        metavar="ARTIFACT",
+        metavar="FIELD=payload.json",
         default=None,
-        help="NOT YET IMPLEMENTED — reserved for the disclosure envelope "
-        "([aac-disclosure-envelope]); using this flag is an error",
+        help="disclose a field (agent_input or agent_output) by reading its exact "
+        "payload from a JSON file, e.g. --reveal agent_input=input.json. Wraps the "
+        "capsule in the Disclosure Envelope shape the viewer reads. Single-capsule "
+        "only (no --bundle, no --ledger/--from-run yielding more than one capsule) — "
+        "the array-fragment bundle path doesn't support per-item disclosure (see "
+        "capsule_emit/permalink.py module docstring for why).",
     )
 
     return parser
@@ -174,17 +178,50 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return 0 if fail_count == 0 else 1
 
 
+_REVEALABLE_FIELDS = ("agent_input", "agent_output")
+
+
+def _parse_reveal_args(reveal: list[str]) -> dict:
+    """Parse ``--reveal FIELD=path.json`` entries into {field: payload}."""
+    from .permalink import PermalinkError, _load_json_file
+
+    disclosures: dict = {}
+    for entry in reveal:
+        if "=" not in entry:
+            raise PermalinkError(f"--reveal {entry!r}: expected FIELD=payload.json")
+        field, _, path = entry.partition("=")
+        if field not in _REVEALABLE_FIELDS:
+            raise PermalinkError(
+                f"--reveal {entry!r}: field must be one of {_REVEALABLE_FIELDS}"
+            )
+        disclosures[field] = _load_json_file(path)
+    return disclosures
+
+
+def _check_reveal_digests(capsule: dict, disclosures: dict) -> list[str]:
+    """Recompute each disclosed field's digest and compare to the committed one.
+
+    Returns a list of mismatch descriptions (empty = every disclosed field
+    matches). A bad disclosure must never silently ship — this is the CLI's
+    own local guard, independent of what the viewer later re-checks.
+    """
+    from .core import _digest
+
+    ca = (capsule.get("model_attestation") or {}).get("compute_attestation") or {}
+    mismatches = []
+    for field, payload in disclosures.items():
+        committed = ca.get(f"{field}_digest")
+        if not committed:
+            mismatches.append(f"{field}: capsule has no {field}_digest to disclose against")
+            continue
+        recomputed = _digest(payload)
+        if recomputed != committed:
+            mismatches.append(f"{field}: committed {committed[:12]}… != disclosed-payload {recomputed[:12]}…")
+    return mismatches
+
+
 def _cmd_permalink(args: argparse.Namespace) -> int:
     from .permalink import PermalinkError, build_url, check_capsules, load_capsules, summarize
-
-    if args.reveal:
-        print(
-            "permalink: --reveal is not yet implemented — it depends on the "
-            "disclosure-envelope format ([aac-disclosure-envelope], not yet built). "
-            "Only withheld/bundle permalinks are supported in this build.",
-            file=sys.stderr,
-        )
-        return 2
 
     try:
         capsules = load_capsules(
@@ -212,8 +249,35 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
             return 1
         print(f"permalink --check: {len(capsules)}/{len(capsules)} capsule(s) VALID")
 
+    disclosures = None
+    if args.reveal:
+        if args.bundle or len(capsules) > 1:
+            print(
+                "permalink: --reveal requires exactly one capsule and no --bundle — "
+                "the array-fragment bundle path doesn't support per-item disclosure "
+                "(see capsule_emit/permalink.py module docstring for why).",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            disclosures = _parse_reveal_args(args.reveal)
+        except PermalinkError as exc:
+            print(f"permalink: {exc}", file=sys.stderr)
+            return 1
+        mismatches = _check_reveal_digests(capsules[0], disclosures)
+        if mismatches:
+            print(
+                "permalink --reveal: disclosed payload does not match the committed "
+                "digest — refusing to emit a URL",
+                file=sys.stderr,
+            )
+            for m in mismatches:
+                print(f"  {m}", file=sys.stderr)
+            return 1
+        print(f"permalink --reveal: {len(disclosures)}/{len(disclosures)} disclosed field(s) digest-match VALID")
+
     bundle = args.bundle or len(capsules) > 1
-    url = build_url(capsules, base_url=args.base_url, bundle=bundle)
+    url = build_url(capsules, base_url=args.base_url, bundle=bundle, disclosures=disclosures)
     print(summarize(capsules))
     print(url)
     return 0

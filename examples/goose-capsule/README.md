@@ -52,9 +52,47 @@ to emit a URL if any capsule fails verification — so a presenter can't hand ou
 `evidence/run-transcript.md`) produce the identical byte-for-byte URL; they predate the CLI and
 haven't been migrated to call `capsule_emit.permalink` directly yet.
 
-**Revealed links (`--reveal <artifact>`) are not available yet** — that flag depends on
-[aac-disclosure-envelope], a separate, not-yet-built disclosure-envelope format change. Only
-withheld links ship in this build.
+## Verify permalink (disclosed)
+
+The order/vendor/amount data in this demo is entirely synthetic (acme-co, Frobozz Supply,
+Globex Corp — nobody real), so there's no reason to keep it withheld once you actually want to
+*see* what a capsule committed to, not just its digest. `--reveal FIELD=payload.json` wraps a
+single capsule in the [Disclosure Envelope](https://github.com/action-state-group/agent-action-capsule/issues/66)
+(`{"capsule": <unmodified, anchored bytes>, "disclosures": {...}}`) — the capsule itself never
+changes; the disclosed payload rides alongside it, and the verify page recomputes its digest
+against the field the capsule already committed to and shows the match:
+
+```bash
+capsule-emit permalink capsule2.json \
+  --reveal agent_input=capsule2_input.json --reveal agent_output=capsule2_output.json
+# → permalink --reveal: 2/2 disclosed field(s) digest-match VALID
+```
+
+Capsule 2's disclosed permalink (the human denial — chained order → **REJECTED** → escalation):
+
+```
+https://verify.agentactioncapsule.org/v/16a6ab95420291ac977011fa8620516b02a44850a11433c09e6a355e660ccefd#eyJjYXBzdWxlIjogeyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICIxNmE2YWI5NTQyMDI5MWFjOTc3MDExZmE4NjIwNTE2YjAyYTQ0ODUwYTExNDMzYzA5ZTZhMzU1ZTY2MGNjZWZkIiwgImFjdGlvbl9pZCI6ICJhcHByb3ZlX2xhcmdlX29yZGVyL2QxOWIyNGI4LWY0MzQtNGFkMy04MmY2LTczMDM4ODFhMDgyMCIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjE6MDM6NDkuMTgyMzIyWiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiZjEwY2JlYThlNGJmYzUxMzRlNzE3Njc0YWVjZmM0MWRhYjFhMTIzMDVjMTFiNTRlMDU0NDJkYjNmYjkyYjlhOCIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImViYzg5Zjg4OGM5NTdlYmQyN2EyODI1ZWM4ODJjNjI5NTlhMjRjNTE0YjU5MWJkZDViOGFmODliYzdiZTA2MDkiLCAicnVudGltZSI6ICJtY3AiLCAiYXBwcm92ZXJfaWQiOiAicHJpeWFAYWNtZS1jby5jb20ifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJwbGFubmVkIiwgInR5cGUiOiAiYXBwcm92ZV9sYXJnZV9vcmRlciJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAibm90X2FwcGxpY2FibGUiLCAibGVkZ2VyX21vZGUiOiAiY2hhaW5lZCJ9LCAiZGlzcG9zaXRpb24iOiB7ImRlY2lzaW9uIjogInJlamVjdCIsICJhcHByb3ZlciI6ICJodW1hbiIsICJodW1hbl9kaXNwb3NlZCI6IHRydWUsICJ2ZXJkaWN0X2NsYXNzIjogImJsb2NrZWQifSwgImNoYWluIjogeyJwYXJlbnRfY2Fwc3VsZV9pZCI6ICJmNzA4YjkyYTM0YjE1YjU4MmRiNjAwNDI2MTljMzdiMzgwZjBiNjRiNWM2YzBiYmE2ZTEzYTcxNjUyZjk4ZDNiIiwgInJlbGF0aW9uIjogInNlcXVlbmNlIn19LCAiZGlzY2xvc3VyZXMiOiB7ImFnZW50X2lucHV0IjogeyJwb19udW1iZXIiOiAiUE8tNzc3OCIsICJ2ZW5kb3IiOiAiR2xvYmV4IENvcnAiLCAiYW1vdW50X3VzZCI6ICIxMjUwMDAuMDAiLCAicmVxdWVzdGVkX2J5IjogImdvb3NlLWFnZW50QHYxIn0sICJhZ2VudF9vdXRwdXQiOiB7InJldmlld2VkX2F0IjogIjIwMjYtMDgtMDNUMDA6MDA6MDBaIiwgInJlYXNvbiI6ICJvcmRlciB2YWx1ZSBleGNlZWRzIHZlbmRvcidzIGFwcHJvdmVkIFBPIGNlaWxpbmcifX19
+```
+
+Open it: the Privilege Log now reads `REVEALED · ✓ match` for both `agent_input` and
+`agent_output` (was `WITHHELD` before), Integrity/Sequence still both `✓`, and the anchor banner
+still reads `Anchored log index 268` — unchanged, because the capsule's own bytes never moved.
+The escrowed denial reason ("order value exceeds vendor's approved PO ceiling") and the human
+approver's identity are right there instead of a digest. See `evidence/run-transcript.md` for
+the other two capsules' disclosed permalinks and the full before/after fragment-size table.
+
+Withholding any field still leaves the record verifying — that's the point being demonstrated,
+not just claimed: the capsule doesn't need the payload to prove it exists and hasn't changed;
+disclosure is a separate, later, revocable choice about the same sealed bytes.
+
+**One current viewer limitation, found while building this:** the array-fragment *bundle*
+permalink (the withheld one above) does not support per-item disclosure — wrapping a bundle
+item in the Disclosure Envelope makes the viewer's chain-table/Integrity code silently stop
+recognizing that record (it reads `capsule_id` directly off each array item, and doesn't unwrap
+the envelope there) rather than fail loudly. `capsule_emit.permalink.build_url()` now raises
+`PermalinkError` if you try `bundle=True` with `disclosures=` for exactly this reason — disclose
+via the individual permalinks above instead. Not a `capsule-emit` fix; it's a
+`scitt-cose`/hosted-verifier gap, flagged separately.
 
 ## Connect it to real Goose
 

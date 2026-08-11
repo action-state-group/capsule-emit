@@ -1,10 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for `capsule-emit permalink` — withheld/bundle half only.
-
---reveal is intentionally out of scope: [aac-disclosure-envelope] is a
-separate, not-yet-built task. Tests here only assert that --reveal is
-rejected with a clear error, not that it works.
-"""
+"""Tests for `capsule-emit permalink` — withheld/bundle and disclosed (--reveal)."""
 from __future__ import annotations
 
 import base64
@@ -189,6 +184,29 @@ def test_build_url_custom_base_url(three_capsule_chain):
     assert url.startswith("http://localhost:8080/v/")
 
 
+def test_build_url_disclosures_wraps_in_envelope(three_capsule_chain):
+    _, records = three_capsule_chain
+    cap = records[0].capsule
+    url = build_url([cap], bundle=False, disclosures={"agent_input": {"invoice_id": "INV-1"}})
+    decoded = _decode_fragment(url)
+    assert decoded == {"capsule": cap, "disclosures": {"agent_input": {"invoice_id": "INV-1"}}}
+    # the wrapped capsule is byte-identical to the unmodified sealed one — no re-keying/mutation
+    assert decoded["capsule"] == cap
+
+
+def test_build_url_disclosures_reject_bundle(three_capsule_chain):
+    _, records = three_capsule_chain
+    with pytest.raises(PermalinkError, match="bundle=False"):
+        build_url([records[0].capsule], bundle=True, disclosures={"agent_input": {}})
+
+
+def test_build_url_disclosures_reject_multiple_capsules(three_capsule_chain):
+    _, records = three_capsule_chain
+    capsules = [r.capsule for r in records]
+    with pytest.raises(PermalinkError, match="exactly one capsule"):
+        build_url(capsules, bundle=False, disclosures={"agent_input": {}})
+
+
 def test_summarize_single_capsule(three_capsule_chain):
     _, records = three_capsule_chain
     summary = summarize([records[0].capsule])
@@ -299,13 +317,77 @@ def test_cli_permalink_no_input_errors(capsys):
     assert "no capsules given" in capsys.readouterr().err
 
 
-def test_cli_permalink_reveal_is_rejected(three_capsule_chain, capsys):
+def test_cli_permalink_reveal_on_bundle_is_rejected(three_capsule_chain, capsys):
+    """--reveal + more than one capsule (implicit bundle) is refused, not silently degraded."""
     ledger, _ = three_capsule_chain
-    exit_code = cli_main(["permalink", "--ledger", str(ledger), "--reveal", "agent_input"])
+    exit_code = cli_main(["permalink", "--ledger", str(ledger), "--reveal", "agent_input=x.json"])
     assert exit_code != 0
     err = capsys.readouterr().err
-    assert "not yet implemented" in err
-    assert "aac-disclosure-envelope" in err
+    assert "exactly one capsule" in err
+    assert "http" not in capsys.readouterr().out
+
+
+def test_cli_permalink_reveal_matching_payload(tmp_path, capsys):
+    """--reveal FIELD=payload.json wraps the capsule in the Disclosure Envelope shape."""
+    ledger = tmp_path / "l.jsonl"
+    cap = emit(
+        action="check_invoice",
+        operator="acme-co",
+        developer="agent@v1",
+        agent_input={"invoice_id": "INV-1"},
+        agent_output={"risk": "low"},
+        verdict="executed",
+        anchor=False,
+        ledger=ledger,
+    )
+    input_file = tmp_path / "input.json"
+    input_file.write_text(json.dumps({"invoice_id": "INV-1"}))
+    output_file = tmp_path / "output.json"
+    output_file.write_text(json.dumps({"risk": "low"}))
+
+    exit_code = cli_main(
+        [
+            "permalink",
+            "--ledger",
+            str(ledger),
+            "--reveal",
+            f"agent_input={input_file}",
+            "--reveal",
+            f"agent_output={output_file}",
+        ]
+    )
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "digest-match VALID" in out
+    url = [line for line in out.splitlines() if line.startswith("http")][0]
+    decoded = _decode_fragment(url)
+    assert decoded["capsule"]["capsule_id"] == cap.capsule_id
+    assert decoded["disclosures"]["agent_input"] == {"invoice_id": "INV-1"}
+    assert decoded["disclosures"]["agent_output"] == {"risk": "low"}
+
+
+def test_cli_permalink_reveal_mismatched_payload_refused(tmp_path, capsys):
+    """A disclosed payload that doesn't hash to the committed digest must never ship."""
+    ledger = tmp_path / "l.jsonl"
+    emit(
+        action="check_invoice",
+        operator="acme-co",
+        developer="agent@v1",
+        agent_input={"invoice_id": "INV-1"},
+        verdict="executed",
+        anchor=False,
+        ledger=ledger,
+    )
+    input_file = tmp_path / "wrong.json"
+    input_file.write_text(json.dumps({"invoice_id": "WRONG-ID"}))
+
+    exit_code = cli_main(
+        ["permalink", "--ledger", str(ledger), "--reveal", f"agent_input={input_file}"]
+    )
+    assert exit_code != 0
+    captured = capsys.readouterr()
+    assert "does not match the committed digest" in captured.err
+    assert "http" not in captured.out
 
 
 def test_cli_permalink_from_run(two_capsule_run_dir, capsys):
