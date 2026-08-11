@@ -373,6 +373,109 @@ from this task is the one above: the *envelope-wrapped* case breaks even the wor
 
 ---
 
+## Bundle disclosure lift addendum ([capsule-emit-lift-bundle-disclosure-block], 2026-08-11)
+
+**No re-anchor, same frozen run.** All three capsules stay byte-identical to the PR #42 merge —
+same `capsule_id`s, same leaf indices (267/268/269), same digests. This task only lifts the
+producer-side block in `capsule_emit/permalink.py` that refused `bundle=True` + `disclosures=`;
+no capsule bytes change.
+
+**Why it's liftable now:** the block existed because the *deployed* viewer read
+`capsule_id`/`action_type`/`disposition`/`chain` directly off each bundle-array item with no
+envelope unwrap — an enveloped item silently fell out of the Integrity/Sequence check instead of
+failing loud (the vacuous-pass bug documented above). `scitt-cose` PR #30
+(`fix(viewer): unwrap Disclosure Envelope in reg panel + bundle ritual`, merged + **deployed**
+2026-08-11) fixes both call sites: `unwrapEnvelope()`/`_unwrap_envelope()` now runs before
+`findChainGaps`/`annotateRecords`/`evaluateRitual`/`verifyCapsuleId`/`_capSummary` read a bundle
+item's `capsule_id`/`chain`, and before `renderRegPanel`'s `checkHitl`/`checkSd` read
+`disposition`/`model_attestation` — so a per-item envelope wrapper in the bundle array is now
+unwrapped and really checked, not skipped.
+
+**What changed in `capsule-emit`:** `build_url(capsules, bundle=True, disclosures={capsule_id:
+{field: payload}})` — disclosures for a bundle are keyed by `capsule_id`, one entry per item to
+disclose; items with no entry stay bare. The CLI's `--reveal` now accepts
+`SELECTOR:FIELD=payload.json` for bundles (`SELECTOR` = 1-based record number as shown in the
+chain summary, or an `>=8`-char `capsule_id` prefix, same convention as `ledger show`); the old
+unqualified `--reveal FIELD=payload.json` form still works for a genuine single capsule and is
+now refused (not silently misapplied) when more than one capsule is in scope. Per-item digest
+mismatch refuses the whole URL, same fail-closed rule as the single-capsule case
+(`tests/test_permalink.py::test_cli_permalink_reveal_bundle_mismatch_refused_per_item`,
+`test_build_url_bundle_disclosures_unknown_capsule_id_rejected`).
+
+**The fully disclosed goose bundle permalink** — all 3 capsules, all 6 disclosed fields
+(`agent_input`+`agent_output` per record), built via the real CLI against the frozen ledger
+(payloads reconstructed byte-for-byte from the individual disclosed permalinks in the addendum
+above — same source values `demo.py` passed to `emit_capsule()`, not re-derived):
+
+```
+$ capsule-emit permalink --ledger ledger.jsonl --check \
+    --reveal 1:agent_input=cap1_agent_input.json --reveal 1:agent_output=cap1_agent_output.json \
+    --reveal 2:agent_input=cap2_agent_input.json --reveal 2:agent_output=cap2_agent_output.json \
+    --reveal 3:agent_input=cap3_agent_input.json --reveal 3:agent_output=cap3_agent_output.json
+permalink --check: 3/3 capsule(s) VALID
+permalink --reveal: 6/6 disclosed field(s) digest-match VALID (3/3 capsule(s) disclosed)
+3 capsules — chain: executed → blocked → executed (f708b92a → 16a6ab95 → 061e6bde)
+```
+
+`https://verify.agentactioncapsule.org/v/f708b92a34b15b582db60042619c37b380f0b64b5c6c0bba6e13a71652f98d3b#W3siY2Fwc3VsZSI6IHsic3BlY192ZXJzaW9uIjogImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wMiIsICJmb3JtYXRfdmVyc2lvbiI6ICIyIiwgImNhcHN1bGVfaWQiOiAiZjcwOGI5MmEzNGIxNWI1ODJkYjYwMDQyNjE5YzM3YjM4MGYwYjY0YjVjNmMwYmJhNmUxM2E3MTY1MmY5OGQzYiIsICJhY3Rpb25faWQiOiAic3VibWl0X29yZGVyL2RlOGI3ZjhjLTdiNzQtNGU1NC05MDA1LTExNDRiMDYzYWExOCIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjE6MDM6NDkuMTgyMDEyWiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiOWJlYjg1NGMxOTJlZjIxNTM5MzgxNjQ2NzkyYmIwMzQ2ZDY1NzgxYTllMjcwNTJjNDc3NzVhZTFiMmFiZDkyMiIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImVhN2E5N2U0YTQwNzBhZTYxOTAzMjg2NDNmOTIwOWQ3NDUxNWMxOTkwNDBjZGJmMTYxZGUxNmJkM2VmMTY0NjAiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAid3JpdGVfb3JkZXIiLCAiZWZmZWN0X2F0dGVzdGF0aW9uIjogInJ1bnRpbWVfY2xhaW1lZCJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAiZGlzcGF0Y2hlZF91bmNvbmZpcm1lZCIsICJsZWRnZXJfbW9kZSI6ICJzdGFuZGFsb25lIn0sICJkaXNwb3NpdGlvbiI6IHsiZGVjaXNpb24iOiAiYWNjZXB0IiwgImFwcHJvdmVyIjogInBvbGljeSIsICJodW1hbl9kaXNwb3NlZCI6IGZhbHNlLCAidmVyZGljdF9jbGFzcyI6ICJleGVjdXRlZCJ9fSwgImRpc2Nsb3N1cmVzIjogeyJhZ2VudF9pbnB1dCI6IHsidmVuZG9yIjogIkZyb2JvenogU3VwcGx5IiwgImFtb3VudCI6ICIxMjQwLjE5IiwgInBvX251bWJlciI6ICJQTy03Nzc3In0sICJhZ2VudF9vdXRwdXQiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInBvX251bWJlciI6ICJQTy03Nzc3IiwgInZlbmRvciI6ICJGcm9ib3p6IFN1cHBseSIsICJhbW91bnRfdXNkIjogIjEyNDAuMTkiLCAiY29uZmlybWF0aW9uX3JlZiI6ICJDT05GLTc3NzcifX19LCB7ImNhcHN1bGUiOiB7InNwZWNfdmVyc2lvbiI6ICJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDIiLCAiZm9ybWF0X3ZlcnNpb24iOiAiMiIsICJjYXBzdWxlX2lkIjogIjE2YTZhYjk1NDIwMjkxYWM5NzcwMTFmYTg2MjA1MTZiMDJhNDQ4NTBhMTE0MzNjMDllNmEzNTVlNjYwY2NlZmQiLCAiYWN0aW9uX2lkIjogImFwcHJvdmVfbGFyZ2Vfb3JkZXIvZDE5YjI0YjgtZjQzNC00YWQzLTgyZjYtNzMwMzg4MWEwODIwIiwgImFjdGlvbl90eXBlIjogImRlY2lkZSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0xMFQyMTowMzo0OS4xODIzMjJaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICJmMTBjYmVhOGU0YmZjNTEzNGU3MTc2NzRhZWNmYzQxZGFiMWExMjMwNWMxMWI1NGUwNTQ0MmRiM2ZiOTJiOWE4IiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiZWJjODlmODg4Yzk1N2ViZDI3YTI4MjVlYzg4MmM2Mjk1OWEyNGM1MTRiNTkxYmRkNWI4YWY4OWJjN2JlMDYwOSIsICJydW50aW1lIjogIm1jcCIsICJhcHByb3Zlcl9pZCI6ICJwcml5YUBhY21lLWNvLmNvbSJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogInBsYW5uZWQiLCAidHlwZSI6ICJhcHByb3ZlX2xhcmdlX29yZGVyIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJub3RfYXBwbGljYWJsZSIsICJsZWRnZXJfbW9kZSI6ICJjaGFpbmVkIn0sICJkaXNwb3NpdGlvbiI6IHsiZGVjaXNpb24iOiAicmVqZWN0IiwgImFwcHJvdmVyIjogImh1bWFuIiwgImh1bWFuX2Rpc3Bvc2VkIjogdHJ1ZSwgInZlcmRpY3RfY2xhc3MiOiAiYmxvY2tlZCJ9LCAiY2hhaW4iOiB7InBhcmVudF9jYXBzdWxlX2lkIjogImY3MDhiOTJhMzRiMTViNTgyZGI2MDA0MjYxOWMzN2IzODBmMGI2NGI1YzZjMGJiYTZlMTNhNzE2NTJmOThkM2IiLCAicmVsYXRpb24iOiAic2VxdWVuY2UifX0sICJkaXNjbG9zdXJlcyI6IHsiYWdlbnRfaW5wdXQiOiB7InBvX251bWJlciI6ICJQTy03Nzc4IiwgInZlbmRvciI6ICJHbG9iZXggQ29ycCIsICJhbW91bnRfdXNkIjogIjEyNTAwMC4wMCIsICJyZXF1ZXN0ZWRfYnkiOiAiZ29vc2UtYWdlbnRAdjEifSwgImFnZW50X291dHB1dCI6IHsicmV2aWV3ZWRfYXQiOiAiMjAyNi0wOC0wM1QwMDowMDowMFoiLCAicmVhc29uIjogIm9yZGVyIHZhbHVlIGV4Y2VlZHMgdmVuZG9yJ3MgYXBwcm92ZWQgUE8gY2VpbGluZyJ9fX0sIHsiY2Fwc3VsZSI6IHsic3BlY192ZXJzaW9uIjogImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wMiIsICJmb3JtYXRfdmVyc2lvbiI6ICIyIiwgImNhcHN1bGVfaWQiOiAiMDYxZTZiZGVkODdkM2M0NmQ2NDI1MDFhYTEwODViZDg3YWUxMDJjOGI0NDU5YjVjOTUyZGJmYWU2MzRiM2EzYiIsICJhY3Rpb25faWQiOiAiZXNjYWxhdGVfdG9fbWFuYWdlci9iMGIwY2MwYy05ZTg1LTRlMDgtYThlOC04YjFjMmIyZGYxNmMiLCAiYWN0aW9uX3R5cGUiOiAiZnlpIiwgIm9wZXJhdG9yIjogImFjbWUtY28iLCAiZGV2ZWxvcGVyIjogImdvb3NlLWFnZW50QHYxIiwgInRpbWVzdGFtcCI6ICIyMDI2LTA4LTEwVDIxOjAzOjQ5LjE4MjU5MVoiLCAibW9kZWxfYXR0ZXN0YXRpb24iOiB7Im1vZGVsX2lkIjogImNsYXVkZS1vcHVzLTQtOCIsICJwcm92aWRlciI6ICJhbnRocm9waWMiLCAiY29tcHV0ZV9hdHRlc3RhdGlvbiI6IHsiYWdlbnRfaW5wdXRfZGlnZXN0IjogImI0NDg0Y2VlMDRhNzk3YzgyZTMwMGZhNTlmMzUzNzE2M2Y1ZTRjYjVmYmNkZGM4YTI1OGIwNzZkZWE2ZjYyYjciLCAiYWdlbnRfb3V0cHV0X2RpZ2VzdCI6ICI2MWM4ZWFiMjEzZDNlMDM0ZjQ2NWEyZjU5ZGM1YTU1ZDFlZmI2OGY1OTRkMjc2ODNiMDQ0MzUxNjEwNDdiMzYzIiwgInJ1bnRpbWUiOiAibWNwIn19LCAiZWZmZWN0IjogeyJzdGF0dXMiOiAiZGlzcGF0Y2hlZCIsICJ0eXBlIjogImVzY2FsYXRlX3RvX21hbmFnZXIiLCAiZWZmZWN0X2F0dGVzdGF0aW9uIjogInJ1bnRpbWVfY2xhaW1lZCJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAiZGlzcGF0Y2hlZF91bmNvbmZpcm1lZCIsICJsZWRnZXJfbW9kZSI6ICJjaGFpbmVkIn0sICJkaXNwb3NpdGlvbiI6IHsiZGVjaXNpb24iOiAiYWNjZXB0IiwgImFwcHJvdmVyIjogInBvbGljeSIsICJodW1hbl9kaXNwb3NlZCI6IGZhbHNlLCAidmVyZGljdF9jbGFzcyI6ICJleGVjdXRlZCJ9LCAiY2hhaW4iOiB7InBhcmVudF9jYXBzdWxlX2lkIjogIjE2YTZhYjk1NDIwMjkxYWM5NzcwMTFmYTg2MjA1MTZiMDJhNDQ4NTBhMTE0MzNjMDllNmEzNTVlNjYwY2NlZmQiLCAicmVsYXRpb24iOiAiZXNjYWxhdGVzIn19LCAiZGlzY2xvc3VyZXMiOiB7ImFnZW50X2lucHV0IjogeyJwb19udW1iZXIiOiAiUE8tNzc3OCIsICJyZWFzb24iOiAib3JkZXIgYmxvY2tlZCBhdCBhcHByb3ZhbCBnYXRlOyByb3V0aW5nIGZvciBtYW5hZ2VyIHJldmlldyJ9LCAiYWdlbnRfb3V0cHV0IjogeyJwb19udW1iZXIiOiAiUE8tNzc3OCIsICJlc2NhbGF0ZWRfdG8iOiAiYXAtbWFuYWdlckBhY21lLWNvLmNvbSJ9fX1d`
+
+**Browser-confirmed against the deployed viewer (fresh navigation, URL sourced from CLI stdout,
+never hand-retyped, per the `[verify-bundle-mismatch-fix]` postmortem discipline):**
+
+- **Verification Ritual: Integrity ✓, Sequence ✓** — all 3 rows read `✓ verifies`, including the
+  two envelope-wrapped items (records 1 and 2, and record 3 too — all disclosed). Before
+  scitt-cose#30 this would have been a vacuous pass on the wrapped rows (skipped, not checked);
+  now it's a real per-item recompute.
+- **Anchor banner unchanged**: `Publicly anchored · log index 267` (record 1's leaf) — no
+  re-anchor, matches the frozen run.
+- **Chain navigation table** reads correctly through the envelope for every column, including
+  the enveloped middle record: `# 2 · 16a6ab954202… · decide · blocked · human · 2026-08-10
+  21:03:49` — `ACTION_TYPE`/`VERDICT`/`APPROVER` all populate (pre-fix these would have been
+  blank/coincidental for a wrapped item, per the "Bundle stays withheld" empirical finding
+  above).
+- **Privilege Log** on each record shows `REVEALED · ✓ match` for both `agent_input` and
+  `agent_output` — same as the individual disclosed permalinks.
+- **Regulatory context panel** on record 2 (the `human_disposed=true, approver="human"` denial)
+  correctly detects `human-oversight-record` alongside `disclosure-transparency-record` and
+  `per-action-attribution` — this is scitt-cose#30's Fix 1 (reg-panel envelope unwrap) working
+  *inside a bundle item*, the exact combination (enveloped bundle item + reg panel) that was
+  never exercised by the single-capsule-only disclosure in PR #55.
+
+**Fragment size — flagged per the task's threshold, does not trip it:**
+
+| Bundle | Fragment size | vs. ~16KB threshold |
+|---|---:|---|
+| Withheld (unchanged, PR #42) | 4,316 chars | 26% of threshold |
+| Fully disclosed (all 3 items, 6 fields) | 5,348 chars | 33% of threshold |
+
+Growth of +1,032 chars (+24%) for disclosing all three payload sets in one URL. Well under the
+~16KB flag point; the CLI's own fragment-size check (`capsule_emit/cli.py`,
+`_FRAGMENT_SIZE_WARN_BYTES = 16 * 1024`) prints a stderr warning — not a refusal — if a future
+bundle disclosure does cross it (exercised in
+`tests/test_permalink.py::test_cli_permalink_reveal_bundle_ambiguous_prefix_refused` and
+`test_cli_permalink_fragment_size_warning_past_16kb` with a synthetic oversized payload; this
+demo bundle stays silent, confirmed by `test_cli_permalink_fragment_size_no_warning_for_small_chain`-style
+absence-of-warning check).
+
+**New tests** (`tests/test_permalink.py`, all green — see Test suite section below for the full
+461/461 run): `test_build_url_bundle_disclosures_wraps_only_targeted_item`,
+`test_build_url_bundle_disclosures_multiple_items`,
+`test_build_url_bundle_disclosures_no_entries_is_plain_bundle`,
+`test_build_url_bundle_disclosures_unknown_capsule_id_rejected`,
+`test_cli_permalink_reveal_bundle_by_index`,
+`test_cli_permalink_reveal_bundle_by_capsule_id_prefix`,
+`test_cli_permalink_reveal_bundle_multiple_items`,
+`test_cli_permalink_reveal_bundle_mismatch_refused_per_item` (per-item digest mismatch refuses
+the whole URL, confirmed with the capsule_id named in the error),
+`test_cli_permalink_reveal_bundle_bad_index_refused`,
+`test_cli_permalink_reveal_bundle_ambiguous_prefix_refused`,
+`test_cli_permalink_fragment_size_warning_past_16kb`,
+`test_cli_permalink_reveal_unqualified_on_bundle_is_rejected` (replaces the old
+"bundle+reveal always rejected" test — now only the *unqualified* `FIELD=` form is rejected on a
+bundle, not disclosure itself).
+
+---
+
 ## What the evidence means
 
 **POST /v1/digest** (`HTTP 200`) registers the capsule_id (a SHA-256 content address) on the
@@ -467,8 +570,24 @@ anchor-honesty rewrite) — same assertions, new mock target.
 | Bundle permalink correctly refused for disclosure (`PermalinkError`) — confirmed why, not assumed | ✓ |
 | Fragment size growth (+364/+368/+304 chars) — well under the ~16KB flag threshold | ✓ |
 | New tests: `test_build_url_disclosures_*`, `test_cli_permalink_reveal_*` (450/450 total) | ✓ |
-| scitt-cose viewer gap #1 (bundle-array disclosure → vacuous Integrity pass) — found, reported, not fixed here | ⚠ (see addendum) |
-| scitt-cose viewer gap #2 (Regulatory context panel misses human-oversight/disclosure-transparency for envelope-wrapped fragments) — found, reported, not fixed here | ⚠ (see addendum) |
+| scitt-cose viewer gap #1 (bundle-array disclosure → vacuous Integrity pass) — found, reported, not fixed here | ✅ FIXED — scitt-cose#30, see below |
+| scitt-cose viewer gap #2 (Regulatory context panel misses human-oversight/disclosure-transparency for envelope-wrapped fragments) — found, reported, not fixed here | ✅ FIXED — scitt-cose#30, see below |
+
+**[capsule-emit-lift-bundle-disclosure-block] (2026-08-11) additions — same frozen run, no re-anchor:**
+
+| Check | Result |
+|-------|--------|
+| scitt-cose PR #30 confirmed merged + deployed before touching code (not assumed) | ✓ |
+| Producer-side `PermalinkError` block on `bundle=True` + `disclosures=` removed | ✓ |
+| `build_url()` per-item bundle disclosure: `disclosures={capsule_id: {field: payload}}`, unknown capsule_id rejected | ✓ |
+| CLI `--reveal SELECTOR:FIELD=payload.json` for bundles (1-based index or ≥8-char capsule_id prefix) | ✓ |
+| Per-item digest-check, refuse-on-mismatch (same rule as single-capsule) | ✓ |
+| Fully disclosed goose bundle permalink (3 capsules, 6 disclosed fields) built via the real CLI | ✓ |
+| Browser-confirmed against the DEPLOYED viewer: Integrity ✓/Sequence ✓ on every record (real, not vacuous), Chain Navigation columns populate through the envelope, Privilege Log REVEALED·✓ match, Regulatory context panel detects `human-oversight-record` on an enveloped bundle item | ✓ |
+| Fragment size: withheld 4,316 chars → disclosed 5,348 chars (+1,032, 33% of the ~16KB threshold) | ✓ |
+| CLI fragment-size warning (`_FRAGMENT_SIZE_WARN_BYTES`) added and tested with a synthetic oversized payload | ✓ |
+| New tests (12): bundle-disclosure `build_url`/CLI coverage incl. mismatch-refusal per item | ✓ |
+| Full suite 461/461 green (excl. pre-existing local protobuf collection error) | ✓ |
 
 **Sealed capsule (offline artifact, refreshed from this run):**
 `examples/goose-capsule/evidence/capsule.json`
