@@ -179,6 +179,8 @@ def build_hold_reserve_capsule(
         asg_payload["currency"] = action.currency
     if action.target is not None:
         asg_payload["target"] = action.target
+    if action.expires_at is not None:
+        asg_payload["expires_at"] = action.expires_at
     return _build(hold_action=hold_action, chain=None, asg_payload=asg_payload)
 
 

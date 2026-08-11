@@ -47,6 +47,36 @@ def test_reserve_cites_aggregate_and_reserved_amount(tmp_path):
     assert result.ok, result.findings
 
 
+# -- expires_at is recorded on the reserve, never enforced by the engine -----
+
+
+def test_reserve_records_expires_at_when_the_caller_supplies_it(tmp_path):
+    """``expires_at`` is a plain audit field: the caller states its intended
+    deadline, the engine records it on the reserve capsule verbatim, and
+    never reads it back -- expiry stays caller-invoked (``engine.expire()``),
+    so a later auditor can tell whether an expiry was timely or arbitrary."""
+    ledger_path = tmp_path / "ledger.jsonl"
+    engine = HoldEngine(ledger_path=str(ledger_path), cap_minor={"money.transfer": 1_000_000})
+    action = Action(
+        verb="transfer_funds", operator=OPERATOR, developer=DEVELOPER, action_class="money.transfer",
+        amount_minor=500, currency="EUR", expires_at="2026-08-11T12:00:00Z",
+    )
+    decision = engine.evaluate_and_reserve(action)
+    assert decision.outcome == "allow"
+    assert decision.capsule["asg_payload"]["expires_at"] == "2026-08-11T12:00:00Z"
+    assert verify(decision.capsule).ok
+
+
+def test_reserve_omits_expires_at_when_the_caller_does_not_supply_it(tmp_path):
+    """No default deadline is invented -- absence of ``expires_at`` means
+    the caller didn't state one, not that one was silently computed."""
+    ledger_path = tmp_path / "ledger.jsonl"
+    engine = HoldEngine(ledger_path=str(ledger_path), cap_minor={"money.transfer": 1_000_000})
+    decision = engine.evaluate_and_reserve(_action(amount_minor=500))
+    assert decision.outcome == "allow"
+    assert "expires_at" not in decision.capsule["asg_payload"]
+
+
 # -- N concurrent calls against a cap admitting K -----------------------------
 
 

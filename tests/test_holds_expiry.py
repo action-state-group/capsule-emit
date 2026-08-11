@@ -3,6 +3,7 @@
 hold's current status before it is allowed to dispatch."""
 from __future__ import annotations
 
+import pytest
 from agent_action_capsule import verify
 
 from capsule_emit.approval import seal_approval
@@ -141,27 +142,96 @@ def test_breach_sequence_late_approval_denied_and_refusal_recorded(tmp_path):
     assert resumed.outcome == "deny"
 
 
-def test_breach_sequence_mutant_no_resume_check_dispatches_over_limit(tmp_path):
-    """Mutant test: the resume-time recheck (this task's own fix) is what
-    ``seal_approval``'s ``resume_ok``/``resume_reason`` wiring closes. Calling
-    it WITHOUT that wiring -- as every caller did before this task -- is the
-    mutant: it reproduces the original bug (late approval dispatches over
-    the limit with every integrity check passing), proving the wiring is
-    load-bearing, not decorative."""
+def test_breach_sequence_omitting_resume_ok_now_raises_not_silently_dispatches(tmp_path):
+    """Regression: omitting ``resume_ok`` against a hold reserve used to
+    silently default to ``True`` and dispatch over the limit (the original
+    bug hold-02 closed the *wiring* for). This task's own fix (the
+    ``resume_ok=None`` loud check) closes the *omission* itself -- a caller
+    that forgets to wire the resume-time recheck in now gets a loud
+    :class:`ValueError`, not a silent over-limit approval."""
     engine, ledger_path, reserve_id, status = _breach_sequence(tmp_path)
-    assert status == HoldStatus.EXPIRED  # setup precondition unaffected by the mutant
+    assert status == HoldStatus.EXPIRED  # setup precondition unaffected
+
+    with pytest.raises(ValueError, match="resume_ok must be explicitly"):
+        seal_approval(
+            blocked_capsule_id=reserve_id, approver_id="alice@acme.example", decision="approve",
+            action_digest="a" * 64, ledger=str(ledger_path), anchor=False, operator=OPERATOR, developer=DEVELOPER,
+            # no resume_ok / resume_reason -- must raise, not silently dispatch.
+        )
+
+
+def test_breach_sequence_explicit_resume_ok_true_still_dispatches_over_limit(tmp_path):
+    """The loud check only catches *omission*. A caller that explicitly
+    (mistakenly) hardcodes ``resume_ok=True`` instead of actually wiring in
+    ``hold_status()`` is a deliberate override this task does not and
+    cannot prevent -- ``resume_ok`` is a plain data seam fed by the caller
+    (``approval.py``'s own docstring), not something ``seal_approval`` can
+    independently verify. Pinned here as the residual risk the fix leaves
+    in place, distinct from the (now closed) silent-default case above."""
+    engine, ledger_path, reserve_id, status = _breach_sequence(tmp_path)
+    assert status == HoldStatus.EXPIRED  # setup precondition unaffected
 
     mutant_result = seal_approval(
         blocked_capsule_id=reserve_id, approver_id="alice@acme.example", decision="approve",
         action_digest="a" * 64, ledger=str(ledger_path), anchor=False, operator=OPERATOR, developer=DEVELOPER,
-        # no resume_ok / resume_reason -- the mutant: the caller never asks.
+        resume_ok=True,  # the mutant: hardcoded instead of wired to hold_status()
     )
     assert mutant_result.capsule["disposition"]["decision"] == "approve", (
-        "mutant did not flip the outcome -- omitting the resume-time recheck is not load-bearing"
+        "hardcoded resume_ok=True did not dispatch -- explicit override semantics changed unexpectedly"
     )
     assert mutant_result.capsule["effect"]["status"] == "dispatched", (
-        "mutant did not flip dispatch -- omitting the resume-time recheck is not load-bearing"
+        "hardcoded resume_ok=True did not dispatch -- explicit override semantics changed unexpectedly"
     )
+
+
+# -- resume_ok default: loud when a hold applies, quiet when none does -------
+
+
+def test_resume_ok_unset_against_a_reserve_raises_instead_of_silently_approving(tmp_path):
+    """``resume_ok`` defaults to ``None``. When ``blocked_capsule_id`` is
+    itself a hold reserve, forgetting to wire the resume-time recheck must
+    be loud (raise), not silently resolve to the old ``True`` default that
+    let a stale approval dispatch over budget."""
+    ledger_path = tmp_path / "ledger.jsonl"
+    engine = _engine(ledger_path)
+    reserve = engine.evaluate_and_reserve(_action(amount_minor=1_000, target="acct-1"))
+    reserve_id = reserve.capsule["capsule_id"]
+
+    with pytest.raises(ValueError, match="resume_ok must be explicitly"):
+        seal_approval(
+            blocked_capsule_id=reserve_id, approver_id="alice@acme.example", decision="approve",
+            action_digest="a" * 64, ledger=str(ledger_path), anchor=False, operator=OPERATOR, developer=DEVELOPER,
+            # resume_ok left unset -- must not silently default to True.
+        )
+
+    # explicit True/False both still work, unaffected by the default change.
+    result = seal_approval(
+        blocked_capsule_id=reserve_id, approver_id="alice@acme.example", decision="approve",
+        action_digest="a" * 64, ledger=str(ledger_path), anchor=False, operator=OPERATOR, developer=DEVELOPER,
+        resume_ok=True,
+    )
+    assert result.capsule["disposition"]["decision"] == "approve"
+
+
+def test_resume_ok_unset_when_no_hold_applies_behaves_as_true(tmp_path):
+    """A blocked capsule that never chains from a hold reserve (an ordinary
+    ``verdict="blocked"`` action, no ``HoldEngine`` in play at all) is the
+    "no hold applies" case the ``None`` default documents -- it must resolve
+    quietly to ``True``, not raise."""
+    from capsule_emit.core import emit
+
+    ledger_path = tmp_path / "ledger.jsonl"
+    blocked = emit(
+        action="write_po", operator=OPERATOR, developer=DEVELOPER, verdict="blocked",
+        effect={"type": "write_po", "status": "planned"}, anchor=False, ledger=str(ledger_path),
+    )
+
+    result = seal_approval(
+        blocked_capsule_id=blocked.capsule["capsule_id"], approver_id="alice@acme.example", decision="approve",
+        action_digest="a" * 64, ledger=str(ledger_path), anchor=False, operator=OPERATOR, developer=DEVELOPER,
+        # resume_ok left unset -- no hold applies, must not raise.
+    )
+    assert result.capsule["disposition"]["decision"] == "approve"
 
 
 # -- ambiguous status fails closed --------------------------------------------

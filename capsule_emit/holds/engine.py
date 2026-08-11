@@ -127,7 +127,7 @@ class HoldEngine:
 
     def _evaluate_and_reserve_locked(self, action: Action) -> HoldDecision:
         records = read_ledger(self._ledger_path)
-        current = active_exposure_minor(records, action.developer)
+        current = active_exposure_minor(records, action.developer, action_class=action.action_class)
         requested = action.amount_minor if action.amount_minor is not None else 0
         cap = self._cap_minor.get(action.action_class)
 
@@ -271,7 +271,6 @@ class HoldEngine:
         self,
         reserve_capsule_id: str,
         *,
-        action_class: str | None,
         executed_amount_minor: int,
         execution_capsule_id: str | None = None,
     ) -> HoldDecision:
@@ -281,7 +280,14 @@ class HoldEngine:
         ``executed_amount_minor`` for this hold once it lands, by delta
         algebra alone. Over-tolerance conversions NEVER build that record —
         they route through a plain DENY decision capsule instead, a limit
-        event: fail-closed, never a silent top-up of the aggregate."""
+        event: fail-closed, never a silent top-up of the aggregate.
+
+        ``action_class`` is derived from the reserve record's own
+        ``hold_scope`` -- not caller-supplied -- so the tolerance lookup can
+        never disagree with the scope lock about which class this hold
+        belongs to (a mismatched caller-passed class used to be able to
+        silently select a different tolerance row than the one the lock
+        itself was keyed on)."""
         check_integer_amount(executed_amount_minor, "executed_amount_minor")
         records = read_ledger(self._ledger_path)
         by_id = {r["capsule_id"]: r for r in records if r.get("capsule_id")}
@@ -294,8 +300,8 @@ class HoldEngine:
 
         payload = reserve_record.get("asg_payload") or {}
         subject = reserve_record.get("developer", "")
-        scope_action_class = (payload.get("hold_scope") or {}).get("action_class")
-        scope = (scope_action_class or "", subject)
+        action_class = (payload.get("hold_scope") or {}).get("action_class")
+        scope = (action_class or "", subject)
         with self._scope_locks.get(scope):
             status, terminal_record = self.hold_status(reserve_capsule_id)
             if status != HoldStatus.ACTIVE:

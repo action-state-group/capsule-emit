@@ -31,7 +31,12 @@ class Action:
     taxonomy). ``amount_minor``/``currency`` are integer-minor-units money
     fields (never floats). ``target`` is an optional free-form discriminator
     (e.g. a counterparty or recipient reference) carried through to the
-    sealed capsule's payload for audit purposes.
+    sealed capsule's payload for audit purposes. ``expires_at`` is an
+    optional ISO-8601 deadline the caller intends this reservation to lapse
+    by — recorded on the reserve capsule (``holds/capsules.py``) purely so
+    an auditor can tell whether a later ``expire()`` call was timely or
+    arbitrary; the engine never reads or enforces it itself (expiry stays
+    caller-invoked, per ``HoldEngine.expire``'s own docstring).
     """
 
     verb: str
@@ -43,6 +48,7 @@ class Action:
     amount_minor: int | None = None
     currency: str | None = None
     target: str | None = None
+    expires_at: str | None = None
 
     def resolved_action_id(self) -> str:
         return self.action_id or _new_action_id(self.verb)

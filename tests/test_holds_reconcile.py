@@ -44,7 +44,7 @@ def test_reconcile_carries_planned_executed_delta_and_chains_to_both(tmp_path):
 
     execution_capsule_id = "e" * 64  # opaque foreign-system reference
     decision = engine.reconcile(
-        reserve_id, action_class="money.transfer", executed_amount_minor=1_020_000,
+        reserve_id, executed_amount_minor=1_020_000,
         execution_capsule_id=execution_capsule_id,
     )
     assert decision.outcome == "allow"
@@ -75,7 +75,7 @@ def test_over_tolerance_denies_never_adjusts_aggregate(tmp_path):
     reserve = engine.evaluate_and_reserve(_action(amount_minor=1_000_000, target="acct-1"))
     reserve_id = reserve.capsule["capsule_id"]
 
-    over = engine.reconcile(reserve_id, action_class="money.transfer", executed_amount_minor=1_200_000)
+    over = engine.reconcile(reserve_id, executed_amount_minor=1_200_000)
     assert over.outcome == "deny"
     assert over.reason_code == OVER_TOLERANCE
 
@@ -100,7 +100,7 @@ def test_over_tolerance_mutant_neutralizing_tolerance_flips_to_full_reconcile(tm
     engine = _engine(ledger_path)
     reserve = engine.evaluate_and_reserve(_action(amount_minor=1_000_000, target="acct-1"))
     reserve_id = reserve.capsule["capsule_id"]
-    over = engine.reconcile(reserve_id, action_class="money.transfer", executed_amount_minor=1_200_000)
+    over = engine.reconcile(reserve_id, executed_amount_minor=1_200_000)
     assert over.outcome == "deny"
 
     reserve2 = engine.evaluate_and_reserve(_action(amount_minor=1_000_000, target="acct-2"))
@@ -108,7 +108,7 @@ def test_over_tolerance_mutant_neutralizing_tolerance_flips_to_full_reconcile(tm
     # mutant: the tolerance for this class is effectively removed (set so
     # large nothing can ever exceed it).
     engine._tolerance_minor["money.transfer"] = 10**12
-    mutant = engine.reconcile(reserve2_id, action_class="money.transfer", executed_amount_minor=1_200_000)
+    mutant = engine.reconcile(reserve2_id, executed_amount_minor=1_200_000)
     assert mutant.outcome == "allow", "mutant did not flip the outcome -- the tolerance check is not load-bearing"
     assert (mutant.capsule.get("action_id") or "").startswith("hold.reconcile/")
 
@@ -125,7 +125,7 @@ def test_reconcile_after_expiry_denied_citing_fresh_evaluation(tmp_path):
 
     from capsule_emit.holds.errors import RECONCILE_AFTER_EXPIRY
 
-    attempt = engine.reconcile(reserve_id, action_class="money.transfer", executed_amount_minor=1_000_000)
+    attempt = engine.reconcile(reserve_id, executed_amount_minor=1_000_000)
     assert attempt.outcome == "deny"
     assert attempt.reason_code == RECONCILE_AFTER_EXPIRY
     assert "evaluate_and_reserve" in attempt.reason
@@ -142,7 +142,7 @@ def test_fold_semantics_across_partial_over_within_and_over_beyond_tolerance(tmp
     r1 = engine.evaluate_and_reserve(_action(amount_minor=1_000_000, action_id="t/1", target="acct-1"))
     assert r1.outcome == "allow"
     assert _aggregate(ledger_path) == 1_000_000  # planned, while held
-    c1 = engine.reconcile(r1.capsule["capsule_id"], action_class="money.transfer", executed_amount_minor=600_000)
+    c1 = engine.reconcile(r1.capsule["capsule_id"], executed_amount_minor=600_000)
     assert c1.outcome == "allow"
     assert _aggregate(ledger_path) == 600_000  # executed, once reconciled
 
@@ -150,7 +150,7 @@ def test_fold_semantics_across_partial_over_within_and_over_beyond_tolerance(tmp
     r2 = engine.evaluate_and_reserve(_action(amount_minor=1_000_000, action_id="t/2", target="acct-2"))
     assert r2.outcome == "allow"
     assert _aggregate(ledger_path) == 600_000 + 1_000_000
-    c2 = engine.reconcile(r2.capsule["capsule_id"], action_class="money.transfer", executed_amount_minor=1_000_000 + TOLERANCE)
+    c2 = engine.reconcile(r2.capsule["capsule_id"], executed_amount_minor=1_000_000 + TOLERANCE)
     assert c2.outcome == "allow"
     assert _aggregate(ledger_path) == 600_000 + (1_000_000 + TOLERANCE)
 
@@ -160,7 +160,7 @@ def test_fold_semantics_across_partial_over_within_and_over_beyond_tolerance(tmp
     before = _aggregate(ledger_path)
     assert before == 600_000 + (1_000_000 + TOLERANCE) + 1_000_000
     c3 = engine.reconcile(
-        r3.capsule["capsule_id"], action_class="money.transfer", executed_amount_minor=1_000_000 + TOLERANCE + 1,
+        r3.capsule["capsule_id"], executed_amount_minor=1_000_000 + TOLERANCE + 1,
     )
     assert c3.outcome == "deny"
     assert _aggregate(ledger_path) == before  # unchanged: the over-tolerance attempt never adjusts it
@@ -179,11 +179,11 @@ def test_reconcile_is_terminal_further_lifecycle_calls_deny(tmp_path):
     engine = _engine(ledger_path)
     reserve = engine.evaluate_and_reserve(_action(amount_minor=1_000_000, target="acct-1"))
     reserve_id = reserve.capsule["capsule_id"]
-    reconciled = engine.reconcile(reserve_id, action_class="money.transfer", executed_amount_minor=1_000_000)
+    reconciled = engine.reconcile(reserve_id, executed_amount_minor=1_000_000)
     assert reconciled.outcome == "allow"
     assert reconciled.hold_status == HoldStatus.RECONCILED
 
-    again = engine.reconcile(reserve_id, action_class="money.transfer", executed_amount_minor=1_000_000)
+    again = engine.reconcile(reserve_id, executed_amount_minor=1_000_000)
     assert again.outcome == "deny"
 
     release_attempt = engine.release(reserve_id)
