@@ -192,7 +192,7 @@ def _resolve_capsule_by_selector(capsules: list[dict], selector: str) -> dict:
     capsule_id prefix — same prefix convention as ``ledger show``) to a capsule."""
     from .permalink import PermalinkError, _capsule_id_of
 
-    if selector.isdigit():
+    if selector.isdigit() and len(selector) < 8:
         idx = int(selector)
         if not (1 <= idx <= len(capsules)):
             raise PermalinkError(

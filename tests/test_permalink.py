@@ -606,6 +606,45 @@ def test_cli_permalink_reveal_bundle_ambiguous_prefix_refused(three_capsule_chai
     assert ">=8-char" in capsys.readouterr().err
 
 
+def test_resolve_capsule_by_selector_all_digit_long_prefix_resolves_as_prefix():
+    """An all-digit selector >=8 chars is a legal hex capsule_id prefix (digits
+    0-9 are valid hex), not a record number -- isdigit() alone over-claims it."""
+    from capsule_emit.cli import _resolve_capsule_by_selector
+    from capsule_emit.permalink import PermalinkError
+
+    capsules = [
+        {"capsule_id": "aaaaaaaaaaaa" + "0" * 52},
+        {"capsule_id": "12345678" + "b" * 56},
+        {"capsule_id": "cccccccccccc" + "0" * 52},
+    ]
+    # Before the fix: "12345678".isdigit() is True -> treated as record index 12345678
+    # -> out of range on a 3-capsule bundle, even though it is a valid prefix of record 2.
+    resolved = _resolve_capsule_by_selector(capsules, "12345678")
+    assert resolved is capsules[1]
+
+    with pytest.raises(PermalinkError):
+        _resolve_capsule_by_selector(capsules, "99999999")
+
+
+def test_resolve_capsule_by_selector_all_digit_prefix_collision_with_valid_index():
+    """The silent-wrong-capsule case: an all-digit 8-char prefix that also
+    happens to look like a valid record index must resolve as the PREFIX
+    match, not the index -- record 2 has a wholly unrelated capsule_id."""
+    from capsule_emit.cli import _resolve_capsule_by_selector
+
+    capsules = [
+        {"capsule_id": "aaaaaaaaaaaa" + "0" * 52},
+        {"capsule_id": "bbbbbbbbbbbb" + "0" * 52},
+        {"capsule_id": "00000002" + "c" * 56},
+    ]
+    # "00000002" is all-digit and 8 chars -- isdigit()-only logic reads it as
+    # record index 2 and silently returns capsules[1] (the wrong capsule).
+    resolved = _resolve_capsule_by_selector(capsules, "00000002")
+    assert resolved is capsules[2]
+    assert resolved is not capsules[1]
+
+
+
 def test_cli_permalink_fragment_size_no_warning_for_small_chain(three_capsule_chain, capsys):
     ledger, _ = three_capsule_chain
     exit_code = cli_main(["permalink", "--ledger", str(ledger), "--base-url", "http://x"])
