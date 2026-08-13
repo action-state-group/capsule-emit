@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+from pathlib import Path
 
 import pytest
 
@@ -14,9 +15,19 @@ from capsule_emit.permalink import (
     PermalinkError,
     build_url,
     check_capsules,
+    embed_signed_statements,
+    find_signed_statement,
     load_capsules,
     summarize,
 )
+
+
+def _write_fake_statement(ledger_dir, capsule_id: str, content: bytes = b"\x84fake-cose-bytes") -> Path:
+    statements_dir = Path(ledger_dir) / "signed-statements"
+    statements_dir.mkdir(parents=True, exist_ok=True)
+    path = statements_dir / f"{capsule_id}.cose"
+    path.write_bytes(content)
+    return path
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -242,6 +253,72 @@ def test_check_capsules_detects_tamper(three_capsule_chain):
 
 
 # ---------------------------------------------------------------------------
+# find_signed_statement / embed_signed_statements
+# ---------------------------------------------------------------------------
+
+
+def test_find_signed_statement_matches_ledger_dir(three_capsule_chain):
+    ledger, records = three_capsule_chain
+    content = b"\x84real-cose-bytes"
+    _write_fake_statement(ledger.parent, records[0].capsule_id, content)
+    found = find_signed_statement(records[0].capsule, ledger_path=str(ledger))
+    assert found == content
+
+
+def test_find_signed_statement_missing_returns_none(three_capsule_chain):
+    ledger, records = three_capsule_chain
+    assert find_signed_statement(records[0].capsule, ledger_path=str(ledger)) is None
+
+
+def test_find_signed_statement_from_run_dir(two_capsule_run_dir):
+    run_dir, records = two_capsule_run_dir
+    content = b"\x84run-dir-cose-bytes"
+    _write_fake_statement(run_dir, records[0].capsule_id, content)
+    found = find_signed_statement(records[0].capsule, from_run=str(run_dir))
+    assert found == content
+
+
+def test_embed_signed_statements_adds_base64_field(three_capsule_chain):
+    ledger, records = three_capsule_chain
+    content = b"\x84real-cose-bytes"
+    _write_fake_statement(ledger.parent, records[0].capsule_id, content)
+    capsules = [r.capsule for r in records]
+
+    embedded, matched = embed_signed_statements(capsules, ledger_path=str(ledger))
+
+    assert matched == 1
+    assert base64.b64decode(embedded[0]["signed_statement"]) == content
+    # unmatched capsules pass through unmodified — no key added
+    assert "signed_statement" not in embedded[1]
+    assert "signed_statement" not in embedded[2]
+    # original capsule dicts are untouched (no in-place mutation)
+    assert "signed_statement" not in capsules[0]
+
+
+def test_embed_signed_statements_no_matches_leaves_capsules_unmodified(three_capsule_chain):
+    ledger, records = three_capsule_chain
+    capsules = [r.capsule for r in records]
+    embedded, matched = embed_signed_statements(capsules, ledger_path=str(ledger))
+    assert matched == 0
+    assert embedded == capsules
+
+
+def test_embedding_breaks_capsule_id_digest_recompute(three_capsule_chain):
+    """Documents the confirmed consequence recorded in embed_signed_statements'
+    docstring: signed_statement is not exempt from the capsule_id digest, so an
+    embedded capsule fails its own recompute check. Locked in as a test so this
+    doesn't silently change without the docstring/CLI ordering being revisited —
+    it's why the CLI runs --check before embedding, never after."""
+    ledger, records = three_capsule_chain
+    _write_fake_statement(ledger.parent, records[0].capsule_id)
+    capsules = [r.capsule for r in records]
+    embedded, _ = embed_signed_statements(capsules, ledger_path=str(ledger))
+
+    assert check_capsules([capsules[0]])[0].ok is True
+    assert check_capsules([embedded[0]])[0].ok is False
+
+
+# ---------------------------------------------------------------------------
 # CLI surface
 # ---------------------------------------------------------------------------
 
@@ -398,3 +475,73 @@ def test_cli_permalink_from_run(two_capsule_run_dir, capsys):
     assert "2 capsules" in out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
     assert url.startswith(f"{DEFAULT_BASE_URL}/v/{records[0].capsule_id}#")
+
+
+# ---------------------------------------------------------------------------
+# --with-statements (default OFF, opt-in)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_permalink_without_with_statements_omits_signed_statement(three_capsule_chain, capsys):
+    """Default OFF: even when .cose files exist on disk, a plain --bundle
+    permalink must not carry them — this is the opt-in-only guarantee."""
+    ledger, records = three_capsule_chain
+    _write_fake_statement(ledger.parent, records[0].capsule_id)
+
+    exit_code = cli_main(["permalink", "--ledger", str(ledger)])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    url = [line for line in out.splitlines() if line.startswith("http")][0]
+    decoded = _decode_fragment(url)
+    assert all("signed_statement" not in c for c in decoded)
+
+
+def test_cli_permalink_with_statements_embeds_into_bundle(three_capsule_chain, capsys):
+    ledger, records = three_capsule_chain
+    content0 = b"\x84stmt-for-record-0"
+    content2 = b"\x84stmt-for-record-2"
+    _write_fake_statement(ledger.parent, records[0].capsule_id, content0)
+    _write_fake_statement(ledger.parent, records[2].capsule_id, content2)
+
+    exit_code = cli_main(["permalink", "--ledger", str(ledger), "--bundle", "--with-statements"])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "embedded 2/3 signed_statement" in out
+
+    url = [line for line in out.splitlines() if line.startswith("http")][0]
+    decoded = _decode_fragment(url)
+    assert base64.b64decode(decoded[0]["signed_statement"]) == content0
+    assert "signed_statement" not in decoded[1]
+    assert base64.b64decode(decoded[2]["signed_statement"]) == content2
+    # everything else about the capsule is untouched
+    assert decoded[0]["capsule_id"] == records[0].capsule_id
+
+
+def test_cli_permalink_with_statements_from_run(two_capsule_run_dir, capsys):
+    run_dir, records = two_capsule_run_dir
+    content = b"\x84run-dir-stmt"
+    _write_fake_statement(run_dir, records[0].capsule_id, content)
+
+    exit_code = cli_main(["permalink", "--from-run", str(run_dir), "--with-statements"])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "embedded 1/2 signed_statement" in out
+    url = [line for line in out.splitlines() if line.startswith("http")][0]
+    decoded = _decode_fragment(url)
+    assert base64.b64decode(decoded[0]["signed_statement"]) == content
+    assert "signed_statement" not in decoded[1]
+
+
+def test_cli_permalink_with_statements_check_runs_before_embedding(three_capsule_chain, capsys):
+    """--check must validate the real, unembedded capsules — embedding happens
+    after, so a valid chain still passes --check even with --with-statements."""
+    ledger, records = three_capsule_chain
+    _write_fake_statement(ledger.parent, records[0].capsule_id)
+
+    exit_code = cli_main(
+        ["permalink", "--ledger", str(ledger), "--check", "--with-statements"]
+    )
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "3/3" in out and "VALID" in out
+    assert "embedded 1/3 signed_statement" in out

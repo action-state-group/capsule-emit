@@ -83,6 +83,93 @@ def load_capsules(
     return capsules
 
 
+def _statements_dir_candidates(
+    *,
+    capsule_files: list[str] | None,
+    ledger_path: str | None,
+    from_run: str | None,
+) -> list[Path]:
+    """Directories to check for ``signed-statements/<capsule_id>.cose``.
+
+    Matches the ``<ledger_dir>/signed-statements/`` convention (see
+    ``capsule_sidecar.py``'s ``NodeState.statements_dir``): ``ledger_dir`` is
+    the directory holding ``capsules.jsonl``/``ledger.jsonl``.
+    """
+    if ledger_path:
+        return [Path(ledger_path).parent]
+    if from_run:
+        return [Path(from_run)]
+    if capsule_files:
+        # dedupe while preserving order
+        seen: dict[Path, None] = {}
+        for f in capsule_files:
+            seen.setdefault(Path(f).parent, None)
+        return list(seen)
+    return []
+
+
+def find_signed_statement(
+    capsule: dict,
+    *,
+    capsule_files: list[str] | None = None,
+    ledger_path: str | None = None,
+    from_run: str | None = None,
+) -> bytes | None:
+    """Look up the COSE_Sign1 bytes for ``capsule``, if any sit on disk."""
+    capsule_id = _capsule_id_of(capsule)
+    for base in _statements_dir_candidates(
+        capsule_files=capsule_files, ledger_path=ledger_path, from_run=from_run
+    ):
+        candidate = base / "signed-statements" / f"{capsule_id}.cose"
+        if candidate.exists():
+            return candidate.read_bytes()
+    return None
+
+
+def embed_signed_statements(
+    capsules: list[dict],
+    *,
+    capsule_files: list[str] | None = None,
+    ledger_path: str | None = None,
+    from_run: str | None = None,
+) -> tuple[list[dict], int]:
+    """Return capsules with a base64 ``signed_statement`` field added wherever a
+    matching ``signed-statements/<capsule_id>.cose`` file is found on disk.
+
+    Capsules with no matching file are returned unmodified (not an error —
+    ``--with-statements`` is best-effort embedding, not a requirement that
+    every capsule have one). Returns ``(capsules, matched_count)``.
+
+    Known consequence, confirmed empirically (not fixed here — it's viewer/spec
+    territory, gated by [viewer-authenticity-never-passes]): ``signed_statement``
+    lands as a sibling top-level key on the capsule, matching what the current
+    ``checkAuthenticity`` reads (``capsules.some(c => c.signed_statement)``, a
+    flat per-item check, unwrapped). ``compute_capsule_id`` / its JS twin
+    ``computeCapsuleId`` hash every key except ``capsule_id``/``chain`` — they do
+    NOT exempt ``signed_statement`` — so a capsule embedded this way fails its own
+    digest recompute (confirmed against this repo's ``check_capsules()``: a valid
+    capsule flips from ok=True to ok=False the moment ``signed_statement`` is
+    added). Whoever resolves the Authenticity decision also needs to decide how
+    ``signed_statement`` is excluded from the digest (extend the linkage-field
+    exemption, or move to an envelope shape — see the bundle-envelope warning in
+    this module's docstring, since that path has its own documented failure mode).
+    Do NOT run this repo's own ``--check``/``check_capsules()`` against the
+    embedded output for that reason; CLI order is check-then-embed.
+    """
+    out = []
+    matched = 0
+    for cap in capsules:
+        raw = find_signed_statement(
+            cap, capsule_files=capsule_files, ledger_path=ledger_path, from_run=from_run
+        )
+        if raw is None:
+            out.append(cap)
+            continue
+        matched += 1
+        out.append({**cap, "signed_statement": base64.b64encode(raw).decode()})
+    return out, matched
+
+
 def check_capsules(capsules: list[dict]) -> list[Any]:
     """Run the real, local ``agent_action_capsule.verify()`` (recompute+check) on every
     capsule, in ledger order, with store-level chain checks. No network. Returns the

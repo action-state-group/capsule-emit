@@ -142,6 +142,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "refuse to emit a URL if any capsule fails",
     )
     permalink_p.add_argument(
+        "--with-statements",
+        action="store_true",
+        help="embed each capsule's signed_statement (base64 COSE_Sign1, read from "
+        "<ledger_dir>/signed-statements/<capsule_id>.cose) in the bundle. Default OFF: "
+        "bundles ride in the URL fragment, and embedding statements can push a bundle "
+        "well past practical URL length limits — measure before turning this on for a "
+        "large bundle.",
+    )
+    permalink_p.add_argument(
         "--reveal",
         action="append",
         metavar="FIELD=payload.json",
@@ -275,6 +284,20 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
                 print(f"  {m}", file=sys.stderr)
             return 1
         print(f"permalink --reveal: {len(disclosures)}/{len(disclosures)} disclosed field(s) digest-match VALID")
+
+    if args.with_statements:
+        from .permalink import embed_signed_statements
+
+        capsules, matched = embed_signed_statements(
+            capsules,
+            capsule_files=args.capsule_files or None,
+            ledger_path=args.ledger,
+            from_run=args.from_run,
+        )
+        print(
+            f"permalink --with-statements: embedded {matched}/{len(capsules)} "
+            "signed_statement(s) (looked for <ledger_dir>/signed-statements/<capsule_id>.cose)"
+        )
 
     bundle = args.bundle or len(capsules) > 1
     url = build_url(capsules, base_url=args.base_url, bundle=bundle, disclosures=disclosures)
