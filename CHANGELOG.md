@@ -11,15 +11,22 @@ All notable changes to `capsule-emit` are documented here. The format follows
   opt-in, default OFF. `capsule-emit permalink --ledger <l> --bundle` previously built its
   fragment from `capsules.jsonl` alone — the real `COSE_Sign1` signed statements sitting
   beside it in `<ledger_dir>/signed-statements/<capsule_id>.cose` never made it into the
-  artifact. `--with-statements` embeds each capsule's matching statement (base64) as a
-  `signed_statement` field, best-effort (capsules with no `.cose` file on disk pass through
-  unmodified). Measured on a real 5-capsule bundle: fragment grows from 7,180 to 18,656 chars
-  (2.6x); a 20-capsule bundle: 29,212 → 75,784 chars (2.6x) — default OFF is deliberate, not
-  a placeholder, per the fragment-size caution in the originating task. Known consequence,
+  artifact. `--with-statements` embeds each capsule's matching statement as a
+  `signed_statement: {statement_b64, pubkey_pem}` sidecar, best-effort (capsules with no
+  `.cose` file pass through unmodified; `pubkey_pem` only when a companion
+  `<capsule_id>.pub.pem` is found). Shape matches — and round-trips a `pass` against —
+  `scitt-cose`'s real reference verifier (`hosted_profiles/aac.py::_check_authenticity`,
+  the same one the pinned `test-vectors/tamper-states/*` fixtures are tested against), not
+  an invented format. Measured on a real 5-capsule bundle: fragment grows from 7,180 to
+  18,784–19,676 chars (2.6–2.7x, depending on whether pubkey files are present); a
+  20-capsule bundle: 29,212 → 76,292–79,864 chars — default OFF is deliberate, not a
+  placeholder, per the fragment-size caution in the originating task. Known consequence,
   not addressed here (viewer/spec territory): `signed_statement` is not exempt from the
   `capsule_id` digest recompute, so an embedded capsule fails a strict Integrity re-check
   (confirmed against this repo's own `check_capsules()`) until the viewer decision on
-  Authenticity ships — see `embed_signed_statements()`'s docstring.
+  Authenticity ships — see `embed_signed_statements()`'s docstring. No producer in this
+  codebase writes a `.pub.pem` file today, so `pubkey_pem` will be absent for any current
+  demo/PoC ledger — key discovery/distribution is unaddressed, out of scope here.
 - **MCP toolset digest — `ext.mcp`** (`capsule_emit/adapters/mcp.py`): closes the gap NSA CSI
   *"MCP: Security Design Considerations"* (May 2026, U/OO/6030316-26) documents — a capsule
   proves what the agent did, not which tool descriptions the model was shown, so a server

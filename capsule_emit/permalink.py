@@ -126,6 +126,30 @@ def find_signed_statement(
     return None
 
 
+def find_statement_pubkey(
+    capsule: dict,
+    *,
+    capsule_files: list[str] | None = None,
+    ledger_path: str | None = None,
+    from_run: str | None = None,
+) -> str | None:
+    """Look up a companion public-key PEM for ``capsule``'s signed statement.
+
+    Convention mirrors the ``.cose`` file exactly: ``signed-statements/<capsule_id>.pub.pem``.
+    This is a narrow, mechanical read of whatever sits next to the statement on disk — it is
+    NOT a key-discovery/distribution mechanism (no such thing exists yet; see module docstring).
+    Best-effort: returns ``None`` when absent, same as ``find_signed_statement``.
+    """
+    capsule_id = _capsule_id_of(capsule)
+    for base in _statements_dir_candidates(
+        capsule_files=capsule_files, ledger_path=ledger_path, from_run=from_run
+    ):
+        candidate = base / "signed-statements" / f"{capsule_id}.pub.pem"
+        if candidate.exists():
+            return candidate.read_text()
+    return None
+
+
 def embed_signed_statements(
     capsules: list[dict],
     *,
@@ -133,12 +157,24 @@ def embed_signed_statements(
     ledger_path: str | None = None,
     from_run: str | None = None,
 ) -> tuple[list[dict], int]:
-    """Return capsules with a base64 ``signed_statement`` field added wherever a
-    matching ``signed-statements/<capsule_id>.cose`` file is found on disk.
+    """Return capsules with a ``signed_statement`` sidecar added wherever a matching
+    ``signed-statements/<capsule_id>.cose`` file is found on disk.
 
-    Capsules with no matching file are returned unmodified (not an error —
-    ``--with-statements`` is best-effort embedding, not a requirement that
-    every capsule have one). Returns ``(capsules, matched_count)``.
+    Shape: ``{"statement_b64": <base64 COSE_Sign1 bytes>, "pubkey_pem": <PEM str>}``
+    — this matches the real, tested reference verifier
+    (``scitt-cose``'s ``hosted_profiles/aac.py::_check_authenticity``, and the pinned
+    ``test-vectors/tamper-states/*/bundle.json`` fixtures it's tested against), not an
+    invented shape — a bare base64 string would crash that verifier's ``.get()`` calls
+    on the very first sidecar (caught, but reported as "fail", not "skip"). ``pubkey_pem``
+    is included only when a companion ``<capsule_id>.pub.pem`` file is found (see
+    ``find_statement_pubkey``); no such file exists in any producer in this codebase
+    today, so expect this to be absent for demo/PoC ledgers, and a sidecar with no
+    discoverable key can't be verified even once the viewer catches up.
+
+    Capsules with no matching ``.cose`` file are returned unmodified (not an error —
+    ``--with-statements`` is best-effort embedding, not a requirement that every
+    capsule have one). Returns ``(capsules, matched_count)`` — ``matched_count`` counts
+    ``.cose`` matches, independent of whether a pubkey was also found.
 
     Known consequence, confirmed empirically (not fixed here — it's viewer/spec
     territory, gated by [viewer-authenticity-never-passes]): ``signed_statement``
@@ -166,7 +202,13 @@ def embed_signed_statements(
             out.append(cap)
             continue
         matched += 1
-        out.append({**cap, "signed_statement": base64.b64encode(raw).decode()})
+        sidecar: dict[str, Any] = {"statement_b64": base64.b64encode(raw).decode()}
+        pubkey_pem = find_statement_pubkey(
+            cap, capsule_files=capsule_files, ledger_path=ledger_path, from_run=from_run
+        )
+        if pubkey_pem is not None:
+            sidecar["pubkey_pem"] = pubkey_pem
+        out.append({**cap, "signed_statement": sidecar})
     return out, matched
 
 

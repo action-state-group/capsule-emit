@@ -144,11 +144,11 @@ def _build_parser() -> argparse.ArgumentParser:
     permalink_p.add_argument(
         "--with-statements",
         action="store_true",
-        help="embed each capsule's signed_statement (base64 COSE_Sign1, read from "
-        "<ledger_dir>/signed-statements/<capsule_id>.cose) in the bundle. Default OFF: "
-        "bundles ride in the URL fragment, and embedding statements can push a bundle "
-        "well past practical URL length limits — measure before turning this on for a "
-        "large bundle.",
+        help="embed each capsule's signed_statement sidecar ({statement_b64, pubkey_pem}, "
+        "read from <ledger_dir>/signed-statements/<capsule_id>.cose and the companion "
+        "<capsule_id>.pub.pem if present) in the bundle. Default OFF: bundles ride in the "
+        "URL fragment, and embedding statements can push a bundle well past practical URL "
+        "length limits — measure before turning this on for a large bundle.",
     )
     permalink_p.add_argument(
         "--reveal",

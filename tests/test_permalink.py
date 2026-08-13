@@ -29,6 +29,14 @@ def _write_fake_statement(ledger_dir, capsule_id: str, content: bytes = b"\x84fa
     path.write_bytes(content)
     return path
 
+
+def _write_fake_pubkey(ledger_dir, capsule_id: str, pem: str = "-----BEGIN PUBLIC KEY-----\nfake\n-----END PUBLIC KEY-----\n") -> Path:
+    statements_dir = Path(ledger_dir) / "signed-statements"
+    statements_dir.mkdir(parents=True, exist_ok=True)
+    path = statements_dir / f"{capsule_id}.pub.pem"
+    path.write_text(pem)
+    return path
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -278,7 +286,7 @@ def test_find_signed_statement_from_run_dir(two_capsule_run_dir):
     assert found == content
 
 
-def test_embed_signed_statements_adds_base64_field(three_capsule_chain):
+def test_embed_signed_statements_adds_statement_b64_sidecar(three_capsule_chain):
     ledger, records = three_capsule_chain
     content = b"\x84real-cose-bytes"
     _write_fake_statement(ledger.parent, records[0].capsule_id, content)
@@ -287,12 +295,27 @@ def test_embed_signed_statements_adds_base64_field(three_capsule_chain):
     embedded, matched = embed_signed_statements(capsules, ledger_path=str(ledger))
 
     assert matched == 1
-    assert base64.b64decode(embedded[0]["signed_statement"]) == content
+    sidecar = embedded[0]["signed_statement"]
+    assert isinstance(sidecar, dict)
+    assert base64.b64decode(sidecar["statement_b64"]) == content
+    assert "pubkey_pem" not in sidecar  # no companion .pub.pem file was written
     # unmatched capsules pass through unmodified — no key added
     assert "signed_statement" not in embedded[1]
     assert "signed_statement" not in embedded[2]
     # original capsule dicts are untouched (no in-place mutation)
     assert "signed_statement" not in capsules[0]
+
+
+def test_embed_signed_statements_includes_pubkey_when_present(three_capsule_chain):
+    ledger, records = three_capsule_chain
+    _write_fake_statement(ledger.parent, records[0].capsule_id)
+    pem_path = _write_fake_pubkey(ledger.parent, records[0].capsule_id)
+    capsules = [r.capsule for r in records]
+
+    embedded, matched = embed_signed_statements(capsules, ledger_path=str(ledger))
+
+    assert matched == 1
+    assert embedded[0]["signed_statement"]["pubkey_pem"] == pem_path.read_text()
 
 
 def test_embed_signed_statements_no_matches_leaves_capsules_unmodified(three_capsule_chain):
@@ -510,9 +533,9 @@ def test_cli_permalink_with_statements_embeds_into_bundle(three_capsule_chain, c
 
     url = [line for line in out.splitlines() if line.startswith("http")][0]
     decoded = _decode_fragment(url)
-    assert base64.b64decode(decoded[0]["signed_statement"]) == content0
+    assert base64.b64decode(decoded[0]["signed_statement"]["statement_b64"]) == content0
     assert "signed_statement" not in decoded[1]
-    assert base64.b64decode(decoded[2]["signed_statement"]) == content2
+    assert base64.b64decode(decoded[2]["signed_statement"]["statement_b64"]) == content2
     # everything else about the capsule is untouched
     assert decoded[0]["capsule_id"] == records[0].capsule_id
 
@@ -528,7 +551,7 @@ def test_cli_permalink_with_statements_from_run(two_capsule_run_dir, capsys):
     assert "embedded 1/2 signed_statement" in out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
     decoded = _decode_fragment(url)
-    assert base64.b64decode(decoded[0]["signed_statement"]) == content
+    assert base64.b64decode(decoded[0]["signed_statement"]["statement_b64"]) == content
     assert "signed_statement" not in decoded[1]
 
 
