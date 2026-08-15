@@ -123,17 +123,56 @@ recognise it MUST ignore it (Class-1 extensibility).
 ## Limitations
 
 The following are open questions for Dapr Agents maintainers.  See the adapter
-source (`capsule_emit/adapters/dapr_agents.py`) for the full numbered list:
+source (`capsule_emit/adapters/dapr_agents.py`) for the full numbered list.
+Re-verified 2026-07-30 against `dapr-agents==1.0.5` (see drift note below):
 
-- **L1 Callback surface** — No before/after tool hook was found at v1.0; this
-  adapter wraps at function definition time.
-- **L2 Workflow ID inside tools** — Not available from the SDK inside a tool
-  call at v1.0; must be supplied at construction or per-call.
-- **L3 HITL approver identity** — `wait_for_external_event()` returns a raw
-  payload; the authenticated approver identity must come from your auth layer.
-- **L4 Replay idempotency** — Dapr Workflow may replay activities; wrapped
-  tools fire again on replay, emitting duplicate capsules.
-- **L5 App ID auto-discovery** — Must be supplied at construction.
+- **L1 Callback surface — PARTIALLY RESOLVED as of dapr-agents ≥1.0.x.**
+  `dapr_agents.hooks` now ships a native `before_tool_call`/`after_tool_call`
+  hook system (`Hooks`, `ToolHookContext`, `HookDecision` — `Proceed` /
+  `Deny` / `Mutate` / `Skip` / `RequireApproval`), registered via
+  `DurableAgent(hooks=Hooks(...))`.  This is a real, exercisable before-call
+  seam that did not exist when this adapter was built (confirmed absent in
+  `dapr-agents==1.0.0`).  This adapter's decorator-wrap approach
+  (`@emitter.tool()`) remains valid as the simpler integration and is what
+  this demo exercises; wiring `@emitter.tool()`'s emission into a
+  `before_tool_call`/`after_tool_call` hook callback instead of a Python
+  decorator is a reasonable follow-up but is a design change, not a fix —
+  left for a dedicated task. Note: `after_tool_call` is documented by Dapr
+  as "reserved API surface... not yet dispatched by the agent runtime" in
+  1.0.5, so only `before_tool_call` is currently usable for a real hook.
+- **L2 Workflow ID inside tools — STILL TRUE.** `ToolHookContext` /
+  `HookContext` (the new hook system) carry `step_name`, `step_kind`,
+  `source`, `payload`, `tool_call_id` — no `instance_id` or workflow field.
+  Must still be supplied at construction or per-call.
+- **L3 HITL approver identity — STILL TRUE, confirmed in the native flow
+  too.** Dapr Agents' own new `ApprovalResponseEvent` (sent to
+  `DurableAgent.raise_approval_event()`) carries `approved: bool` and
+  `reason`, but no approver-identity field — the framework's own native
+  approval schema has the same gap this adapter already worked around.
+- **L4 Replay idempotency** — unchanged; Dapr Workflow may replay activities,
+  wrapped tools fire again on replay, emitting duplicate capsules.
+- **L5 App ID auto-discovery — STILL TRUE**, confirmed absent from the new
+  hook context fields as well. Must be supplied at construction.
+
+### Drift note (2026-07-30 rerun)
+
+- **Version-naming correction:** there is no `dapr-agents` release numbered
+  1.18 — latest on PyPI is **1.0.5** (checked against GitHub releases too).
+  `dapr-agents==1.0.5` transitively pins the Dapr *core* SDK (`dapr` package)
+  at **1.18.3** — that is almost certainly the source of any "Dapr Agents
+  1.18" label; the two version numbers belong to different packages.
+- **New in 1.0.x (not present in 1.0.0):** the `Hooks`/`RequireApproval`/
+  `Deny`/`ApprovalRequiredEvent`/`ApprovalResponseEvent` native approval
+  system described in L1/L3 above.
+- **Adapter fix landed this pass:** `@emitter.tool()` gained an optional
+  `prior_capsule_id` kwarg so a tool-call `fyi` capsule can chain onto a
+  preceding `decide` capsule (previously only `record_hitl()` supported
+  chaining) — needed for a real fyi → decide(blocked) → fyi chain where the
+  agent escalates after a denial. See `test_tool_chains_to_prior_decide_capsule`.
+- No changes were needed to capsule construction, digest computation, or the
+  `dapr_agents` extension shape — none of it imports the `dapr_agents`
+  package directly, so there was no hard breakage to fix, only the
+  documentation/limitations drift above.
 
 ## Notes
 
