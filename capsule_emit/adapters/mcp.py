@@ -71,6 +71,22 @@ No MCP SDK dependency required — the wrapper works with any callable.
     #   Strong hardware attestation (TEE/DCAP/TPM) is NOT provided here —
     #   that belongs in the CCF or gate layer, not the emit-tier.
     #
+    # ── Toolset digest (ext.mcp) ──────────────────────────────────────────
+    # A capsule proves what the agent DID, not which tool descriptions the
+    # model was shown at decision time — a server that swaps a tool's
+    # description after gaining trust is otherwise invisible in the record.
+    #
+    # Call emitter.capture_toolset(tools) once per session (right after the
+    # server registers its tools — ``await app.list_tools()`` for FastMCP)
+    # and again whenever the toolset changes.  Every capsule emitted after
+    # that carries ``ext.mcp.toolset_digest`` — the same value while the
+    # toolset is stable; a mid-session swap is a visible digest change
+    # between adjacent capsules in the chain. See
+    # docs/extensions/mcp-toolset-digest.md for the exact digest context.
+    #
+    #   tools = await app.list_tools()
+    #   emitter.capture_toolset(tools)
+    #
     # ── Tool-error policy ────────────────────────────────────────────────
     # If the wrapped function raises, the exception propagates immediately
     # and NO capsule is emitted.  A failed call leaves no partial ledger row.
@@ -96,7 +112,11 @@ import os
 import platform
 import socket
 import warnings
+from collections.abc import Iterable
+from pathlib import Path
 from typing import Any, Callable
+
+from agent_action_capsule.canonical import jcs, json_digest, normalize
 
 from ..gate import GateBlockedError, run_gate
 from ._base import CapsuleEmitterBase
@@ -207,6 +227,50 @@ def _host_block() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Toolset digest (ext.mcp) — the manifest AS PRESENTED TO THE MODEL.
+#
+# Digest context (see docs/extensions/mcp-toolset-digest.md for the full
+# spec): each manifest entry projects to exactly {name, description,
+# input_schema} — no titles, annotations, output schema, or metadata — then
+# the projected list is sorted by name (order-independent: reordering the
+# manifest does not move the digest, only content changes do) and digested
+# with JSON-DIGEST (RFC 8785 JCS + SHA-256), the same canonicalization used
+# for capsule_id and I/O digests elsewhere in this library.
+# ---------------------------------------------------------------------------
+
+
+def _tool_field(tool: Any, *names: str) -> Any:
+    """Read the first present field from *tool* — a dict or an object (e.g.
+    ``mcp.types.Tool``) — trying each name in *names* in order."""
+    if isinstance(tool, dict):
+        for name in names:
+            if name in tool:
+                return tool[name]
+        return None
+    for name in names:
+        if hasattr(tool, name):
+            return getattr(tool, name)
+    return None
+
+
+def _project_tool(tool: Any) -> dict[str, Any]:
+    """Project one manifest entry to the digest context: name + description
+    + input schema.  Nothing else enters the digest.
+    """
+    name = _tool_field(tool, "name")
+    if not isinstance(name, str) or not name:
+        raise ValueError("MCP tool manifest entry is missing a required 'name'")
+    description = _tool_field(tool, "description") or ""
+    schema = _tool_field(tool, "inputSchema", "input_schema") or {}
+    return {"name": name, "description": description, "input_schema": schema}
+
+
+def _project_toolset(tools: Iterable[Any]) -> list[dict[str, Any]]:
+    """Canonical projection of a tool manifest — sorted by name."""
+    return sorted((_project_tool(t) for t in tools), key=lambda t: t["name"])
+
+
+# ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
 
@@ -228,6 +292,10 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             Pass ``anchor=False`` for offline/sandbox use.  Never poke
             ``emitter._anchor`` directly.
         anchor_url: Override the anchor endpoint.
+        anchor_wait: When set, block up to this many seconds per tool call for
+            the real anchor outcome, so ``.last.anchored`` / ``.anchor_status``
+            reflect a genuine confirmed/failed result instead of the default
+            non-blocking "submitted". ``None`` (default) never blocks.
         model: Default ``{"provider": ..., "model_id": ...}`` applied to
             every capsule.  The MCP adapter does NOT auto-capture the model
             — what you supply is what gets sealed.  Can be overridden
@@ -255,6 +323,15 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             The skip fires only on *explicit* ``"fyi"`` labels.  A tool with
             no ``action_type`` (unknown) is still sealed — unknown defaults to
             gated (fail-safe), never silently dropped.
+        emit_manifest_artifact: When ``True`` (default), the first
+            ``capture_toolset()`` call and every call that changes the
+            digest write the canonical manifest bytes to disk as openable
+            evidence (see ``manifest_artifact_dir``).  ``False`` keeps the
+            digest + typed reference visible in every capsule while
+            withholding the bytes ("digest visible, bytes withheld").
+        manifest_artifact_dir: Directory for manifest artifact files.
+            Defaults to a sibling of the ledger file
+            (``<ledger-stem>.mcp-manifests/``).
     """
 
     def __init__(
@@ -265,10 +342,13 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         ledger: str | os.PathLike = "ledger.jsonl",
         anchor: bool = True,
         anchor_url: str | None = None,
+        anchor_wait: float | None = None,
         model: dict[str, str] | None = None,
         action_type: str | None = None,
         host_provenance: bool = False,
         seal_reads: bool = True,
+        emit_manifest_artifact: bool = True,
+        manifest_artifact_dir: str | os.PathLike | None = None,
     ) -> None:
         super().__init__(
             operator=operator,
@@ -276,11 +356,87 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             ledger=ledger,
             anchor=anchor,
             anchor_url=anchor_url,
+            anchor_wait=anchor_wait,
             model=model,
         )
         self._default_action_type = action_type
         self._host_provenance = host_provenance
         self._seal_reads = seal_reads
+        self._emit_manifest_artifact = emit_manifest_artifact
+        self._manifest_artifact_dir = manifest_artifact_dir
+        self._toolset_digest: str | None = None
+        self._toolset_ref: dict[str, str] | None = None
+
+    @property
+    def toolset_digest(self) -> str | None:
+        """The current tool-manifest digest, or ``None`` before the first
+        ``capture_toolset()`` call."""
+        return self._toolset_digest
+
+    def capture_toolset(self, tools: Iterable[Any]) -> str:
+        """Register the tool manifest as presented to the model.
+
+        Computes a digest over the canonical projection of *tools* (name +
+        description + input schema; see docs/extensions/mcp-toolset-digest.md
+        for the exact digest context) and carries it as
+        ``ext.mcp.toolset_digest`` in every capsule emitted from this point
+        on — the same value while the toolset is stable.
+
+        Call once per session, right after the server registers its tools
+        (``tools = await app.list_tools()`` for FastMCP), and again whenever
+        the toolset changes.  A mid-session change shows up as a digest
+        change between adjacent capsules in the chain — no other capsule
+        field moves.
+
+        When ``emit_manifest_artifact=True`` (constructor default, see
+        class docstring), a call that changes the digest (including the
+        first call) also writes the canonical manifest bytes to disk as
+        openable evidence.  ``emit_manifest_artifact=False`` keeps the
+        digest + typed reference visible without ever writing bytes.
+
+        Returns the toolset digest (hex).
+        """
+        projected = _project_toolset(tools)
+        digest = json_digest(projected)
+        changed = digest != self._toolset_digest
+        self._toolset_digest = digest
+        self._toolset_ref = {
+            "type": "MCPToolManifest",
+            "digest_alg": "SHA-256",
+            "digest": digest,
+        }
+        if changed and self._emit_manifest_artifact:
+            self._write_manifest_artifact(digest, projected)
+        return digest
+
+    def _manifest_dir(self) -> Path:
+        if self._manifest_artifact_dir is not None:
+            return Path(self._manifest_artifact_dir)
+        ledger_path = Path(self._ledger)
+        return ledger_path.parent / f"{ledger_path.stem}.mcp-manifests"
+
+    def _write_manifest_artifact(self, digest: str, projected: list[dict[str, Any]]) -> Path:
+        """Write the exact canonical (JCS) bytes that hash to *digest*.
+
+        A verifier who obtains this file can recompute SHA-256 over its
+        raw bytes and compare directly against ``ext.mcp.toolset_digest`` —
+        no re-serialization step, no ambiguity about whitespace or key order.
+        """
+        directory = self._manifest_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{digest}.json"
+        if not path.exists():
+            path.write_bytes(jcs(normalize(projected)))
+        return path
+
+    def _ext_mcp_block(self) -> dict[str, Any] | None:
+        if self._toolset_digest is None:
+            return None
+        return {
+            "toolset_digest": self._toolset_digest,
+            "digest_alg": "SHA-256",
+            "manifest_ref": self._toolset_ref,
+        }
 
     def tool(
         self,
@@ -349,6 +505,9 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
                         extra.update(_extract_mcp_context(ctx_val))
                 if self._host_provenance:
                     extra.update(_host_block())
+                ext_mcp = self._ext_mcp_block()
+                if ext_mcp is not None:
+                    extra["ext.mcp"] = ext_mcp
                 return {
                     "tool_input": tool_input,
                     "tool_output": output,
@@ -392,6 +551,9 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
                         extra.update(_extract_mcp_context(ctx_val))
                 if self._host_provenance:
                     extra.update(_host_block())
+                ext_mcp = self._ext_mcp_block()
+                if ext_mcp is not None:
+                    extra["ext.mcp"] = ext_mcp
 
                 gate_result = run_gate(constraints, tool_input, output)
                 gate_checks = gate_result.to_gate_checks()

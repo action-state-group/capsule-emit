@@ -25,6 +25,10 @@ class CapsuleEmitterBase:
         ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
         anchor: Fire-and-forget anchor on every emit (default: True).
         anchor_url: Override anchor endpoint (else ``AAC_ANCHOR_URL`` env var).
+        anchor_wait: When set, block up to this many seconds per emit for the
+            real anchor outcome, so ``EmitResult.anchored`` / ``.anchor_status``
+            reflect a genuine confirmation instead of just "submitted".
+            ``None`` (default) never blocks — see ``capsule_emit.emit()``.
         model: Default ``{"provider": ..., "model_id": ...}`` applied to every capsule
             when the adapter cannot auto-capture the model from the framework. Can be
             overridden per-emit by passing ``model=`` to :meth:`emit_capsule`.
@@ -44,6 +48,7 @@ class CapsuleEmitterBase:
         ledger: str | os.PathLike = "ledger.jsonl",
         anchor: bool = True,
         anchor_url: str | None = None,
+        anchor_wait: float | None = None,
         model: dict[str, str] | None = None,
         max_results: int | None = None,
     ) -> None:
@@ -52,6 +57,7 @@ class CapsuleEmitterBase:
         self._ledger = ledger
         self._anchor = anchor
         self._anchor_url = anchor_url
+        self._anchor_wait = anchor_wait
         self._default_model = model
         self._last: EmitResult | None = None
         # A bounded deque when a cap is set (streaming adapters), else an unbounded
@@ -84,7 +90,7 @@ class CapsuleEmitterBase:
         human_disposed: bool = False,
         approver: str = "policy",
         decision: str = "accept",
-        relation: str = "confirms",
+        relation: str | None = "confirms",
         action_type: str | None = None,
         runtime: str | None = None,
         extra_compute: dict[str, Any] | None = None,
@@ -108,6 +114,7 @@ class CapsuleEmitterBase:
             anchor=self._anchor,
             ledger=self._ledger,
             anchor_url=self._anchor_url,
+            anchor_wait=self._anchor_wait,
             model=model if model is not None else self._default_model,
             human_disposed=human_disposed,
             approver=approver,

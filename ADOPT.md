@@ -114,8 +114,15 @@ What verification proves:
 
 - The `capsule_id` matches the recomputed content address of the capsule fields.
   One byte tampered → different digest → verification fails.
-- The `agent_input_digest` and `agent_output_digest` match the values in
-  `compute_attestation` (supply the raw inputs to `--verify-inputs`).
+- The `agent_input_digest` matches the value in `compute_attestation` — verify it with the
+  shipped `capsule_emit.verify.verify_input_digest` primitive (no CLI flag ships this yet):
+
+  ```python
+  from capsule_emit.verify import verify_input_digest
+
+  verify_input_digest(cap_dict, candidate_input)  # True if candidate_input matches the sealed digest
+  ```
+
 - Class-1 verification is **offline and keyless** — reproducible from the bytes alone.
 
 ---

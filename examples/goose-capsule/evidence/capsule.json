@@ -1,22 +1,24 @@
 {
-    "spec_version": "draft-mih-scitt-agent-action-capsule-01",
+    "spec_version": "draft-mih-scitt-agent-action-capsule-02",
     "format_version": "2",
-    "capsule_id": "a1dfb7375422c656929c09b08e92ac8c65f9fb8c02694d6d0d7cca7e023e31df",
-    "action_id": "submit_order/c8e979e1-014c-4abb-9c82-52bfc8f08f84",
+    "capsule_id": "f708b92a34b15b582db60042619c37b380f0b64b5c6c0bba6e13a71652f98d3b",
+    "action_id": "submit_order/de8b7f8c-7b74-4e54-9005-1144b063aa18",
     "action_type": "decide",
     "operator": "acme-co",
     "developer": "goose-agent@v1",
-    "timestamp": "2026-06-30T00:09:13.179004Z",
+    "timestamp": "2026-08-10T21:03:49.182012Z",
     "model_attestation": {
+        "model_id": "claude-opus-4-8",
+        "provider": "anthropic",
         "compute_attestation": {
-            "agent_input_digest": "007d2adff95932a774b1d88d95deb110e778c0e1b9e4870f155ed43a068a5094",
-            "agent_output_digest": "d5bca388e622b2922cfd27fddc8a48d656fd8c3bbef72d6d1a9f9b783b1201ab",
+            "agent_input_digest": "9beb854c192ef21539381646792bb0346d65781a9e27052c47775ae1b2abd922",
+            "agent_output_digest": "ea7a97e4a4070ae6190328643f9209d74515c199040cdbf161de16bd3ef16460",
             "runtime": "mcp"
         }
     },
     "effect": {
         "status": "dispatched",
-        "type": "submit_order",
+        "type": "write_order",
         "effect_attestation": "runtime_claimed"
     },
     "assurance": {
