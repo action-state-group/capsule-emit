@@ -24,6 +24,12 @@ jobs:
           pip install
           "git+https://github.com/action-state-group/agent-action-capsule.git#subdirectory=python"
 
+      - name: install capsule-anchor (from source; needed for multi-anchor demo tests; requires Python >=3.11)
+        if: matrix.python-version == '3.12'
+        run: >
+          pip install
+          "git+https://github.com/action-state-group/capsule-anchor.git"
+
       - name: install capsule-emit
         run: pip install -e ".[dev,agentgateway]"
 
