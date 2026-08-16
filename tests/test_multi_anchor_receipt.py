@@ -170,9 +170,6 @@ class TestReceiptMutants:
         to avoid the in-process singleton issue.
         """
         from agent_action_capsule.anchor import generate_issuer_keypair
-        from cryptography.hazmat.primitives.serialization import (
-            Encoding, PublicFormat, load_pem_private_key,
-        )
 
         # Get the receipt from the real anchor.
         log_pem_real = _raw_ed25519_hex_to_pem(_fetch_pubkey_hex_from_app(anchor))
@@ -247,8 +244,8 @@ class TestReceiptMutants:
 class TestPartialReachability:
     def test_absent_receipt_reported_as_absent_not_pass(self, capsule_id):
         """An absent receipt entry is ABSENT, never a pass."""
-        import sys
         import pathlib
+        import sys
         sys.path.insert(0, str(
             pathlib.Path(__file__).parent.parent /
             "examples" / "multi-anchor-receipt-demo"
@@ -275,8 +272,8 @@ class TestPartialReachability:
         self, anchor, capsule_id
     ):
         """anchor-A verified + anchor-B absent: each status is independent."""
-        import sys
         import pathlib
+        import sys
         sys.path.insert(0, str(
             pathlib.Path(__file__).parent.parent /
             "examples" / "multi-anchor-receipt-demo"
@@ -314,8 +311,8 @@ class TestPartialReachability:
 
     def test_partial_reachability_never_aggregated(self, anchor, capsule_id):
         """Absent receipt must never cause the present receipt to be reported differently."""
-        import sys
         import pathlib
+        import sys
         sys.path.insert(0, str(
             pathlib.Path(__file__).parent.parent /
             "examples" / "multi-anchor-receipt-demo"

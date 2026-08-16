@@ -372,7 +372,7 @@ def run_partial_demo(ledger: Path) -> None:
         _print_receipt_status(status_b)
 
         # There is no aggregate "all-pass" check.  Each receipt stands alone.
-        assert status_a["receipt_ok"], f"anchor-A receipt did not verify"
+        assert status_a["receipt_ok"], "anchor-A receipt did not verify"
         assert not status_b["receipt_present"], "anchor-B receipt should be absent"
 
         print()
