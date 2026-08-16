@@ -21,10 +21,12 @@ import os
 
 import pytest
 
+# capsule-anchor requires Python >=3.11; skip the entire module gracefully
+# on earlier versions rather than failing at import time.
+pytest.importorskip("capsule_anchor", reason="capsule-anchor not installed (requires Python >=3.11)")
+
 os.environ.setdefault("CAPSULE_ANCHOR_INSECURE_EPHEMERAL_KEY", "1")
 os.environ.setdefault("CAPSULE_ANCHOR_INSECURE_IN_MEMORY", "1")
-
-from capsule_anchor.app import create_app  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -89,6 +91,7 @@ def _emit_capsule(tmp_path, action: str = "multi_anchor_test") -> str:
 @pytest.fixture
 def anchor(tmp_path):
     """Single capsule-anchor TestClient (in-memory, ephemeral key)."""
+    from capsule_anchor.app import create_app
     from fastapi.testclient import TestClient
     with TestClient(create_app()) as client:
         yield client
