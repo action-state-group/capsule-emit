@@ -42,6 +42,7 @@ from agent_action_capsule.canonical import FloatInDigestError, UnsafeIntegerErro
 from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError
 
 from .ledger import append_to_ledger
+from .numbers import CANONICALIZATION_ID
 
 __all__ = ["emit", "EmitResult"]
 
@@ -302,7 +303,10 @@ def emit(
     # Per-emit random salt for digest privacy (opt-in — see salt_digests above).
     emit_salt: str | None = secrets.token_hex(16) if salt_digests else None
 
-    compute_att: dict[str, Any] = {}
+    # Required by mesh-llm #1332: record which canonicalization algorithm was used
+    # to produce capsule_id.  Distinct from forwarded_copy.transforms, which is the
+    # content-transform chain between digest domains (a mesh-sidecar concept).
+    compute_att: dict[str, Any] = {"canonicalization_id": CANONICALIZATION_ID}
     _had_digest = False
     if agent_input is not None:
         try:

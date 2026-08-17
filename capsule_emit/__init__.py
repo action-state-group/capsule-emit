@@ -37,7 +37,7 @@ from .ledger import show as ledger_show
 from .ledger import view as ledger_view
 from .ledger import view_chains as ledger_view_chains
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
-from .numbers import float_to_str
+from .numbers import CANONICALIZATION_ID, float_to_str
 from .verify import verify_input_digest
 
 __version__ = "0.3.1"
@@ -68,7 +68,8 @@ __all__ = [
     "load_manifest",
     "find_manifest",
     "ManifestDeclaration",
-    # Number conversion (RFC 8785 §3.2.2.3)
+    # Number conversion (RFC 8785 §3.2.2.3) and canonicalization identifier
+    "CANONICALIZATION_ID",
     "float_to_str",
     # Verify
     "verify_input_digest",

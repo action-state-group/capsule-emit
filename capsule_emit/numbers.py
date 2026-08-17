@@ -1,9 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
-"""float_to_str — RFC 8785 §3.2.2.3 binary-float-to-string for digest-bearing fields.
+"""Number-rule and canonicalization identifier for digest-bearing capsule fields.
 
-PROVISIONAL — rule sent to Anton 2026-08-17; expect concurrence at the 19 Aug
-VTO session. Nothing frozen until confirmed. See
+PROVISIONAL — conversion rule sent to Anton 2026-08-17; two-maintainer concurrence
+expected at the 19 Aug VTO session.  Nothing frozen until confirmed.  See
 ``_work/amplifier/9-float-decision-of-record-2026-08-17.md``.
+
+``CANONICALIZATION_ID`` — the identifier recorded in every emitted capsule under
+``compute_attestation.canonicalization_id``.  It names the digest algorithm used to
+compute ``capsule_id`` (RFC 8785 JCS over absent-field-normalised data; SHA-256;
+lowercase hex), as required by mesh-llm #1332.  This identifier is distinct from
+``forwarded_copy.transforms``, which is the content-transform chain between digest
+domains — a different concept residing in the mesh-sidecar block.
 
 Wire rule (normative in CPB — already enforced by agent_action_capsule.canonical):
   A JSON number token in a digest-bearing field MUST match ``0|-?[1-9][0-9]*``
@@ -28,7 +35,12 @@ import math
 
 from agent_action_capsule.canonical import FloatInDigestError
 
-__all__ = ["float_to_str"]
+#: Identifier recorded in ``compute_attestation.canonicalization_id`` on every
+#: emitted capsule.  Provisional pending two-maintainer CPB concurrence;
+#: the field is required by mesh-llm #1332 and ships in this PR regardless.
+CANONICALIZATION_ID: str = "jcs-n"
+
+__all__ = ["CANONICALIZATION_ID", "float_to_str"]
 
 
 def float_to_str(v: float, *, field: str = "") -> str:
