@@ -322,10 +322,20 @@ def emit(
     compute_att: dict[str, Any] = {}
     _had_digest = False
     if agent_input is not None:
-        compute_att["agent_input_digest"] = _digest(agent_input, salt=emit_salt)
+        try:
+            compute_att["agent_input_digest"] = _digest(agent_input, salt=emit_salt)
+        except (FloatInDigestError, UnsafeIntegerError) as exc:
+            raise type(exc)(
+                f"float in agent_input for action {action!r}: {exc}"
+            ) from exc
         _had_digest = True
     if agent_output is not None:
-        compute_att["agent_output_digest"] = _digest(agent_output, salt=emit_salt)
+        try:
+            compute_att["agent_output_digest"] = _digest(agent_output, salt=emit_salt)
+        except (FloatInDigestError, UnsafeIntegerError) as exc:
+            raise type(exc)(
+                f"float in agent_output for action {action!r}: {exc}"
+            ) from exc
         _had_digest = True
     # Only store the salt when there is at least one digest it was applied to.
     if emit_salt is not None and _had_digest:
