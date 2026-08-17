@@ -1,5 +1,43 @@
 # CrewAI adapter
 
+Two integration shapes, pick by coverage:
+
+- **`CapsuleEventListener` (recommended)** — a CrewAI `BaseEventListener` on the
+  event bus: register once, **every** tool call in the crew seals a capsule.
+  Zero per-tool code. This is CrewAI's own sanctioned third-party mechanism.
+- **`CrewAICapsuleEmitter.wrap()`** — wrap individual tools for surgical
+  coverage (only the consequential ones on the record).
+
+## The event-bus listener (register once)
+
+```python
+from capsule_emit.adapters.crewai_listener import CapsuleEventListener
+
+CapsuleEventListener(operator="acme-co", developer="ops-crew@v1")
+# ...then run your crew as usual:
+crew.kickoff()
+```
+
+Requires `pip install "capsule-emit[crewai]"`. What seals:
+
+| Bus event | Capsule |
+|---|---|
+| `ToolUsageStartedEvent` | `effect.status="planned"` (the commitment record) |
+| `ToolUsageFinishedEvent` | `effect.status="confirmed"`, chained to the planned capsule (`chain.relation="confirms"`) |
+| `ToolUsageErrorEvent` | `verdict="errored"`, `effect.status="failed"`, chained |
+| `CrewKickoffStarted/Completed/FailedEvent` | `fyi` capsules (`include_lifecycle=False` to disable) |
+| LLM call events | off by default (`include_llm=True` to enable) |
+
+- **Replay-safe:** honors the bus's `is_replaying()` — per CrewAI's guidance,
+  no capsule seals while a replay is dispatching.
+- **Isolation-safe:** the bus already isolates handler exceptions; the listener
+  additionally never raises. An unreachable anchor endpoint warns — the crew
+  run is unaffected.
+- Runnable end-to-end demo (hermetic, no LLM key, local stub anchor):
+  [`examples/crewai-listener/`](../../examples/crewai-listener/).
+
+## The tool wrapper (surgical)
+
 `CrewAICapsuleEmitter` wraps a **tool object**. You hand it your tool, it hands back
 a sealing version that emits one capsule per call (input + output captured
 automatically). It works whether your tool is a plain function or a CrewAI
