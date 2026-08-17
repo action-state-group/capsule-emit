@@ -9,7 +9,7 @@ The adoption surface for the Agent Action Capsule standard:
         action="write_order",
         operator="acme-co",
         developer="po-agent@v1",
-        agent_input={"vendor": "Frobozz Supply", "total": 1240.19},
+        agent_input={"vendor": "Frobozz Supply", "total": "1240.19"},
         agent_output=result,
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         verdict="executed",
@@ -37,6 +37,7 @@ from .ledger import show as ledger_show
 from .ledger import view as ledger_view
 from .ledger import view_chains as ledger_view_chains
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
+from .numbers import float_to_str
 from .verify import verify_input_digest
 
 __version__ = "0.3.1"
@@ -67,6 +68,8 @@ __all__ = [
     "load_manifest",
     "find_manifest",
     "ManifestDeclaration",
+    # Number conversion (RFC 8785 §3.2.2.3)
+    "float_to_str",
     # Verify
     "verify_input_digest",
     # Disclosure envelope
