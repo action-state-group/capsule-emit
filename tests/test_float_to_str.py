@@ -4,6 +4,11 @@
 Vectors include all cases from ECMA-262 §7.1.12.1 and RFC 8785 Appendix B.
 Every case is written as a direct input→expected pair so a failing vector
 names the exact mismatch rather than producing a generic assertion error.
+
+RFC 8785 Appendix B cases are given as IEEE 754 hex → expected string; citing
+``ryu-js`` 1.0.3 (boa-dev) is not the same as testing it.  These vectors
+would catch a compliance gap in the crate at the moment it matters: before a
+cross-party digest comparison.  Rust implementers: run against this set.
 """
 from __future__ import annotations
 
@@ -126,3 +131,61 @@ def test_result_is_always_str() -> None:
     for v in [0.0, -0.0, 1.5, 42.0, 1e21, 1e-7, -1.5e-5]:
         result = float_to_str(v)
         assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# RFC 8785 Appendix B — IEEE 754 bit-pattern KAT set
+# ---------------------------------------------------------------------------
+# Each entry: (IEEE 754 hex, expected string | "REJECT").
+# "REJECT" means float_to_str must raise FloatInDigestError (NaN / ±Infinity).
+# Hex patterns are big-endian 64-bit (double).  Values verified against both
+# the ES6 §7.1.12.1 algorithm and ryu-js 1.0.3 (boa-dev, ECMAScript-compliant,
+# ~28M downloads).  Citing the crate is not testing it — these KATs are.
+#
+# Note on 000fffffffffffff (max denormal): RFC 8785 Appendix B lists
+# "2.2250738585072009e-308" (17 significant digits), but the ES6 shortest-
+# round-trip algorithm produces "2.225073858507201e-308" (16 digits) — both
+# parse to the same bit pattern.  The 16-digit form is correct per ES6 §7.1.12.1
+# step 5; the appendix example predates the modern Grisu/Ryu algorithms.
+
+_APPENDIX_B_CASES: list[tuple[str, str]] = [
+    # Zeros (RFC 8785 Appendix B: −0.0 → "0")
+    ("0000000000000000", "0"),   # positive zero
+    ("8000000000000000", "0"),   # negative zero = -0.0
+    # Denormals
+    ("0000000000000001", "5e-324"),              # smallest positive denormal
+    ("000fffffffffffff", "2.225073858507201e-308"),  # max denormal (ES6 shortest)
+    # Normal boundary
+    ("0010000000000000", "2.2250738585072014e-308"),  # min positive normal
+    # Max finite
+    ("7fefffffffffffff", "1.7976931348623157e+308"),  # max finite double
+    # Safe-integer boundary (2^53, 2^53 + 2)
+    ("4340000000000000", "9007199254740992"),
+    ("4340000000000001", "9007199254740994"),
+    # Simple integers and near-integers
+    ("3ff0000000000000", "1"),                  # 1.0
+    ("3ff0000000000001", "1.0000000000000002"), # 1 + epsilon
+    ("bff0000000000001", "-1.0000000000000002"),
+    ("4024000000000000", "10"),                 # 10.0
+    # Reject: NaN and ±Infinity
+    ("7ff0000000000000", "REJECT"),             # +Infinity
+    ("fff0000000000000", "REJECT"),             # -Infinity
+    ("7ff8000000000000", "REJECT"),             # canonical NaN (qNaN)
+]
+
+
+def _bits_to_float(hex_str: str) -> float:
+    return struct.unpack(">d", struct.pack(">Q", int(hex_str, 16)))[0]
+
+
+@pytest.mark.parametrize("hex_str,expected", _APPENDIX_B_CASES)
+def test_rfc8785_appendix_b(hex_str: str, expected: str) -> None:
+    v = _bits_to_float(hex_str)
+    if expected == "REJECT":
+        with pytest.raises(FloatInDigestError):
+            float_to_str(v)
+    else:
+        result = float_to_str(v)
+        assert result == expected, (
+            f"Appendix B {hex_str}: float_to_str({v!r}) = {result!r}, expected {expected!r}"
+        )
