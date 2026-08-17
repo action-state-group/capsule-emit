@@ -116,7 +116,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Callable
 
-from agent_action_capsule.canonical import jcs, json_digest, normalize
+from agent_action_capsule.canonical import FloatInDigestError, UnsafeIntegerError, jcs, json_digest, normalize
 
 from ..gate import GateBlockedError, run_gate
 from ._base import CapsuleEmitterBase
@@ -522,14 +522,20 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             _skip_reads = not self._seal_reads and _atype == "fyi"
 
             def _safe_emit(action_name: str, emit_kwargs: dict) -> None:
-                """Emit a capsule; emit errors are warned, never propagated.
+                """Emit a capsule; transient emit errors are warned, never propagated.
 
-                The record layer must never crash the tool call.  A failed
-                emit is a data-quality issue, not a tool failure — the tool
-                has already returned successfully.
+                The record layer must never crash the tool call for transient
+                failures.  However, producer errors (FloatInDigestError,
+                UnsafeIntegerError) are structural: the capsule cannot be sealed
+                regardless of retries, and silently dropping it would produce a
+                ledger that is empty for an undiagnosable reason.  These propagate
+                immediately so the caller gets an emission-time error naming the
+                rejected field rather than a downstream crash on an empty list.
                 """
                 try:
                     self.emit_capsule(action_name, **emit_kwargs)
+                except (FloatInDigestError, UnsafeIntegerError):
+                    raise  # producer error: propagate at emission time, don't suppress
                 except Exception as exc:
                     msg = f"capsule-emit: failed to seal capsule for '{action_name}': {exc}"
                     warnings.warn(msg, RuntimeWarning, stacklevel=4)
