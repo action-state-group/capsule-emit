@@ -6,6 +6,49 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — BREAKING: `canonicalization_id` in `compute_attestation` (mesh-llm #1332)
+
+Every emitted capsule now carries `compute_attestation.canonicalization_id: "jcs-n"`,
+naming the digest algorithm used to compute `capsule_id` (RFC 8785 JCS over
+absent-field-normalised data; SHA-256; lowercase hex).  This field is required by
+mesh-llm #1332.  It is distinct from `forwarded_copy.transforms`, which is the
+content-transform chain between digest domains — a different concept residing in the
+mesh-sidecar block.
+
+**Why this is BREAKING and not versioned:** No previously emitted record carries a
+`canonicalization_id`.  The clean migration path — *"old records verify under the
+algorithm they recorded"* — is unavailable because nothing was recorded.
+
+**Honest handling of existing records:**
+
+(a) **Existing ledgers are demo-grade.** `ledger-live` already carries the
+    briefly-public-key provenance note; nothing of evidentiary weight depends on
+    pre-#1332 digests.  The cost of breaking their re-verification is close to zero.
+
+(b) **Retroactive mapping — labelled documented-not-recorded, an inference.**
+    Records with `format_version ≤ '2'` that carry no `canonicalization_id` used
+    one of two legacy conventions (`repr()` or `f"{x:.3f}"`), neither of which is
+    the `jcs-n` rule.  Inferring that they used `jcs-n` would be false; the honest
+    label is *"legacy repr-era, convention undeclared."*  Do not verify old digests
+    against `jcs-n`; the result is undefined.
+
+(c) **The identifier ships in this PR** — the fix and the spec obligation are one
+    change, per the decision of record (2026-08-17).
+
+**Number-rule additions (same PR):**
+
+- `capsule_emit.numbers.float_to_str` — RFC 8785 §3.2.2.3 (ECMA-262 §7.1.12.1)
+  binary-float-to-string.  Retires `repr()` and `f"{x:.3f}"` everywhere.  Rust
+  side: `ryu-js` 1.0.3 (boa-dev, ECMAScript-compliant, ~28M downloads).
+- `capsule_emit.numbers.CANONICALIZATION_ID = "jcs-n"` — the provisional identifier
+  (two-maintainer CPB concurrence pending; field ships regardless).
+- RFC 8785 Appendix B KAT set added to `tests/test_float_to_str.py` with exact
+  IEEE 754 bit patterns.  The KATs catch a compliance gap in an implementing crate
+  at the moment it matters; citing `ryu-js` is not the same as testing it.
+- `FloatInDigestError` and `UnsafeIntegerError` now propagate immediately at
+  `emit()` and `MCPCapsuleEmitter` call sites, naming the rejected field, rather
+  than being silently swallowed by the adapter's fail-safe wrapper.
+
 ### Added
 - **MCP toolset digest — `ext.mcp`** (`capsule_emit/adapters/mcp.py`): closes the gap NSA CSI
   *"MCP: Security Design Considerations"* (May 2026, U/OO/6030316-26) documents — a capsule
