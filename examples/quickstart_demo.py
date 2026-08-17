@@ -32,7 +32,7 @@ def main() -> int:
         operator="acme-co",
         developer="po-agent@v1",
         runtime="demo",
-        agent_input={"vendor": "Frobozz Supply", "total": 1240.19},
+        agent_input={"vendor": "Frobozz Supply", "total": "1240.19"},
         agent_output=agent_output,
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         verdict="executed",

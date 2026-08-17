@@ -155,11 +155,11 @@ mcp_emitter = MCPCapsuleEmitter(
 
 
 @mcp_emitter.tool(constraints=[AmountUnderCap(5000), VendorKnown({"Acme", "Globex"})])
-def submit_order(vendor: str, amount: float) -> dict:
+def submit_order(vendor: str, amount: int) -> dict:
     return {"status": "accepted", "vendor": vendor, "amount": amount}
 
 
-mcp_result = submit_order(vendor="Globex", amount=2500.0)
+mcp_result = submit_order(vendor="Globex", amount=2500)
 print(f"tool returned: {mcp_result}")
 
 assert mcp_emitter.last is not None
@@ -190,11 +190,11 @@ mcp_block_calls: list = []
     constraints=[AmountUnderCap(100)],
     on_block=lambda action, gr: mcp_block_calls.append((action, gr)),
 )
-def blocked_order(vendor: str, amount: float) -> dict:
+def blocked_order(vendor: str, amount: int) -> dict:
     return {"status": "pending"}
 
 
-blocked_result = blocked_order(vendor="Acme", amount=999.0)
+blocked_result = blocked_order(vendor="Acme", amount=999)
 print(f"tool returned: {blocked_result}")
 
 assert mcp_block_emitter.last is not None
@@ -217,12 +217,12 @@ err_emitter = MCPCapsuleEmitter(
 
 
 @err_emitter.tool(constraints=[AmountUnderCap(100)])
-def order_no_callback(vendor: str, amount: float) -> dict:
+def order_no_callback(vendor: str, amount: int) -> dict:
     return {"status": "ok"}
 
 
 try:
-    order_no_callback(vendor="Acme", amount=9999.0)
+    order_no_callback(vendor="Acme", amount=9999)
     print("ERROR: should have raised GateBlockedError")
     sys.exit(1)
 except GateBlockedError as e:
