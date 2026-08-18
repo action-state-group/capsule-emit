@@ -10,7 +10,6 @@ No MCP SDK dependency required — the wrapper works with any callable.
         operator="acme-co",
         developer="po-agent@v1",
         anchor=False,           # True (default) → fire-and-forget digest anchor
-        action_type="act",      # default for all tools (MCP tools do things)
     )
 
     # ── Decorator order ──────────────────────────────────────────────────
@@ -466,8 +465,9 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             effect_type: Effect type string (defaults to *action*).
             verdict: Disposition verdict_class (default ``"executed"``).
             action_type: Override per-tool action type.  Defaults to the
-                constructor ``action_type`` (``"act"``).  Use
-                ``action_type="decide"`` for approval / confirmation tools.
+                constructor ``action_type`` (``None`` → auto-derives from verdict).
+                Use ``action_type="decide"`` for approval / confirmation tools,
+                ``action_type="fyi"`` for observation-only tools.
             model: Per-tool model override.  ``None`` (default) falls back
                 to the constructor ``model=``.  The adapter does NOT
                 auto-capture the model; supply it explicitly.

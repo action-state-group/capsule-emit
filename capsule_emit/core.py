@@ -43,7 +43,11 @@ from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantE
 
 from .ledger import append_to_ledger
 
-__all__ = ["emit", "EmitResult"]
+__all__ = ["emit", "EmitResult", "VALID_ACTION_TYPES"]
+
+# §5.1 accepted values for action_type.  Tests import this constant to lock
+# the documented set against what the reference verifier actually accepts.
+VALID_ACTION_TYPES: frozenset[str] = frozenset({"fyi", "decide"})
 
 _DEFAULT_LEDGER = "ledger.jsonl"
 
@@ -264,7 +268,7 @@ def emit(
             ``approver`` MUST be ``"human"`` — raises ``ValueError`` otherwise.
         approver: Who approved the disposition: ``"human"`` or ``"policy"`` (default).
         decision: Disposition decision string (default ``"accept"``).
-        action_type: ``"decide"`` | ``"act"`` | ``"retrieve"`` | ``"fyi"`` override.
+        action_type: ``"decide"`` | ``"fyi"`` override (see ``VALID_ACTION_TYPES``).
             When ``None`` (default), auto-derived from *verdict* — disposition verbs
             (``"executed"``, ``"confirmed"``, ``"denied"``, ``"blocked"``) map to
             ``"decide"``; anything else maps to ``"fyi"``.

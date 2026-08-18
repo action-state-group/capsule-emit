@@ -9,7 +9,7 @@ Covers:
 - Graceful degradation: Context outside real request → no provenance, no error
 - model= per-tool: overrides constructor default
 - model= constructor default: used when no per-tool override
-- action_type: defaults to "act" for MCP tools
+- action_type: auto-derived from verdict (None default: "decide" for executed, "fyi" otherwise)
 - action_type: constructor default overridable
 - action_type: per-tool override (@emitter.tool(action_type="decide"))
 - action_type: passed through core.emit via extra_compute
