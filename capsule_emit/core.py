@@ -38,10 +38,11 @@ from typing import Any, Literal
 
 from agent_action_capsule import emit as _base_emit
 from agent_action_capsule.anchor import AnchorError, AnchorFuture, AnchorResult, async_anchor
-from agent_action_capsule.canonical import jcs, json_digest, normalize
+from agent_action_capsule.canonical import compute_capsule_id, jcs, json_digest, normalize
 from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError
 
 from .ledger import append_to_ledger
+from .numbers import CANONICALIZATION_ID
 
 __all__ = ["emit", "EmitResult"]
 
@@ -227,6 +228,7 @@ def emit(
     extra_compute: dict[str, Any] | None = None,
     disposition_authority: str | None = None,
     salt_digests: bool = False,
+    canonicalization_id: str = CANONICALIZATION_ID,
 ) -> EmitResult:
     """Emit a sealed, optionally anchored Agent Action Capsule.
 
@@ -284,6 +286,14 @@ def emit(
             capsules. Default ``False`` (unsalted, deterministic digests — the
             pre-existing behavior; cross-call digest comparisons keep working
             unchanged). Pass ``True`` for a privacy-sensitive deployment.
+        canonicalization_id: The CPB registry identifier naming the algorithm used
+            to compute ``capsule_id``.  Written into the top-level
+            ``canonicalization_id`` field (the self-describing binding slot —
+            inside the signed payload, committed to ``capsule_id``).  Default is
+            ``CANONICALIZATION_ID`` (``"jcs-n"``).  Pass a different registered
+            value (e.g. ``"jcs"``) when the profile under which this capsule is
+            sealed changes.  The value propagates through the constant —
+            call sites need no change when the profile revs.
 
     Returns:
         :class:`EmitResult` with ``.capsule_id``, ``.anchored``, and ``.anchor_status``.
@@ -376,6 +386,13 @@ def emit(
         disposition=disposition,
         tool_name=action,
     )
+
+    # Write canonicalization_id into the self-describing binding slot (top-level,
+    # inside the signed payload) then recompute capsule_id to commit it.
+    # CHAIN_LINKAGE_FIELDS = ("capsule_id", "chain") — every other top-level field
+    # is in the capsule_id preimage, so the id is fully signature-covered.
+    capsule["canonicalization_id"] = canonicalization_id
+    capsule["capsule_id"] = compute_capsule_id(capsule)
 
     append_to_ledger(capsule, ledger)
 
