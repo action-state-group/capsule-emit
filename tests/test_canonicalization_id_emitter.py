@@ -25,17 +25,15 @@ import os
 import tempfile
 
 import pytest
+from agent_action_capsule.canonical import compute_capsule_id
 
 import capsule_emit
 from capsule_emit import CANONICALIZATION_ID, emit
 from capsule_emit.verify_canonicalization import (
     KNOWN_ALGORITHMS,
-    CanonicalizationResult,
     CanonicalizationVerdict,
     verify_canonicalization_id,
 )
-from agent_action_capsule.canonical import compute_capsule_id
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -407,7 +405,7 @@ class TestWireTranscript:
         print(f"canonicalization_id (top-level): {capsule['canonicalization_id']!r}")
         print(f"capsule_id: {capsule['capsule_id']!r}")
         print(
-            f"compute_attestation has no canonicalization_id: "
+            "compute_attestation has no canonicalization_id: "
             + str('canonicalization_id' not in
                   capsule.get('model_attestation', {}).get('compute_attestation', {}))
         )

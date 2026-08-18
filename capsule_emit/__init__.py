@@ -40,9 +40,9 @@ from .manifest import ManifestDeclaration, find_manifest, load_manifest
 from .numbers import CANONICALIZATION_ID
 from .verify import verify_input_digest
 from .verify_canonicalization import (
+    KNOWN_ALGORITHMS,
     CanonicalizationResult,
     CanonicalizationVerdict,
-    KNOWN_ALGORITHMS,
     verify_canonicalization_id,
 )
 
