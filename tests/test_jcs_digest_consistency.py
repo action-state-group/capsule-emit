@@ -47,7 +47,7 @@ def test_faithfully_sealed_input_reverifies(receipt: dict) -> None:
     ``verify_input_digest`` takes ``(capsule, candidate_input)``.
     """
     capsule = _emit_and_read(receipt)
-    assert capsule_emit.verify_input_digest(capsule, receipt) is True
+    assert capsule_emit.verify_input_digest(capsule, receipt)
 
 
 def test_tamper_after_seal_is_caught() -> None:
@@ -55,7 +55,7 @@ def test_tamper_after_seal_is_caught() -> None:
     receipt = {"a": "x", "note": None}
     capsule = _emit_and_read(receipt)
     tampered = {"a": "x", "note": "SNEAKY"}
-    assert capsule_emit.verify_input_digest(capsule, tampered) is False
+    assert not capsule_emit.verify_input_digest(capsule, tampered)
 
 
 def test_float_input_fails_closed_at_emit() -> None:
@@ -70,11 +70,13 @@ def test_float_input_fails_closed_at_emit() -> None:
 
 def test_verify_never_throws_on_float_candidate() -> None:
     """The profile requires a verifier to return a structured result, never
-    throw. A float-bearing candidate must yield False, not FloatInDigestError —
+    throw. A float-bearing candidate must yield NON_CONFORMING (not a raise) —
     this is the crash/DoS surface the seal-side fix alone did NOT close."""
+    from capsule_emit import VerifyReason
     capsule = _emit_and_read({"a": "x"})
-    # must return a bool, not raise:
-    assert capsule_emit.verify_input_digest(capsule, {"amount": 19.99}) is False
+    result = capsule_emit.verify_input_digest(capsule, {"amount": 19.99})
+    assert not result
+    assert result.reason == VerifyReason.NON_CONFORMING
 
 
 def test_non_json_native_types_still_emit() -> None:

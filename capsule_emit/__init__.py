@@ -57,7 +57,7 @@ from .ledger import view_chains as ledger_view_chains
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
 from .numbers import CANONICALIZATION_ID, float_to_str
 from .surface import Capsule, carry, compose, seal
-from .verify import verify_input_digest
+from .verify import InputDigestResult, VerifyReason, verify_input_digest
 from .verify_canonicalization import (
     KNOWN_ALGORITHMS,
     CanonicalizationResult,
@@ -110,8 +110,10 @@ __all__ = [
     "verify_canonicalization_id",
     "CanonicalizationVerdict",
     "CanonicalizationResult",
-    # Verify
+    # Verify (HYBRID — InputDigestResult, VerifyReason, verify_input_digest)
     "verify_input_digest",
+    "InputDigestResult",
+    "VerifyReason",
     # Disclosure envelope
     "build_disclosure_envelope",
     "DisclosureError",
