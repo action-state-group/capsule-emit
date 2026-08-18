@@ -248,8 +248,7 @@ def test_canonicalization_id_is_parameterized() -> None:
     that was written into the capsule — no hardcoded 'jcs-n' in the verifier."""
     from capsule_emit.numbers import CANONICALIZATION_ID
     r = emit("ping", operator="op", developer="dev", anchor=False, ledger=_tmp_ledger())
-    ca = r.capsule["model_attestation"]["compute_attestation"]
-    assert ca["canonicalization_id"] == CANONICALIZATION_ID
+    assert r.capsule["canonicalization_id"] == CANONICALIZATION_ID
     # The verifier does not inspect canonicalization_id (that is the sibling
     # task [capsule-emit-canonicalization-id-emitter]); we assert here only
     # that the id is NOT hardcoded at any verify call site.
