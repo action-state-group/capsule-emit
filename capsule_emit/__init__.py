@@ -37,7 +37,14 @@ from .ledger import show as ledger_show
 from .ledger import view as ledger_view
 from .ledger import view_chains as ledger_view_chains
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
+from .numbers import CANONICALIZATION_ID
 from .verify import verify_input_digest
+from .verify_canonicalization import (
+    KNOWN_ALGORITHMS,
+    CanonicalizationResult,
+    CanonicalizationVerdict,
+    verify_canonicalization_id,
+)
 
 __version__ = "0.3.1"
 
@@ -67,6 +74,12 @@ __all__ = [
     "load_manifest",
     "find_manifest",
     "ManifestDeclaration",
+    # Canonicalization id constant + verifier
+    "CANONICALIZATION_ID",
+    "KNOWN_ALGORITHMS",
+    "verify_canonicalization_id",
+    "CanonicalizationVerdict",
+    "CanonicalizationResult",
     # Verify
     "verify_input_digest",
     # Disclosure envelope
