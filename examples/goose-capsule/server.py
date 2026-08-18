@@ -84,7 +84,7 @@ emitter = MCPCapsuleEmitter(
 
 @server.tool()
 @emitter.tool(effect_type="write_order")  # seeded registry value (§12 / REGISTRY.md §3)
-def submit_order(vendor: str, amount: float, po_number: str) -> dict:
+def submit_order(vendor: str, amount: str, po_number: str) -> dict:
     """Submit a purchase order (consequential — every call sealed into a capsule)."""
     return {
         "status": "dispatched",
@@ -99,8 +99,8 @@ def submit_order(vendor: str, amount: float, po_number: str) -> dict:
 @emitter.tool(action_type="fyi")  # read-only: sealed as observation, not gate decision
 def get_price(vendor: str, item: str) -> dict:
     """Look up the current price for an item from a vendor."""
-    prices = {"widget": 42.00, "gadget": 128.50, "doohickey": 9.99}
-    unit_price = prices.get(item.lower(), 0.00)
+    prices = {"widget": "42.00", "gadget": "128.50", "doohickey": "9.99"}
+    unit_price = prices.get(item.lower(), "0.00")
     return {"vendor": vendor, "item": item, "unit_price_usd": unit_price, "currency": "USD"}
 
 
