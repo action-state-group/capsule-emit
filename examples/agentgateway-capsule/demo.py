@@ -130,7 +130,7 @@ def main():
         _tools_call(
             check_request, check_response,
             tool_name="submit_order",
-            arguments={"vendor": "Frobozz Supply", "amount": 1240.19, "po_number": "PO-7777"},
+            arguments={"vendor": "Frobozz Supply", "amount": "1240.19", "po_number": "PO-7777"},
             tool_result={"status": "dispatched", "confirmation_ref": "CONF-7777"},
         )
         records = read_ledger(ledger)
@@ -142,7 +142,7 @@ def main():
             check_request, check_response,
             tool_name="get_price",
             arguments={"vendor": "Frobozz Supply", "item": "widget"},
-            tool_result={"unit_price_usd": 42.00, "currency": "USD"},
+            tool_result={"unit_price_usd": "42.00", "currency": "USD"},
         )
         records = read_ledger(ledger)
         assert len(records) == 2, f"expected 2 capsules, got {len(records)}"
