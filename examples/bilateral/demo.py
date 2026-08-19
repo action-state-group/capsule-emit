@@ -73,6 +73,16 @@ def _action_digest(action: dict) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _req_sig_digest(rec) -> str:
+    payload = request_payload(rec.requester_org, rec.responder_org, rec.action_digest)
+    return sig_digest(rec.request_sig, payload)
+
+
+def _act_sig_digest(rec, hid: str) -> str:
+    payload = action_payload(hid, rec.responder_org, _req_sig_digest(rec))
+    return sig_digest(rec.action_sig, payload)
+
+
 # ---------------------------------------------------------------------------
 # The shared action
 # ---------------------------------------------------------------------------
@@ -123,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── Move 3: Action attestation ───────────────────────────────────────────
     print("\n[3] Org B signs the action attestation (constraints passed)")
-    act_pay = action_payload(hid, "org-b", sig_digest(rec.request_sig))
+    act_pay = action_payload(hid, "org-b", _req_sig_digest(rec))
     act_sig = _sign("org-b", act_pay)
     rec2 = hs.respond(hid, act_sig)
     _ok(f"state: {rec2.state.value}")
@@ -143,12 +153,12 @@ def main(argv: list[str] | None = None) -> int:
     print("\n[4] Both parties acknowledge the counterparty's attestation")
 
     # A acks B's action sig
-    rq_pay = confirm_payload(hid, "org-a", sig_digest(rec2.action_sig))
+    rq_pay = confirm_payload(hid, "org-a", _act_sig_digest(rec2, hid))
     rq_confirm = _sign("org-a", rq_pay)
     hs.confirm(hid, "org-a", rq_confirm)
 
     # B acks A's request sig
-    rs_pay = confirm_payload(hid, "org-b", sig_digest(rec2.request_sig))
+    rs_pay = confirm_payload(hid, "org-b", _req_sig_digest(rec2))
     rs_confirm = _sign("org-b", rs_pay)
     rec_final = hs.confirm(hid, "org-b", rs_confirm)
     _ok(f"state: {rec_final.state.value}")

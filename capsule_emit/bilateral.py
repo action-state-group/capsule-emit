@@ -15,7 +15,7 @@ Payload functions (deterministic signing bytes):
   request_payload(requester, responder, action_digest) -> bytes
   action_payload(handshake_id, responder, request_sig_digest) -> bytes
   confirm_payload(handshake_id, party, acked_sig_digest) -> bytes
-  sig_digest(sig) -> str
+  sig_digest(sig, payload) -> str
 
 Orchestration:
   BilateralHandshake   -- in-memory state machine; bring your own verifier
@@ -153,11 +153,40 @@ def _canon(obj: dict) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def sig_digest(sig: BilateralSig) -> str:
-    """Stable digest of a signature, used to bind later phases to earlier ones."""
+def sig_digest(sig: BilateralSig, payload: bytes) -> str:
+    """Stable digest of a signing act (signer + the bytes it attested to).
+
+    Digests ``alg:key_id:`` plus the exact ``payload`` the signature was
+    verified against — never ``sig.signature`` itself. An ECDSA signature is
+    not unique per signing act (for any valid ``(r, s)``, ``(r, n-s)`` also
+    verifies over the same bytes; SEC1 v2.0 SS4.1.3), so hashing the raw
+    signature bytes would let anyone who can see a valid (payload, signature)
+    pair — no private key required — produce a second value for the same
+    act by re-encoding the signature. Binding to the act (signer + payload)
+    instead of the signature's byte representation makes later phases
+    reference "org X attested to exactly this" rather than "this exact
+    signature encoding", which is what non-repudiation actually needs.
+    """
     return hashlib.sha256(
-        f"{sig.alg}:{sig.key_id}:{sig.signature}".encode()
+        f"{sig.alg}:{sig.key_id}:".encode() + payload
     ).hexdigest()
+
+
+def _request_sig_digest(rec: BilateralRecord) -> str:
+    """The stable digest of A's request attestation, recomputed from record fields."""
+    assert rec.request_sig is not None
+    payload = request_payload(rec.requester_org, rec.responder_org, rec.action_digest)
+    return sig_digest(rec.request_sig, payload)
+
+
+def _action_sig_digest(rec: BilateralRecord, handshake_id: str) -> str:
+    """The stable digest of B's action attestation, recomputed from record fields."""
+    assert rec.action_sig is not None
+    assert rec.responder_org is not None
+    payload = action_payload(
+        handshake_id, rec.responder_org, _request_sig_digest(rec)
+    )
+    return sig_digest(rec.action_sig, payload)
 
 
 def request_payload(
@@ -349,7 +378,7 @@ class BilateralHandshake:
             assert rec.responder_org is not None
             assert rec.request_sig is not None
             payload = action_payload(
-                handshake_id, rec.responder_org, sig_digest(rec.request_sig)
+                handshake_id, rec.responder_org, _request_sig_digest(rec)
             )
             self._verify(rec.responder_org, payload, action_sig)
             updated = BilateralRecord(
@@ -381,7 +410,7 @@ class BilateralHandshake:
             updates: dict = {}
             if party_org == rec.requester_org:
                 payload = confirm_payload(
-                    handshake_id, party_org, sig_digest(rec.action_sig)
+                    handshake_id, party_org, _action_sig_digest(rec, handshake_id)
                 )
                 self._verify(party_org, payload, confirm_sig)
                 updates["requester_confirm"] = confirm_sig
@@ -389,7 +418,7 @@ class BilateralHandshake:
                 resp_done = rec.responder_confirm is not None
             elif party_org == rec.responder_org:
                 payload = confirm_payload(
-                    handshake_id, party_org, sig_digest(rec.request_sig)
+                    handshake_id, party_org, _request_sig_digest(rec)
                 )
                 self._verify(party_org, payload, confirm_sig)
                 updates["responder_confirm"] = confirm_sig

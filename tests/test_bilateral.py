@@ -56,6 +56,19 @@ def _action_digest(action: dict) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _req_sig_digest(rec) -> str:
+    """Mirror of BilateralHandshake's internal _request_sig_digest, for tests
+    that build payloads externally rather than through respond()/confirm()."""
+    payload = request_payload(rec.requester_org, rec.responder_org, rec.action_digest)
+    return sig_digest(rec.request_sig, payload)
+
+
+def _act_sig_digest(rec, hid: str) -> str:
+    """Mirror of BilateralHandshake's internal _action_sig_digest."""
+    payload = action_payload(hid, rec.responder_org, _req_sig_digest(rec))
+    return sig_digest(rec.action_sig, payload)
+
+
 ACTION = {"type": "book_slot", "amount": 1000, "vendor": "Acme"}
 DIGEST = _action_digest(ACTION)
 
@@ -81,7 +94,7 @@ def test_request_payload_contains_all_fields():
 
 def test_action_payload_binds_request_sig():
     sig = BilateralSig(alg="hmac-sha256", key_id="org-a", signature="abc")
-    p = json.loads(action_payload("hid-1", "org-b", sig_digest(sig)))
+    p = json.loads(action_payload("hid-1", "org-b", sig_digest(sig, b"payload")))
     assert p["phase"] == "action"
     assert p["handshake_id"] == "hid-1"
     assert p["responder_org"] == "org-b"
@@ -90,7 +103,7 @@ def test_action_payload_binds_request_sig():
 
 def test_confirm_payload_binds_acked_sig():
     sig = BilateralSig(alg="hmac-sha256", key_id="org-b", signature="xyz")
-    p = json.loads(confirm_payload("hid-1", "org-a", sig_digest(sig)))
+    p = json.loads(confirm_payload("hid-1", "org-a", sig_digest(sig, b"payload")))
     assert p["phase"] == "confirm"
     assert p["party_org"] == "org-a"
     assert "acked_sig_digest" in p
@@ -98,13 +111,22 @@ def test_confirm_payload_binds_acked_sig():
 
 def test_sig_digest_deterministic():
     sig = BilateralSig(alg="hmac-sha256", key_id="org-a", signature="sig123")
-    assert sig_digest(sig) == sig_digest(sig)
+    assert sig_digest(sig, b"payload") == sig_digest(sig, b"payload")
 
 
-def test_sig_digest_different_for_different_sigs():
-    s1 = BilateralSig(alg="hmac-sha256", key_id="org-a", signature="sig1")
-    s2 = BilateralSig(alg="hmac-sha256", key_id="org-a", signature="sig2")
-    assert sig_digest(s1) != sig_digest(s2)
+def test_sig_digest_different_for_different_payloads():
+    sig = BilateralSig(alg="hmac-sha256", key_id="org-a", signature="sig1")
+    assert sig_digest(sig, b"payload-a") != sig_digest(sig, b"payload-b")
+
+
+def test_sig_digest_same_for_different_signature_bytes_over_same_payload():
+    """The malleability-immunity property: sig_digest binds to (signer, payload),
+    never to the signature bytes, so a different signature encoding over the
+    identical payload by the identical signer yields the identical digest."""
+    payload = b"payload"
+    s1 = BilateralSig(alg="ES256", key_id="org-a", signature="sig-encoding-1")
+    s2 = BilateralSig(alg="ES256", key_id="org-a", signature="sig-encoding-2")
+    assert sig_digest(s1, payload) == sig_digest(s2, payload)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +198,7 @@ def test_respond_acted():
     hs = _hs()
     rec = _open(hs)
     hid = rec.handshake_id
-    a_payload = action_payload(hid, "org-b", sig_digest(rec.request_sig))
+    a_payload = action_payload(hid, "org-b", _req_sig_digest(rec))
     action_sig = _sign("org-b", a_payload)
     rec2 = hs.respond(hid, action_sig)
     assert rec2.state is BilateralState.ACTED
@@ -195,18 +217,18 @@ def test_confirm_bilateral():
     rec = _open(hs)
     hid = rec.handshake_id
 
-    a_pay = action_payload(hid, "org-b", sig_digest(rec.request_sig))
+    a_pay = action_payload(hid, "org-b", _req_sig_digest(rec))
     action_sig = _sign("org-b", a_pay)
     rec2 = hs.respond(hid, action_sig)
 
     # Requester confirms B's action sig
-    req_pay = confirm_payload(hid, "org-a", sig_digest(rec2.action_sig))
+    req_pay = confirm_payload(hid, "org-a", _act_sig_digest(rec2, hid))
     req_confirm = _sign("org-a", req_pay)
     rec3 = hs.confirm(hid, "org-a", req_confirm)
     assert rec3.state is BilateralState.ACTED  # not yet bilateral — only one side
 
     # Responder confirms A's request sig
-    resp_pay = confirm_payload(hid, "org-b", sig_digest(rec2.request_sig))
+    resp_pay = confirm_payload(hid, "org-b", _req_sig_digest(rec2))
     resp_confirm = _sign("org-b", resp_pay)
     rec4 = hs.confirm(hid, "org-b", resp_confirm)
     assert rec4.state is BilateralState.BILATERAL
@@ -216,7 +238,7 @@ def test_confirm_unknown_party_raises():
     hs = _hs()
     rec = _open(hs)
     hid = rec.handshake_id
-    a_pay = action_payload(hid, "org-b", sig_digest(rec.request_sig))
+    a_pay = action_payload(hid, "org-b", _req_sig_digest(rec))
     hs.respond(hid, _sign("org-b", a_pay))
     with pytest.raises(UnknownParty):
         hs.confirm(hid, "org-c", _sign("org-a", b"x"))
@@ -288,7 +310,7 @@ def test_e2e_full_handshake_and_verify(tmp_path):
     cap_a = seal_request("org-a", "agent-a@v1", "book_slot", DIGEST, ledger=ledger, anchor=False)
 
     # 2. Action (B evaluates constraints, seals)
-    act_pay = action_payload(hid, "org-b", sig_digest(rec.request_sig))
+    act_pay = action_payload(hid, "org-b", _req_sig_digest(rec))
     act_sig = _sign("org-b", act_pay)
     rec2 = hs.respond(hid, act_sig)
 
@@ -298,9 +320,9 @@ def test_e2e_full_handshake_and_verify(tmp_path):
     )
 
     # 3. Both confirm
-    rq_c_pay = confirm_payload(hid, "org-a", sig_digest(rec2.action_sig))
+    rq_c_pay = confirm_payload(hid, "org-a", _act_sig_digest(rec2, hid))
     hs.confirm(hid, "org-a", _sign("org-a", rq_c_pay))
-    rs_c_pay = confirm_payload(hid, "org-b", sig_digest(rec2.request_sig))
+    rs_c_pay = confirm_payload(hid, "org-b", _req_sig_digest(rec2))
     rec_final = hs.confirm(hid, "org-b", _sign("org-b", rs_c_pay))
 
     assert rec_final.state is BilateralState.BILATERAL
