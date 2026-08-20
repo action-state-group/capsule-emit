@@ -18,13 +18,19 @@ Four rendering levels for the ledger:
                                                     SELECTOR:FIELD=payload.json
                                                     per bundle item)
 
+    capsule-emit evidence --ledger <path>        — build a Verification-stage
+                                                    evidence comment (markdown)
+                                                    from a ledger; fail-closed
+
 Exit codes: 0 = ok, 1 = error.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import sys
+from pathlib import Path
 
 
 def _cmd_ledger_view(args: argparse.Namespace) -> int:
@@ -47,6 +53,7 @@ def _cmd_ledger_view(args: argparse.Namespace) -> int:
     if records:
         try:
             from agent_action_capsule import verify_store
+
             verify_results = verify_store(records)
         except Exception:
             pass  # viewer degrades gracefully if verify unavailable
@@ -141,8 +148,7 @@ def _build_parser() -> argparse.ArgumentParser:
     permalink_p.add_argument(
         "--check",
         action="store_true",
-        help="run verify() on every capsule first (no network); "
-        "refuse to emit a URL if any capsule fails",
+        help="run verify() on every capsule first (no network); refuse to emit a URL if any capsule fails",
     )
     permalink_p.add_argument(
         "--reveal",
@@ -160,7 +166,90 @@ def _build_parser() -> argparse.ArgumentParser:
         "no --reveal stay withheld.",
     )
 
+    # evidence
+    evidence_p = sub.add_parser(
+        "evidence",
+        help="build a Verification-stage evidence comment (markdown) from a ledger; "
+        "fail-closed — every capsule is re-verified first",
+    )
+    evidence_p.add_argument(
+        "capsule_files",
+        nargs="*",
+        metavar="CAPSULE.json",
+        help="one or more capsule JSON files (mutually exclusive with --ledger/--from-run)",
+    )
+    evidence_p.add_argument(
+        "--ledger", metavar="PATH", default=None, help="read capsules from a JSONL ledger file"
+    )
+    evidence_p.add_argument(
+        "--from-run",
+        metavar="DIR",
+        default=None,
+        help="read capsules from a run directory (its ledger.jsonl if present, else its *.json files)",
+    )
+    evidence_p.add_argument(
+        "--issue",
+        metavar="URL",
+        default=None,
+        help="the Ready issue this work implements (rendered as the Implements: line)",
+    )
+    evidence_p.add_argument(
+        "--title", default="Verification evidence", help="comment heading (default: %(default)s)"
+    )
+    evidence_p.add_argument(
+        "--out",
+        metavar="FILE.md",
+        default=None,
+        help="write the markdown to FILE.md (default: stdout)",
+    )
+    evidence_p.add_argument(
+        "--base-url",
+        default=DEFAULT_BASE_URL,
+        help=f"verify-surface base URL for the viewer link (default: {DEFAULT_BASE_URL})",
+    )
+    evidence_p.add_argument(
+        "--no-viewer-link",
+        action="store_true",
+        help="omit the verify-viewer permalink (offline verify commands remain)",
+    )
+
     return parser
+
+
+def _cmd_evidence(args: argparse.Namespace) -> int:
+    from .evidence import EvidenceError, build_evidence_markdown
+    from .permalink import PermalinkError, load_capsules
+
+    try:
+        capsules = load_capsules(
+            capsule_files=args.capsule_files or None,
+            ledger_path=args.ledger,
+            from_run=args.from_run,
+        )
+    except PermalinkError as exc:
+        print(f"evidence: {exc}", file=sys.stderr)
+        return 1
+
+    ledger_name = Path(args.ledger).name if args.ledger else "ledger.jsonl"
+    try:
+        markdown = build_evidence_markdown(
+            capsules,
+            issue_url=args.issue,
+            title=args.title,
+            base_url=args.base_url,
+            viewer_link=not args.no_viewer_link,
+            ledger_name=ledger_name,
+        )
+    except EvidenceError as exc:
+        print(f"evidence: {exc}", file=sys.stderr)
+        return 1
+
+    if args.out:
+        Path(args.out).write_text(markdown)
+        print(f"evidence: {len(capsules)}/{len(capsules)} capsule(s) VALID — wrote {args.out}")
+    else:
+        print(markdown)
+    return 0
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
@@ -370,6 +459,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "permalink":
         return _cmd_permalink(args)
+
+    if args.command == "evidence":
+        return _cmd_evidence(args)
 
     parser.error(f"unknown command {args.command!r}")
     return 1

@@ -8,7 +8,9 @@ and a live anchor to a public transparency log.
 examples/goose-capsule/
 ├── demo.py     # standalone run — no Goose required, anchors live by default
 ├── server.py   # the actual MCP extension — hand this file to Goose
-├── evidence/   # a real, live-anchored run (transcript + one sealed capsule)
+├── contribution_demo.py  # issues-first lifecycle demo → Verification evidence comment
+├── evidence/   # a real, live-anchored run (transcript + one sealed capsule
+│               #  + verification-comment.md from contribution_demo.py)
 └── README.md   # this file
 ```
 
@@ -120,6 +122,34 @@ disclosure is a separate, later, revocable choice about the same sealed bytes. (
 of this demo noted that the bundle permalink didn't support per-item disclosure — a viewer gap
 in `scitt-cose`, not `capsule-emit`. That gap is fixed as of `scitt-cose#30`; the producer-side
 refusal in `capsule_emit.permalink.build_url()` is lifted accordingly.)
+
+## Goose's issues-first policy: evidence under the Verification stage
+
+Goose moved contribution to an issues-first lifecycle ("Moving to issues as the
+new PRs", 2026-07-30): Inbox → Accepted/design → Ready → In progress →
+**Verification** → Done. PRs must implement a Ready issue and "explain how the
+issue's verification plan was carried out" — and Verification is a human
+confirming the work. That stage runs on prose; capsules give it records.
+
+`contribution_demo.py` maps the lifecycle onto sealed evidence:
+
+| Lifecycle stage   | What the demo does |
+|-------------------|--------------------|
+| Accepted/design   | the verification plan is agreed (the demo's `PLAN`) |
+| Ready             | implementation begins — fresh ledger, issue-linked payloads |
+| In progress       | every tool call sealed + chained: `run_repro` → `apply_patch` → `run_tests` |
+| Verification      | `capsule-emit evidence --ledger … --issue <url>` renders the evidence comment |
+| Done              | the issue closes with the evidence bundle in its record |
+
+```bash
+python examples/goose-capsule/contribution_demo.py            # offline
+capsule-emit evidence --ledger ledger.jsonl --issue <ready-issue-url>
+```
+
+The builder is fail-closed: every capsule is re-verified locally at generation
+time, and a tampered ledger refuses to render at all — a contributor
+structurally cannot hand a reviewer an evidence comment whose records don't
+verify. See `evidence/verification-comment.md` for a committed real run.
 
 ## Connect it to real Goose
 

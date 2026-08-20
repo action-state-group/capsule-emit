@@ -194,6 +194,28 @@ agent-action-capsule verify --store ledger.jsonl
 Goose v1.39.0 (aarch64-apple-darwin) installs as a prebuilt binary — no Rust
 toolchain required.
 
+## Issues-first contributions: the Verification-stage evidence comment
+
+Goose's contribution lifecycle (CONTRIBUTING.md, since 2026-07-30) ends at a
+**Verification** stage — a human confirms the implementation works — and its PR
+rules require explaining "how the issue's verification plan was carried out."
+When the implementer is an agent sealing its work with this adapter, that
+explanation can be records instead of prose:
+
+```bash
+# during In progress: the agent's tool calls seal into ledger.jsonl as usual
+# at Verification:
+capsule-emit evidence --ledger ledger.jsonl --issue <ready-issue-url> --out comment.md
+```
+
+The output is a markdown comment for the PR/issue: per-step sealed records
+(action, verdict, effect, capsule_id), the chain summary, offline verify
+commands, and a viewer permalink. Fail-closed — every capsule is re-verified
+locally at generation time; a tampered ledger refuses to render. Runnable
+end-to-end: `examples/goose-capsule/contribution_demo.py` (offline by
+default), with a committed real run at
+`examples/goose-capsule/evidence/verification-comment.md`.
+
 ## Notes
 
 - **Every capsule carries `runtime="mcp"`** in `compute_attestation` automatically.
