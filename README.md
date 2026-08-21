@@ -31,8 +31,8 @@ go get github.com/ethanyzhang/capsule-producer-go
 
 ## Complete HTTP example
 
-An action fact is an immutable, minimized snapshot of what the application observed. It contains metadata
-and content digests, never the raw request or response body.
+An action fact is a detached, minimized value snapshot of what the application observed. It contains
+metadata and content digests, never the raw request or response body.
 
 ```go
 package main
@@ -88,7 +88,7 @@ func createStatement() ([]byte, error) {
         return nil, err
     }
 
-    result, err := producer.Create(producer.Input{
+    input := producer.Input{
         ActionID:   "slack-send-018f6f4d",
         ActionType: producer.ActionTypeDecide,
         Operator:   "local-operator",
@@ -107,7 +107,8 @@ func createStatement() ([]byte, error) {
             RequestDigest:        digests.RequestDigest,
             ResponseDigest:       digests.ResponseDigest,
         },
-    }, identity)
+    }
+    result, err := producer.Create(input, identity)
     if err != nil {
         return nil, err
     }
@@ -152,9 +153,25 @@ type Exchange struct {
 `Provider` and `Operation` belong to the exchange. Request and response implementations must not
 repeat those fields.
 
-The included HTTP implementation stores copied strings, lengths, and SHA-256 digests. It never
-retains `*http.Request`, `*http.Response`, headers, or body bytes. Other transports can implement
-the same interfaces without adding HTTP concepts to the producer.
+The included HTTP implementation stores a detached value snapshot of strings, lengths, and SHA-256
+digests. It never retains `*http.Request`, `*http.Response`, headers, or body bytes. Other transports
+can implement the same interfaces without adding HTTP concepts to the producer.
+
+HTTP provider codes are trimmed and must contain at most 64 ASCII letters, digits, `_`, `-`, or `.`.
+An unrepresentable code returns an error instead of being replaced with a value the provider did not
+return. Evidence methods revalidate snapshots, including values constructed directly rather than by
+the provided constructors.
+All text entering a digest or signed payload must be valid UTF-8. HTTP media types are reduced to
+their base type on both construction paths, so equivalent snapshots produce the same evidence.
+Evidence numbers must use canonical integer spelling; floats and hand-built non-JSON `json.Number`
+values are rejected before hashing.
+
+Custom `RequestFact` and `ResponseFact` implementations may return only JSON-DIGEST-compatible
+values: `bool`, `string`, `json.Number`, non-empty `[]any`, and non-empty `map[string]any`. Represent
+integers as `json.Number`; Go integer types, floats, typed slices such as `[]string`, and arbitrary
+structs are rejected with the failing evidence path. Nil and empty containers are also rejected.
+AAC normalization removes them when they are object members; rejecting them in every position avoids
+giving the same value different digest semantics inside an array.
 
 ## Evidence digests
 
@@ -202,6 +219,24 @@ local producer signature     → attestation_mode=self_attested
 
 ## Capsule ID and chain
 
+Continuing the complete example above, link a new capsule to the result already created by passing
+that result's Capsule ID to `Input.Chain`:
+
+```go
+nextInput := input
+nextInput.ActionID = "slack-send-018f6f4d-confirmation"
+nextInput.Timestamp = time.Now()
+nextInput.Chain = &producer.Chain{
+    ParentCapsuleID: result.CapsuleID,
+    Relation:        producer.ChainConfirms,
+}
+next, err := producer.Create(nextInput, identity)
+```
+
+The built-in relations are `ChainConfirms`, `ChainSupersedes`, and `ChainEpochOpens`. The relation
+is part of the signed payload. This producer library does not store capsules, look up the parent,
+verify that the parent exists, or traverse a chain. A ledger or application store owns those jobs.
+
 AAC calculates `capsule_id` as JSON-DIGEST over the payload after excluding top-level `capsule_id`
 and `chain`.
 
@@ -222,6 +257,11 @@ constructor `NewEd25519SigningIdentity` derives the key ID as SHA-256 over the p
 - supported critical and unprotected headers;
 - CWT issuer, subject, statement type, action type, and decision ID bindings;
 - AAC Class 1 payload verification using the upstream verifier.
+
+The JSON decoder rejects trailing values, trailing non-whitespace data, and duplicate object keys so
+the signed payload has one interoperable interpretation. It also rejects excessive nesting before a
+hostile payload can exhaust the process stack. A Class 1 failure returns a `*Class1Error`
+and a partial `Verification` whose structured findings remain available to the caller.
 
 Receipt and transparency-log verification are intentionally outside the initial library.
 

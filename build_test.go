@@ -1,6 +1,7 @@
 package producer
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -143,6 +144,15 @@ func TestBuildRejectsInvalidInput(t *testing.T) {
 		{name: "epoch opens", mutate: func(input *Input) {
 			input.Chain = &Chain{ParentCapsuleID: parentDigest, Relation: ChainEpochOpens}
 		}, contains: "epoch id"},
+		{name: "invalid UTF-8 identity", mutate: func(input *Input) {
+			input.ActionID = string([]byte{'a', 0xff})
+		}, contains: "UTF-8"},
+		{name: "invalid UTF-8 effect", mutate: func(input *Input) {
+			input.Effect.Type = string([]byte{'t', 0xff})
+		}, contains: "UTF-8"},
+		{name: "never-dispatch verdict with effect", mutate: func(input *Input) {
+			input.Disposition.VerdictClass = VerdictDenied
+		}, contains: "verdict_effect_conflict"},
 	}
 
 	for _, test := range tests {
@@ -160,6 +170,43 @@ func TestDecodePayloadRejectsInvalidJSONAndNonObject(t *testing.T) {
 	require.Error(t, err)
 	_, err = DecodePayload([]byte(`[]`))
 	require.ErrorContains(t, err, "not an object")
+	_, err = DecodePayload([]byte(`{} null`))
+	require.ErrorContains(t, err, "trailing JSON value")
+	_, err = DecodePayload([]byte(`{"action_id":"first","action_id":"second"}`))
+	require.ErrorContains(t, err, "duplicate object key")
+	_, err = DecodePayload([]byte{'{', '"', 'x', '"', ':', '"', 0xff, '"', '}'})
+	require.ErrorContains(t, err, "UTF-8")
+	deep := `{"value":` + strings.Repeat("[", maxJSONDepth) + strings.Repeat("]", maxJSONDepth) + `}`
+	_, err = DecodePayload([]byte(deep))
+	require.ErrorContains(t, err, "maximum depth")
+}
+
+func TestBuildVerdictEffectOrthogonality(t *testing.T) {
+	verdicts := []VerdictClass{
+		VerdictBlocked, VerdictHITLDispatched, VerdictDenied, VerdictEngineFailure,
+		VerdictDeferred, VerdictNeedsDecision, VerdictExpired, VerdictEscalated, VerdictResolved,
+	}
+	statuses := []EffectStatus{EffectDispatched, EffectConfirmed, EffectFailed, EffectReverted}
+	for _, verdict := range verdicts {
+		for _, status := range statuses {
+			t.Run(string(verdict)+"/"+string(status), func(t *testing.T) {
+				input := validInput()
+				input.Disposition.VerdictClass = verdict
+				input.Effect.Status = status
+				if status != EffectConfirmed {
+					input.Effect.ResponseDigest = ""
+				}
+				_, err := Build(input)
+				require.ErrorContains(t, err, "verdict_effect_conflict")
+			})
+		}
+	}
+
+	input := validInput()
+	input.Disposition.VerdictClass = VerdictDenied
+	input.Effect = &Effect{Type: "test.tool.send", Status: EffectPlanned, IrreversibilityClass: IrreversibilityOneWayConsequential}
+	_, err := Build(input)
+	require.NoError(t, err)
 }
 
 func validInput() Input {

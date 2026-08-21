@@ -3,6 +3,7 @@ package httpfact
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -32,13 +33,13 @@ func TestCaptureResponseNormalizesMetadata(t *testing.T) {
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json; charset=utf-8"}},
 	}
-	fact, err := CaptureResponse(response, []byte(`{"ok":true}`), " invalid provider code ", true)
+	fact, err := CaptureResponse(response, []byte(`{"ok":true}`), " ok ", true)
 	require.NoError(t, err)
 	evidence, err := fact.ResponseEvidence()
 	require.NoError(t, err)
 	assert.Equal(t, json.Number("200"), evidence["status_code"])
 	assert.Equal(t, "application/json", evidence["media_type"])
-	assert.Equal(t, "provider_error", evidence["provider_code"])
+	assert.Equal(t, "ok", evidence["provider_code"])
 	assert.Equal(t, true, evidence["accepted"])
 	assert.True(t, fact.ResponseObserved())
 }
@@ -55,6 +56,8 @@ func TestHTTPFactConstructorsRejectInvalidInput(t *testing.T) {
 	require.ErrorContains(t, err, "length")
 	_, err = NewRequestWithDigest(http.MethodPost, "api", 1, digest[:4])
 	require.ErrorContains(t, err, "SHA-256")
+	_, err = NewRequestWithDigest(http.MethodPost, string([]byte{'a', 0xff}), 1, digest[:])
+	require.ErrorContains(t, err, "UTF-8")
 
 	_, err = CaptureResponse(nil, nil, "", false)
 	require.ErrorContains(t, err, "required")
@@ -67,7 +70,32 @@ func TestHTTPFactConstructorsRejectInvalidInput(t *testing.T) {
 	_, err = NewResponseWithDigest(200, "", "", 1, nil, false)
 	require.ErrorContains(t, err, "SHA-256")
 
-	fact, err := NewResponseWithDigest(200, longCode, "text/plain", 1, digest[:], true)
+	_, err = NewResponseWithDigest(200, longCode, "text/plain", 1, digest[:], true)
+	require.ErrorContains(t, err, "64 bytes")
+	_, err = NewResponseWithDigest(200, "rate limit", "text/plain", 1, digest[:], true)
+	require.ErrorContains(t, err, "unsupported character")
+	_, err = NewResponseWithDigest(200, "ok", string([]byte{'t', 0xff}), 1, digest[:], true)
+	require.ErrorContains(t, err, "UTF-8")
+	fact, err := NewResponseWithDigest(200, "provider_error", "text/plain", 1, digest[:], true)
 	require.NoError(t, err)
 	assert.Equal(t, "provider_error", fact.ProviderCode)
+}
+
+func TestEvidenceMethodsRejectInvalidDirectSnapshots(t *testing.T) {
+	_, err := (Request{}).RequestEvidence()
+	require.ErrorContains(t, err, "method")
+	_, err = (Request{Method: http.MethodPost, ContentDigest: "bad"}).RequestEvidence()
+	require.ErrorContains(t, err, "SHA-256")
+	_, err = (Response{}).ResponseEvidence()
+	require.ErrorContains(t, err, "status code")
+	_, err = (Response{StatusCode: 200, ContentDigest: "bad"}).ResponseEvidence()
+	require.ErrorContains(t, err, "SHA-256")
+	digest := sha256.Sum256([]byte("body"))
+	evidence, err := (Response{
+		StatusCode: 200, ProviderCode: " ok ", MediaType: "application/json; charset=utf-8",
+		ContentDigest: fmt.Sprintf("%x", digest),
+	}).ResponseEvidence()
+	require.NoError(t, err)
+	assert.Equal(t, "ok", evidence["provider_code"])
+	assert.Equal(t, "application/json", evidence["media_type"])
 }

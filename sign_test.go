@@ -3,8 +3,11 @@ package producer
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
+	"strings"
 	"testing"
 
+	"github.com/action-state-group/agent-action-capsule/go/canonical"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/veraison/go-cose"
@@ -200,6 +203,70 @@ func TestVerifyStatementRejectsAlgorithmProfilePayloadAndClass1Failures(t *testi
 
 	_, err = VerifyStatement(result.Statement, wrongAlgorithmVerifier{}, identity.KeyID)
 	require.ErrorContains(t, err, "algorithm")
+}
+
+func TestVerifyStatementRejectsAmbiguousJSONPayloads(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	identity, err := NewEd25519SigningIdentity(privateKey)
+	require.NoError(t, err)
+	result, err := Create(validInput(), identity)
+	require.NoError(t, err)
+	verifier, err := NewEd25519Verifier(publicKey)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		payload  []byte
+		contains string
+	}{
+		{name: "trailing value", payload: append(append([]byte(nil), result.Payload...), []byte(` null`)...), contains: "trailing JSON value"},
+		{name: "trailing garbage", payload: append(append([]byte(nil), result.Payload...), []byte(` garbage`)...), contains: "trailing data"},
+		{name: "duplicate key", payload: []byte(strings.Replace(string(result.Payload), `{"action_id":`, `{"action_id":"shadow","action_id":`, 1)), contains: "duplicate object key"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var message cose.Sign1Message
+			require.NoError(t, message.UnmarshalCBOR(result.Statement))
+			message.Payload = test.payload
+			resign(t, &message, identity.Signer)
+			statement, err := message.MarshalCBOR()
+			require.NoError(t, err)
+			_, err = VerifyStatement(statement, verifier, identity.KeyID)
+			require.ErrorContains(t, err, test.contains)
+		})
+	}
+}
+
+func TestVerifyStatementReturnsStructuredClass1Failure(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	identity, err := NewEd25519SigningIdentity(privateKey)
+	require.NoError(t, err)
+	result, err := Create(validInput(), identity)
+	require.NoError(t, err)
+	verifier, err := NewEd25519Verifier(publicKey)
+	require.NoError(t, err)
+
+	var message cose.Sign1Message
+	require.NoError(t, message.UnmarshalCBOR(result.Statement))
+	payload, err := DecodePayload(message.Payload)
+	require.NoError(t, err)
+	payload["capsule_id"] = strings.Repeat("0", 64)
+	message.Payload, err = canonical.JCS(payload)
+	require.NoError(t, err)
+	resign(t, &message, identity.Signer)
+	statement, err := message.MarshalCBOR()
+	require.NoError(t, err)
+
+	verified, err := VerifyStatement(statement, verifier, identity.KeyID)
+	require.Error(t, err)
+	var class1Error *Class1Error
+	require.True(t, errors.As(err, &class1Error))
+	require.NotEmpty(t, class1Error.Findings)
+	require.NotEmpty(t, verified.Class1.Findings)
+	assert.NotContains(t, err.Error(), "0x")
+	assert.Contains(t, err.Error(), "code=capsule_id_mismatch")
 }
 
 type wrongAlgorithmVerifier struct{}

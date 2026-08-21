@@ -4,25 +4,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/action-state-group/agent-action-capsule/go/canonical"
 )
+
+var jsonIntegerPattern = regexp.MustCompile(`^(0|[1-9][0-9]*|-[1-9][0-9]*)$`)
 
 const (
 	// EffectEvidenceSchemaV1 identifies the ordered evidence-envelope convention
 	// defined by this library. It is not a field defined by the AAC specification.
 	EffectEvidenceSchemaV1 = "urn:capsule-producer:effect-evidence:v1"
+	maxEvidenceDepth       = 1000
 )
 
 // RequestFact returns the minimized canonical value for one outbound request.
+// Values may contain bool, string, json.Number, non-empty []any, and non-empty
+// map[string]any. Numbers must be canonical JSON integers represented as
+// json.Number. Nil and empty containers are rejected uniformly because AAC
+// normalization removes them when they are object members; allowing them only
+// in array positions would make their digest meaning depend on location.
 type RequestFact interface {
 	RequestEvidence() (map[string]any, error)
 }
 
 // ResponseFact returns the minimized canonical value for one response and says
-// whether a response was actually observed.
+// whether a response was actually observed. Its value contract matches RequestFact.
 type ResponseFact interface {
 	ResponseEvidence() (map[string]any, error)
 	ResponseObserved() bool
@@ -79,6 +89,12 @@ func DigestExchanges(exchanges []Exchange) (Digests, error) {
 		}
 		if strings.TrimSpace(exchange.Operation) == "" {
 			return Digests{}, fmt.Errorf("exchange %d operation is required", index+1)
+		}
+		if !utf8.ValidString(exchange.Provider) {
+			return Digests{}, fmt.Errorf("exchange %d provider must be valid UTF-8", index+1)
+		}
+		if !utf8.ValidString(exchange.Operation) {
+			return Digests{}, fmt.Errorf("exchange %d operation must be valid UTF-8", index+1)
 		}
 		if nilInterface(exchange.Request) {
 			return Digests{}, fmt.Errorf("exchange %d request fact is required", index+1)
@@ -145,6 +161,52 @@ func validateNestedEvidence(value map[string]any) error {
 		if _, exists := value[reserved]; exists {
 			return fmt.Errorf("reserved exchange field %q must not be repeated", reserved)
 		}
+	}
+	return validateEvidenceValue(value, "$", 1)
+}
+
+func validateEvidenceValue(value any, path string, depth int) error {
+	if depth > maxEvidenceDepth {
+		return fmt.Errorf("evidence exceeds maximum depth of %d", maxEvidenceDepth)
+	}
+	switch typed := value.(type) {
+	case nil:
+		return fmt.Errorf("evidence value at %s must not be nil", path)
+	case bool:
+	case string:
+		if !utf8.ValidString(typed) {
+			return fmt.Errorf("evidence text at %s must be valid UTF-8", path)
+		}
+	case json.Number:
+		if !utf8.ValidString(string(typed)) {
+			return fmt.Errorf("evidence number at %s must be valid UTF-8", path)
+		}
+		if !jsonIntegerPattern.MatchString(string(typed)) {
+			return fmt.Errorf("evidence number at %s must be a canonical JSON integer", path)
+		}
+	case map[string]any:
+		if len(typed) == 0 {
+			return fmt.Errorf("evidence object at %s must not be empty", path)
+		}
+		for key, item := range typed {
+			if !utf8.ValidString(key) {
+				return fmt.Errorf("evidence object key at %s must be valid UTF-8", path)
+			}
+			if err := validateEvidenceValue(item, path+"."+key, depth+1); err != nil {
+				return err
+			}
+		}
+	case []any:
+		if len(typed) == 0 {
+			return fmt.Errorf("evidence array at %s must not be empty", path)
+		}
+		for index, item := range typed {
+			if err := validateEvidenceValue(item, fmt.Sprintf("%s[%d]", path, index), depth+1); err != nil {
+				return err
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported evidence value at %s: %T; use bool, string, json.Number, non-empty []any, or non-empty map[string]any", path, value)
 	}
 	return nil
 }

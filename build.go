@@ -1,16 +1,21 @@
 package producer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/action-state-group/agent-action-capsule/go/canonical"
 )
 
 var hexDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+const maxJSONDepth = 1000
 
 // Build validates input, derives assurance, computes capsule_id with the
 // upstream AAC implementation, and returns deterministic JCS payload bytes.
@@ -50,12 +55,19 @@ func Build(input Input) (BuiltPayload, error) {
 			"relation":          string(input.Chain.Relation),
 		}
 	}
+	if err := validatePayloadText(payload, "$"); err != nil {
+		return BuiltPayload{}, err
+	}
 
 	capsuleID, err := canonical.ComputeCapsuleID(payload)
 	if err != nil {
 		return BuiltPayload{}, fmt.Errorf("compute capsule id: %w", err)
 	}
 	payload["capsule_id"] = capsuleID
+	class1 := verifyClass1(payload)
+	if !class1.OK {
+		return BuiltPayload{}, fmt.Errorf("built payload failed AAC Class 1: %w", newClass1Error(class1.Findings))
+	}
 	encoded, err := canonical.JCS(payload)
 	if err != nil {
 		return BuiltPayload{}, fmt.Errorf("encode canonical capsule payload: %w", err)
@@ -172,6 +184,31 @@ func validateEffect(effect Effect) error {
 	return nil
 }
 
+func validatePayloadText(value any, path string) error {
+	switch typed := value.(type) {
+	case string:
+		if !utf8.ValidString(typed) {
+			return fmt.Errorf("payload text at %s must be valid UTF-8", path)
+		}
+	case map[string]any:
+		for key, item := range typed {
+			if !utf8.ValidString(key) {
+				return fmt.Errorf("payload key at %s must be valid UTF-8", path)
+			}
+			if err := validatePayloadText(item, path+"."+key); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for index, item := range typed {
+			if err := validatePayloadText(item, fmt.Sprintf("%s[%d]", path, index)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func dispositionMap(disposition Disposition) map[string]any {
 	result := map[string]any{
 		"decision":       string(disposition.Decision),
@@ -229,9 +266,20 @@ func assuranceMap(effect *Effect, chain *Chain) map[string]any {
 
 // DecodePayload decodes payload bytes with json.Number preservation.
 func DecodePayload(payload []byte) (map[string]any, error) {
-	decoded, err := canonicalDecode(payload)
+	if !utf8.Valid(payload) {
+		return nil, fmt.Errorf("decode capsule payload: JSON must be UTF-8")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	decoded, err := decodeJSONValue(decoder, 1)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode capsule payload: %w", err)
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("decode capsule payload: trailing JSON value")
+		}
+		return nil, fmt.Errorf("decode capsule payload: trailing data: %w", err)
 	}
 	result, ok := decoded.(map[string]any)
 	if !ok {
@@ -240,12 +288,57 @@ func DecodePayload(payload []byte) (map[string]any, error) {
 	return result, nil
 }
 
-func canonicalDecode(payload []byte) (any, error) {
-	var value any
-	decoder := json.NewDecoder(strings.NewReader(string(payload)))
-	decoder.UseNumber()
-	if err := decoder.Decode(&value); err != nil {
-		return nil, fmt.Errorf("decode capsule payload: %w", err)
+func decodeJSONValue(decoder *json.Decoder, depth int) (any, error) {
+	if depth > maxJSONDepth {
+		return nil, fmt.Errorf("JSON exceeds maximum depth of %d", maxJSONDepth)
 	}
-	return value, nil
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	delimiter, ok := token.(json.Delim)
+	if !ok {
+		return token, nil
+	}
+	switch delimiter {
+	case '{':
+		result := make(map[string]any)
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return nil, fmt.Errorf("object key is not a string")
+			}
+			if _, exists := result[key]; exists {
+				return nil, fmt.Errorf("duplicate object key %q", key)
+			}
+			value, err := decodeJSONValue(decoder, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = value
+		}
+		if _, err := decoder.Token(); err != nil {
+			return nil, err
+		}
+		return result, nil
+	case '[':
+		var result []any
+		for decoder.More() {
+			value, err := decodeJSONValue(decoder, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, value)
+		}
+		if _, err := decoder.Token(); err != nil {
+			return nil, err
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("unexpected JSON delimiter %q", delimiter)
+	}
 }

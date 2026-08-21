@@ -100,6 +100,15 @@ func TestDigestExchangesRejectsInvalidFacts(t *testing.T) {
 		{name: "request repeats identity", exchange: validExchange(), contains: "must not be repeated"},
 		{name: "response error", exchange: validExchange(), contains: "project exchange 1 response"},
 		{name: "response repeats identity", exchange: validExchange(), contains: "must not be repeated"},
+		{name: "provider UTF-8", exchange: validExchange(), contains: "provider must be valid UTF-8"},
+		{name: "request evidence UTF-8", exchange: validExchange(), contains: "must be valid UTF-8"},
+		{name: "cyclic evidence", exchange: validExchange(), contains: "maximum depth"},
+		{name: "invalid evidence number", exchange: validExchange(), contains: "canonical JSON integer"},
+		{name: "unsupported evidence value", exchange: validExchange(), contains: "$.count: int"},
+		{name: "unsupported nested evidence value", exchange: validExchange(), contains: "$.items[0]: []string"},
+		{name: "nil evidence value", exchange: validExchange(), contains: "$.optional must not be nil"},
+		{name: "empty evidence array", exchange: validExchange(), contains: "$.items must not be empty"},
+		{name: "empty evidence object", exchange: validExchange(), contains: "$.details must not be empty"},
 	}
 
 	for _, test := range tests {
@@ -128,6 +137,26 @@ func TestDigestExchangesRejectsInvalidFacts(t *testing.T) {
 				exchange.Response = responseFact{observed: true, err: errors.New("broken")}
 			case "response repeats identity":
 				exchange.Response = responseFact{observed: true, value: map[string]any{"sequence": json.Number("1")}}
+			case "provider UTF-8":
+				exchange.Provider = string([]byte{'s', 0xff})
+			case "request evidence UTF-8":
+				exchange.Request = requestFact{value: map[string]any{"nested": []any{string([]byte{'x', 0xff})}}}
+			case "cyclic evidence":
+				cycle := map[string]any{}
+				cycle["self"] = cycle
+				exchange.Request = requestFact{value: cycle}
+			case "invalid evidence number":
+				exchange.Request = requestFact{value: map[string]any{"body_length": json.Number(`48,"provider":"forged"`)}}
+			case "unsupported evidence value":
+				exchange.Request = requestFact{value: map[string]any{"count": 1}}
+			case "unsupported nested evidence value":
+				exchange.Request = requestFact{value: map[string]any{"items": []any{[]string{"x"}}}}
+			case "nil evidence value":
+				exchange.Request = requestFact{value: map[string]any{"optional": nil}}
+			case "empty evidence array":
+				exchange.Request = requestFact{value: map[string]any{"items": []any{}}}
+			case "empty evidence object":
+				exchange.Request = requestFact{value: map[string]any{"details": map[string]any{}}}
 			}
 			_, err := DigestExchanges([]Exchange{exchange})
 			require.ErrorContains(t, err, test.contains)
@@ -140,6 +169,26 @@ func validExchange() Exchange {
 		Provider: "slack", Operation: "chat.postMessage",
 		Request:  requestFact{value: map[string]any{"content_digest": digest("1")}},
 		Response: responseFact{observed: true, value: map[string]any{"content_digest": digest("2")}},
+	}
+}
+
+func TestDigestExchangesRejectsNonCanonicalNumbers(t *testing.T) {
+	for _, value := range []string{"", "N/A", "007", "+5", "0x10", "-", "-0", "1.0", "1e2", `48,"buf":"abab"`} {
+		t.Run(value, func(t *testing.T) {
+			exchange := validExchange()
+			exchange.Request = requestFact{value: map[string]any{"value": json.Number(value)}}
+			_, err := DigestExchanges([]Exchange{exchange})
+			require.ErrorContains(t, err, "canonical JSON integer")
+		})
+	}
+
+	for _, value := range []string{"0", "1", "-1", "9007199254740991", "-9007199254740991"} {
+		t.Run("valid/"+value, func(t *testing.T) {
+			exchange := validExchange()
+			exchange.Request = requestFact{value: map[string]any{"value": json.Number(value)}}
+			_, err := DigestExchanges([]Exchange{exchange})
+			require.NoError(t, err)
+		})
 	}
 }
 

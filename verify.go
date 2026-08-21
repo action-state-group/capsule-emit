@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/action-state-group/agent-action-capsule/go/verify"
 	"github.com/veraison/go-cose"
@@ -16,6 +18,33 @@ type Verification struct {
 	Payload map[string]any
 	KeyID   []byte
 	Class1  verify.VerificationResult
+}
+
+// Class1Error reports structured AAC Class 1 findings.
+type Class1Error struct {
+	Findings []verify.Finding
+}
+
+// Error returns a stable rendering without exposing pointer addresses from
+// the upstream finding representation.
+func (e *Class1Error) Error() string {
+	parts := make([]string, 0, len(e.Findings))
+	for _, finding := range e.Findings {
+		check := "none"
+		if finding.Check != nil {
+			check = strconv.Itoa(*finding.Check)
+		}
+		parts = append(parts, fmt.Sprintf("check=%s severity=%s code=%s detail=%s", check, finding.Severity, finding.Code, finding.Detail))
+	}
+	return "AAC Class 1 verification failed: " + strings.Join(parts, "; ")
+}
+
+func newClass1Error(findings []verify.Finding) *Class1Error {
+	return &Class1Error{Findings: append([]verify.Finding(nil), findings...)}
+}
+
+func verifyClass1(payload map[string]any) verify.VerificationResult {
+	return verify.Verify(payload, nil, knownRegistries())
 }
 
 // NewEd25519Verifier creates a COSE verifier for an Ed25519 public key.
@@ -62,29 +91,26 @@ func VerifyStatement(statement []byte, verifier cose.Verifier, expectedKeyID []b
 		return Verification{}, err
 	}
 
-	decoded, err := verify.DecodeCapsuleJSON(message.Payload)
+	payload, err := DecodePayload(message.Payload)
 	if err != nil {
 		return Verification{}, fmt.Errorf("decode Capsule payload: %w", err)
-	}
-	payload, ok := decoded.(map[string]any)
-	if !ok {
-		return Verification{}, fmt.Errorf("Capsule payload is not an object")
 	}
 	if payload["spec_version"] != SpecVersion || payload["format_version"] != FormatVersion {
 		return Verification{}, fmt.Errorf("unsupported Capsule profile")
 	}
-	class1 := verify.Verify(decoded, nil, knownRegistries())
+	class1 := verifyClass1(payload)
+	verification := Verification{
+		Payload: payload,
+		KeyID:   append([]byte(nil), keyID...),
+		Class1:  class1,
+	}
 	if !class1.OK {
-		return Verification{}, fmt.Errorf("AAC Class 1 verification failed: %v", class1.Findings)
+		return verification, newClass1Error(class1.Findings)
 	}
 	if err := validateCWTClaims(message, payload); err != nil {
 		return Verification{}, err
 	}
-	return Verification{
-		Payload: payload,
-		KeyID:   append([]byte(nil), keyID...),
-		Class1:  class1,
-	}, nil
+	return verification, nil
 }
 
 func validateStatementHeaders(message cose.Sign1Message) error {
