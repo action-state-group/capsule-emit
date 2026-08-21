@@ -120,7 +120,10 @@ func (response Response) ResponseEvidence() (map[string]any, error) {
 // ResponseObserved reports true because Response represents a received HTTP response.
 func (Response) ResponseObserved() bool { return true }
 
-func normalizedProviderCode(code string) (string, error) {
+// NormalizeProviderCode returns the provider-code representation used in
+// response evidence. Applications that substitute hostile provider values can
+// call it before constructing a fact without copying these rules.
+func NormalizeProviderCode(code string) (string, error) {
 	code = strings.TrimSpace(code)
 	if len(code) > 64 {
 		return "", fmt.Errorf("http response provider code must not exceed 64 bytes")
@@ -133,7 +136,9 @@ func normalizedProviderCode(code string) (string, error) {
 	return code, nil
 }
 
-func normalizedMediaType(mediaType string) (string, error) {
+// NormalizeMediaType returns the media-type representation used in response
+// evidence, without parameters.
+func NormalizeMediaType(mediaType string) (string, error) {
 	if !utf8.ValidString(mediaType) {
 		return "", fmt.Errorf("http response media type must be valid UTF-8")
 	}
@@ -166,11 +171,11 @@ func validateResponse(response Response) (string, string, error) {
 	if !validSHA256Hex(response.ContentDigest) {
 		return "", "", fmt.Errorf("http response content digest must be lowercase hexadecimal SHA-256")
 	}
-	providerCode, err := normalizedProviderCode(response.ProviderCode)
+	providerCode, err := NormalizeProviderCode(response.ProviderCode)
 	if err != nil {
 		return "", "", err
 	}
-	mediaType, err := normalizedMediaType(response.MediaType)
+	mediaType, err := NormalizeMediaType(response.MediaType)
 	if err != nil {
 		return "", "", err
 	}

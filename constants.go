@@ -91,6 +91,8 @@ const (
 type ChainRelation string
 
 const (
+	// ChainConfirms is a library convenience extension. It is not registered
+	// by AAC draft-02, so verification reports it as informational.
 	ChainConfirms   ChainRelation = "confirms"
 	ChainSupersedes ChainRelation = "supersedes"
 	ChainEpochOpens ChainRelation = "epoch_opens"

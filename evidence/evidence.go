@@ -47,6 +47,26 @@ type Exchange struct {
 	Response  ResponseFact
 }
 
+// ValidateExchangeIdentity checks the provider and operation fields shared by
+// request and response evidence. Applications should call it before dispatch
+// when an invalid identity would otherwise make terminal digesting fail after
+// an effect has already occurred.
+func ValidateExchangeIdentity(provider, operation string) error {
+	if strings.TrimSpace(provider) == "" {
+		return fmt.Errorf("provider is required")
+	}
+	if strings.TrimSpace(operation) == "" {
+		return fmt.Errorf("operation is required")
+	}
+	if !utf8.ValidString(provider) {
+		return fmt.Errorf("provider must be valid UTF-8")
+	}
+	if !utf8.ValidString(operation) {
+		return fmt.Errorf("operation must be valid UTF-8")
+	}
+	return nil
+}
+
 // Digests binds the ordered request facts and, when complete, response facts.
 type Digests struct {
 	RequestDigest  string
@@ -84,17 +104,8 @@ func DigestExchanges(exchanges []Exchange) (Digests, error) {
 	responses := make([]any, 0, len(exchanges))
 	responseKnown := true
 	for index, exchange := range exchanges {
-		if strings.TrimSpace(exchange.Provider) == "" {
-			return Digests{}, fmt.Errorf("exchange %d provider is required", index+1)
-		}
-		if strings.TrimSpace(exchange.Operation) == "" {
-			return Digests{}, fmt.Errorf("exchange %d operation is required", index+1)
-		}
-		if !utf8.ValidString(exchange.Provider) {
-			return Digests{}, fmt.Errorf("exchange %d provider must be valid UTF-8", index+1)
-		}
-		if !utf8.ValidString(exchange.Operation) {
-			return Digests{}, fmt.Errorf("exchange %d operation must be valid UTF-8", index+1)
+		if err := ValidateExchangeIdentity(exchange.Provider, exchange.Operation); err != nil {
+			return Digests{}, fmt.Errorf("exchange %d %w", index+1, err)
 		}
 		if nilInterface(exchange.Request) {
 			return Digests{}, fmt.Errorf("exchange %d request fact is required", index+1)

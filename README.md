@@ -233,9 +233,11 @@ nextInput.Chain = &producer.Chain{
 next, err := producer.Create(nextInput, identity)
 ```
 
-The built-in relations are `ChainConfirms`, `ChainSupersedes`, and `ChainEpochOpens`. The relation
-is part of the signed payload. This producer library does not store capsules, look up the parent,
-verify that the parent exists, or traverse a chain. A ledger or application store owns those jobs.
+The draft-02 registered relations are `ChainSupersedes` and `ChainEpochOpens`. `ChainConfirms` is a
+library convenience extension, not a draft-02 registered value, so verification reports it as an
+informational finding rather than rejecting the Capsule. The relation is part of the signed payload.
+This producer library does not store capsules, look up the parent, verify that the parent exists, or
+traverse a chain. A ledger or application store owns those jobs.
 
 AAC calculates `capsule_id` as JSON-DIGEST over the payload after excluding top-level `capsule_id`
 and `chain`.

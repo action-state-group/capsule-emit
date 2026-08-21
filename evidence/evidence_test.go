@@ -164,6 +164,14 @@ func TestDigestExchangesRejectsInvalidFacts(t *testing.T) {
 	}
 }
 
+func TestValidateExchangeIdentity(t *testing.T) {
+	require.NoError(t, ValidateExchangeIdentity("slack", "chat.postMessage"))
+	require.ErrorContains(t, ValidateExchangeIdentity(" ", "chat.postMessage"), "provider")
+	require.ErrorContains(t, ValidateExchangeIdentity("slack", " "), "operation")
+	require.ErrorContains(t, ValidateExchangeIdentity("slack\xff", "chat.postMessage"), "UTF-8")
+	require.ErrorContains(t, ValidateExchangeIdentity("slack", "chat.postMessage\xff"), "UTF-8")
+}
+
 func validExchange() Exchange {
 	return Exchange{
 		Provider: "slack", Operation: "chat.postMessage",

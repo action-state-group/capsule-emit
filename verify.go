@@ -188,8 +188,16 @@ func knownRegistries() map[string]map[string]bool {
 			string(IrreversibilityOneWayConsequential), string(IrreversibilityOneWayTerminal),
 		),
 		"effect_attestation": set(string(AttestationGateExecuted), string(AttestationRuntimeClaimed)),
-		"chain.relation":     set(string(ChainConfirms), string(ChainSupersedes), string(ChainEpochOpens)),
+		"chain.relation":     set(string(ChainSupersedes), string(ChainEpochOpens)),
 	}
+}
+
+// IsDraft02IrreversibilityClass reports whether value is one of the
+// irreversibility classes seeded by AAC draft-02. Registry extensions remain
+// valid Capsules, but applications may use this predicate when their own
+// configuration intentionally permits only the seeded vocabulary.
+func IsDraft02IrreversibilityClass(value IrreversibilityClass) bool {
+	return knownRegistries()["irreversibility_class"][string(value)]
 }
 
 func claimMap(value any) map[any]any {

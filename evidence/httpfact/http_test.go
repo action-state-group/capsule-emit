@@ -44,6 +44,20 @@ func TestCaptureResponseNormalizesMetadata(t *testing.T) {
 	assert.True(t, fact.ResponseObserved())
 }
 
+func TestResponseNormalizers(t *testing.T) {
+	providerCode, err := NormalizeProviderCode(" ok ")
+	require.NoError(t, err)
+	assert.Equal(t, "ok", providerCode)
+	_, err = NormalizeProviderCode("not allowed")
+	require.ErrorContains(t, err, "unsupported character")
+
+	mediaType, err := NormalizeMediaType(" application/json; charset=utf-8 ")
+	require.NoError(t, err)
+	assert.Equal(t, "application/json", mediaType)
+	_, err = NormalizeMediaType("application/json\xff")
+	require.ErrorContains(t, err, "UTF-8")
+}
+
 func TestHTTPFactConstructorsRejectInvalidInput(t *testing.T) {
 	digest := sha256.Sum256([]byte("body"))
 	longCode := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
