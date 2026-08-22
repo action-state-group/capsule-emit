@@ -23,7 +23,7 @@ from __future__ import annotations
 import os
 import tempfile
 
-from capsule_emit import InputDigestResult, VerifyReason, emit, verify_input_digest
+from capsule_emit import InputDigestResult, VerifyReason, seal, verify_input_digest
 
 
 def _tmp_ledger() -> str:
@@ -31,11 +31,11 @@ def _tmp_ledger() -> str:
 
 
 def _emit_with(agent_input: dict) -> dict:
-    r = emit(
-        "test_action",
+    r = seal(
+        agent_input,
+        action="test_action",
         operator="op",
         developer="dev",
-        agent_input=agent_input,
         anchor=False,
         ledger=_tmp_ledger(),
     )
@@ -96,7 +96,7 @@ def test_lenient_digest_mismatch_wrong_value() -> None:
 
 def test_lenient_digest_mismatch_absent_digest() -> None:
     """A capsule emitted without agent_input has no stored digest → DIGEST_MISMATCH."""
-    r = emit("ping", operator="op", developer="dev", anchor=False, ledger=_tmp_ledger())
+    r = seal(None, action="ping", operator="op", developer="dev", anchor=False, ledger=_tmp_ledger())
     capsule = r.capsule
     result = verify_input_digest(capsule, {"a": 1})
     assert not result.ok
@@ -247,7 +247,7 @@ def test_canonicalization_id_is_parameterized() -> None:
     """The id value read from CANONICALIZATION_ID must be the same constant
     that was written into the capsule — no hardcoded 'jcs-n' in the verifier."""
     from capsule_emit.numbers import CANONICALIZATION_ID
-    r = emit("ping", operator="op", developer="dev", anchor=False, ledger=_tmp_ledger())
+    r = seal(None, action="ping", operator="op", developer="dev", anchor=False, ledger=_tmp_ledger())
     assert r.capsule["canonicalization_id"] == CANONICALIZATION_ID
     # The verifier does not inspect canonicalization_id (that is the sibling
     # task [capsule-emit-canonicalization-id-emitter]); we assert here only
