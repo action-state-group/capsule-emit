@@ -481,8 +481,11 @@ def verify_inclusion(
         peaks_left_bytes = [_parse_digest_hex(w) for w in proof.peaks_left]
         peaks_right_bytes = [_parse_digest_hex(w) for w in proof.peaks_right]
 
+        # `zip(..., strict=True)` needs Python 3.10+; this package's floor is
+        # 3.9. Lengths are already proven equal above (`len(proof.witness) !=
+        # len(path)` returns False first), so a plain zip is equivalent here.
         acc = leaf_hash(body_digest)
-        for step, sib in zip(path, witness_bytes, strict=True):
+        for step, sib in zip(path, witness_bytes):
             acc = (
                 interior_hash(sib, acc, step.parent_pos)
                 if step.target_is_right
@@ -606,8 +609,11 @@ def verify_consistency(
                 return False
             w_bytes = [_parse_digest_hex(x) for x in w]
 
+            # See verify_inclusion above: lengths already proven equal by the
+            # `len(w) != len(path)` check above, so plain zip is equivalent
+            # to strict=True (unavailable before Python 3.10) here.
             acc = old_peaks_bytes[i]
-            for step, sib in zip(path, w_bytes, strict=True):
+            for step, sib in zip(path, w_bytes):
                 acc = (
                     interior_hash(sib, acc, step.parent_pos)
                     if step.target_is_right

@@ -222,7 +222,10 @@ def test_kat39_inclusion_proofs_verify_for_every_leaf():
             *_peak_and_height_for(store, size, leaf_index),
             core.leaf_index_to_pos(leaf_index),
         )
-        for step, sib_hex in zip(path, proof.witness, strict=True):
+        assert len(path) == len(proof.witness)
+        # zip(..., strict=True) needs Python 3.10+; this package's floor is
+        # 3.9 -- the explicit length assert above gives the same guarantee.
+        for step, sib_hex in zip(path, proof.witness):
             sib = bytes.fromhex(sib_hex)
             acc = (
                 core.interior_hash(sib, acc, step.parent_pos)
