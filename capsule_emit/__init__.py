@@ -48,6 +48,8 @@ from .gate import (
     gate_and_emit,
     run_gate,
 )
+from .holds import Action as HoldAction
+from .holds import HoldDecision, HoldEngine, HoldStatus
 from .ledger import append_to_ledger, read_ledger
 from .ledger import show as ledger_show
 from .ledger import view as ledger_view
@@ -86,6 +88,11 @@ __all__ = [
     "EscalationCallback",
     "run_gate",
     "gate_and_emit",
+    # Holds (reservation-as-capsule)
+    "HoldAction",
+    "HoldDecision",
+    "HoldEngine",
+    "HoldStatus",
     # Ledger
     "append_to_ledger",
     "read_ledger",

@@ -14,15 +14,23 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
 __all__ = ["append_to_ledger", "read_ledger", "view", "view_chains", "show"]
 
+# Physical write safety: two threads calling append_to_ledger for
+# *different* files never contend, but two threads appending to the SAME
+# ledger file must not interleave their writes. This lock guarantees that —
+# it says nothing about business atomicity (e.g. holds/scope.py's per-scope
+# reservation lock), which is a caller-level concern layered on top.
+_append_lock = threading.Lock()
+
 
 def append_to_ledger(capsule: dict, path: str | os.PathLike = "ledger.jsonl") -> None:
     """Append a sealed capsule dict as a single JSON line."""
-    with open(path, "a", encoding="utf-8") as fh:
+    with _append_lock, open(path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(capsule, separators=(",", ":")) + "\n")
 
 
