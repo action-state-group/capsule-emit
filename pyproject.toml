@@ -30,6 +30,7 @@ agentgateway = ["grpcio>=1.60", "protobuf>=5.0"]
 hermes = []
 adk = ["google-adk>=2.0"]
 dapr-agents = ["dapr-agents>=1.0"]
+checkpoint = ["scitt-cose>=0.2.0", "cryptography>=42.0"]
 
 [project.scripts]
 capsule-emit = "capsule_emit.cli:main"
