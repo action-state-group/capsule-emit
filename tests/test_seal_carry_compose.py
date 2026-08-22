@@ -6,6 +6,7 @@ Surface of record: ``_work/api-verb-naming-design-2026-08-21.md`` §7.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import subprocess
 import sys
 import uuid
@@ -17,6 +18,16 @@ from agent_action_capsule.verify import verify
 import capsule_emit
 import capsule_emit.surface as surface_module
 from capsule_emit import Capsule, carry, compose, emit, seal
+
+# agent_action_capsule/__init__.py does `from .emit import ... emit`, which
+# rebinds the package's `emit` ATTRIBUTE to the re-exported function — so both
+# plain attribute access (`agent_action_capsule.emit`) and `import
+# agent_action_capsule.emit as x` (which also resolves via that attribute)
+# return the function, not the submodule, and a dotted-string mock.patch()
+# target built on either is unreliable (confirmed to resolve differently
+# between Python 3.9 and 3.13's unittest.mock). importlib.import_module()
+# reads sys.modules directly, sidestepping the shadowed attribute.
+_base_emit_module = importlib.import_module("agent_action_capsule.emit")
 
 
 def test_seal_returns_capsule_and_verifies_offline(tmp_path, monkeypatch):
@@ -110,13 +121,13 @@ def test_emit_is_a_thin_alias_of_seal(tmp_path, monkeypatch):
     kwargs = {"operator": "acme-co", "developer": "po-agent@v1", "anchor": False}
 
     with (
-        mock.patch("agent_action_capsule.emit.uuid.uuid4", return_value=fixed_uuid),
-        mock.patch("agent_action_capsule.emit._utc_now", return_value=fixed_ts),
+        mock.patch.object(_base_emit_module.uuid, "uuid4", return_value=fixed_uuid),
+        mock.patch.object(_base_emit_module, "_utc_now", return_value=fixed_ts),
     ):
         via_emit = emit("mint", agent_input={"x": 1}, ledger="via_emit.jsonl", **kwargs)
     with (
-        mock.patch("agent_action_capsule.emit.uuid.uuid4", return_value=fixed_uuid),
-        mock.patch("agent_action_capsule.emit._utc_now", return_value=fixed_ts),
+        mock.patch.object(_base_emit_module.uuid, "uuid4", return_value=fixed_uuid),
+        mock.patch.object(_base_emit_module, "_utc_now", return_value=fixed_ts),
     ):
         via_seal = seal({"x": 1}, action="mint", ledger="via_seal.jsonl", **kwargs)
 
