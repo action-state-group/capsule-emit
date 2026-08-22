@@ -22,9 +22,9 @@ Transparency Service (TS) for independent, third-party freshness evidence.
   structurally — never by importing a concrete log implementation). Wraps
   your own append-only capsule log with inclusion and range proofs.
 - **`emit`** — builds, signs, and (optionally) registers a checkpoint:
-  `{log_id, mmr_size, root, peaks_digest, prev_size, prev_root, key_id,
-  timestamp, signature}`. `key_id` doubles as a peer identifier when a
-  deployment checkpoints several independent logs (e.g. one per mesh node).
+  `{log_id, mmr_size, root, prev_size, prev_root, key_id, timestamp,
+  signature}`. `key_id` doubles as a peer identifier when a deployment
+  checkpoints several independent logs (e.g. one per mesh node).
 
 ## Registration is opt-in, always
 
