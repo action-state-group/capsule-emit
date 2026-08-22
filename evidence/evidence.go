@@ -165,9 +165,8 @@ func envelope(exchanges []any) map[string]any {
 }
 
 func validateNestedEvidence(value map[string]any) error {
-	if len(value) == 0 {
-		return fmt.Errorf("evidence object must not be empty")
-	}
+	// Emptiness is enforced by validateEvidenceValue's map case below, which
+	// reports the offending path; do not duplicate it with a pathless check here.
 	for _, reserved := range []string{"provider", "operation", "sequence", "request", "response"} {
 		if _, exists := value[reserved]; exists {
 			return fmt.Errorf("reserved exchange field %q must not be repeated", reserved)
@@ -178,7 +177,7 @@ func validateNestedEvidence(value map[string]any) error {
 
 func validateEvidenceValue(value any, path string, depth int) error {
 	if depth > maxEvidenceDepth {
-		return fmt.Errorf("evidence exceeds maximum depth of %d", maxEvidenceDepth)
+		return fmt.Errorf("evidence at %s exceeds maximum depth of %d", path, maxEvidenceDepth)
 	}
 	switch typed := value.(type) {
 	case nil:
