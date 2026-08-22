@@ -12,8 +12,11 @@ Four rendering levels for the ledger:
 
     capsule-emit permalink <capsule.json ...>    — build a demo verify-surface
                                                     permalink (withheld/bundle,
-                                                    or single-capsule disclosed
-                                                    via --reveal FIELD=payload.json)
+                                                    or disclosed via --reveal
+                                                    FIELD=payload.json single-
+                                                    capsule / --reveal
+                                                    SELECTOR:FIELD=payload.json
+                                                    per bundle item)
 
 Exit codes: 0 = ok, 1 = error.
 """
@@ -107,7 +110,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     permalink_p = sub.add_parser(
         "permalink",
-        help="build a demo verify-surface permalink (withheld/bundle only)",
+        help="build a demo verify-surface permalink (withheld/bundle, disclosed via --reveal)",
     )
     permalink_p.add_argument(
         "capsule_files",
@@ -147,11 +150,14 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="FIELD=payload.json",
         default=None,
         help="disclose a field (agent_input or agent_output) by reading its exact "
-        "payload from a JSON file, e.g. --reveal agent_input=input.json. Wraps the "
-        "capsule in the Disclosure Envelope shape the viewer reads. Single-capsule "
-        "only (no --bundle, no --ledger/--from-run yielding more than one capsule) — "
-        "the array-fragment bundle path doesn't support per-item disclosure (see "
-        "capsule_emit/permalink.py module docstring for why).",
+        "payload from a JSON file, e.g. --reveal agent_input=input.json for a "
+        "single capsule. For a bundle (--bundle, or --ledger/--from-run yielding "
+        "more than one capsule), prefix with a selector: --reveal "
+        "SELECTOR:FIELD=payload.json, where SELECTOR is a 1-based record number "
+        "(as shown in the chain summary) or an >=8-char capsule_id prefix — repeat "
+        "--reveal per field/item to disclose more than one. Wraps the targeted "
+        "capsule(s) in the Disclosure Envelope shape the viewer reads; items with "
+        "no --reveal stay withheld.",
     )
 
     return parser
@@ -181,20 +187,63 @@ def _cmd_verify(args: argparse.Namespace) -> int:
 _REVEALABLE_FIELDS = ("agent_input", "agent_output")
 
 
-def _parse_reveal_args(reveal: list[str]) -> dict:
-    """Parse ``--reveal FIELD=path.json`` entries into {field: payload}."""
-    from .permalink import PermalinkError, _load_json_file
+def _resolve_capsule_by_selector(capsules: list[dict], selector: str) -> dict:
+    """Resolve a ``--reveal`` SELECTOR (1-based record number, or an >=8-char
+    capsule_id prefix — same prefix convention as ``ledger show``) to a capsule."""
+    from .permalink import PermalinkError, _capsule_id_of
 
-    disclosures: dict = {}
+    if selector.isdigit() and len(selector) < 8:
+        idx = int(selector)
+        if not (1 <= idx <= len(capsules)):
+            raise PermalinkError(
+                f"--reveal: record number {idx} out of range (1-{len(capsules)})"
+            )
+        return capsules[idx - 1]
+    if len(selector) < 8:
+        raise PermalinkError(
+            f"--reveal: selector {selector!r} must be a 1-based record number or "
+            "an >=8-char capsule_id prefix"
+        )
+    matches = [c for c in capsules if _capsule_id_of(c).startswith(selector)]
+    if not matches:
+        raise PermalinkError(f"--reveal: no capsule matches capsule_id prefix {selector!r}")
+    if len(matches) > 1:
+        raise PermalinkError(
+            f"--reveal: capsule_id prefix {selector!r} matches {len(matches)} capsules — "
+            "use more characters"
+        )
+    return matches[0]
+
+
+def _parse_reveal_args(reveal: list[str], capsules: list[dict]) -> dict[str, dict]:
+    """Parse ``--reveal FIELD=path.json`` (exactly one capsule) or ``--reveal
+    SELECTOR:FIELD=path.json`` (bundle) entries into
+    ``{capsule_id: {field: payload}}``."""
+    from .permalink import PermalinkError, _capsule_id_of, _load_json_file
+
+    disclosures: dict[str, dict] = {}
+    multi = len(capsules) > 1
     for entry in reveal:
         if "=" not in entry:
             raise PermalinkError(f"--reveal {entry!r}: expected FIELD=payload.json")
-        field, _, path = entry.partition("=")
+        key, _, path = entry.partition("=")
+        if ":" in key:
+            selector, _, field = key.partition(":")
+            cap = _resolve_capsule_by_selector(capsules, selector)
+        elif multi:
+            raise PermalinkError(
+                f"--reveal {entry!r}: more than one capsule — use "
+                "SELECTOR:FIELD=payload.json (SELECTOR = 1-based record number "
+                "or an >=8-char capsule_id prefix)"
+            )
+        else:
+            field = key
+            cap = capsules[0]
         if field not in _REVEALABLE_FIELDS:
             raise PermalinkError(
                 f"--reveal {entry!r}: field must be one of {_REVEALABLE_FIELDS}"
             )
-        disclosures[field] = _load_json_file(path)
+        disclosures.setdefault(_capsule_id_of(cap), {})[field] = _load_json_file(path)
     return disclosures
 
 
@@ -218,6 +267,23 @@ def _check_reveal_digests(capsule: dict, disclosures: dict) -> list[str]:
         if recomputed != committed:
             mismatches.append(f"{field}: committed {committed[:12]}… != disclosed-payload {recomputed[:12]}…")
     return mismatches
+
+
+def _check_reveal_digests_per_capsule(capsules: list[dict], disclosures: dict[str, dict]) -> list[str]:
+    """Run ``_check_reveal_digests`` per disclosed capsule; mismatches are
+    prefixed with the capsule_id so a bundle report identifies which item
+    failed."""
+    from .permalink import _capsule_id_of
+
+    by_id = {_capsule_id_of(c): c for c in capsules}
+    mismatches: list[str] = []
+    for cid, fields in disclosures.items():
+        cap = by_id[cid]
+        mismatches.extend(f"{cid[:16]}…  {m}" for m in _check_reveal_digests(cap, fields))
+    return mismatches
+
+
+_FRAGMENT_SIZE_WARN_BYTES = 16 * 1024
 
 
 def _cmd_permalink(args: argparse.Namespace) -> int:
@@ -249,22 +315,16 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
             return 1
         print(f"permalink --check: {len(capsules)}/{len(capsules)} capsule(s) VALID")
 
+    bundle = args.bundle or len(capsules) > 1
+
     disclosures = None
     if args.reveal:
-        if args.bundle or len(capsules) > 1:
-            print(
-                "permalink: --reveal requires exactly one capsule and no --bundle — "
-                "the array-fragment bundle path doesn't support per-item disclosure "
-                "(see capsule_emit/permalink.py module docstring for why).",
-                file=sys.stderr,
-            )
-            return 2
         try:
-            disclosures = _parse_reveal_args(args.reveal)
+            per_capsule = _parse_reveal_args(args.reveal, capsules)
         except PermalinkError as exc:
             print(f"permalink: {exc}", file=sys.stderr)
             return 1
-        mismatches = _check_reveal_digests(capsules[0], disclosures)
+        mismatches = _check_reveal_digests_per_capsule(capsules, per_capsule)
         if mismatches:
             print(
                 "permalink --reveal: disclosed payload does not match the committed "
@@ -274,10 +334,22 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
             for m in mismatches:
                 print(f"  {m}", file=sys.stderr)
             return 1
-        print(f"permalink --reveal: {len(disclosures)}/{len(disclosures)} disclosed field(s) digest-match VALID")
+        n_fields = sum(len(fields) for fields in per_capsule.values())
+        print(
+            f"permalink --reveal: {n_fields}/{n_fields} disclosed field(s) digest-match VALID "
+            f"({len(per_capsule)}/{len(capsules)} capsule(s) disclosed)"
+        )
+        disclosures = per_capsule if bundle else next(iter(per_capsule.values()))
 
-    bundle = args.bundle or len(capsules) > 1
     url = build_url(capsules, base_url=args.base_url, bundle=bundle, disclosures=disclosures)
+    frag_len = len(url.split("#", 1)[1].encode())
+    if frag_len > _FRAGMENT_SIZE_WARN_BYTES:
+        print(
+            f"permalink: warning — URL fragment is {frag_len:,} bytes "
+            f"(over the ~{_FRAGMENT_SIZE_WARN_BYTES // 1024}KB flag threshold); "
+            "some browsers/proxies/shell history truncate or choke on URLs this long",
+            file=sys.stderr,
+        )
     print(summarize(capsules))
     print(url)
     return 0

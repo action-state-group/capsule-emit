@@ -8,17 +8,19 @@ where the presenter meant to paste the whole chain silently degrades to the
 first case — that is the failure this module exists to make impossible: bundle
 mode is the default whenever more than one capsule is supplied, not opt-in.
 
-Disclosure (``--reveal``) wraps a single capsule in the Disclosure Envelope shape
-the verify-surface viewer already reads (``{"capsule": <unmodified capsule>,
-"disclosures": {"agent_input": ..., "agent_output": ...}}`` —
-draft-mih-scitt-agent-action-capsule-disclosure-envelope-00, landed in the viewer
-via scitt-cose#27/[aac-disclosure-envelope]). It is single-capsule only: the
-array-fragment bundle path reads ``capsule_id``/``action_type``/``disposition``
-directly off each array item and hashes the *whole* array item for the Integrity
-check, so a per-item envelope wrapper there doesn't fail loud — it silently
-un-recognizes the capsule_id and skips that record's Integrity/Sequence check
-entirely (confirmed empirically), which is worse than a hard failure. Don't wrap
-bundle items in the envelope; disclose via individual permalinks instead.
+Disclosure (``--reveal``) wraps a capsule in the Disclosure Envelope shape the
+verify-surface viewer reads (``{"capsule": <unmodified capsule>, "disclosures":
+{"agent_input": ..., "agent_output": ...}}`` —
+draft-mih-scitt-agent-action-capsule-disclosure-envelope-00, landed in the
+viewer via scitt-cose#27/[aac-disclosure-envelope]). Per-item disclosure in the
+array-fragment bundle path is supported since scitt-cose#30
+(``unwrapEnvelope()``/``_unwrap_envelope()`` in the deployed viewer): each
+bundle item can independently be a bare capsule or an envelope-wrapped one, and
+``findChainGaps``/``annotateRecords``/``evaluateRitual``/``verifyCapsuleId``
+unwrap before reading ``capsule_id``/``chain``, so an enveloped item's
+Integrity/Sequence check is real, not silently skipped (that was the bug —
+scitt-cose#30 — this module's old ``bundle=True`` refusal existed to route
+around). Items with no disclosure stay bare in the array.
 """
 from __future__ import annotations
 
@@ -123,27 +125,42 @@ def build_url(
     ``bundle=True`` encodes the JSON-array fragment (chain-navigation table);
     otherwise the single capsule object is encoded directly.
 
-    ``disclosures``, when given, wraps the single capsule in the Disclosure
-    Envelope shape (``{"capsule": ..., "disclosures": ...}``) instead of the
-    bare capsule — e.g. ``{"agent_input": {...}, "agent_output": {...}}``.
-    Requires ``bundle=False`` and exactly one capsule (see module docstring
-    for why bundle-level disclosure isn't offered: it silently produces a
-    vacuous, not failed, Integrity check in the current viewer).
+    ``disclosures`` shape depends on ``bundle``:
+
+    - ``bundle=False``: a flat ``{field: payload}`` dict (e.g.
+      ``{"agent_input": {...}, "agent_output": {...}}``) — wraps the single
+      capsule in the Disclosure Envelope shape (``{"capsule": ...,
+      "disclosures": ...}``) instead of the bare capsule. Requires exactly
+      one capsule.
+    - ``bundle=True``: a ``{capsule_id: {field: payload}}`` dict, keyed by
+      the ``capsule_id`` of each bundle item to disclose. Every key must
+      match a capsule_id present in ``capsules``. Items with no entry stay
+      bare in the array; items with an entry are envelope-wrapped in place —
+      each disclosed independently, per module docstring.
     """
     base_url = base_url.rstrip("/")
     anchor_id = _capsule_id_of(capsules[0])
-    if disclosures is not None:
-        if bundle:
-            raise PermalinkError(
-                "disclosures require bundle=False — see build_url()/module docstring: "
-                "the array-fragment bundle path doesn't read a per-item Disclosure "
-                "Envelope and silently skips that record's Integrity check instead of "
-                "failing loud. Use an individual (non-bundle) permalink per capsule."
-            )
+    if disclosures is not None and not bundle:
         if len(capsules) != 1:
-            raise PermalinkError("disclosures require exactly one capsule")
+            raise PermalinkError("disclosures require exactly one capsule (or bundle=True)")
         payload: Any = {"capsule": capsules[0], "disclosures": disclosures}
+    elif bundle:
+        if disclosures:
+            ids = {_capsule_id_of(c) for c in capsules}
+            unknown = sorted(set(disclosures) - ids)
+            if unknown:
+                raise PermalinkError(
+                    f"disclosures given for capsule_id(s) not in the bundle: {unknown}"
+                )
+            payload = [
+                {"capsule": c, "disclosures": disclosures[_capsule_id_of(c)]}
+                if _capsule_id_of(c) in disclosures
+                else c
+                for c in capsules
+            ]
+        else:
+            payload = capsules
     else:
-        payload = capsules if bundle else capsules[0]
+        payload = capsules[0]
     frag = base64.b64encode(json.dumps(payload).encode()).decode()
     return f"{base_url}/v/{anchor_id}#{frag}"
