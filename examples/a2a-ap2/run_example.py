@@ -39,7 +39,7 @@ from a2a_sandbox import (  # noqa: E402
     is_sandbox,
 )
 
-from capsule_emit import emit  # noqa: E402
+from capsule_emit import seal  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
@@ -96,11 +96,11 @@ def scenario_a() -> tuple[str, str]:
     _info(f"  limit check: {pay_amount.value} ≤ {task.mandate.max_amount.value}  → APPROVED")
 
     # Step 1: Dispatch capsule — payment initiated
-    dispatched = emit(
+    dispatched = seal(
+        task.input_dict(),                       # AP2 CartMandate (the "may")
         action="send_payment",
         operator=OPERATOR,
         developer=DEVELOPER,
-        agent_input=task.input_dict(),           # AP2 CartMandate (the "may")
         agent_output=None,                       # output not yet known at dispatch
         model=None,
         verdict="executed",
@@ -116,11 +116,11 @@ def scenario_a() -> tuple[str, str]:
     _info(f"payment_id: {result.payment_id}  status: {result.status}  mode: {'sandbox' if is_sandbox() else 'real Stripe'}")
 
     # Step 2: Confirm capsule — payment completed, chain onto dispatched
-    confirmed = emit(
+    confirmed = seal(
+        task.input_dict(),                       # same mandate = same input digest
         action="send_payment",
         operator=OPERATOR,
         developer=DEVELOPER,
-        agent_input=task.input_dict(),           # same mandate = same input digest
         agent_output=result.as_dict(),           # payment outcome (the "did")
         model=None,
         verdict="executed",
@@ -171,11 +171,11 @@ def scenario_b() -> str:
     _info(f"  limit check: {attempted} > {SPEND_LIMIT}  → REFUSED (over agent spend limit)")
 
     # Seal a refusal — effect.status="planned" (payment was NEVER dispatched)
-    refusal = emit(
+    refusal = seal(
+        task.input_dict(),   # the mandate we evaluated
         action="send_payment",
         operator=OPERATOR,
         developer=DEVELOPER,
-        agent_input=task.input_dict(),   # the mandate we evaluated
         agent_output={
             "refusal_reason": "over_agent_spend_limit",
             "requested": requested_amount.as_dict(),

@@ -218,10 +218,10 @@ def test_resume_ok_unset_when_no_hold_applies_behaves_as_true(tmp_path):
     ``verdict="blocked"`` action, no ``HoldEngine`` in play at all) is the
     "no hold applies" case the ``None`` default documents -- it must resolve
     quietly to ``True``, not raise."""
-    from capsule_emit.core import emit
+    from capsule_emit.core import _emit_capsule
 
     ledger_path = tmp_path / "ledger.jsonl"
-    blocked = emit(
+    blocked = _emit_capsule(
         action="write_po", operator=OPERATOR, developer=DEVELOPER, verdict="blocked",
         effect={"type": "write_po", "status": "planned"}, anchor=False, ledger=str(ledger_path),
     )

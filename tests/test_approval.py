@@ -18,7 +18,7 @@ import pytest
 from agent_action_capsule import verify
 
 from capsule_emit.approval import list_pending, seal_approval
-from capsule_emit.core import emit
+from capsule_emit.core import _emit_capsule
 from capsule_emit.ledger import read_ledger
 
 # ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ from capsule_emit.ledger import read_ledger
 
 def _blocked_capsule(tmp_path: Path, action: str = "write_po") -> dict:
     """Emit a blocked capsule directly and return the capsule dict."""
-    result = emit(
+    result = _emit_capsule(
         action=action,
         operator="test-org",
         developer="agent@v1",
@@ -165,7 +165,7 @@ def test_list_pending_empty_ledger(tmp_path):
 
 def test_list_pending_executed_capsule_not_pending(tmp_path):
     """Executed (passed) capsules do not appear in list_pending()."""
-    emit(
+    _emit_capsule(
         action="safe_action",
         operator="test-org",
         developer="agent@v1",
@@ -182,7 +182,7 @@ def test_list_pending_multiple_blocked_one_resolved(tmp_path):
     """Two blocked capsules, one resolved → only unresolved appears in list_pending()."""
     ledger = tmp_path / "ledger.jsonl"
 
-    blocked_1 = emit(
+    blocked_1 = _emit_capsule(
         action="action_a",
         operator="test-org",
         developer="agent@v1",
@@ -192,7 +192,7 @@ def test_list_pending_multiple_blocked_one_resolved(tmp_path):
         ledger=ledger,
     ).capsule
 
-    blocked_2 = emit(
+    blocked_2 = _emit_capsule(
         action="action_b",
         operator="test-org",
         developer="agent@v1",
@@ -236,7 +236,7 @@ def test_list_pending_crash_resume(tmp_path):
     ledger = tmp_path / "ledger.jsonl"
 
     # --- "prior run" --- emit a blocked capsule and write it to disk
-    blocked = emit(
+    blocked = _emit_capsule(
         action="send_payment",
         operator="payments-co",
         developer="payment-agent@v1",

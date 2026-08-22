@@ -28,7 +28,7 @@ import pytest
 from agent_action_capsule.canonical import compute_capsule_id
 
 import capsule_emit
-from capsule_emit import CANONICALIZATION_ID, emit
+from capsule_emit import CANONICALIZATION_ID, seal
 from capsule_emit.verify_canonicalization import (
     KNOWN_ALGORITHMS,
     CanonicalizationVerdict,
@@ -45,7 +45,8 @@ def _emit_no_anchor(**kwargs) -> capsule_emit.EmitResult:
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
         ledger = f.name
     try:
-        return emit("test_action", anchor=False, ledger=ledger, **kwargs)
+        agent_input = kwargs.pop("agent_input", None)
+        return seal(agent_input, action="test_action", anchor=False, ledger=ledger, **kwargs)
     finally:
         try:
             os.unlink(ledger)

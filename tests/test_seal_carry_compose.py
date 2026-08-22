@@ -18,6 +18,7 @@ from agent_action_capsule.verify import verify
 import capsule_emit
 import capsule_emit.surface as surface_module
 from capsule_emit import Capsule, carry, compose, emit, seal
+from capsule_emit.core import _emit_capsule
 
 # agent_action_capsule/__init__.py does `from .emit import ... emit`, which
 # rebinds the package's `emit` ATTRIBUTE to the re-exported function — so both
@@ -110,11 +111,11 @@ def test_layer_0_imports_no_checkpoint_module():
     assert proc.returncode == 0, proc.stderr
 
 
-def test_emit_is_a_thin_alias_of_seal(tmp_path, monkeypatch):
-    # seal(payload) must be provably the same underlying emit() call, not a
-    # divergent reimplementation. Freeze the two non-deterministic inputs
-    # emit() doesn't let callers override (action_id's uuid4 suffix,
-    # timestamp) and compare the full output.
+def test_seal_is_a_thin_alias_of_the_internal_primitive(tmp_path, monkeypatch):
+    # seal(payload) must be provably the same underlying _emit_capsule() call,
+    # not a divergent reimplementation. Freeze the two non-deterministic
+    # inputs _emit_capsule() doesn't let callers override (action_id's uuid4
+    # suffix, timestamp) and compare the full output.
     monkeypatch.chdir(tmp_path)
     fixed_uuid = uuid.UUID(int=0)
     fixed_ts = "2026-01-01T00:00:00Z"
@@ -124,12 +125,19 @@ def test_emit_is_a_thin_alias_of_seal(tmp_path, monkeypatch):
         mock.patch.object(_base_emit_module.uuid, "uuid4", return_value=fixed_uuid),
         mock.patch.object(_base_emit_module, "_utc_now", return_value=fixed_ts),
     ):
-        via_emit = emit("mint", agent_input={"x": 1}, ledger="via_emit.jsonl", **kwargs)
+        via_primitive = _emit_capsule("mint", agent_input={"x": 1}, ledger="via_primitive.jsonl", **kwargs)
     with (
         mock.patch.object(_base_emit_module.uuid, "uuid4", return_value=fixed_uuid),
         mock.patch.object(_base_emit_module, "_utc_now", return_value=fixed_ts),
     ):
         via_seal = seal({"x": 1}, action="mint", ledger="via_seal.jsonl", **kwargs)
 
-    assert via_emit.capsule_id == via_seal.capsule_id
-    assert via_emit.capsule == via_seal.capsule
+    assert via_primitive.capsule_id == via_seal.capsule_id
+    assert via_primitive.capsule == via_seal.capsule
+
+
+def test_emit_is_a_removed_raising_stub():
+    # Clean break (2026-08-22): emit() was renamed. It stays importable for
+    # one release so callers get a clear error instead of an ImportError.
+    with pytest.raises(RuntimeError, match="emit\\(\\) was renamed"):
+        emit("mint", agent_input={"x": 1})

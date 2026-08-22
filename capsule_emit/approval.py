@@ -36,7 +36,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from .core import EmitResult, emit
+from .core import EmitResult, _emit_capsule
 from .ledger import read_ledger
 
 __all__ = ["seal_approval", "list_pending"]
@@ -157,7 +157,7 @@ def seal_approval(
     if not resume_ok:
         extra_compute["resume_check"] = {"ok": False, "reason": resume_reason}
 
-    return emit(
+    return _emit_capsule(
         action=action,
         operator=operator,
         developer=developer,

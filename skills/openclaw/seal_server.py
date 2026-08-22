@@ -105,7 +105,7 @@ def seal(req: SealRequest) -> JSONResponse:
                        reached the transparency log. The anchor submission is
                        non-blocking by default, so this is almost always False
                        here — use anchor_status for the weaker "was it
-                       submitted" fact, or pass anchor_wait= to capsule_emit.emit()
+                       submitted" fact, or pass anchor_wait= to capsule_emit.seal()
                        directly if you need a synchronous confirmed/failed answer.
         anchor_status — "confirmed" | "submitted" | "failed" | "skipped"
         reveal       — present only when reveal=True; contains raw input/output
@@ -116,11 +116,11 @@ def seal(req: SealRequest) -> JSONResponse:
         # verdict classes (§5.4.2).  Apply this remap as a safety net regardless
         # of what the caller sends.
         eff_status = "planned" if req.verdict == "blocked" else req.effect_status
-        result = capsule_emit.emit(
+        result = capsule_emit.seal(
+            req.input,
             action=req.action,
             operator=req.operator,
             developer=req.developer,
-            agent_input=req.input,
             agent_output=req.output,
             verdict=req.verdict,
             effect={"type": req.action, "status": eff_status},

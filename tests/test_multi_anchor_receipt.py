@@ -68,12 +68,12 @@ def _verify_receipt_offline(sub: dict, capsule_id: str, log_pem: bytes) -> bool:
 
 
 def _emit_capsule(tmp_path, action: str = "multi_anchor_test") -> str:
-    from capsule_emit import emit
-    result = emit(
+    from capsule_emit import seal
+    result = seal(
+        {"x": 1},
         action=action,
         operator="test-op",
         developer="test-agent@v0",
-        agent_input={"x": 1},
         agent_output={"y": 2},
         model={"provider": "test", "model_id": "test-model"},
         verdict="executed",

@@ -34,7 +34,7 @@ from agent_action_capsule.contracts import (
     EffectRecord,
 )
 
-from capsule_emit import emit
+from capsule_emit import seal
 from capsule_emit.ledger import append_to_ledger
 
 # ---------------------------------------------------------------------------
@@ -54,17 +54,17 @@ if LEDGER.exists():
 # 1. Standard executed capsule — approve_purchase
 # ---------------------------------------------------------------------------
 print("Emitting capsule 1: approve_purchase (executed) …")
-cap1 = emit(
-    action="approve_purchase",
-    operator="acme-research",
-    developer="procurement-agent@v1",
-    model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
-    agent_input={
+cap1 = seal(
+    {
         "vendor": "BioSupplies GmbH",
         "item": "reagent-kit-A90",
         "quantity": 200,
         "unit_price_eur": 47.50,
     },
+    action="approve_purchase",
+    operator="acme-research",
+    developer="procurement-agent@v1",
+    model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
     agent_output={
         "po_number": "PO-2026-0701",
         "status": "dispatched",
@@ -178,7 +178,8 @@ print("  verdict:    executed (value_grounded: pass, invoice_reconciles: pass)\n
 # 4. Chain-linked capsule — confirm_purchase chains → capsule #1
 # ---------------------------------------------------------------------------
 print("Emitting capsule 4: confirm_purchase (confirmed, chained → capsule 1) …")
-cap4 = emit(
+cap4 = seal(
+    None,
     action="confirm_purchase",
     operator="acme-research",
     developer="procurement-agent@v1",

@@ -140,13 +140,13 @@ def main() -> int:
         # ── 1. README hero snippet ─────────────────────────────────────────────
         section("1. README hero emit() snippet")
         r = run(venv_python, textwrap.dedent(f"""
-            from capsule_emit import emit
+            from capsule_emit import seal
             result = {{"po_id": "PO-7781"}}
-            cap = emit(
+            cap = seal(
+                {{"vendor": "Frobozz Supply", "total": 1240.19}},
                 action="write_order",
                 operator="acme-co",
                 developer="po-agent@v1",
-                agent_input={{"vendor": "Frobozz Supply", "total": 1240.19}},
                 agent_output=result,
                 model={{"provider": "anthropic", "model_id": "claude-sonnet-4-6"}},
                 verdict="executed",
@@ -188,15 +188,16 @@ def main() -> int:
         section("3. Tutorial 01 — first capsule flow")
         ledger3 = str(workdir / "tut01.jsonl")
         r = run(venv_python, textwrap.dedent(f"""
-            from capsule_emit import emit, ledger_view
+            from capsule_emit import seal, ledger_view
             import json, pathlib
             ledger = pathlib.Path({ledger3!r})
 
             caps = []
             for i in range(3):
-                c = emit(
+                c = seal(
+                    {{"i": i}},
                     action="write_order", operator="acme-co", developer="po-agent@v1",
-                    agent_input={{"i": i}}, agent_output={{"ok": True}},
+                    agent_output={{"ok": True}},
                     effect={{"type": "write_order", "status": "dispatched"}},
                     anchor=False, ledger=ledger,
                 )
@@ -234,17 +235,19 @@ def main() -> int:
         section("4. Tutorial 02 — confirming & chaining")
         ledger2 = str(workdir / "tut02.jsonl")
         r = run(venv_python, textwrap.dedent(f"""
-            from capsule_emit import emit
+            from capsule_emit import seal
             from agent_action_capsule import verify_store
             import json, pathlib
             ledger = pathlib.Path({ledger2!r})
 
-            attempt = emit(
+            attempt = seal(
+                None,
                 action="write_order", operator="acme-co", developer="po-agent@v1",
                 effect={{"type": "write_order", "status": "dispatched"}},
                 anchor=False, ledger=ledger,
             )
-            done = emit(
+            done = seal(
+                None,
                 action="write_order", operator="acme-co", developer="po-agent@v1",
                 verdict="confirmed",
                 effect={{"type": "write_order", "status": "confirmed"}},
@@ -283,15 +286,15 @@ def main() -> int:
         section("5. Tutorial 03 — reading your ledger")
         ledger_t3 = str(workdir / "tut03.jsonl")
         r = run(venv_python, textwrap.dedent(f"""
-            from capsule_emit import emit, ledger_view
+            from capsule_emit import seal, ledger_view
             from capsule_emit.ledger import read_ledger
             import json, pathlib, io, sys
             ledger = pathlib.Path({ledger_t3!r})
 
-            a = emit(action="write_order", operator="acme-co", developer="po-agent@v1",
+            a = seal(None, action="write_order", operator="acme-co", developer="po-agent@v1",
                      effect={{"type": "write_order", "status": "dispatched"}},
                      anchor=False, ledger=ledger)
-            emit(action="write_order", operator="acme-co", developer="po-agent@v1",
+            seal(None, action="write_order", operator="acme-co", developer="po-agent@v1",
                  verdict="confirmed",
                  effect={{"type": "write_order", "status": "confirmed"}},
                  agent_output={{"ok": True}},
@@ -446,12 +449,12 @@ def main() -> int:
         # ── 8. anchor=False, AAC_ANCHOR_URL override ──────────────────────────
         section("8. going-deeper / why-anchoring — offline + anchor_url override")
         r = run(venv_python, textwrap.dedent("""
-            from capsule_emit import emit
+            from capsule_emit import seal
             import tempfile, pathlib
             ledger = pathlib.Path(tempfile.mktemp(suffix=".jsonl"))
 
             # anchor=False — must not network, anchored=False
-            cap = emit(action="test", operator="o", developer="d@v1",
+            cap = seal(None, action="test", operator="o", developer="d@v1",
                        anchor=False, ledger=ledger)
             assert not cap.anchored, f"expected anchored=False, got {cap.anchored}"
 
@@ -463,7 +466,7 @@ def main() -> int:
             # pre-0.4.0 bug this gate exists to catch, so this assertion is meant to
             # fail against a stale PyPI publish rather than paper over it.
             import os
-            cap2 = emit(action="test2", operator="o", developer="d@v1",
+            cap2 = seal(None, action="test2", operator="o", developer="d@v1",
                         anchor_url="http://127.0.0.1:0/v1/digest",
                         anchor=True, ledger=ledger)
             assert not cap2.anchored, (
@@ -484,13 +487,13 @@ def main() -> int:
         # build a 2-capsule ledger to test CLI --store
         cli_ledger = str(workdir / "cli.jsonl")
         setup = run(venv_python, textwrap.dedent(f"""
-            from capsule_emit import emit
+            from capsule_emit import seal
             import pathlib
             ledger = pathlib.Path({cli_ledger!r})
-            a = emit(action="write_order", operator="o", developer="d@v1",
+            a = seal(None, action="write_order", operator="o", developer="d@v1",
                      anchor=False, ledger=ledger,
                      effect={{"type": "write_order", "status": "dispatched"}})
-            emit(action="write_order", operator="o", developer="d@v1",
+            seal(None, action="write_order", operator="o", developer="d@v1",
                  verdict="confirmed",
                  effect={{"type": "write_order", "status": "confirmed"}},
                  agent_output={{"ok": True}},
@@ -533,15 +536,15 @@ def main() -> int:
         # ── 10. No unknown_registry_value warnings on canonical write_order path
         section("10. No unknown_registry_value on write_order + confirms")
         r = run(venv_python, textwrap.dedent("""
-            from capsule_emit import emit
+            from capsule_emit import seal
             from agent_action_capsule import verify
             import tempfile, pathlib
             ledger = pathlib.Path(tempfile.mktemp(suffix=".jsonl"))
 
-            a = emit(action="write_order", operator="acme-co", developer="po-agent@v1",
+            a = seal(None, action="write_order", operator="acme-co", developer="po-agent@v1",
                      effect={"type": "write_order", "status": "dispatched"},
                      anchor=False, ledger=ledger)
-            b = emit(action="write_order", operator="acme-co", developer="po-agent@v1",
+            b = seal(None, action="write_order", operator="acme-co", developer="po-agent@v1",
                      verdict="confirmed",
                      effect={"type": "write_order", "status": "confirmed"},
                      agent_output={"ok": True},

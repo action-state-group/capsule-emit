@@ -5,7 +5,7 @@ import pytest
 from agent_action_capsule import verify
 from agent_action_capsule.contracts import InvariantError
 
-from capsule_emit import emit
+from capsule_emit import seal
 
 # ---------------------------------------------------------------------------
 # Fixture
@@ -21,11 +21,11 @@ def tmp_ledger(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_io_digests_without_model(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        {"key": "value"},
         action="process",
         operator="org",
         developer="agent@v1",
-        agent_input={"key": "value"},
         anchor=False,
         ledger=tmp_ledger,
     )
@@ -37,11 +37,11 @@ def test_io_digests_without_model(tmp_ledger):
 
 
 def test_io_digests_with_model(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        {"key": "value"},
         action="process",
         operator="org",
         developer="agent@v1",
-        agent_input={"key": "value"},
         agent_output={"result": "done"},
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         anchor=False,
@@ -58,21 +58,22 @@ def test_io_digests_with_model(tmp_ledger):
 
 def test_input_digest_stability(tmp_ledger):
     inp = {"vendor": "Acme", "total": "1200"}
-    cap_a = emit(action="order", operator="org", developer="agent@v1", agent_input=inp, anchor=False, ledger=tmp_ledger)
-    cap_b = emit(action="order", operator="org", developer="agent@v1", agent_input=inp, anchor=False, ledger=tmp_ledger)
+    cap_a = seal(inp, action="order", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap_b = seal(inp, action="order", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
     ma_a = cap_a.capsule["model_attestation"]["compute_attestation"]
     ma_b = cap_b.capsule["model_attestation"]["compute_attestation"]
     assert ma_a["agent_input_digest"] == ma_b["agent_input_digest"]
 
 
 def test_mutating_input_changes_capsule_id(tmp_ledger):
-    cap_a = emit(action="order", operator="org", developer="agent@v1", agent_input={"v": "1"}, anchor=False, ledger=tmp_ledger)
-    cap_b = emit(action="order", operator="org", developer="agent@v1", agent_input={"v": "2"}, anchor=False, ledger=tmp_ledger)
+    cap_a = seal({"v": "1"}, action="order", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap_b = seal({"v": "2"}, action="order", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
     assert cap_a.capsule_id != cap_b.capsule_id
 
 
 def test_output_digest_without_input(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="log",
         operator="org",
         developer="agent@v1",
@@ -88,7 +89,8 @@ def test_output_digest_without_input(tmp_ledger):
 
 
 def test_both_digests_null_without_io(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="noop",
         operator="org",
         developer="agent@v1",
@@ -105,7 +107,8 @@ def test_both_digests_null_without_io(tmp_ledger):
 
 
 def test_runtime_committed(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="run",
         operator="org",
         developer="agent@v1",
@@ -124,8 +127,9 @@ def test_runtime_committed(tmp_ledger):
 # ---------------------------------------------------------------------------
 
 def test_chain_relation_confirms_default(tmp_ledger):
-    parent = emit(action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
-    cap = emit(
+    parent = seal(None, action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap = seal(
+        None,
         action="action_b",
         operator="org",
         developer="agent@v1",
@@ -138,8 +142,9 @@ def test_chain_relation_confirms_default(tmp_ledger):
 
 
 def test_chain_relation_supersedes(tmp_ledger):
-    parent = emit(action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
-    cap = emit(
+    parent = seal(None, action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap = seal(
+        None,
         action="action_b",
         operator="org",
         developer="agent@v1",
@@ -153,8 +158,9 @@ def test_chain_relation_supersedes(tmp_ledger):
 
 
 def test_chain_relation_escalates(tmp_ledger):
-    parent = emit(action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
-    cap = emit(
+    parent = seal(None, action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap = seal(
+        None,
         action="action_b",
         operator="org",
         developer="agent@v1",
@@ -168,14 +174,15 @@ def test_chain_relation_escalates(tmp_ledger):
 
 
 def test_no_chain_when_no_confirms(tmp_ledger):
-    cap = emit(action="standalone", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap = seal(None, action="standalone", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
     assert "chain" not in cap.capsule
     assert verify(cap.capsule).ok
 
 
 def test_relation_without_confirms_raises(tmp_ledger):
     with pytest.raises(ValueError, match="requires confirms="):
-        emit(
+        seal(
+            None,
             action="act",
             operator="org",
             developer="agent@v1",
@@ -195,8 +202,9 @@ def test_relation_none_keeps_chain_without_confirms_assertion(tmp_ledger):
     "the caller isn't asserting a relation" (in particular, not "confirms"),
     not that the sealed capsule ends up with a null/absent relation field.
     """
-    parent = emit(action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
-    cap = emit(
+    parent = seal(None, action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap = seal(
+        None,
         action="action_b",
         operator="org",
         developer="agent@v1",
@@ -211,7 +219,8 @@ def test_relation_none_keeps_chain_without_confirms_assertion(tmp_ledger):
 
 
 def test_relation_none_does_not_raise_without_confirms(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="standalone",
         operator="org",
         developer="agent@v1",
@@ -228,7 +237,8 @@ def test_relation_none_does_not_raise_without_confirms(tmp_ledger):
 # ---------------------------------------------------------------------------
 
 def test_human_disposed_capsule(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="approve",
         operator="org",
         developer="agent@v1",
@@ -248,7 +258,8 @@ def test_human_disposed_capsule(tmp_ledger):
 
 def test_human_disposed_wrong_approver_raises(tmp_ledger):
     with pytest.raises(InvariantError):
-        emit(
+        seal(
+            None,
             action="approve",
             operator="org",
             developer="agent@v1",
@@ -260,7 +271,8 @@ def test_human_disposed_wrong_approver_raises(tmp_ledger):
 
 
 def test_custom_decision(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="gate",
         operator="org",
         developer="agent@v1",
@@ -273,7 +285,8 @@ def test_custom_decision(tmp_ledger):
 
 
 def test_verdict_blocked_never_dispatch(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="gate",
         operator="org",
         developer="agent@v1",
@@ -289,11 +302,11 @@ def test_verdict_blocked_never_dispatch(tmp_ledger):
 # ---------------------------------------------------------------------------
 
 def test_huge_agent_input(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        {"data": "x" * 100_000},
         action="process",
         operator="org",
         developer="agent@v1",
-        agent_input={"data": "x" * 100_000},
         anchor=False,
         ledger=tmp_ledger,
     )
@@ -304,11 +317,11 @@ def test_huge_agent_input(tmp_ledger):
 
 
 def test_empty_agent_input(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        {},
         action="process",
         operator="org",
         developer="agent@v1",
-        agent_input={},
         anchor=False,
         ledger=tmp_ledger,
     )
@@ -316,11 +329,11 @@ def test_empty_agent_input(tmp_ledger):
 
 
 def test_empty_string_agent_input(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        "",
         action="process",
         operator="org",
         developer="agent@v1",
-        agent_input="",
         anchor=False,
         ledger=tmp_ledger,
     )
@@ -328,11 +341,11 @@ def test_empty_string_agent_input(tmp_ledger):
 
 
 def test_none_agent_input_explicit(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="process",
         operator="org",
         developer="agent@v1",
-        agent_input=None,
         anchor=False,
         ledger=tmp_ledger,
     )
@@ -344,11 +357,11 @@ def test_none_agent_input_explicit(tmp_ledger):
 
 
 def test_unicode_agent_input(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        {"text": "日本語​éàü 🔒"},
         action="process",
         operator="org",
         developer="agent@v1",
-        agent_input={"text": "日本語​éàü 🔒"},
         anchor=False,
         ledger=tmp_ledger,
     )
@@ -361,11 +374,11 @@ def test_unicode_agent_input(tmp_ledger):
 
 
 def test_binary_like_agent_input(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        {"data": "\x00\x01\x02\xff"},
         action="process",
         operator="org",
         developer="agent@v1",
-        agent_input={"data": "\x00\x01\x02\xff"},
         anchor=False,
         ledger=tmp_ledger,
     )
@@ -373,11 +386,11 @@ def test_binary_like_agent_input(tmp_ledger):
 
 
 def test_deeply_nested_agent_input(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        {"a": {"b": {"c": {"d": "deep"}}}},
         action="process",
         operator="org",
         developer="agent@v1",
-        agent_input={"a": {"b": {"c": {"d": "deep"}}}},
         anchor=False,
         ledger=tmp_ledger,
     )
@@ -385,7 +398,8 @@ def test_deeply_nested_agent_input(tmp_ledger):
 
 
 def test_list_agent_output(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="process",
         operator="org",
         developer="agent@v1",
@@ -401,7 +415,8 @@ def test_list_agent_output(tmp_ledger):
 
 
 def test_large_output_string(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="process",
         operator="org",
         developer="agent@v1",
@@ -418,7 +433,8 @@ def test_large_output_string(tmp_ledger):
 
 def test_confirms_nonexistent_parent(tmp_ledger):
     fake_parent = "a" * 64
-    cap = emit(
+    cap = seal(
+        None,
         action="follow",
         operator="org",
         developer="agent@v1",
@@ -438,8 +454,9 @@ def test_confirms_nonexistent_parent(tmp_ledger):
 
 
 def test_confirms_self_circular(tmp_ledger):
-    cap = emit(action="first", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
-    cap2 = emit(
+    cap = seal(None, action="first", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap2 = seal(
+        None,
         action="self_ref",
         operator="org",
         developer="agent@v1",
@@ -451,8 +468,9 @@ def test_confirms_self_circular(tmp_ledger):
 
 
 def test_cyclic_chain_two_nodes(tmp_ledger):
-    cap_a = emit(action="node_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
-    cap_b = emit(
+    cap_a = seal(None, action="node_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap_b = seal(
+        None,
         action="node_b",
         operator="org",
         developer="agent@v1",
@@ -460,7 +478,8 @@ def test_cyclic_chain_two_nodes(tmp_ledger):
         anchor=False,
         ledger=tmp_ledger,
     )
-    cap_a2 = emit(
+    cap_a2 = seal(
+        None,
         action="node_a2",
         operator="org",
         developer="agent@v1",
@@ -478,12 +497,13 @@ def test_cyclic_chain_two_nodes(tmp_ledger):
 # ---------------------------------------------------------------------------
 
 def test_anchor_false_does_not_anchor(tmp_ledger):
-    cap = emit(action="noop", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap = seal(None, action="noop", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
     assert cap.anchored is False
 
 
 def test_anchor_false_bad_url_no_error(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="noop",
         operator="org",
         developer="agent@v1",
@@ -497,7 +517,8 @@ def test_anchor_false_bad_url_no_error(tmp_ledger):
 def test_anchor_true_with_unreachable_url_does_not_raise(tmp_ledger):
     raised = None
     try:
-        cap = emit(
+        cap = seal(
+            None,
             action="noop",
             operator="org",
             developer="agent@v1",
@@ -508,7 +529,7 @@ def test_anchor_true_with_unreachable_url_does_not_raise(tmp_ledger):
         assert cap is not None
     except Exception as exc:
         raised = exc
-    assert raised is None, f"emit() raised unexpectedly: {raised!r}"
+    assert raised is None, f"seal() raised unexpectedly: {raised!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -577,8 +598,9 @@ _EMIT_CONFIGS = [
 @pytest.mark.parametrize("label,kwargs", _EMIT_CONFIGS)
 def test_every_emit_verifies(label, kwargs, tmp_ledger):
     if label == "with_confirm_chain":
-        parent = emit(action="parent", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
-        cap = emit(
+        parent = seal(None, action="parent", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+        cap = seal(
+            None,
             action="child",
             operator="org",
             developer="agent@v1",
@@ -588,6 +610,7 @@ def test_every_emit_verifies(label, kwargs, tmp_ledger):
             ledger=tmp_ledger,
         )
     else:
-        cap = emit(**kwargs, anchor=False, ledger=tmp_ledger)
+        agent_input = kwargs.pop("agent_input", None)
+        cap = seal(agent_input, **kwargs, anchor=False, ledger=tmp_ledger)
     result = verify(cap.capsule)
     assert result.ok, [f.detail for f in result.findings if f.severity == "error"]

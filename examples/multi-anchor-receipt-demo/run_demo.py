@@ -42,7 +42,7 @@ from pathlib import Path
 from agent_action_capsule import verify as capsule_verify
 from scitt_cose import verify_receipt
 
-from capsule_emit import emit
+from capsule_emit import seal
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -239,12 +239,12 @@ def run_full_demo(ledger: Path) -> None:
         log_pem_a = _raw_ed25519_hex_to_pem(pubkey_hex_a)
         log_pem_b = _raw_ed25519_hex_to_pem(pubkey_hex_b)
 
-        _section("Step 2 — emit one capsule")
-        result = emit(
+        _section("Step 2 — seal one capsule")
+        result = seal(
+            {"query": "demonstrate multi-anchor receipts"},
             action="multi_anchor_demo",
             operator="demo-operator",
             developer="demo-agent@v1",
-            agent_input={"query": "demonstrate multi-anchor receipts"},
             agent_output={"status": "recorded"},
             model={"provider": "demo", "model_id": "demo-model"},
             verdict="executed",
@@ -341,12 +341,12 @@ def run_partial_demo(ledger: Path) -> None:
         pubkey_hex_a = _fetch_log_pubkey_hex(url_a)
         log_pem_a = _raw_ed25519_hex_to_pem(pubkey_hex_a)
 
-        _section("Step 2 — emit capsule")
-        result = emit(
+        _section("Step 2 — seal capsule")
+        result = seal(
+            {"query": "partial reachability scenario"},
             action="multi_anchor_demo_partial",
             operator="demo-operator",
             developer="demo-agent@v1",
-            agent_input={"query": "partial reachability scenario"},
             agent_output={"status": "recorded"},
             model={"provider": "demo", "model_id": "demo-model"},
             verdict="executed",

@@ -11,8 +11,9 @@ Registry (draft-mih-sokolov-scitt-payload-binding).
 
 This constant is the single declaration point for the capsule profile's
 algorithm. When the profile revs from ``jcs-n`` to ``jcs`` (plan G5/A8) the
-change is one edit here; emit() callers need no update because the value is
-wired through as a parameter default, not hardcoded at each call site.
+change is one edit here; sealing callers (seal()/carry()/compose()) need no
+update because the value is wired through as a parameter default, not
+hardcoded at each call site.
 
 Wire rule (normative in CPB — already enforced by agent_action_capsule.canonical):
   A JSON number token in a digest-bearing field MUST match ``0|-?[1-9][0-9]*``
@@ -41,7 +42,8 @@ from agent_action_capsule.canonical import FloatInDigestError
 #: at the top level of every emitted capsule, inside the signed payload).
 #: Profile default: ``jcs-n`` (RFC 8785 JCS + absent-field normalization + SHA-256).
 #: When the capsule profile revs to ``jcs`` (plan G5/A8): change this constant only —
-#: emit() accepts it as a parameter default, so all call sites update automatically.
+#: the internal primitive accepts it as a parameter default, so all call sites
+#: (via seal()/carry()/compose()) update automatically.
 CANONICALIZATION_ID: str = "jcs-n"
 
 __all__ = ["CANONICALIZATION_ID", "float_to_str"]

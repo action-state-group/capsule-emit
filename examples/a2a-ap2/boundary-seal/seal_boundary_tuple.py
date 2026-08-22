@@ -99,21 +99,21 @@ def main() -> int:
 
     _banner("Step 2 — Seal as SCITT Signed Statement (capsule-emit)")
 
-    from capsule_emit import emit
+    from capsule_emit import seal
 
     ledger = Path(tempfile.mkdtemp(prefix="a2a-boundary-")) / "ledger.jsonl"
 
     # NOTE: anchor=False here on purpose. Step 4 anchors + resolves the
     # capsule_id in a SINGLE POST /v1/digest. Submitting the same new
-    # capsule_id twice (emit's fire-and-forget anchor AND the resolve) can
+    # capsule_id twice (seal's fire-and-forget anchor AND the resolve) can
     # double-append it on the anchor, whose register dedup is not atomic —
     # one statement would then occupy two CT leaves. One submission, one leaf.
-    result = emit(
+    result = seal(
+        agent_input,
         action="a2a.boundary_seal",
         operator="action-state-group",
         developer="a2a-sdk==1.1.1@86c6b0d",
         runtime="draft-mih-scitt-agent-action-capsule-02",
-        agent_input=agent_input,
         agent_output=agent_output,
         model={
             "provider": "synthetic",

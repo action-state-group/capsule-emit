@@ -16,11 +16,11 @@ from capsule_emit.verify import verify_input_digest
 def _emit_sealed(agent_input=None, agent_output=None) -> dict:
     with tempfile.TemporaryDirectory() as d:
         ledger = str(Path(d) / "ledger.jsonl")
-        capsule_emit.emit(
+        capsule_emit.seal(
+            agent_input,
             action="purchase",
             operator="did:key:zOperator",
             developer="agent@v1",
-            agent_input=agent_input,
             agent_output=agent_output,
             anchor=False,
             ledger=ledger,

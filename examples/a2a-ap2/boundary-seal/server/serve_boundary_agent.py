@@ -112,7 +112,7 @@ def _anchor_and_resolve(capsule_id: str) -> dict:
     returns its CT coordinates + Receipt. Submitting exactly once is deliberate:
     two near-simultaneous submissions of the same new capsule_id can double-
     append on the anchor (its register dedup is not atomic), so the seal path
-    must NOT both emit(anchor=True) AND resolve. ``ok`` is True only on HTTP 200
+    must NOT both seal(anchor=True) AND resolve. ``ok`` is True only on HTTP 200
     with entry_hash == SHA-256(bytes.fromhex(capsule_id)).
     """
     expected = hashlib.sha256(bytes.fromhex(capsule_id)).hexdigest()
@@ -145,7 +145,7 @@ class BoundarySealExecutor(AgentExecutor):
         from a2a.helpers.proto_helpers import new_task_from_user_message
         from agent_action_capsule import verify
 
-        from capsule_emit import emit, verify_input_digest
+        from capsule_emit import seal, verify_input_digest
 
         msg = context.message
         # The first event MUST be a Task; create it from the user message and
@@ -188,14 +188,14 @@ class BoundarySealExecutor(AgentExecutor):
         }
 
         ledger = Path(tempfile.mkdtemp(prefix="a2a-serve-")) / "ledger.jsonl"
-        # Seal WITHOUT emit's fire-and-forget anchor; we anchor+resolve in a
+        # Seal WITHOUT the fire-and-forget anchor; we anchor+resolve in a
         # single POST below so the capsule_id is submitted exactly once.
-        result = emit(
+        result = seal(
+            agent_input,
             action="a2a.boundary_seal",
             operator="action-state-group",
             developer="a2a-sdk==1.1.1@86c6b0d",
             runtime="draft-mih-scitt-agent-action-capsule-02",
-            agent_input=agent_input,
             agent_output=agent_output,
             model={"provider": "synthetic", "model_id": "boundary-seal-reference"},
             verdict="executed",

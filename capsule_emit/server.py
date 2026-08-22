@@ -69,7 +69,7 @@ import os
 
 from mcp.server.fastmcp import FastMCP
 
-from capsule_emit import emit, read_ledger
+from capsule_emit import read_ledger, seal
 
 try:
     from agent_action_capsule import verify as _aac_verify
@@ -122,11 +122,11 @@ def capsule_record(
         out = tool_output
 
     try:
-        result = emit(
+        result = seal(
+            inp,
             action=action,
             operator=operator,
             developer=developer,
-            agent_input=inp,
             agent_output=out,
             verdict="executed",
             effect={"type": action, "status": "dispatched"},
@@ -135,7 +135,7 @@ def capsule_record(
             runtime="mcp",
         )
     except Exception as exc:
-        return f"error: emit failed — {exc}"
+        return f"error: seal failed — {exc}"
     return f"sealed capsule_id={result.capsule_id}"
 
 

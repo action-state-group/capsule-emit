@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """capsule-emit quickstart demo — the 5-minute acceptance bar.
 
-Demonstrates: emit → anchor (async, fire-and-forget) → ledger view → verify.
+Demonstrates: seal → anchor (async, fire-and-forget) → ledger view → verify.
 
 Run:
     pip install "capsule-emit[dev]"
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from agent_action_capsule import verify
 
-from capsule_emit import emit, ledger_view, load_manifest
+from capsule_emit import ledger_view, load_manifest, seal
 
 LEDGER_PATH = Path(tempfile.mkdtemp()) / "ledger.jsonl"
 
@@ -23,16 +23,16 @@ LEDGER_PATH = Path(tempfile.mkdtemp()) / "ledger.jsonl"
 def main() -> int:
     print("=== capsule-emit quickstart demo ===\n")
 
-    # --- 1. EMIT — the consequential action ----------------------------------
-    print("Step 1: emit() — write_po action")
+    # --- 1. SEAL — the consequential action ----------------------------------
+    print("Step 1: seal() — write_po action")
     agent_output = {"po_number": "PO-2026-001", "status": "dispatched"}
 
-    cap = emit(
+    cap = seal(
+        {"vendor": "Frobozz Supply", "total": "1240.19"},
         action="write_po",
         operator="acme-co",
         developer="po-agent@v1",
         runtime="demo",
-        agent_input={"vendor": "Frobozz Supply", "total": "1240.19"},
         agent_output=agent_output,
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         verdict="executed",
@@ -46,8 +46,9 @@ def main() -> int:
     print("  ✓ sealed\n")
 
     # --- 2. CONFIRM — chain a confirm action ----------------------------------
-    print("Step 2: emit() — confirm_write_po (chains → write_po)")
-    confirm = emit(
+    print("Step 2: seal() — confirm_write_po (chains → write_po)")
+    confirm = seal(
+        None,
         action="confirm_write_po",
         operator="acme-co",
         developer="po-agent@v1",
