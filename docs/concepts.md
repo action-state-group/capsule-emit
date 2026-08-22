@@ -4,7 +4,7 @@ Seven words cover everything. Each one is a real field you can see or a command 
 can run — no theory required.
 
 ### Capsule
-A sealed receipt of one thing your agent did. Who did it, what they did, what
+A sealed record of one thing your agent did. Who did it, what they did, what
 happened — bundled and hashed so it can't be quietly changed. It's plain JSON
 (`cap.capsule`). **Everything else is about what you can do with capsules.**
 
@@ -21,9 +21,10 @@ present "tried to charge the card" as "charged the card."
 
 ### Chain
 Actions link together. A *confirm* (or a human approval) is its own capsule that
-points back at the one before it (`chain.parent_capsule_id`), by content address — so a
-*different* agent can chain to yours by id alone. String them up and
-*attempted → approved → confirmed* becomes one trail you can follow and verify.
+points back at the one before it (`chain.parent_capsule_id`), by content address.
+String them up and *attempted → approved → confirmed* becomes one trail you can
+follow and verify — within one stream today; cross-organizational chaining
+guidance is under revision.
 → `emit(..., confirms=earlier_id)` · [within & across agents](chaining.md)
 
 ### Break

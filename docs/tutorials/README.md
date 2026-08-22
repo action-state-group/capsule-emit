@@ -19,7 +19,7 @@ terminal session you can reproduce line for line.
 ## Wait — what's a capsule, in one breath?
 
 Your agent did something (wrote a PO, sent an email, charged a card). A **capsule**
-is a little sealed receipt of that action: *who* did it, *what* they did, and *what
+is a little sealed record of that action: *who* did it, *what* they did, and *what
 happened* — hashed so it can't be quietly edited, and (optionally) logged to a public
 list so anyone can later check it's real. You add **one line** where the action
 happens; you get back proof you can hand to anyone.

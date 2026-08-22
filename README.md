@@ -60,7 +60,7 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 **Then climb, one rung at a time:**
 
 - **Capture more, write less** — a decorator [adapter](docs/adapters/) (MCP / LangChain / CrewAI / Hermes / Goose / ADK) seals each wrapped tool call automatically; the [agentgateway](docs/adapters/agentgateway.md) adapter seals all consequential traffic at the gateway chokepoint — no per-tool changes needed.
-- **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence — and a *different* agent can chain to yours by id alone. → `emit(..., confirms=parent_id)` · [within & across agents](docs/chaining.md)
+- **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence. → `emit(..., confirms=parent_id)` · [within one stream, and across (under revision)](docs/chaining.md)
 - **Declare now, enforce later** — a `manifest.md` declares your rules; a compatible gateway enforces the *same file*, with no change to your `emit()` calls.
 
 The unit is the **capsule** (one action). What you keep and grow is the **ledger** (the anchored trail). Chaining links specific capsules within it. Start with the ledger; add the rest when you need it. → walk it end-to-end in the **[tutorials](docs/tutorials/)**.
@@ -73,14 +73,14 @@ The unit is the **capsule** (one action). What you keep and grow is the **ledger
 
 ## Anchoring — where the proof lives
 
-**Anchor is on by default.** On `emit()`, the capsule's **digest only** is submitted — async, non-blocking — to an [RFC 9162](https://www.rfc-editor.org/rfc/rfc9162) SCITT transparency log, so this exact capsule's existence is recorded at that time and independently checkable against the log. (`cap.anchored` reports the submission; surfacing the log's inclusion **receipt** back onto the result is on the near-term roadmap — today the digest is on the log and checkable there.)
+**Anchor is on by default.** On `emit()`, the capsule's **digest only** is submitted — async, non-blocking — to an [RFC 9162](https://www.rfc-editor.org/rfc/rfc9162) SCITT transparency log, so this exact capsule's existence is recorded at that time and checkable against the log by a party who trusts neither you nor your runtime. (`cap.anchored` reports the submission; surfacing the log's inclusion **receipt** back onto the result is on the near-term roadmap — today the digest is on the log and checkable there.) That's **registered**, not automatically **witnessed** — see [why anchoring makes it trustworthy](docs/why-anchoring.md) for the honest ladder.
 
 - **What's logged:** a SHA-256 digest — nothing else. Your payloads never leave your machine.
-- **Where:** the free hosted log at `https://anchor.agentactioncapsule.org/v1/digest` (no signup, no key).
+- **Where:** the free hosted log at `https://anchor.agentactioncapsule.org/v1/digest` (no signup, no key) — a single-operator log.
 - **Self-host or repoint:** the log service ([`capsule-anchor`](https://github.com/action-state-group/capsule-anchor)) is open-source — `AAC_ANCHOR_URL=…` or `emit(..., anchor_url=…)`.
 - **Offline:** `emit(..., anchor=False)` seals locally, skips the network.
 
-*Why bother:* a self-hosted log you control isn't proof to an outsider; a shared, append-only transparency log is. That's what makes the capsule checkable by someone who trusts neither party.
+*Why bother:* a self-hosted log you control isn't proof to an outsider; a shared, append-only transparency log is checkable by someone who trusts neither you nor the log's contents (though not, without a witness, someone unwilling to trust the log's operator at all — that step is registered vs. witnessed, not shared vs. unshared).
 
 ## Verify
 

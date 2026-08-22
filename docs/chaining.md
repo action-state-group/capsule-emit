@@ -1,9 +1,8 @@
 # Chaining — within one agent, and across agents
 
 A single capsule records one action. **Chaining** links capsules into a verifiable
-*trail* — and the same mechanism works whether the capsules came from one agent or from
-different agents in different organizations. This is where the may/did distinction
-becomes a sequence, and where cross-organizational verifiable history comes from.
+*trail* within one stream. This is where the may/did distinction becomes a sequence.
+Cross-organizational chaining guidance is under revision — see below.
 
 ## How the link works
 
@@ -40,30 +39,20 @@ done = emit(action="write_po", operator="acme-co", developer="po-agent@v1",
 That turns *approved → executed → confirmed* (and human-in-the-loop approval) into one
 verifiable sequence in your ledger. (See [tutorial 2](tutorials/02-confirming-and-chaining.md).)
 
-## Across agents — the same mechanism, no shared ledger
+## Across agents — under revision
 
-Here's the part identity and observability can't do. Because `capsule_id` is global,
-**a different agent — in a different org, with its own ledger — can chain to your
-capsule just by knowing its id.** No shared database, no coordination:
+> **⚠ Under revision.** This section previously recommended `confirms=` for
+> linking capsules across different organizations/ledgers. That guidance is
+> being replaced: a dedicated cross-stream reference mechanism has been decided
+> and is not yet shipped. **Don't use `confirms=` to link capsules across
+> different organizations/ledgers in new integrations** — treat it as valid only
+> for links within one stream (see "Within one agent" above). This section will
+> be rewritten in full once the replacement ships.
 
-```python
-# Emitter A (your org) seals an action in A's ledger
-a = emit("write_po", operator="acme-co", developer="po-agent@v1",
-         effect={"type": "write_po", "status": "dispatched"}, ledger="A.jsonl")
-
-# Emitter B (a DIFFERENT org/agent, B's own ledger) confirms A's action — by A's id alone
-b = emit("write_po", operator="vendor-co", developer="fulfillment@v2",
-         verdict="confirmed", effect={"type": "write_po", "status": "confirmed"},
-         confirms=a.capsule_id,                 # ← just the foreign id
-         ledger="B.jsonl")
-
-assert b.capsule["chain"]["parent_capsule_id"] == a.capsule_id   # → True
-```
-
-Now there's a **cross-organizational verifiable trail**: vendor-co's confirmation points,
-tamper-evidently, at acme-co's dispatch. Neither party trusts the other's database — they
-trust the **content address**. This is the basis for multi-agent workflows, counterparty
-confirmation, and selective disclosure of a cross-party chain.
+The mechanical fact that doesn't change: because `capsule_id` is a content
+address, a capsule in one ledger can reference a capsule in another by id alone
+— no shared database is required. What's changing is which relation you use to
+express that cross-stream link; this page will be updated when that lands.
 
 > Today `confirms=` writes `relation: "confirms"`. The spec also defines `supersede` /
 > `escalate`; richer relation values (and a `relation=` parameter) are

@@ -128,8 +128,9 @@ jurisdiction.)*
 **Do I have to be online? What if I don't want to anchor at all?**
 Anchoring is async and non-blocking, and fully optional: `emit(..., anchor=False)`
 seals locally and skips the network. You can anchor later, or never. Without an
-anchor you still have a tamper-evident record — just self-attested, not
-independently witnessed ([why that matters](why-anchoring.md)).
+anchor you have a tamper-evident record — self-attested. With the default anchor
+you move up to registered — checkable against the log, but not yet witnessed
+([why that matters, and what the difference is](why-anchoring.md)).
 
 **Can I use my own log instead of the hosted one?**
 Yes — `AAC_ANCHOR_URL=…` or `emit(..., anchor_url=…)`; the log service

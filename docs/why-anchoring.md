@@ -28,7 +28,8 @@ This is the precise sense in which *"your logs are your own word."*
 Anchoring writes the capsule's **digest** to a **shared, append-only transparency
 log** — one that no single party owns. In return you get an
 [RFC 9162](https://www.rfc-editor.org/rfc/rfc9162) **inclusion-proof receipt**. That
-brings in the missing thing: an **independent witness**.
+gets you **registered**: the record is now checkable by a party who trusts
+neither you nor your runtime.
 
 - **Existed at time T.** The receipt proves this exact capsule was logged at that
   time — so it can't have been built after the fact (hole 3 closed).
@@ -38,23 +39,38 @@ brings in the missing thing: an **independent witness**.
   offline — they trust the *log*, not you.
 
 That's the leap from *tamper-evident* (you didn't edit it) to *independently
-verifiable* (someone who distrusts you can confirm it).
+verifiable* (someone who distrusts you can confirm it) — but it's a leap to
+**registered**, not automatically to **witnessed**. A single log, even a shared
+one, can still show two different views to two different readers; registration
+alone doesn't rule that out. Closing that gap is what a *witness* does (next
+section).
 
 ## Be precise about what it proves (and doesn't)
 
 Anchoring proves **existence, integrity, and time** — *that this exact record was
-sealed and logged when it says.* It does **not** make the recorded claim *true*. A
-capsule that says "the payment settled" is still your runtime's word that it
-settled. The honest tiers:
+sealed and logged when it says.* It does **not** make the recorded claim *true*, and
+by itself it does **not** rule out the log showing different histories to different
+parties. A capsule that says "the payment settled" is still your runtime's word that
+it settled. The honest ladder:
 
 - **Self-attested (a record you keep):** tamper-evident, but trust-the-keeper.
-- **Anchored (digest in a shared log):** + existed-at-T, omission-resistant,
-  independently checkable — cross-party.
-- **Counter-signed / confirmed:** strongest — when the other party signs the outcome
-  (e.g. the bank signs settlement) or a confirmation capsule
-  [chains](concepts.md) to the action.
+- **Registered / anchored (digest in a shared log):** + existed-at-T,
+  omission-resistant, independently checkable — but you're still trusting that
+  *one* log operator not to equivocate. This is where `capsule-emit`'s default
+  hosted anchor sits today.
+- **Witnessed:** the log's own checkpoint is independently co-signed — honestly
+  described as "witnessed up to size S at time T" — or the same digest is
+  registered to more than one independently-operated log, so equivocation now
+  requires collusion. A witness operated by *you*, or by a party closely related
+  to you, buys less than one with no relationship to you at all (self < peer <
+  independent) — a perfectly good receipt from an unwitnessed log is registered,
+  not witnessed.
+- **Counter-signed / confirmed:** a separate axis from the witnessing ladder —
+  when the other party signs the outcome (e.g. the bank signs settlement) or a
+  confirmation capsule [chains](concepts.md) to the action.
 
-Anchoring moves you from the first tier to the second. Don't claim the third for free.
+Anchoring today moves you from the first tier to the second. Don't claim the third
+or fourth for free.
 
 ## What actually leaves your machine
 
@@ -66,11 +82,13 @@ re-hashes your held capsule and checks the fingerprint against the log.)
 ## Why a *shared* log, not your own
 
 A transparency log **you** run isn't proof to an outsider — it has the same
-"trust-the-keeper" problem as your ledger. The value comes from the log being
-**shared and independent**: that's what a counterparty can rely on without trusting
-you. `capsule-emit` anchors by default to the free hosted log at
-`anchor.agentactioncapsule.org`; you can self-host or repoint (`AAC_ANCHOR_URL`),
-but the trust property only holds when the log is one the *verifier* also trusts.
+"trust-the-keeper" problem as your ledger. A **shared** log — one you don't
+control — lets a counterparty check your capsule without trusting *you*; it
+does not, by itself, mean nobody has to trust the log's *operator* (that's the
+registered-vs-witnessed distinction above). `capsule-emit` anchors by default to
+the free hosted log at `anchor.agentactioncapsule.org`, a single-operator log;
+you can self-host or repoint (`AAC_ANCHOR_URL`), but either way the trust
+property only holds when the log is one the *verifier* also trusts.
 
 ## In practice
 
