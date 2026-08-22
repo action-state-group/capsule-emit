@@ -134,6 +134,7 @@ New here? Written to be read top-to-bottom, no standards background needed:
 - **[The public log, explained](docs/the-public-log-explained.md)** — plain-English + FAQ: the transparency log, how Merkle proofs work, what's visible vs hidden, what you can progressively share. For when someone asks *"you're putting our data on a public log?"*
 - **[Adapters](docs/adapters/)** — decorator adapters (MCP / LangChain / CrewAI / Hermes / [Goose](docs/adapters/goose.md) / [ADK](docs/adapters/adk.md)) seal each wrapped tool call; [agentgateway](docs/adapters/agentgateway.md) seals all `tools/call` traffic at the gateway layer. Paste-to-your-coding-agent prompt on each page.
 - **[Going deeper — and popping out](docs/going-deeper.md)** — *down* into the spec + `scitt-cose` substrate to verify it yourself; *up* to a compatible enforcement gateway when you want capsules to **block**, not just record.
+- **[`capsule_emit.checkpoint`](docs/checkpoint.md)** — opt-in CLL (Checkpointed Local Log) core: an MMR index over your own ledger plus signed, TS-registrable peaks checkpoints. Zero cost unless imported.
 
 ## How it fits
 
