@@ -1,7 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 """capsule-emit — one-call emit() for Agent Action Capsules.
 
-The adoption surface for the Agent Action Capsule standard:
+The developer surface, on one authorship axis — never
+``import capsule_emit as capsule`` (it would shadow the noun the canonical
+line below assigns to):
+
+    from capsule_emit import seal, carry, compose
+
+    capsule = seal(payload)                        # MINT — mine
+    effect  = carry(receipt_bytes)                 # CARRY — theirs, already signed
+    action  = compose([auth, guard, act, effect])  # BIND — references members
+
+All three return a :class:`Capsule` (never call it a ``receipt`` — that word
+is reserved for what a witness/transparency-service returns) and all three
+append to the log. See ``capsule_emit.surface`` for the full contract.
+
+``emit()`` is the lower-level, fully-parameterized primitive ``seal()``
+wraps (action/operator/developer/model/effect all in one call) and remains
+available unchanged:
 
     from capsule_emit import emit
 
@@ -38,6 +54,7 @@ from .ledger import view as ledger_view
 from .ledger import view_chains as ledger_view_chains
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
 from .numbers import CANONICALIZATION_ID
+from .surface import Capsule, carry, compose, seal
 from .verify import verify_input_digest
 from .verify_canonicalization import (
     KNOWN_ALGORITHMS,
@@ -50,6 +67,11 @@ __version__ = "0.3.1"
 
 __all__ = [
     "__version__",
+    # seal / carry / compose — the developer surface (Layer 0)
+    "Capsule",
+    "seal",
+    "carry",
+    "compose",
     # Core
     "emit",
     "EmitResult",

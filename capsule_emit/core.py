@@ -22,6 +22,13 @@ was requested. The default (non-blocking) anchor path can only ever report the
 weaker ``anchor_status="submitted"``; pass ``anchor_wait=<seconds>`` to block
 for a real confirmed/failed outcome. See ``transparent.py`` / ``verify.py`` /
 ``cli.py`` in ``agent_action_capsule`` for the same rule enforced elsewhere.
+
+**Prefer** ``capsule_emit.seal`` **for the one-liner mint case** — ``capsule =
+seal(payload)`` is a thin wrapper over this exact ``emit()`` (see
+``capsule_emit.surface``) with a friendlier import and a default ``action``.
+``emit()`` itself is not deprecated — it stays the fully-parameterized
+primitive for callers that need every keyword in one call — but new
+mint-shaped call sites should reach for ``seal()`` first.
 """
 from __future__ import annotations
 
