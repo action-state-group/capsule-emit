@@ -232,7 +232,7 @@ def emit(
     anchor_url: str | None = None,
     anchor_wait: float | None = None,
     witness: bool | None = None,
-    witness_url: str | None = None,
+    witness_url: str | list[str] | None = None,
     human_disposed: bool = False,
     approver: str = "policy",
     decision: str = "accept",
@@ -287,9 +287,15 @@ def emit(
             ``witness=`` kwarg always overrides the env var). Never blocks —
             there is no ``witness_wait`` because a checkpoint reports on a
             *stream*, not this one call.
-        witness_url: Override the witness Transparency Service endpoint
+        witness_url: Override the witness Transparency Service endpoint(s)
             (else reads ``CAPSULE_WITNESS_URL`` env var, else the free
-            public-good tier at ``anchor.agentactioncapsule.org``).
+            public-good tier at ``witness.agentactioncapsule.org`` --
+            currently served via ``anchor.agentactioncapsule.org`` while its
+            CNAME is pending). Pass a single URL, or several (a list, or a
+            comma-separated string for the env var) to register the same
+            checkpoint with more than one Transparency Service at once --
+            what climbs from *witnessed (single witness)* to *multi-witness,
+            equivocation-resistant* (see ``docs/checkpoint.md``).
         human_disposed: Whether a human made the disposition decision. When True,
             ``approver`` MUST be ``"human"`` — raises ``ValueError`` otherwise.
         approver: Who approved the disposition: ``"human"`` or ``"policy"`` (default).

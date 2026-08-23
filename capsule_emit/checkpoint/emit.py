@@ -44,12 +44,14 @@ to it: everything above stays true for direct/manual use — nothing here
 reaches for a signing key, a schedule, or the network on its own.
 
 The free public-good witness tier lives at ``DEFAULT_TS_URL``
-(``anchor.agentactioncapsule.org``) -- prefilled as the config default so a
-caller who wants it need not look it up, but never contacted unless
-``register_checkpoint``/``verify_receipt_offline`` is actually called, and
-freely substitutable with any conforming Transparency Service. A generated
-config file should show it commented out (see ``EXAMPLE_CONFIG_TOML``), so
-opting in is an explicit uncomment, not a silent default.
+(``witness.agentactioncapsule.org`` -- semantically a witness, not the
+anchor; see ``_PENDING_CNAME_TARGETS`` below for its current DNS status)
+-- prefilled as the config default so a caller who wants it need not look it
+up, but never contacted unless ``register_checkpoint``/``verify_receipt_offline``
+is actually called, and freely substitutable with any conforming Transparency
+Service. A generated config file should show it commented out (see
+``EXAMPLE_CONFIG_TOML``), so opting in is an explicit uncomment, not a silent
+default.
 
 The checkpoint ``signature`` covers all fields except itself and
 ``witnesses`` (deterministic JSON, ``sort_keys=True``); the digest registered
@@ -86,7 +88,16 @@ __all__ = [
     "EXAMPLE_CONFIG_TOML",
 ]
 
-DEFAULT_TS_URL = "https://anchor.agentactioncapsule.org"
+DEFAULT_TS_URL = "https://witness.agentactioncapsule.org"
+
+#: [currently anchor., CNAME pending] ``witness.agentactioncapsule.org`` is
+#: meant to CNAME onto ``anchor.agentactioncapsule.org`` -- same free
+#: public-good service, semantically correct name for this tier -- but that
+#: DNS record has not propagated yet. Until it does, a request to the
+#: *default* URL is dispatched to the anchor host directly so registration
+#: keeps working today; an explicit non-default ``ts_url`` is never
+#: rewritten. Remove this indirection once the CNAME is live.
+_PENDING_CNAME_TARGETS = {DEFAULT_TS_URL: "https://anchor.agentactioncapsule.org"}
 
 #: A generated-config snippet: the witness URL is prefilled with the free
 #: public-good tier but shipped COMMENTED OUT, so registration stays opt-in
@@ -387,9 +398,15 @@ def register_checkpoint(
     The TS returns a COSE Receipt over the checkpoint's digest. The receipt
     proves that this checkpoint was seen by the TS at some point in its log.
     Never called implicitly -- registration is always the caller's decision.
+
+    ``ts_url`` is what's recorded on the returned ``WitnessRecord`` (the
+    semantic identity of the witness); the actual HTTP request may be
+    dispatched elsewhere for the *default* URL only -- see
+    ``_PENDING_CNAME_TARGETS``.
     """
     digest = cp.digest()
-    url = ts_url.rstrip("/") + "/v1/digest"
+    dispatch_url = _PENDING_CNAME_TARGETS.get(ts_url, ts_url)
+    url = dispatch_url.rstrip("/") + "/v1/digest"
     payload = json.dumps({"capsule_id": digest}).encode()
     req = urllib.request.Request(
         url,

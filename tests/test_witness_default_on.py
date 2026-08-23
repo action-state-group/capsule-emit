@@ -96,10 +96,12 @@ def _clean_witness_state():
     witness._counts.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
+    witness._notice_printed = False
     yield
     witness._counts.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
+    witness._notice_printed = False
 
 
 def _wait_for(predicate, timeout=5.0):

@@ -82,9 +82,19 @@ The unit is the **capsule** (one action). What you keep and grow is the **ledger
 
 *Why bother:* a self-hosted log you control isn't proof to an outsider; a shared, append-only transparency log is checkable by someone who trusts neither you nor the log's contents (though not, without a witness, someone unwilling to trust the log's operator at all — that step is registered vs. witnessed, not shared vs. unshared).
 
-## Checkpoint — the stream, not just the entry
+## Checkpoint — your log now proves itself
 
-Anchoring (above) is per-**capsule**. `emit()` also, **by default**, folds every capsule into a per-ledger [Merkle Mountain Range](docs/checkpoint.md) and — once enough entries have accumulated — builds and registers a signed **checkpoint** over the whole stream so far, same free hosted log, same digest-only/async posture. No opt-in code required; zero cost until a ledger actually crosses that threshold (`emit(..., witness=False)` or `CAPSULE_WITNESS=off` to disable). See **[`capsule_emit.checkpoint`](docs/checkpoint.md)** for the cadence, the disable switch, and what trust tier this does (and doesn't) reach.
+Until 0.5.0, your capsule log was like a git repo you never pushed: internally consistent — every capsule content-addressed, every entry chained to the one before it — but nothing *outside* your machine vouches for it. An unpushed commit can be quietly rewritten; a pushed one can't.
+
+**0.5.0 pushes.** Anchoring (above) is per-**capsule**; checkpointing is per-**stream**. `emit()` also, **by default**, folds every capsule into a per-ledger [Merkle Mountain Range](docs/checkpoint.md) and — every ~100 records (`capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`) — builds and registers a signed **checkpoint**: a 32-byte summary of the whole stream so far, sent to an independent witness. Same digest-only/async posture as the anchor; your payloads never leave.
+
+- **Off is one flag, honored everywhere:** `emit(..., witness=False)` for one call, `CAPSULE_WITNESS=off` for every call — no code change, no opt-in required in the first place.
+- **Your log is still your file.** The witness only ever sees a digest; walking away from it loses no history — `ledger.jsonl` is complete on its own, the witness just lets someone else confirm you didn't rewrite it after the fact.
+- **Any witness works, and more than one is stronger.** The default is a free hosted tier at `witness.agentactioncapsule.org`\* — but any conforming Transparency Service is substitutable (`CAPSULE_WITNESS_URL` / `emit(..., witness_url=...)`), and you can register with several at once (a list, or comma-separated) for a stronger, equivocation-resistant tier. The first checkpoint of a process prints one line to stderr — once — naming exactly what's sent, where, and how to turn it off.
+
+See **[`capsule_emit.checkpoint`](docs/checkpoint.md)** for the cadence, the multi-witness config, and precisely what trust tier a checkpoint does (and doesn't) reach — a single witness upgrades you from *self-attested*, but it isn't the *multi-witness, equivocation-resistant* tier, and a witness never vouches that your capsules' content is true, only that they exist, are ordered, and weren't deleted.
+
+\* currently served via `anchor.agentactioncapsule.org` while the `witness.` CNAME is pending — same free hosted service either way.
 
 ## Verify
 

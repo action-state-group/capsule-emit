@@ -43,7 +43,9 @@ verifiable* (someone who distrusts you can confirm it) — but it's a leap to
 **registered**, not automatically to **witnessed**. A single log, even a shared
 one, can still show two different views to two different readers; registration
 alone doesn't rule that out. Closing that gap is what a *witness* does (next
-section).
+section) — `capsule-emit`'s own checkpoint stream (on by default since 0.5.0,
+see [`docs/checkpoint.md`](checkpoint.md)) does exactly this, at
+*single-witness* strength, once it registers.
 
 ## Be precise about what it proves (and doesn't)
 
@@ -57,20 +59,30 @@ it settled. The honest ladder:
 - **Registered / anchored (digest in a shared log):** + existed-at-T,
   omission-resistant, independently checkable — but you're still trusting that
   *one* log operator not to equivocate. This is where `capsule-emit`'s default
-  hosted anchor sits today.
-- **Witnessed:** the log's own checkpoint is independently co-signed — honestly
-  described as "witnessed up to size S at time T" — or the same digest is
-  registered to more than one independently-operated log, so equivocation now
-  requires collusion. A witness operated by *you*, or by a party closely related
-  to you, buys less than one with no relationship to you at all (self < peer <
-  independent) — a perfectly good receipt from an unwitnessed log is registered,
-  not witnessed.
+  per-capsule anchor sits today.
+- **Witnessed (single witness):** a Transparency Service has registered a
+  signed *checkpoint* over your stream — vouching that the records under it
+  **existed, in that order, and haven't been rewritten since** (existence +
+  order + non-deletion). `capsule-emit`'s default checkpoint
+  ([`docs/checkpoint.md`](checkpoint.md), on since 0.5.0) reaches exactly this
+  tier once it registers. It's a real upgrade over self-attested — but it is
+  **not** the next tier: one witness can still show a different view to a
+  different party, and — like registered/anchored — a witness never vouches
+  that the record's *content* is true, only that it exists, is ordered, and
+  wasn't deleted.
+- **Multi-witness (equivocation-resistant):** the same checkpoint is
+  independently co-signed by, or registered to, more than one
+  independently-operated log — honestly described as "witnessed up to size S
+  at time T" by each — so equivocation now requires collusion. A witness
+  operated by *you*, or by a party closely related to you, buys less than one
+  with no relationship to you at all (self < peer < independent).
 - **Counter-signed / confirmed:** a separate axis from the witnessing ladder —
   when the other party signs the outcome (e.g. the bank signs settlement) or a
   confirmation capsule [chains](concepts.md) to the action.
 
-Anchoring today moves you from the first tier to the second. Don't claim the third
-or fourth for free.
+Anchoring today moves you from the first tier to the second; the default
+checkpoint stream moves your *stream* to the third. Don't claim the fourth or
+fifth for free.
 
 ## What actually leaves your machine
 
