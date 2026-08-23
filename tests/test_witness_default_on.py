@@ -27,7 +27,7 @@ import time
 
 import pytest
 
-from capsule_emit import emit, witness
+from capsule_emit import seal, witness
 
 _WORKTREE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -124,7 +124,7 @@ def test_default_path_checkpoints_and_registers_a_stream(tmp_path, stub_ts, monk
     ledger = tmp_path / "ledger.jsonl"
 
     results = [
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
         for i in range(5)
     ]
 
@@ -147,7 +147,7 @@ def test_default_witness_true_matches_calling_emit_with_no_witness_kwarg(tmp_pat
     ledger = tmp_path / "ledger.jsonl"
 
     for i in range(2):
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
 
     assert _wait_for(lambda: len(received) >= 1), (
         "emit() with no witness= kwarg at all never produced a checkpoint -- "
@@ -166,7 +166,7 @@ def test_witness_false_opts_out(tmp_path, stub_ts, monkeypatch):
     ledger = tmp_path / "ledger.jsonl"
 
     for i in range(4):
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger,
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger,
              witness_url=ts_url, witness=False)
 
     time.sleep(0.2)  # give a wrongly-dispatched worker a chance to land
@@ -182,7 +182,7 @@ def test_capsule_witness_off_env_var_opts_out(tmp_path, stub_ts, monkeypatch):
     ledger = tmp_path / "ledger.jsonl"
 
     for i in range(4):
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
 
     time.sleep(0.2)
     assert received == [], "CAPSULE_WITNESS=off still registered a checkpoint with the TS"
@@ -198,7 +198,7 @@ def test_explicit_witness_true_overrides_env_off(tmp_path, stub_ts, monkeypatch)
     ledger = tmp_path / "ledger.jsonl"
 
     for i in range(2):
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger,
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger,
              witness_url=ts_url, witness=True)
 
     assert _wait_for(lambda: len(received) >= 1), (
@@ -216,16 +216,16 @@ def test_only_the_checkpoint_digest_is_posted(tmp_path, stub_ts, monkeypatch):
     ts_url, received = stub_ts
     ledger = tmp_path / "ledger.jsonl"
 
-    emit(
-        "transfer_funds",
+    seal(
+        {"account": "secret-account-number-12345", "amount": "1000.00"},
+        action="transfer_funds",
         operator="a-very-identifying-operator-name",
         developer="agent-x@v9",
-        agent_input={"account": "secret-account-number-12345", "amount": "1000.00"},
         anchor=False,
         ledger=ledger,
         witness_url=ts_url,
     )
-    emit("transfer_funds", operator="a-very-identifying-operator-name",
+    seal(None, action="transfer_funds", operator="a-very-identifying-operator-name",
          anchor=False, ledger=ledger, witness_url=ts_url)
 
     assert _wait_for(lambda: len(received) >= 1)
@@ -254,7 +254,7 @@ def test_single_default_emit_never_imports_checkpoint_subpackage(tmp_path):
         "import sys\n"
         "sys.path.insert(0, {!r})\n"
         "import capsule_emit\n"
-        "r = capsule_emit.emit('single-shot', operator='acme', anchor=False, "
+        "r = capsule_emit.seal(None, action='single-shot', operator='acme', anchor=False, "
         "ledger={!r})\n"
         "assert 'capsule_emit.checkpoint' not in sys.modules, ("
         "'a single below-cadence emit() call imported capsule_emit.checkpoint -- '"
@@ -280,7 +280,7 @@ def test_many_emits_below_cadence_still_never_import_checkpoint(tmp_path):
         "sys.path.insert(0, {!r})\n"
         "import capsule_emit\n"
         "for i in range(20):\n"
-        "    capsule_emit.emit(f'action-{{i}}', operator='acme', anchor=False, "
+        "    capsule_emit.seal(None, action=f'action-{{i}}', operator='acme', anchor=False, "
         "ledger={!r})\n"
         "assert 'capsule_emit.checkpoint' not in sys.modules, ("
         "'20 calls under the default cadence (100) imported capsule_emit.checkpoint')\n"
@@ -312,7 +312,7 @@ def test_crossing_cadence_does_import_checkpoint_subpackage(tmp_path, stub_ts):
         "os.environ['CAPSULE_WITNESS_CADENCE_ENTRIES'] = '2'\n"
         "import capsule_emit\n"
         "for i in range(3):\n"
-        "    capsule_emit.emit(f'action-{{i}}', operator='acme', anchor=False, "
+        "    capsule_emit.seal(None, action=f'action-{{i}}', operator='acme', anchor=False, "
         "ledger={!r}, witness_url={!r})\n"
         "import time\n"
         "for _ in range(200):\n"
@@ -352,7 +352,7 @@ def test_burst_of_cadence_crossings_never_produces_a_rollback_race(
     ledger = tmp_path / "ledger.jsonl"
 
     for i in range(7):  # crosses cadence twice (at 3 and 6) in a tight loop
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
 
     assert _wait_for(lambda: len(received) >= 1)
     time.sleep(0.3)  # let a second dispatch (racing or sequential) land too
