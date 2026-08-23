@@ -131,7 +131,17 @@ def test_default_path_checkpoints_and_registers_a_stream(tmp_path, stub_ts, monk
     assert all(r.capsule_id for r in results)
     assert _wait_for(lambda: len(received) >= 1), "checkpoint was never registered with the TS"
 
+    # The stub TS appends to `received` inside do_POST, before it writes the
+    # response body -- so `received` can go non-empty before the client
+    # thread's register_checkpoint() call has returned and appended the
+    # WitnessRecord to cp.witnesses. Wait on that actual completion signal
+    # too, not just the server-side proxy, to close that race.
     key = witness._resolve_key(str(ledger))
+    assert _wait_for(
+        lambda: key in witness._states
+        and witness._states[key].prev is not None
+        and witness._states[key].prev.witnesses
+    ), "CheckpointRecord never recorded its WitnessRecord"
     state = witness._states[key]
     assert state.prev is not None, "no CheckpointRecord was ever built"
     assert state.prev.witnesses, "CheckpointRecord never recorded its WitnessRecord"
