@@ -82,6 +82,10 @@ The unit is the **capsule** (one action). What you keep and grow is the **ledger
 
 *Why bother:* a self-hosted log you control isn't proof to an outsider; a shared, append-only transparency log is checkable by someone who trusts neither you nor the log's contents (though not, without a witness, someone unwilling to trust the log's operator at all — that step is registered vs. witnessed, not shared vs. unshared).
 
+## Checkpoint — the stream, not just the entry
+
+Anchoring (above) is per-**capsule**. `emit()` also, **by default**, folds every capsule into a per-ledger [Merkle Mountain Range](docs/checkpoint.md) and — once enough entries have accumulated — builds and registers a signed **checkpoint** over the whole stream so far, same free hosted log, same digest-only/async posture. No opt-in code required; zero cost until a ledger actually crosses that threshold (`emit(..., witness=False)` or `CAPSULE_WITNESS=off` to disable). See **[`capsule_emit.checkpoint`](docs/checkpoint.md)** for the cadence, the disable switch, and what trust tier this does (and doesn't) reach.
+
 ## Verify
 
 The verifier ships in the spec package — check any capsule (or a whole ledger) from the bytes alone, no keys/network/clock:
@@ -134,7 +138,7 @@ New here? Written to be read top-to-bottom, no standards background needed:
 - **[The public log, explained](docs/the-public-log-explained.md)** — plain-English + FAQ: the transparency log, how Merkle proofs work, what's visible vs hidden, what you can progressively share. For when someone asks *"you're putting our data on a public log?"*
 - **[Adapters](docs/adapters/)** — decorator adapters (MCP / LangChain / CrewAI / Hermes / [Goose](docs/adapters/goose.md) / [ADK](docs/adapters/adk.md)) seal each wrapped tool call; [agentgateway](docs/adapters/agentgateway.md) seals all `tools/call` traffic at the gateway layer. Paste-to-your-coding-agent prompt on each page.
 - **[Going deeper — and popping out](docs/going-deeper.md)** — *down* into the spec + `scitt-cose` substrate to verify it yourself; *up* to a compatible enforcement gateway when you want capsules to **block**, not just record.
-- **[`capsule_emit.checkpoint`](docs/checkpoint.md)** — opt-in CLL (Checkpointed Local Log) core: an MMR index over your own ledger plus signed, TS-registrable peaks checkpoints. Zero cost unless imported.
+- **[`capsule_emit.checkpoint`](docs/checkpoint.md)** — the CLL (Checkpointed Local Log) core: an MMR index over your own ledger plus signed, TS-registrable peaks checkpoints. Wired in **by default** since 0.5.0 (lazy — zero cost until a ledger is actually checkpoint-worthy); the primitives are also directly usable for your own cadence/keys/TS.
 
 ## How it fits
 

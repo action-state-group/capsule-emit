@@ -6,6 +6,67 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-23
+
+### Changed — BREAKING (default-behavior): CLL checkpoint/witness is now default-ON (emit-witness-default-on)
+
+**What changed.** The CLL checkpoint/witness layer (`capsule_emit.checkpoint`, shipped
+opt-in in the previous release via the `cll-extract-mmr-to-capsule-emit` port) is now
+wired into `capsule_emit.core.emit()`'s default path. Previously a caller had to
+`import capsule_emit.checkpoint` and drive `MmrLedger` / `emit_checkpoint` /
+`register_checkpoint` by hand to get a witnessed stream at all — near-zero adopters
+ever did, so the differentiator never reached the market. Now every ledger
+participates automatically: once it accumulates `capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`
+(100) entries since its last checkpoint, a signed peaks checkpoint is built and
+registered with a Transparency Service with zero code change required.
+
+**Both prior rulings hold across the flip:**
+- **Digest-only (Amendment E's privacy posture).** Only the checkpoint's own SHA-256
+  digest crosses the wire — no capsule content, no ledger path, no action names. Same
+  posture as the already-default per-emit anchor. Registration is async,
+  fire-and-forget, on a daemon thread; a cadence-crossing `emit()` call never blocks.
+- **Zero cost for non-users (the code's original opt-in reason).** Activation is lazy,
+  per ledger path: a caller who emits once and exits, or whose ledger never crosses the
+  cadence threshold, imports nothing from `capsule_emit.checkpoint` and builds no MMR —
+  `tests/test_checkpoint_layer0_cost.py` and the new
+  `tests/test_witness_default_on.py::test_single_default_emit_never_imports_checkpoint_subpackage`
+  /  `test_many_emits_below_cadence_still_never_import_checkpoint` assert this directly,
+  in a subprocess, so a regression here cannot hide behind another test's warm
+  `sys.modules`.
+
+**Endpoint.** Defaults to `anchor.agentactioncapsule.org` — the same donated
+public-good tier the anchor already uses, not the Authority (that boundary is
+unchanged). Overridable per call (`emit(..., witness_url=...)`) or globally
+(`CAPSULE_WITNESS_URL`); any conforming Transparency Service is substitutable.
+
+**Off switch.** `emit(..., witness=False)` opts out one call/ledger; `CAPSULE_WITNESS=off`
+opts out everywhere without a code change. An explicit `witness=` kwarg always wins over
+the env var.
+
+**Signing.** The default path signs checkpoints with an ephemeral, per-process HMAC key
+auto-generated the first time a ledger needs one. This is sufficient for that ledger's
+own rollback/consistency self-check (the checkpoint chain's own integrity), but it is
+not persisted across a process restart and carries no externally-attributable identity —
+a deployment that wants either should drive `capsule_emit.checkpoint`'s primitives
+directly with its own `Signer`, which remains fully supported and unchanged.
+
+**Honest scope, not overclaimed.** Registering a checkpoint to one Transparency Service —
+even a stream-level checkpoint — sits at the same *registered* trust tier the per-emit
+anchor already occupies (see
+[why anchoring makes it trustworthy](docs/why-anchoring.md#be-precise-about-what-it-proves-and-doesnt)),
+not automatically at the stricter *witnessed* tier, which specifically requires
+independent co-signing or registration with more than one independently-operated log.
+The zero-config default does not do that for you; `docs/checkpoint.md` says so plainly
+rather than letting the feature's own name overclaim it.
+
+**Docs reconciled:** `capsule_emit/checkpoint/__init__.py` and
+`capsule_emit/checkpoint/emit.py`'s module docstrings, `docs/checkpoint.md` (new
+"Default wiring" section, manual-use section retitled), and `README.md` (new
+"Checkpoint — the stream, not just the entry" section) all now describe the default-ON
+path; the manual/direct API (`MmrLedger`, `CheckpointConfig`, `emit_checkpoint`,
+`register_checkpoint`) is unchanged and remains independently documented for callers who
+want their own cadence, key, or Transparency Service.
+
 ### Added — BREAKING: `canonicalization_id` in `compute_attestation` (mesh-llm #1332)
 
 Every emitted capsule now carries `compute_attestation.canonicalization_id: "jcs-n"`,

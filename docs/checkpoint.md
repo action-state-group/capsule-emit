@@ -1,8 +1,69 @@
 # `capsule_emit.checkpoint` — the CLL (Checkpointed Local Log) core
 
-An **opt-in** subpackage. Nothing in `capsule_emit`'s top-level import path
-touches it — `import capsule_emit` alone never loads an MMR module, never
-pulls in a checkpoint dependency. You only pay for it when you ask for it:
+## Default wiring (since 0.5.0)
+
+`capsule_emit.core.emit()` wires this in **by default** — no opt-in code
+required. Every ledger you `emit()` into participates in a checkpoint/witness
+stream automatically:
+
+- Once a ledger accumulates `capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`
+  (100) entries since its last checkpoint, a signed peaks checkpoint over
+  that ledger's MMR is built and registered with a Transparency Service —
+  the same free public-good tier the per-emit anchor already uses by
+  default, `anchor.agentactioncapsule.org`.
+- **Digest-only** — the only bytes that ever cross the wire are the
+  checkpoint's own SHA-256 digest (a hash of hashes; see `emit.py`'s
+  `CheckpointRecord.digest()`). No capsule content, no ledger path, no
+  action names, ever leave the process. Same posture as the anchor.
+- **Async, fire-and-forget** — the checkpoint build (local, no network) and
+  its TS registration (the only network call) run on a daemon thread; a
+  cadence-crossing `emit()` call never blocks on it.
+- **Lazy** — nothing above is imported or computed until a checkpoint is
+  actually due. A caller who calls `emit()` once and exits, or whose ledger
+  never crosses the cadence threshold, pays zero cost: no MMR built, no
+  `capsule_emit.checkpoint` import, no network dependency touched. This is
+  what keeps `import capsule_emit` (and a single below-cadence `emit()`
+  call) exactly as cheap as before this default flipped on.
+
+**Turning it off:**
+
+```python
+emit(..., witness=False)          # this call's ledger opts out
+```
+
+```bash
+export CAPSULE_WITNESS=off        # opt out everywhere, no code change
+```
+
+An explicit `witness=` kwarg always overrides the env var. Repoint the
+endpoint with `emit(..., witness_url=...)` or `CAPSULE_WITNESS_URL=…`;
+override the cadence with `CAPSULE_WITNESS_CADENCE_ENTRIES=…`.
+
+**What this is not (yet).** A checkpoint registered with one Transparency
+Service — even the stream-level checkpoint described here — sits at the same
+*registered* trust tier as the per-emit anchor, not automatically at the
+stricter *witnessed* tier described in
+[why anchoring makes it trustworthy](why-anchoring.md#be-precise-about-what-it-proves-and-doesnt):
+that tier specifically requires independent co-signing or registration with
+more than one independently-operated log. Registering the default checkpoint
+to a *different* TS than the per-emit anchor (or to more than one) climbs
+that ladder; the zero-config default does not do this for you.
+
+**Signing.** The default path signs checkpoints with an ephemeral,
+per-process HMAC key auto-generated the first time a ledger needs one — good
+enough for that ledger's own rollback/consistency self-check, but not
+persisted across a process restart and not suitable for a deployment that
+wants a stable, externally-attributable signing identity. Use the manual API
+below with your own `Signer` for that.
+
+## Direct / manual use
+
+The primitives below remain independently usable, and stay opt-in in the
+original sense — nothing in `capsule_emit`'s top-level import path touches
+them; `import capsule_emit` alone never loads an MMR module, never pulls in
+a checkpoint dependency. Reach for this directly when you want your own
+cadence, your own persisted signing key, or a Transparency Service other than
+the default:
 
 ```python
 from capsule_emit.checkpoint import MmrLedger, CheckpointConfig, emit_checkpoint
@@ -26,11 +87,15 @@ Transparency Service (TS) for independent, third-party freshness evidence.
   signature}`. `key_id` doubles as a peer identifier when a deployment
   checkpoints several independent logs (e.g. one per mesh node).
 
-## Registration is opt-in, always
+## Registration is opt-in, always — for direct/manual use of this API
 
 `CheckpointConfig.ts_urls` defaults to an **empty list** — nothing is
-registered anywhere until you set one. The free public-good witness tier at
-`anchor.agentactioncapsule.org` (`DEFAULT_TS_URL`) is documented and
+registered anywhere until you set one. (This is the manual API described in
+this section; `capsule_emit.core.emit()`'s own default path above does not
+use `CheckpointConfig` — it resolves its endpoint the same way the anchor
+does, via `witness_url=` / `CAPSULE_WITNESS_URL`.) The free public-good
+witness tier at `anchor.agentactioncapsule.org` (`DEFAULT_TS_URL`) is
+documented and
 available, but a generated config shows it **commented out**
 (`emit.EXAMPLE_CONFIG_TOML`), so opting in is an explicit uncomment. Any
 conforming SCITT Transparency Service can be substituted — nothing here is

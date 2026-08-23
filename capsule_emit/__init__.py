@@ -33,8 +33,10 @@ available unchanged:
     )
     print(cap.capsule_id, cap.anchored)
 
-Anchor is on by default (async, digest-only). Ledger is written to
-``ledger.jsonl`` by default. Both are configurable.
+Anchor is on by default (async, digest-only); so is the CLL checkpoint/witness
+stream (async, digest-only, lazy per ledger — see ``capsule_emit.witness``
+and ``docs/checkpoint.md``). Ledger is written to ``ledger.jsonl`` by
+default. All of the above are configurable.
 """
 from .approval import list_pending, seal_approval
 from .core import EmitResult, emit
@@ -65,7 +67,7 @@ from .verify_canonicalization import (
     verify_canonicalization_id,
 )
 
-__version__ = "0.3.1"
+__version__ = "0.5.0"
 
 __all__ = [
     "__version__",
