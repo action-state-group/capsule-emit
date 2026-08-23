@@ -27,15 +27,21 @@ Verification chain (all links must hold):
      checkpoint's size matches the previous checkpoint's stored root
      (``verify_checkpoint_consistency``).
 
-External checkpointing is OPTIONAL and OFF by default -- nothing in this
-module makes a network call unless the caller invokes ``register_checkpoint``
-or ``verify_receipt_offline(ts_base_url=...)``. Once enabled: cadence and
-max-lag are declared via ``CheckpointConfig``; sizes are monotonic;
-peak-consistency with the previous checkpoint is enforced before each new
-checkpoint is accepted (``RollbackError``). The operator supplies their own
-signing key and their own schedule (a cron, a timer, whatever the deployment
-already has) -- timing-jitter or scheduling as an operated service is
-explicitly out of scope here.
+These functions are OPTIONAL and OFF by default when used directly -- nothing
+in this module makes a network call unless the caller invokes
+``register_checkpoint`` or ``verify_receipt_offline(ts_base_url=...)``. Once
+enabled: cadence and max-lag are declared via ``CheckpointConfig``; sizes are
+monotonic; peak-consistency with the previous checkpoint is enforced before
+each new checkpoint is accepted (``RollbackError``). The operator supplies
+their own signing key and their own schedule (a cron, a timer, whatever the
+deployment already has) -- timing-jitter or scheduling as an operated service
+is explicitly out of scope here.
+
+Since 0.5.0, ``capsule_emit.core.emit()``'s default path drives these same
+functions automatically once a ledger forms a checkpoint-worthy stream --
+see ``capsule_emit.witness``. That is a caller of this module, not a change
+to it: everything above stays true for direct/manual use — nothing here
+reaches for a signing key, a schedule, or the network on its own.
 
 The free public-good witness tier lives at ``DEFAULT_TS_URL``
 (``anchor.agentactioncapsule.org``) -- prefilled as the config default so a

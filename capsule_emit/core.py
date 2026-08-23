@@ -8,6 +8,8 @@ It wraps ``agent_action_capsule.emit()`` with:
 - Optional per-emit digest salting (``salt_digests=True``), for a privacy-sensitive
   deployment that wants cross-capsule input correlation resistance
 - Async anchor on by default (digest-only; no business content crosses the wire)
+- Async checkpoint/witness on by default, lazy per ledger (digest-only; see
+  ``capsule_emit.witness`` and ``docs/checkpoint.md``)
 - Automatic JSONL ledger append
 - A typed EmitResult with .capsule_id, .anchored, and .anchor_status
 
@@ -48,6 +50,7 @@ from agent_action_capsule.anchor import AnchorError, AnchorFuture, AnchorResult,
 from agent_action_capsule.canonical import compute_capsule_id, jcs, json_digest, normalize
 from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError
 
+from . import witness as _witness
 from .ledger import append_to_ledger
 from .numbers import CANONICALIZATION_ID
 
@@ -228,6 +231,8 @@ def emit(
     ledger: str | os.PathLike = _DEFAULT_LEDGER,
     anchor_url: str | None = None,
     anchor_wait: float | None = None,
+    witness: bool | None = None,
+    witness_url: str | None = None,
     human_disposed: bool = False,
     approver: str = "policy",
     decision: str = "accept",
@@ -269,6 +274,22 @@ def emit(
             ``EmitResult.anchored`` / ``.anchor_status``. When ``None`` (default),
             ``emit()`` never blocks and ``anchored`` is always ``False`` (the
             submission's outcome is not yet known at return time).
+        witness: When ``True`` (default, unless overridden — see below),
+            this ledger participates in the default CLL checkpoint/witness
+            stream: once enough entries accumulate (see
+            ``capsule_emit.witness.DEFAULT_CADENCE_ENTRIES``), a signed peaks
+            checkpoint over this ledger's MMR is built and registered with a
+            Transparency Service — async, digest-only, lazy (nothing is
+            imported or computed until a checkpoint is actually due; see
+            ``capsule_emit.witness`` and ``docs/checkpoint.md``). Pass
+            ``False`` to opt this ledger out, or set ``CAPSULE_WITNESS=off``
+            to opt out everywhere without a code change (an explicit
+            ``witness=`` kwarg always overrides the env var). Never blocks —
+            there is no ``witness_wait`` because a checkpoint reports on a
+            *stream*, not this one call.
+        witness_url: Override the witness Transparency Service endpoint
+            (else reads ``CAPSULE_WITNESS_URL`` env var, else the free
+            public-good tier at ``anchor.agentactioncapsule.org``).
         human_disposed: Whether a human made the disposition decision. When True,
             ``approver`` MUST be ``"human"`` — raises ``ValueError`` otherwise.
         approver: Who approved the disposition: ``"human"`` or ``"policy"`` (default).
@@ -402,6 +423,9 @@ def emit(
     capsule["capsule_id"] = compute_capsule_id(capsule)
 
     append_to_ledger(capsule, ledger)
+
+    witness_endpoint = witness_url or os.environ.get(_witness.WITNESS_URL_ENV_VAR, None)
+    _witness.maybe_checkpoint(os.fspath(ledger), ts_url=witness_endpoint, enabled=witness)
 
     capsule_id = capsule["capsule_id"]
     anchored = False
