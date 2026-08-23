@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 
 import pytest
 from conftest import FakeLogSource, synthetic_capsule
@@ -202,3 +203,98 @@ def test_example_config_ships_the_witness_url_commented_out():
     assert f'ts_urls = ["{DEFAULT_TS_URL}"]\n' not in EXAMPLE_CONFIG_TOML.replace(
         f'# ts_urls = ["{DEFAULT_TS_URL}"]\n', ""
     )
+
+
+# ---------------------------------------------------------------------------
+# register_checkpoint: DEFAULT_TS_URL is the semantic witness.
+# agentactioncapsule.org endpoint, but its CNAME onto
+# anchor.agentactioncapsule.org has not propagated yet -- register_checkpoint
+# must still dispatch the actual HTTP request to the anchor host today, while
+# recording the semantic (witness.) URL on the returned WitnessRecord. An
+# explicit non-default ts_url must never be rewritten.
+# ---------------------------------------------------------------------------
+
+
+class _FakeUrlopenResponse:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_default_ts_url_is_the_witness_host():
+    assert DEFAULT_TS_URL == "https://witness.agentactioncapsule.org"
+
+
+def test_register_checkpoint_default_url_dispatches_to_anchor_host_today(monkeypatch):
+    from capsule_emit.checkpoint import emit as emit_mod
+
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["full_url"] = req.full_url
+        body = json.dumps(
+            {
+                "entry_hash": "a" * 64,
+                "receipt_b64": "c3R1Yg==",
+                "leaf_index": 0,
+                "tree_size": 1,
+            }
+        ).encode()
+        return _FakeUrlopenResponse(body)
+
+    monkeypatch.setattr(emit_mod.urllib.request, "urlopen", fake_urlopen)
+
+    signer = HmacSigner("node-a")
+    mmr = MmrLedger(FakeLogSource())
+    mmr.append(synthetic_capsule(0))
+    cp = emit_checkpoint(mmr, signer, log_id="log-a")
+
+    witness_record = emit_mod.register_checkpoint(cp)  # default ts_url
+
+    assert captured["full_url"] == "https://anchor.agentactioncapsule.org/v1/digest", (
+        "the default (CNAME-pending) witness URL must still dispatch to the "
+        "anchor host today, or registration would silently start failing"
+    )
+    assert witness_record.ts_url == DEFAULT_TS_URL == "https://witness.agentactioncapsule.org", (
+        "the WitnessRecord must record the semantic witness URL, not the "
+        "host the request was actually dispatched to"
+    )
+
+
+def test_register_checkpoint_explicit_non_default_url_is_never_rewritten(monkeypatch):
+    from capsule_emit.checkpoint import emit as emit_mod
+
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["full_url"] = req.full_url
+        body = json.dumps(
+            {
+                "entry_hash": "b" * 64,
+                "receipt_b64": "c3R1Yg==",
+                "leaf_index": 0,
+                "tree_size": 1,
+            }
+        ).encode()
+        return _FakeUrlopenResponse(body)
+
+    monkeypatch.setattr(emit_mod.urllib.request, "urlopen", fake_urlopen)
+
+    signer = HmacSigner("node-a")
+    mmr = MmrLedger(FakeLogSource())
+    mmr.append(synthetic_capsule(0))
+    cp = emit_checkpoint(mmr, signer, log_id="log-a")
+
+    custom_url = "https://my-own-ts.example.org"
+    witness_record = emit_mod.register_checkpoint(cp, custom_url)
+
+    assert captured["full_url"] == "https://my-own-ts.example.org/v1/digest"
+    assert witness_record.ts_url == custom_url

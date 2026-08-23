@@ -27,8 +27,11 @@ backing. ``index`` wires the MMR to any append-only log exposing the
 ``LogSource`` shape (append/scan/fetch/find_gaps/verify) -- structurally, not
 by importing a concrete implementation. ``emit`` builds, signs, and registers
 peaks checkpoints against a Transparency Service (the free public-good tier
-at ``anchor.agentactioncapsule.org`` by default, any conforming TS
-substitutable).
+at ``witness.agentactioncapsule.org`` by default -- currently served via
+``anchor.agentactioncapsule.org`` while its CNAME is pending, see
+``emit._PENDING_CNAME_TARGETS`` -- any conforming TS substitutable, and more
+than one may be registered at once for a multi-witness stream, see
+``capsule_emit.witness``).
 
 Ported from ``capsule-ledger/capsule_ledger/mmr/{core,index,store}.py`` per
 Amendment E (2026-08-21): the CLL core is substrate a counterparty needs to

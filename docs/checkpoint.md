@@ -10,7 +10,15 @@ stream automatically:
   (100) entries since its last checkpoint, a signed peaks checkpoint over
   that ledger's MMR is built and registered with a Transparency Service —
   the same free public-good tier the per-emit anchor already uses by
-  default, `anchor.agentactioncapsule.org`.
+  default, `witness.agentactioncapsule.org` (semantically a witness, not
+  the anchor — **[currently served via `anchor.agentactioncapsule.org`;
+  the `witness.` CNAME is pending]**, see `capsule_emit.checkpoint.emit.
+  DEFAULT_TS_URL` / `_PENDING_CNAME_TARGETS`).
+- **Multiple witnesses.** `witness_url=` (and `CAPSULE_WITNESS_URL`) accept a
+  single endpoint or several — a list, or a comma-separated string — and the
+  same checkpoint is registered with *every* endpoint named, independently;
+  one endpoint failing never blocks the others. A single default endpoint is
+  used unless you opt into more.
 - **Digest-only** — the only bytes that ever cross the wire are the
   checkpoint's own SHA-256 digest (a hash of hashes; see `emit.py`'s
   `CheckpointRecord.digest()`). No capsule content, no ledger path, no
@@ -25,6 +33,14 @@ stream automatically:
   what keeps `import capsule_emit` (and a single below-cadence `emit()`
   call) exactly as cheap as before this default flipped on.
 
+**First-use notice.** The first time a checkpoint actually goes out over the
+network for a process (not merely because witnessing is nominally on — the
+default cadence is 100 entries, so a short-lived process may never trigger
+one), `capsule-emit` prints one line to stderr, once: what's sent (a 32-byte
+digest, structurally incapable of carrying capsule content), where (the
+resolved endpoint(s)), and how to turn it off. It never prints a second time
+in the same process.
+
 **Turning it off:**
 
 ```python
@@ -36,18 +52,24 @@ export CAPSULE_WITNESS=off        # opt out everywhere, no code change
 ```
 
 An explicit `witness=` kwarg always overrides the env var. Repoint the
-endpoint with `emit(..., witness_url=...)` or `CAPSULE_WITNESS_URL=…`;
-override the cadence with `CAPSULE_WITNESS_CADENCE_ENTRIES=…`.
+endpoint (or add more) with `emit(..., witness_url=...)` or
+`CAPSULE_WITNESS_URL=…`; override the cadence with
+`CAPSULE_WITNESS_CADENCE_ENTRIES=…`.
 
-**What this is not (yet).** A checkpoint registered with one Transparency
-Service — even the stream-level checkpoint described here — sits at the same
-*registered* trust tier as the per-emit anchor, not automatically at the
-stricter *witnessed* tier described in
-[why anchoring makes it trustworthy](why-anchoring.md#be-precise-about-what-it-proves-and-doesnt):
-that tier specifically requires independent co-signing or registration with
-more than one independently-operated log. Registering the default checkpoint
-to a *different* TS than the per-emit anchor (or to more than one) climbs
-that ladder; the zero-config default does not do this for you.
+**What trust tier this reaches — be precise.** A single-TS default checkpoint
+is **witnessed (single witness)**: it upgrades the stream from
+*self-attested* to third-party-checkable — the witness vouches that the
+records under this checkpoint **existed, in that order, and haven't been
+rewritten since** (existence + order + non-deletion). It does **not** vouch
+that the records' *content* is true, and it is **not** the *multi-witness,
+equivocation-resistant* tier described in
+[why anchoring makes it trustworthy](why-anchoring.md#be-precise-about-what-it-proves-and-doesnt)
+— that tier specifically requires witnesses a verifier can cross-check: the
+same checkpoint independently co-signed by, or registered to, more than one
+independently-operated log. Register the default checkpoint with more than
+one Transparency Service (`emit(..., witness_url=[url1, url2])` or a
+comma-separated `CAPSULE_WITNESS_URL`) to climb from single-witness to
+multi-witness; the zero-config default does not do this for you.
 
 **Signing.** The default path signs checkpoints with an ephemeral,
 per-process HMAC key auto-generated the first time a ledger needs one — good
@@ -94,7 +116,8 @@ registered anywhere until you set one. (This is the manual API described in
 this section; `capsule_emit.core.emit()`'s own default path above does not
 use `CheckpointConfig` — it resolves its endpoint the same way the anchor
 does, via `witness_url=` / `CAPSULE_WITNESS_URL`.) The free public-good
-witness tier at `anchor.agentactioncapsule.org` (`DEFAULT_TS_URL`) is
+witness tier at `witness.agentactioncapsule.org` (`DEFAULT_TS_URL` —
+currently served via `anchor.agentactioncapsule.org`, CNAME pending) is
 documented and
 available, but a generated config shows it **commented out**
 (`emit.EXAMPLE_CONFIG_TOML`), so opting in is an explicit uncomment. Any

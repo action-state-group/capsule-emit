@@ -34,10 +34,27 @@ registered with a Transparency Service with zero code change required.
   in a subprocess, so a regression here cannot hide behind another test's warm
   `sys.modules`.
 
-**Endpoint.** Defaults to `anchor.agentactioncapsule.org` — the same donated
-public-good tier the anchor already uses, not the Authority (that boundary is
-unchanged). Overridable per call (`emit(..., witness_url=...)`) or globally
+**Endpoint.** Defaults to `witness.agentactioncapsule.org` — semantically a
+witness, not the anchor, though it's the same donated public-good tier the
+anchor already uses under the hood, not the Authority (that boundary is
+unchanged). **[Currently served via `anchor.agentactioncapsule.org` — the
+`witness.` CNAME has not propagated yet; `register_checkpoint` dispatches the
+default URL's request to the anchor host until it does, so registration keeps
+working today. See `capsule_emit.checkpoint.emit._PENDING_CNAME_TARGETS`.]**
+Overridable per call (`emit(..., witness_url=...)`) or globally
 (`CAPSULE_WITNESS_URL`); any conforming Transparency Service is substitutable.
+
+**Multiple witnesses.** `witness_url=` (and `CAPSULE_WITNESS_URL`) now accept
+either a single endpoint or several — a list, or a comma-separated string —
+fanning the same checkpoint out to each independently. One endpoint failing
+never blocks the others. A single default endpoint is used unless you opt
+into more.
+
+**First-use notice.** The first time a checkpoint actually goes out over the
+network for a process, `capsule-emit` prints one line to stderr, once: what's
+sent (a 32-byte digest, structurally incapable of carrying capsule content),
+where (the resolved endpoint(s)), and how to turn it off. It never prints
+again in the same process.
 
 **Off switch.** `emit(..., witness=False)` opts out one call/ledger; `CAPSULE_WITNESS=off`
 opts out everywhere without a code change. An explicit `witness=` kwarg always wins over
@@ -50,20 +67,29 @@ not persisted across a process restart and carries no externally-attributable id
 a deployment that wants either should drive `capsule_emit.checkpoint`'s primitives
 directly with its own `Signer`, which remains fully supported and unchanged.
 
-**Honest scope, not overclaimed.** Registering a checkpoint to one Transparency Service —
-even a stream-level checkpoint — sits at the same *registered* trust tier the per-emit
-anchor already occupies (see
+**Honest scope, not overclaimed.** A single-TS default checkpoint is
+**witnessed (single witness)**: it upgrades the stream from *self-attested*
+to third-party-checkable — the witness vouches the records under it
+**existed, in that order, and haven't been rewritten since** (existence +
+order + non-deletion), **never** that their content is true. It is **not**
+the *multi-witness, equivocation-resistant* tier (see
 [why anchoring makes it trustworthy](docs/why-anchoring.md#be-precise-about-what-it-proves-and-doesnt)),
-not automatically at the stricter *witnessed* tier, which specifically requires
-independent co-signing or registration with more than one independently-operated log.
-The zero-config default does not do that for you; `docs/checkpoint.md` says so plainly
-rather than letting the feature's own name overclaim it.
+which specifically requires witnesses a verifier can cross-check — the same
+checkpoint independently co-signed by, or registered to, more than one
+independently-operated log. Registering the default checkpoint with more than
+one Transparency Service (see "Multiple witnesses" above) is what climbs that
+ladder; the zero-config default does not do it for you. `docs/checkpoint.md`
+and `docs/why-anchoring.md` say so plainly rather than letting the feature's
+own name overclaim it.
 
 **Docs reconciled:** `capsule_emit/checkpoint/__init__.py` and
-`capsule_emit/checkpoint/emit.py`'s module docstrings, `docs/checkpoint.md` (new
-"Default wiring" section, manual-use section retitled), and `README.md` (new
-"Checkpoint — the stream, not just the entry" section) all now describe the default-ON
-path; the manual/direct API (`MmrLedger`, `CheckpointConfig`, `emit_checkpoint`,
+`capsule_emit/checkpoint/emit.py`'s module docstrings, `capsule_emit/witness.py`'s
+module docstring, `docs/checkpoint.md` (new "Default wiring" section, manual-use
+section retitled, trust-tier language rewritten), `docs/why-anchoring.md` (ladder
+now names the single-witness tier the checkpoint stream reaches), and `README.md`
+(new "Checkpoint — your log now proves itself" section) all now describe the
+default-ON path, the witness/anchor endpoint split, and multi-witness config; the
+manual/direct API (`MmrLedger`, `CheckpointConfig`, `emit_checkpoint`,
 `register_checkpoint`) is unchanged and remains independently documented for callers who
 want their own cadence, key, or Transparency Service.
 

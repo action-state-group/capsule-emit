@@ -49,6 +49,22 @@ externally-attributable signing identity -- that caller should use
 **Off switch.** ``emit(..., witness=False)`` or the ``CAPSULE_WITNESS=off``
 env var (checked only when the ``witness`` kwarg is left at its default,
 ``None`` -- an explicit ``True``/``False`` always wins).
+
+**Multiple witnesses.** ``witness_url=`` (and ``CAPSULE_WITNESS_URL``) accept
+either a single endpoint or several -- a list, or a comma-separated string
+(the env var is string-only, so that's its multi-value shape). Every checkpoint
+that comes due is registered with *each* endpoint independently; one endpoint
+failing never blocks the others (see ``_build_and_register``). Registering
+with more than one independently-operated Transparency Service is what climbs
+from the *witnessed (single witness)* tier to the *multi-witness,
+equivocation-resistant* tier -- see ``docs/checkpoint.md``.
+
+**First-use notice.** The first time a checkpoint actually goes out over the
+network for a process, this module prints one line to stderr: what's sent (a
+32-byte digest -- structurally incapable of carrying capsule content), where
+(the resolved endpoint(s)), and how to turn it off. Printed exactly once per
+process regardless of how many ledgers or checkpoints follow (see
+``_print_first_use_notice_once``).
 """
 from __future__ import annotations
 
@@ -57,6 +73,7 @@ import hashlib
 import hmac
 import os
 import secrets
+import sys
 import threading
 import time
 import warnings
@@ -82,7 +99,9 @@ _OFF_VALUES = {"off", "0", "false", "no"}
 
 #: Overrides the default TS URL for the witness path specifically (mirrors
 #: ``AAC_ANCHOR_URL`` for the anchor path). ``emit(..., witness_url=...)``
-#: takes precedence over this.
+#: takes precedence over this. Accepts one URL, or several as a
+#: comma-separated string -- each due checkpoint is registered with every
+#: endpoint named. See :func:`_parse_witness_urls`.
 WITNESS_URL_ENV_VAR = "CAPSULE_WITNESS_URL"
 
 #: How many ``emit()`` calls (for the same ledger path) accumulate before a
@@ -116,6 +135,55 @@ def _resolved_cadence(override: int | None) -> int:
     except ValueError:
         return DEFAULT_CADENCE_ENTRIES
     return parsed if parsed > 0 else DEFAULT_CADENCE_ENTRIES
+
+
+def _parse_witness_urls(raw: str | list[str] | None) -> list[str]:
+    """Normalize a ``witness_url=`` / ``CAPSULE_WITNESS_URL`` value into a
+    list of endpoints, in the order given, with blanks dropped and duplicates
+    removed. Accepts a single URL string, a list of URL strings, or a
+    comma-separated string (the shape an env var must take). An empty result
+    means "no override" -- the caller falls back to the registered default.
+    """
+    if raw is None:
+        return []
+    candidates = raw.split(",") if isinstance(raw, str) else list(raw)
+    seen: set[str] = set()
+    urls: list[str] = []
+    for candidate in candidates:
+        url = candidate.strip()
+        if url and url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
+
+
+_notice_lock = threading.Lock()
+_notice_printed = False
+
+
+def _print_first_use_notice_once(urls: list[str]) -> None:
+    """Print the one-time, first-checkpoint transparency notice to stderr.
+
+    Fires exactly once per process, at the moment the first checkpoint is
+    actually dispatched over the network -- not merely because witnessing is
+    nominally on. Never raises; a broken stderr must not break emit()."""
+    global _notice_printed
+    with _notice_lock:
+        if _notice_printed:
+            return
+        _notice_printed = True
+    try:
+        endpoints = ", ".join(urls) if urls else "the default witness endpoint"
+        print(
+            "capsule-emit: this process just sent its first witness checkpoint -- "
+            "a 32-byte digest (sha256 of the checkpoint, structurally incapable of "
+            f"carrying your capsule content) to {endpoints}. "
+            "Disable with emit(..., witness=False) or CAPSULE_WITNESS=off. "
+            "(This notice prints once per process.)",
+            file=sys.stderr,
+        )
+    except Exception:  # noqa: BLE001 -- a notice must never break emit()
+        pass
 
 
 class _AutoSigner:
@@ -234,7 +302,7 @@ def _get_state(ledger_path: str) -> _WitnessState:
         return state
 
 
-def _build_and_register(state: _WitnessState, ts_url: str | None) -> None:
+def _build_and_register(state: _WitnessState, ts_urls: list[str]) -> None:
     from .checkpoint import (
         DEFAULT_TS_URL,
         CheckpointError,
@@ -243,7 +311,7 @@ def _build_and_register(state: _WitnessState, ts_url: str | None) -> None:
         register_checkpoint,
     )
 
-    resolved_ts_url = ts_url or DEFAULT_TS_URL
+    resolved_urls = ts_urls or [DEFAULT_TS_URL]
 
     with state.lock:
         state.mmr.sync()
@@ -259,22 +327,27 @@ def _build_and_register(state: _WitnessState, ts_url: str | None) -> None:
             return
         state.prev = cp
 
-    try:
-        witness_record = register_checkpoint(cp, resolved_ts_url)
-        cp.witnesses.append(witness_record)
-    except Exception as exc:  # noqa: BLE001 -- fire-and-forget, never raises into emit()
-        warnings.warn(
-            f"capsule-emit: witness registration for checkpoint log_id={state.log_id!r} "
-            f"mmr_size={cp.mmr_size} to {resolved_ts_url} did not complete: {exc}",
-            RuntimeWarning,
-            stacklevel=1,
-        )
+    _print_first_use_notice_once(resolved_urls)
+
+    # Fan the same checkpoint out to every endpoint independently -- one
+    # endpoint failing must never block registration with the others.
+    for url in resolved_urls:
+        try:
+            witness_record = register_checkpoint(cp, url)
+            cp.witnesses.append(witness_record)
+        except Exception as exc:  # noqa: BLE001 -- fire-and-forget, never raises into emit()
+            warnings.warn(
+                f"capsule-emit: witness registration for checkpoint log_id={state.log_id!r} "
+                f"mmr_size={cp.mmr_size} to {url} did not complete: {exc}",
+                RuntimeWarning,
+                stacklevel=1,
+            )
 
 
 def maybe_checkpoint(
     ledger_path: str,
     *,
-    ts_url: str | None = None,
+    ts_url: str | list[str] | None = None,
     enabled: bool | None = None,
     cadence_entries: int | None = None,
 ) -> None:
@@ -286,10 +359,15 @@ def maybe_checkpoint(
     last checkpoint for this exact ``ledger_path``. At that point the
     checkpoint build + TS registration is dispatched on a daemon thread and
     this function returns immediately either way; it never blocks ``emit()``.
+
+    ``ts_url`` accepts a single endpoint or several (a list, or a
+    comma-separated string) -- the due checkpoint is registered with every
+    endpoint named, independently (see :func:`_parse_witness_urls`).
     """
     if not witness_enabled(enabled):
         return
 
+    urls = _parse_witness_urls(ts_url)
     cadence = _resolved_cadence(cadence_entries)
     key = _resolve_key(ledger_path)
     with _count_lock:
@@ -320,7 +398,7 @@ def maybe_checkpoint(
 
     def _worker() -> None:
         try:
-            _build_and_register(state, ts_url)
+            _build_and_register(state, urls)
         finally:
             with _pending_lock:
                 _pending.pop(state.log_id, None)
