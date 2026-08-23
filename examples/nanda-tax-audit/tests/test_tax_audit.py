@@ -233,11 +233,11 @@ def test_capsule_digest_detects_tampering() -> None:
         ledger_path = Path(f.name)
 
     real_amount = 1000
-    capsule_emit.emit(
+    capsule_emit.seal(
+        {"tick": 1, "amount": real_amount},
         action="record_transaction",
         operator="test",
         developer="test-agent",
-        agent_input={"tick": 1, "amount": real_amount},
         anchor=False,
         ledger=str(ledger_path),
     )

@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 from agent_action_capsule import verify
 
-from capsule_emit import emit, read_ledger
+from capsule_emit import read_ledger, seal
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 
 pytest.importorskip("mcp", reason="mcp package not installed")
@@ -83,11 +83,11 @@ def test_server_capsule_record(tmp_path):
 def test_server_capsule_verify_ok(tmp_path):
     """capsule_verify returns ok=True for a valid capsule."""
     ledger = tmp_path / "l.jsonl"
-    result = emit(
+    result = seal(
+        {"x": 1},
         action="test_action",
         operator="org",
         developer="dev@v1",
-        agent_input={"x": 1},
         agent_output={"y": 2},
         verdict="executed",
         anchor=False,
@@ -103,11 +103,11 @@ def test_server_capsule_ledger_summary(tmp_path):
     """capsule_ledger returns a summary with row count and action names."""
     ledger = tmp_path / "l.jsonl"
     for action in ("action_a", "action_b"):
-        emit(
+        seal(
+            {},
             action=action,
             operator="org",
             developer="dev@v1",
-            agent_input={},
             agent_output={},
             verdict="executed",
             anchor=False,
@@ -133,7 +133,7 @@ def test_server_capsule_ledger_limit_clamped_at_zero(tmp_path):
     """limit=0 is clamped to 1 — does not exploit Python's -0 == 0 slice gotcha."""
     ledger = tmp_path / "l.jsonl"
     for action in ("x1", "x2", "x3"):
-        emit(action=action, operator="org", developer="d@v1",
+        seal(None, action=action, operator="org", developer="d@v1",
              verdict="executed", anchor=False, ledger=ledger)
     from capsule_emit.server import capsule_ledger
 
@@ -146,7 +146,7 @@ def test_server_capsule_ledger_negative_limit_clamped(tmp_path):
     """Negative limit is clamped to 1 — does not silently drop first rows."""
     ledger = tmp_path / "l.jsonl"
     for action in ("y1", "y2", "y3"):
-        emit(action=action, operator="org", developer="d@v1",
+        seal(None, action=action, operator="org", developer="d@v1",
              verdict="executed", anchor=False, ledger=ledger)
     from capsule_emit.server import capsule_ledger
 
@@ -160,7 +160,7 @@ def test_server_capsule_ledger_negative_limit_clamped(tmp_path):
 def test_server_capsule_verify_short_prefix_rejected(tmp_path):
     """capsule_verify rejects a prefix shorter than 8 chars to prevent silent mismatch."""
     ledger = tmp_path / "l.jsonl"
-    result = emit(action="test", operator="org", developer="d@v1",
+    result = seal(None, action="test", operator="org", developer="d@v1",
                   verdict="executed", anchor=False, ledger=ledger)
     from capsule_emit.server import capsule_verify
 
@@ -172,7 +172,7 @@ def test_server_capsule_verify_short_prefix_rejected(tmp_path):
 def test_server_capsule_verify_full_id_accepted(tmp_path):
     """capsule_verify accepts a full 64-char capsule ID."""
     ledger = tmp_path / "l.jsonl"
-    result = emit(action="test", operator="org", developer="d@v1",
+    result = seal(None, action="test", operator="org", developer="d@v1",
                   verdict="executed", anchor=False, ledger=ledger)
     from capsule_emit.server import capsule_verify
 
@@ -240,7 +240,8 @@ def test_server_capsule_verify_malformed_capsule_returns_error(tmp_path):
 def test_server_corrupt_ledger_line_skipped(tmp_path):
     """A corrupt JSONL line is skipped; valid lines around it are still returned."""
     ledger = tmp_path / "l.jsonl"
-    emit(
+    seal(
+        None,
         action="good_action",
         operator="org",
         developer="d@v1",
@@ -251,7 +252,8 @@ def test_server_corrupt_ledger_line_skipped(tmp_path):
     # Inject a corrupt line in the middle
     with open(ledger, "a") as fh:
         fh.write("NOT VALID JSON\n")
-    emit(
+    seal(
+        None,
         action="another_action",
         operator="org",
         developer="d@v1",
@@ -413,7 +415,7 @@ def test_capsule_anchor_env_on_values(monkeypatch, _server_reload, value):
 
 
 def test_capsule_anchor_true_reaches_anchor_call(tmp_path, monkeypatch, _server_reload):
-    """CAPSULE_ANCHOR=true → capsule_record's emit() invokes the anchor call.
+    """CAPSULE_ANCHOR=true → capsule_record's seal() call invokes the anchor call.
 
     Patches capsule_emit.core.async_anchor so no real network request is
     made; only whether it was invoked is asserted.

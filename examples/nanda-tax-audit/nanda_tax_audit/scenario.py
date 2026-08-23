@@ -205,12 +205,12 @@ class BizCapsuleAgent(StateMachineAgent):
         self._tick += 1
         real_amount = _tx_amount(self._tick, 1)
 
-        # Record: emit a capsule for the REAL amount
-        result = capsule_emit.emit(
+        # Record: seal a capsule for the REAL amount
+        result = capsule_emit.seal(
+            {"tick": self._tick, "amount": real_amount},
             action="record_transaction",
             operator="biz_capsule",
             developer=str(self._id),
-            agent_input={"tick": self._tick, "amount": real_amount},
             anchor=self._anchor,
             ledger=str(CAPSULE_LEDGER),
         )
@@ -382,7 +382,7 @@ class AuditorAgent(StateMachineAgent):
         # Update crossover running totals
         self._cap_fines_total += cap_fine
 
-        # Emit auditor reasoning capsule
+        # Seal auditor reasoning capsule
         reasoning = {
             "tick": self._tick,
             "biz_control": {
@@ -395,11 +395,11 @@ class AuditorAgent(StateMachineAgent):
                 "reason": cap_reason,
             },
         }
-        result = capsule_emit.emit(
+        result = capsule_emit.seal(
+            reasoning,
             action="audit_decision",
             operator="auditor",
             developer=str(self._id),
-            agent_input=reasoning,
             agent_output={"biz_capsule_fine": cap_fine, "biz_control_fine": ctrl_fine},
             anchor=self._anchor,
             ledger="tax_audit_auditor_reasoning.jsonl",

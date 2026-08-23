@@ -31,7 +31,7 @@ import warnings
 
 import pytest
 
-from capsule_emit import emit
+from capsule_emit import seal
 
 _WORKTREE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -130,9 +130,10 @@ _UNREACHABLE = "http://127.0.0.1:1/"  # nothing listens on port 1; connection re
 
 
 def test_unreachable_endpoint_default_path_never_reports_true(tmp_ledger):
-    """The literal acceptance case: emit(anchor=True) against a dead endpoint
+    """The literal acceptance case: seal(anchor=True) against a dead endpoint
     must never report anchored=True, even on the default non-blocking path."""
-    result = emit(
+    result = seal(
+        None,
         action="anchor-honesty/unreachable-default",
         operator="o",
         developer="d",
@@ -149,7 +150,8 @@ def test_unreachable_endpoint_with_wait_reports_real_failure(tmp_ledger):
     genuine AnchorError, not a guess — anchored False + anchor_status 'failed'."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # atexit warning is covered elsewhere
-        result = emit(
+        result = seal(
+            None,
             action="anchor-honesty/unreachable-wait",
             operator="o",
             developer="d",
@@ -169,7 +171,8 @@ def test_unreachable_endpoint_with_wait_reports_real_failure(tmp_ledger):
 
 def test_anchor_wait_returns_confirmed_result(stub_ts, tmp_ledger):
     base_url, received = stub_ts
-    result = emit(
+    result = seal(
+        None,
         action="anchor-honesty/confirmed",
         operator="o",
         developer="d",
@@ -185,7 +188,8 @@ def test_anchor_wait_returns_confirmed_result(stub_ts, tmp_ledger):
 
 def test_anchor_false_never_submits(stub_ts, tmp_ledger):
     base_url, received = stub_ts
-    result = emit(
+    result = seal(
+        None,
         action="anchor-honesty/skipped",
         operator="o",
         developer="d",
@@ -207,7 +211,8 @@ _SUBPROCESS_SCRIPT = """
 import sys
 import capsule_emit
 
-result = capsule_emit.emit(
+result = capsule_emit.seal(
+    None,
     action="anchor-honesty/subprocess-exit",
     operator="o",
     developer="d",

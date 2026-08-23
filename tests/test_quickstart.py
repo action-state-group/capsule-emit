@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Quickstart acceptance tests — the 5-minute bar for capsule-emit.
 
-Verifies: emit → ledger append → ledger view → verify (VALID) → tamper (INVALID)
+Verifies: seal → ledger append → ledger view → verify (VALID) → tamper (INVALID)
 → confirm-chain → manifest parse.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import io
 import pytest
 from agent_action_capsule import verify
 
-from capsule_emit import emit, ledger_view, load_manifest, read_ledger
+from capsule_emit import ledger_view, load_manifest, read_ledger, seal
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -27,11 +27,11 @@ def tmp_ledger(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_emit_returns_result_with_capsule_id(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        {"vendor": "Frobozz Supply", "total": "1240.19"},
         action="write_po",
         operator="acme-co",
         developer="po-agent@v1",
-        agent_input={"vendor": "Frobozz Supply", "total": "1240.19"},
         agent_output={"status": "dispatched"},
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         verdict="executed",
@@ -45,7 +45,8 @@ def test_emit_returns_result_with_capsule_id(tmp_ledger):
 
 
 def test_emit_verify_valid(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="write_po",
         operator="acme-co",
         developer="po-agent@v1",
@@ -58,7 +59,8 @@ def test_emit_verify_valid(tmp_ledger):
 
 
 def test_emit_tamper_invalid(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="write_po",
         operator="acme-co",
         developer="po-agent@v1",
@@ -73,11 +75,11 @@ def test_emit_tamper_invalid(tmp_ledger):
 
 
 def test_emit_agent_input_digest_committed(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        {"secret": "hunter2"},
         action="process",
         operator="org",
         developer="agent@v1",
-        agent_input={"secret": "hunter2"},
         agent_output={"result": "ok"},
         model={"provider": "test", "model_id": "test-model"},
         verdict="executed",
@@ -93,11 +95,11 @@ def test_emit_agent_input_digest_committed(tmp_ledger):
 
 
 def test_emit_without_model_still_works(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        {"key": "val"},
         action="log_event",
         operator="org",
         developer="agent@v1",
-        agent_input={"key": "val"},
         verdict="executed",
         anchor=False,
         ledger=tmp_ledger,
@@ -111,7 +113,8 @@ def test_emit_without_model_still_works(tmp_ledger):
 # ---------------------------------------------------------------------------
 
 def test_emit_confirm_chains(tmp_ledger):
-    cap = emit(
+    cap = seal(
+        None,
         action="write_po",
         operator="acme-co",
         developer="po-agent@v1",
@@ -119,7 +122,8 @@ def test_emit_confirm_chains(tmp_ledger):
         anchor=False,
         ledger=tmp_ledger,
     )
-    confirm = emit(
+    confirm = seal(
+        None,
         action="confirm_write_po",
         operator="acme-co",
         developer="po-agent@v1",
@@ -138,14 +142,15 @@ def test_emit_confirm_chains(tmp_ledger):
 # ---------------------------------------------------------------------------
 
 def test_ledger_appended(tmp_ledger):
-    emit(action="a", operator="o", developer="d", verdict="executed", anchor=False, ledger=tmp_ledger)
-    emit(action="b", operator="o", developer="d", verdict="executed", anchor=False, ledger=tmp_ledger)
+    seal(None, action="a", operator="o", developer="d", verdict="executed", anchor=False, ledger=tmp_ledger)
+    seal(None, action="b", operator="o", developer="d", verdict="executed", anchor=False, ledger=tmp_ledger)
     records = read_ledger(tmp_ledger)
     assert len(records) == 2
 
 
 def test_ledger_view_prints_table(tmp_ledger):
-    emit(
+    seal(
+        None,
         action="write_po",
         operator="acme-co",
         developer="po-agent@v1",
@@ -204,13 +209,13 @@ def test_manifest_missing_file_safe(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_full_quickstart_chain(tmp_ledger):
-    """The 5-minute bar: emit → anchor-skipped → verify VALID → tamper INVALID."""
-    # Emit
-    cap = emit(
+    """The 5-minute bar: seal → anchor-skipped → verify VALID → tamper INVALID."""
+    # Seal
+    cap = seal(
+        {"vendor": "Frobozz Supply", "total": "1240.19"},
         action="write_po",
         operator="acme-co",
         developer="po-agent@v1",
-        agent_input={"vendor": "Frobozz Supply", "total": "1240.19"},
         agent_output={"po_number": "PO-001"},
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         verdict="executed",
@@ -233,7 +238,8 @@ def test_full_quickstart_chain(tmp_ledger):
     assert not verify(bad).ok
 
     # Confirm chain
-    conf = emit(
+    conf = seal(
+        None,
         action="confirm_write_po",
         operator="acme-co",
         developer="po-agent@v1",

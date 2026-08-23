@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from capsule_emit import emit
+from capsule_emit import seal
 from capsule_emit.cli import main as cli_main
 from capsule_emit.permalink import (
     DEFAULT_BASE_URL,
@@ -27,11 +27,11 @@ from capsule_emit.permalink import (
 def three_capsule_chain(tmp_path):
     """executed -> blocked -> executed, matching the Dapr/Goose demo shape."""
     ledger = tmp_path / "chain.jsonl"
-    root = emit(
+    root = seal(
+        {"invoice_id": "INV-1"},
         action="check_invoice",
         operator="acme-co",
         developer="agent@v1",
-        agent_input={"invoice_id": "INV-1"},
         agent_output={"risk": "low"},
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         verdict="executed",
@@ -39,7 +39,8 @@ def three_capsule_chain(tmp_path):
         anchor=False,
         ledger=ledger,
     )
-    denial = emit(
+    denial = seal(
+        None,
         action="approve_large_purchase",
         operator="acme-co",
         developer="agent@v1",
@@ -48,7 +49,8 @@ def three_capsule_chain(tmp_path):
         anchor=False,
         ledger=ledger,
     )
-    escalation = emit(
+    escalation = seal(
+        None,
         action="escalate_and_approve",
         operator="acme-co",
         developer="agent@v1",
@@ -65,22 +67,22 @@ def three_capsule_chain_with_io(tmp_path):
     """executed -> blocked -> executed, each with agent_input/agent_output — for
     per-item bundle disclosure tests."""
     ledger = tmp_path / "chain_io.jsonl"
-    root = emit(
+    root = seal(
+        {"po_number": "PO-1"},
         action="write_order",
         operator="acme-co",
         developer="agent@v1",
-        agent_input={"po_number": "PO-1"},
         agent_output={"status": "dispatched"},
         verdict="executed",
         anchor=False,
         ledger=ledger,
     )
-    denial = emit(
+    denial = seal(
+        {"po_number": "PO-1", "amount_usd": "125000.00"},
         action="approve_large_order",
         operator="acme-co",
         developer="agent@v1",
         confirms=root.capsule_id,
-        agent_input={"po_number": "PO-1", "amount_usd": "125000.00"},
         agent_output={"reason": "exceeds PO ceiling"},
         verdict="blocked",
         decision="reject",
@@ -89,12 +91,12 @@ def three_capsule_chain_with_io(tmp_path):
         anchor=False,
         ledger=ledger,
     )
-    escalation = emit(
+    escalation = seal(
+        {"po_number": "PO-1"},
         action="escalate_to_manager",
         operator="acme-co",
         developer="agent@v1",
         confirms=denial.capsule_id,
-        agent_input={"po_number": "PO-1"},
         agent_output={"escalated_to": "ap-manager@acme-co.com"},
         verdict="executed",
         anchor=False,
@@ -109,7 +111,8 @@ def two_capsule_run_dir(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     ledger = run_dir / "ledger.jsonl"
-    root = emit(
+    root = seal(
+        None,
         action="write_order",
         operator="acme-co",
         developer="agent@v1",
@@ -117,7 +120,8 @@ def two_capsule_run_dir(tmp_path):
         anchor=False,
         ledger=ledger,
     )
-    child = emit(
+    child = seal(
+        None,
         action="confirm_write_order",
         operator="acme-co",
         developer="agent@v1",
@@ -422,11 +426,11 @@ def test_cli_permalink_reveal_unqualified_on_bundle_is_rejected(three_capsule_ch
 def test_cli_permalink_reveal_matching_payload(tmp_path, capsys):
     """--reveal FIELD=payload.json wraps the capsule in the Disclosure Envelope shape."""
     ledger = tmp_path / "l.jsonl"
-    cap = emit(
+    cap = seal(
+        {"invoice_id": "INV-1"},
         action="check_invoice",
         operator="acme-co",
         developer="agent@v1",
-        agent_input={"invoice_id": "INV-1"},
         agent_output={"risk": "low"},
         verdict="executed",
         anchor=False,
@@ -461,11 +465,11 @@ def test_cli_permalink_reveal_matching_payload(tmp_path, capsys):
 def test_cli_permalink_reveal_mismatched_payload_refused(tmp_path, capsys):
     """A disclosed payload that doesn't hash to the committed digest must never ship."""
     ledger = tmp_path / "l.jsonl"
-    emit(
+    seal(
+        {"invoice_id": "INV-1"},
         action="check_invoice",
         operator="acme-co",
         developer="agent@v1",
-        agent_input={"invoice_id": "INV-1"},
         verdict="executed",
         anchor=False,
         ledger=ledger,
@@ -658,11 +662,11 @@ def test_cli_permalink_fragment_size_warning_past_16kb(tmp_path, capsys):
     stderr warning — flagged, not refused (the task's fragment-size note)."""
     ledger = tmp_path / "big.jsonl"
     big_payload = {"blob": "x" * 20_000}
-    cap = emit(
+    cap = seal(
+        big_payload,
         action="write_order",
         operator="acme-co",
         developer="agent@v1",
-        agent_input=big_payload,
         verdict="executed",
         anchor=False,
         ledger=ledger,

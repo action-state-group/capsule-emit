@@ -52,7 +52,7 @@ from concurrent import futures
 
 import grpc
 
-from capsule_emit import emit
+from capsule_emit import seal
 
 from . import ext_mcp_pb2
 
@@ -141,11 +141,11 @@ class CapsuleEmitServicer:
             tool_result = {}
 
         try:
-            emit(
+            seal(
+                arguments,
                 action=tool_name,
                 operator=self._operator,
                 developer=self._developer,
-                agent_input=arguments,
                 agent_output=tool_result,
                 verdict="executed",
                 effect={"type": tool_name, "status": "dispatched"},
@@ -155,7 +155,7 @@ class CapsuleEmitServicer:
             )
             _log.debug("CheckResponse: sealed capsule for %s", tool_name)
         except Exception as exc:
-            _log.error("CheckResponse: emit failed for %s: %s", tool_name, exc)
+            _log.error("CheckResponse: seal failed for %s: %s", tool_name, exc)
 
         return _pass_response()
 

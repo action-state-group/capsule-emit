@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""capsule-emit core — the one-call emit() with anchor-on-by-default.
+"""capsule-emit core — the internal capsule-construction primitive.
 
 This is the adoption-surface API described in capsule-emit-quickstart.md.
 It wraps ``agent_action_capsule.emit()`` with:
@@ -15,8 +15,9 @@ It wraps ``agent_action_capsule.emit()`` with:
 
 The ``confirms`` parameter threads a "did → confirmed" chain without a scheduler.
 
-The same emit() calls and ledger files are compatible with gateway layers that
-enforce declared manifests — no code changes required to add enforcement on top.
+The same ``_emit_capsule()`` calls and ledger files are compatible with gateway
+layers that enforce declared manifests — no code changes required to add
+enforcement on top.
 
 **Attestation honesty (spec §3.2 MUST):** ``anchored`` is reported ONLY when a
 real ``AnchorResult`` confirms the submission — never merely because anchoring
@@ -25,12 +26,13 @@ weaker ``anchor_status="submitted"``; pass ``anchor_wait=<seconds>`` to block
 for a real confirmed/failed outcome. See ``transparent.py`` / ``verify.py`` /
 ``cli.py`` in ``agent_action_capsule`` for the same rule enforced elsewhere.
 
-**Prefer** ``capsule_emit.seal`` **for the one-liner mint case** — ``capsule =
-seal(payload)`` is a thin wrapper over this exact ``emit()`` (see
-``capsule_emit.surface``) with a friendlier import and a default ``action``.
-``emit()`` itself is not deprecated — it stays the fully-parameterized
-primitive for callers that need every keyword in one call — but new
-mint-shaped call sites should reach for ``seal()`` first.
+**Clean break (2026-08-22):** the public developer verb ``emit()`` (importable
+from the top-level ``capsule_emit`` package) is now a raising stub — use
+``seal()``/``carry()``/``compose()`` (see ``capsule_emit.surface``) instead.
+This module's ``_emit_capsule()`` is the fully-parameterized primitive those
+three verbs (and the framework adapters) wrap; it is internal, not the
+deprecated public verb, and callers needing every keyword in one call should
+import it explicitly rather than reach for the removed ``emit()``.
 """
 from __future__ import annotations
 
@@ -54,7 +56,7 @@ from . import witness as _witness
 from .ledger import append_to_ledger
 from .numbers import CANONICALIZATION_ID
 
-__all__ = ["emit", "EmitResult"]
+__all__ = ["_emit_capsule", "EmitResult"]
 
 _DEFAULT_LEDGER = "ledger.jsonl"
 
@@ -81,9 +83,9 @@ def _track_pending_anchor(capsule_id: str, future: AnchorFuture, endpoint: str |
     internal-exception path inside ``async_anchor``'s worker thread, so this
     is correct for anchor failures too, unlike relying on ``on_result``
     (which ``agent_action_capsule`` 0.1.0 only invokes on success). This
-    bounds growth to "entries between the last two emit() calls," not
+    bounds growth to "entries between the last two _emit_capsule() calls," not
     "forever" — a capsule anchored right before the process goes idle with no
-    further emit() calls still relies on the atexit handler as the backstop.
+    further _emit_capsule() calls still relies on the atexit handler as the backstop.
     """
     with _pending_anchors_lock:
         for pending_id, (pending_future, _) in list(_pending_anchors.items()):
@@ -148,7 +150,7 @@ def _digest(value: Any, salt: str | None = None) -> str:
     :func:`verify_input_digest` (returned ``False``). JCS now closes that gap.
 
     Floats fail closed: a raw JSON float is a §5.1 error (it cannot be
-    reproducibly digested), so ``emit()`` raises ``FloatInDigestError`` here
+    reproducibly digested), so ``_emit_capsule()`` raises ``FloatInDigestError`` here
     rather than silently sealing an ``agent_input`` / ``agent_output`` that
     :func:`verify_input_digest` could never confirm. Encode monetary/quantity
     values as exact decimal strings before sealing.
@@ -175,7 +177,7 @@ def _digest(value: Any, salt: str | None = None) -> str:
     except TypeError:
         # Non-JSON-native types (e.g. tuples, arbitrary objects) — tolerated as
         # before. FloatInDigestError is intentionally NOT caught: a raw float is
-        # a spec-defined error, so emit() fails closed at the door.
+        # a spec-defined error, so _emit_capsule() fails closed at the door.
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
         if salt is not None:
             raw = raw + "|" + salt
@@ -184,7 +186,7 @@ def _digest(value: Any, salt: str | None = None) -> str:
 
 @dataclass
 class EmitResult:
-    """The result of a capsule-emit emit() call.
+    """The result of a capsule-emit _emit_capsule() call.
 
     ``anchored`` is ``True`` ONLY when a real ``AnchorResult`` confirmed the
     submission (i.e. ``anchor_wait`` was set and the future resolved to a
@@ -214,7 +216,7 @@ class EmitResult:
         )
 
 
-def emit(
+def _emit_capsule(
     action: str,
     operator: str = "",
     developer: str = "",
@@ -272,7 +274,7 @@ def emit(
         anchor_wait: When set, block up to this many seconds for the anchor
             submission to resolve, and report the real outcome via
             ``EmitResult.anchored`` / ``.anchor_status``. When ``None`` (default),
-            ``emit()`` never blocks and ``anchored`` is always ``False`` (the
+            ``_emit_capsule()`` never blocks and ``anchored`` is always ``False`` (the
             submission's outcome is not yet known at return time).
         witness: When ``True`` (default, unless overridden — see below),
             this ledger participates in the default CLL checkpoint/witness
@@ -311,7 +313,7 @@ def emit(
             only the stable identifier that lets a verifier confirm the authorization
             out-of-band.
         salt_digests: When ``True``, a fresh random 16-byte hex salt is generated
-            per ``emit()`` call and folded into ``agent_input_digest`` /
+            per ``_emit_capsule()`` call and folded into ``agent_input_digest`` /
             ``agent_output_digest`` (and a ``confirmed``-effect's
             ``response_digest``) before hashing — stored as ``digest_salt`` in
             ``compute_attestation`` so the emitting operator can always recompute

@@ -84,7 +84,7 @@ class CapsuleEmitTrust:
     """Capsule-sealed, collusion-resistant reputation implementing the ``Trust`` Protocol.
 
     Mirrors ``AgentReceiptsTrust`` with one addition: every corroborated receipt
-    triggers a ``capsule_emit.emit()`` call, so the reputation history is sealed
+    triggers a ``capsule_emit.seal()`` call, so the reputation history is sealed
     to an Agent Action Capsule ledger that any third party can verify independently
     with ``agent-action-capsule verify --store <ledger_path>``.
 
@@ -193,11 +193,11 @@ class CapsuleEmitTrust:
         corroborated = is_corroborated(receipt)
 
         try:
-            result = capsule_emit.emit(
+            result = capsule_emit.seal(
+                receipt,
                 action=category,
                 operator=issuer_did,
                 developer=str(agent),
-                agent_input=receipt,
                 agent_output={"corroborated": corroborated, "counterparty_did": cp_did},
                 anchor=self._anchor,
                 ledger=str(self._ledger_path),

@@ -20,10 +20,10 @@ import capsule_emit
 def _emit_and_read(receipt: dict) -> dict:
     with tempfile.TemporaryDirectory() as d:
         ledger = str(Path(d) / "ledger.jsonl")
-        capsule_emit.emit(
+        capsule_emit.seal(
+            receipt,
             action="purchase",
             operator="did:key:zOperator",
-            agent_input=receipt,
             anchor=False,
             ledger=ledger,
         )

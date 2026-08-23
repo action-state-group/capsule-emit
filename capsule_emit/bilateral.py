@@ -459,7 +459,7 @@ def seal_request(
     ``verdict="executed"`` reflects that A committed to the request;
     ``effect.status="dispatched"`` signals the action is in flight.
     """
-    from capsule_emit.core import emit
+    from capsule_emit.core import _emit_capsule
 
     compute: dict = {"action_digest": action_digest, "role": "requester"}
     if extra_compute:
@@ -475,7 +475,7 @@ def seal_request(
     )
     if ledger is not None:
         kw["ledger"] = ledger
-    return emit(**kw)
+    return _emit_capsule(**kw)
 
 
 def seal_action(
@@ -498,7 +498,7 @@ def seal_action(
     disposition (executed / blocked / denied / escalated).  Gate check
     results from the constraint evaluation are stored in compute_attestation.
     """
-    from capsule_emit.core import emit
+    from capsule_emit.core import _emit_capsule
 
     compute: dict = {"action_digest": action_digest, "role": "responder"}
     if gate_checks:
@@ -518,7 +518,7 @@ def seal_action(
     )
     if ledger is not None:
         kw["ledger"] = ledger
-    return emit(**kw)
+    return _emit_capsule(**kw)
 
 
 def seal_bilateral(
@@ -538,7 +538,7 @@ def seal_bilateral(
     parties have acknowledged each other's attestations.  The chain links to
     the most recent prior capsule in the exchange.
     """
-    from capsule_emit.core import emit
+    from capsule_emit.core import _emit_capsule
 
     compute: dict = {
         "action_digest": action_digest,
@@ -559,7 +559,7 @@ def seal_bilateral(
     )
     if ledger is not None:
         kw["ledger"] = ledger
-    return emit(**kw)
+    return _emit_capsule(**kw)
 
 
 def seal_ghost(
@@ -587,7 +587,7 @@ def seal_ghost(
     ghost), the counterparty holds zero.  A verifier sees: requester committed;
     counterparty countersignature absent.  The asymmetry is the evidence.
     """
-    from capsule_emit.core import emit
+    from capsule_emit.core import _emit_capsule
 
     compute: dict = {
         "action_digest": action_digest,
@@ -609,4 +609,4 @@ def seal_ghost(
     )
     if ledger is not None:
         kw["ledger"] = ledger
-    return emit(**kw)
+    return _emit_capsule(**kw)

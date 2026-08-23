@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from capsule_emit import emit, ledger_show, ledger_view, ledger_view_chains
+from capsule_emit import ledger_show, ledger_view, ledger_view_chains, seal
 from capsule_emit.cli import main as cli_main
 
 # ---------------------------------------------------------------------------
@@ -28,11 +28,11 @@ def tmp_ledger(tmp_path):
 @pytest.fixture
 def two_capsule_ledger(tmp_ledger):
     """A simple chain: root → confirmed child."""
-    root = emit(
+    root = seal(
+        {"vendor": "Frobozz", "total": 100},
         action="write_order",
         operator="acme-co",
         developer="agent@v1",
-        agent_input={"vendor": "Frobozz", "total": 100},
         agent_output={"po": "PO-001"},
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         verdict="executed",
@@ -40,7 +40,8 @@ def two_capsule_ledger(tmp_ledger):
         anchor=False,
         ledger=tmp_ledger,
     )
-    child = emit(
+    child = seal(
+        None,
         action="confirm_write_order",
         operator="acme-co",
         developer="agent@v1",
@@ -142,7 +143,8 @@ def test_l2_view_chains_orphan_section(tmp_path):
     ledger = tmp_path / "orphan.jsonl"
     # Emit a child whose parent is not in the ledger
     parent_fake_id = "a" * 64
-    child = emit(
+    child = seal(
+        None,
         action="child",
         operator="org",
         developer="d@v1",

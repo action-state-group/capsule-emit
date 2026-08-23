@@ -3,7 +3,8 @@
 
 All framework adapters (MCP, LangChain, CrewAI, Hermes, Goose, ADK) extend this
 base. It holds operator/developer/ledger config and exposes a single
-``emit_capsule()`` helper that calls the top-level ``capsule_emit.emit()``.
+``emit_capsule()`` helper that calls the internal ``capsule_emit.core._emit_capsule``
+primitive (the same one ``seal()``/``carry()``/``compose()`` wrap).
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import os
 from collections import deque
 from typing import Any
 
-from capsule_emit.core import EmitResult, emit
+from capsule_emit.core import EmitResult, _emit_capsule
 
 __all__ = ["CapsuleEmitterBase"]
 
@@ -28,7 +29,7 @@ class CapsuleEmitterBase:
         anchor_wait: When set, block up to this many seconds per emit for the
             real anchor outcome, so ``EmitResult.anchored`` / ``.anchor_status``
             reflect a genuine confirmation instead of just "submitted".
-            ``None`` (default) never blocks — see ``capsule_emit.emit()``.
+            ``None`` (default) never blocks — see ``capsule_emit.core._emit_capsule()``.
         model: Default ``{"provider": ..., "model_id": ...}`` applied to every capsule
             when the adapter cannot auto-capture the model from the framework. Can be
             overridden per-emit by passing ``model=`` to :meth:`emit_capsule`.
@@ -101,7 +102,7 @@ class CapsuleEmitterBase:
         supplied, which itself is set by ``model=`` in the constructor or overridden
         per-call by framework adapters that auto-capture the model (e.g. LangChain).
         """
-        result = emit(
+        result = _emit_capsule(
             action=action,
             operator=self._operator,
             developer=self._developer,

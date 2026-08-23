@@ -12,9 +12,11 @@ One authorship axis, three verbs: ``seal`` (I authored the content), ``carry``
 capsule asserts no new content — it references other capsules). All three
 return a :data:`Capsule` and all three append to the log. None of them
 re-implements signing or binding — they are thin, opinionated wrappers over
-:func:`capsule_emit.core.emit`, which already does the CPB-bind + sign +
-ledger-append work. See ``_work/api-verb-naming-design-2026-08-21.md`` §7 for
-the surface of record this module implements.
+:func:`capsule_emit.core._emit_capsule`, the internal primitive that already
+does the CPB-bind + sign + ledger-append work (the removed public ``emit()``
+verb wrapped the same primitive). See
+``_work/api-verb-naming-design-2026-08-21.md`` §7 for the surface of record
+this module implements.
 
 **Vocabulary discipline.** The mint result is a ``capsule`` — never call it a
 ``receipt``. A *receipt* is what a witness/transparency-service returns about
@@ -48,11 +50,11 @@ import hashlib
 from collections.abc import Iterable
 from typing import Any
 
-from .core import EmitResult, emit
+from .core import EmitResult, _emit_capsule
 
 __all__ = ["Capsule", "seal", "carry", "compose"]
 
-#: The noun. seal()/carry()/compose() (and emit()) all return this type.
+#: The noun. seal()/carry()/compose() all return this type.
 #: An alias, not a new class — Capsule *is* an EmitResult; the rename is a
 #: vocabulary fix (spec §6: the constructor returns a capsule, never a
 #: receipt), not a new shape.
@@ -76,12 +78,12 @@ def _require_capsule(value: Any, *, who: str) -> Capsule:
 def seal(payload: Any, *, action: str = "seal", **kwargs: Any) -> Capsule:
     """Mint a capsule you authored. The canonical line: ``capsule = seal(payload)``.
 
-    Wraps :func:`capsule_emit.core.emit` — *payload* is sealed as
+    Wraps the internal ``_emit_capsule`` primitive — *payload* is sealed as
     ``agent_input`` (digest-committed; the raw value never leaves the
-    process). Any keyword accepted by :func:`emit` (``operator``,
+    process). Any keyword the primitive accepts (``operator``,
     ``developer``, ``model``, ``effect``, ...) may be passed through.
     """
-    return emit(action, agent_input=payload, **kwargs)
+    return _emit_capsule(action, agent_input=payload, **kwargs)
 
 
 def carry(receipt_bytes: bytes | bytearray | str, *, action: str = "carry", **kwargs: Any) -> Capsule:
@@ -102,7 +104,7 @@ def carry(receipt_bytes: bytes | bytearray | str, *, action: str = "carry", **kw
     }
     extra_compute = dict(kwargs.pop("extra_compute", None) or {})
     extra_compute["carried_artifact"] = carried_ref
-    return emit(action, extra_compute=extra_compute, **kwargs)
+    return _emit_capsule(action, extra_compute=extra_compute, **kwargs)
 
 
 def compose(members: Iterable[Capsule], *, action: str = "compose", **kwargs: Any) -> Capsule:
@@ -127,4 +129,4 @@ def compose(members: Iterable[Capsule], *, action: str = "compose", **kwargs: An
     ]
     extra_compute = dict(kwargs.pop("extra_compute", None) or {})
     extra_compute["composed_members"] = refs
-    return emit(action, extra_compute=extra_compute, **kwargs)
+    return _emit_capsule(action, extra_compute=extra_compute, **kwargs)

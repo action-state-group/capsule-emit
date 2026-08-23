@@ -23,7 +23,7 @@ import pytest
 from agent_action_capsule import verify, verify_store
 from agent_action_capsule.cli import _load_store
 
-from capsule_emit import emit, ledger_view, read_ledger
+from capsule_emit import ledger_view, read_ledger, seal
 
 # ---------------------------------------------------------------------------
 # Fixture
@@ -37,7 +37,8 @@ def tmp_ledger(tmp_path):
 def _emit_n(n, tmp_ledger):
     """Emit n minimal capsules into tmp_ledger; return list of EmitResult."""
     return [
-        emit(
+        seal(
+            None,
             action="test_action",
             operator="test-org",
             developer="test-agent@v1",
@@ -240,7 +241,8 @@ def test_cli_verify_store_empty_file_exits_nonzero_or_zero(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_verify_store_chain_parent_exists(tmp_ledger):
-    cap_a = emit(
+    cap_a = seal(
+        None,
         action="action_a",
         operator="test-org",
         developer="agent@v1",
@@ -248,7 +250,8 @@ def test_verify_store_chain_parent_exists(tmp_ledger):
         anchor=False,
         ledger=tmp_ledger,
     )
-    emit(
+    seal(
+        None,
         action="action_b",
         operator="test-org",
         developer="agent@v1",
@@ -267,7 +270,8 @@ def test_verify_store_chain_parent_exists(tmp_ledger):
 def test_verify_store_chain_parent_missing(tmp_path):
     ledger = tmp_path / "ledger.jsonl"
     fake_parent_id = "b" * 64
-    emit(
+    seal(
+        None,
         action="action_b",
         operator="test-org",
         developer="agent@v1",
@@ -284,7 +288,8 @@ def test_verify_store_chain_parent_missing(tmp_path):
 
 
 def test_ledger_view_shows_chain(tmp_ledger):
-    cap_a = emit(
+    cap_a = seal(
+        None,
         action="action_a",
         operator="test-org",
         developer="agent@v1",
@@ -292,7 +297,8 @@ def test_ledger_view_shows_chain(tmp_ledger):
         anchor=False,
         ledger=tmp_ledger,
     )
-    emit(
+    seal(
+        None,
         action="action_b",
         operator="test-org",
         developer="agent@v1",

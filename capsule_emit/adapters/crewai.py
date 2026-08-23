@@ -65,7 +65,7 @@ class CrewAIListenerCore(CapsuleEmitterBase):
     installed. :class:`capsule_emit.adapters.crewai_listener.CapsuleEventListener`
     is the thin ``BaseEventListener`` shell that routes real bus events here.
 
-    Sealing map (one capsule per event, all through ``capsule_emit.emit()``):
+    Sealing map (one capsule per event, all through ``emit_capsule()``):
 
     - tool started  → ``effect.status="planned"`` (the commitment record)
     - tool finished → ``effect.status="confirmed"``, ``confirms`` the planned
@@ -121,7 +121,7 @@ class CrewAIListenerCore(CapsuleEmitterBase):
     def _args_key(tool_args: Any) -> str:
         """Correlation key for started→finished pairing. Tolerant by design —
         this keys an in-memory dict, it is NOT the sealed digest (which is
-        JCS via ``emit()`` and fails closed on floats)."""
+        JCS via ``emit_capsule()`` and fails closed on floats)."""
         try:
             return json.dumps(tool_args, sort_keys=True, default=str)
         except Exception:

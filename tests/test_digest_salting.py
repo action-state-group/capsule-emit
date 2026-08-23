@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``emit(salt_digests=True)``: per-emit random salt on digest-committed fields.
+"""``seal(salt_digests=True)``: per-emit random salt on digest-committed fields.
 
 Opt-in (default ``False``) so existing deterministic-digest callers and tests
 are unaffected. When enabled, ``agent_input_digest`` / ``agent_output_digest``
@@ -22,10 +22,10 @@ import capsule_emit
 def _emit_and_read(receipt: dict, *, salt_digests: bool) -> dict:
     with tempfile.TemporaryDirectory() as d:
         ledger = str(Path(d) / "ledger.jsonl")
-        capsule_emit.emit(
+        capsule_emit.seal(
+            receipt,
             action="purchase",
             operator="did:key:zOperator",
-            agent_input=receipt,
             anchor=False,
             ledger=ledger,
             salt_digests=salt_digests,
@@ -73,7 +73,8 @@ def test_confirmed_effect_response_digest_uses_the_same_salt_as_agent_output():
     agent_output_digest, not a second, independently-salted digest."""
     with tempfile.TemporaryDirectory() as d:
         ledger = str(Path(d) / "ledger.jsonl")
-        capsule_emit.emit(
+        capsule_emit.seal(
+            None,
             action="purchase",
             operator="did:key:zOperator",
             agent_output={"status": "shipped"},
