@@ -19,7 +19,7 @@ import time
 
 import pytest
 
-from capsule_emit import emit, witness
+from capsule_emit import seal, witness
 
 _ = base64, hashlib  # re-exported for parity with the stub TS handler below
 
@@ -142,7 +142,7 @@ def test_witness_url_list_fans_out_to_every_endpoint(tmp_path, two_stub_ts, monk
     ledger = tmp_path / "ledger.jsonl"
 
     for i in range(2):
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger,
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger,
              witness_url=[url_a, url_b])
 
     assert _wait_for(lambda: len(received_a) >= 1), "first witness never received the checkpoint"
@@ -167,7 +167,7 @@ def test_capsule_witness_url_env_var_comma_separated_fans_out(tmp_path, two_stub
     ledger = tmp_path / "ledger.jsonl"
 
     for i in range(2):
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger)
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger)
 
     assert _wait_for(lambda: len(received_a) >= 1)
     assert _wait_for(lambda: len(received_b) >= 1)
@@ -185,7 +185,7 @@ def test_one_failing_endpoint_does_not_block_the_others(tmp_path, stub_ts_single
     ledger = tmp_path / "ledger.jsonl"
 
     for i in range(2):
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger,
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger,
              witness_url=[dead_url, good_url])
 
     assert _wait_for(lambda: len(received) >= 1), (
@@ -217,7 +217,7 @@ def test_first_use_notice_prints_once_with_disable_instructions(tmp_path, stub_t
     ledger = tmp_path / "ledger.jsonl"
 
     for i in range(2):
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
     assert _wait_for(lambda: len(received) >= 1)
     time.sleep(0.1)  # let the notice print land before we capture it
 
@@ -231,7 +231,7 @@ def test_first_use_notice_prints_once_with_disable_instructions(tmp_path, stub_t
     # A second cadence-crossing checkpoint in the same process must not
     # reprint the notice.
     for i in range(2, 4):
-        emit(f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
     assert _wait_for(lambda: len(received) >= 2)
     time.sleep(0.1)
 
@@ -246,7 +246,7 @@ def test_first_use_notice_not_printed_before_any_checkpoint_is_due(tmp_path, stu
     ledger = tmp_path / "ledger.jsonl"
 
     # Real default cadence (100) -- far below the threshold, no checkpoint due.
-    emit("single-shot", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
+    seal(None, action="single-shot", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
 
     err = capsys.readouterr().err
     assert "this process just sent its first witness checkpoint" not in err
