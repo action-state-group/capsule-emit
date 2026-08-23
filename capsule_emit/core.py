@@ -41,6 +41,7 @@ import hashlib
 import json
 import os
 import secrets
+import sys
 import threading
 import time
 import warnings
@@ -67,6 +68,129 @@ AnchorStatus = Literal["confirmed", "submitted", "failed", "skipped"]
 _ATEXIT_ANCHOR_TIMEOUT = float(
     os.environ.get("CAPSULE_EMIT_ATEXIT_ANCHOR_TIMEOUT", "5.0")
 )
+
+#: Explicit ``anchor=`` always wins; this env var is consulted only when the
+#: caller leaves ``anchor`` at its default (``None``) — the same "explicit
+#: kwarg beats env var, env var beats built-in default" shape as
+#: ``capsule_emit.witness.WITNESS_ENV_VAR``. Reconciles the site's
+#: documented ``CAPSULE_ANCHOR=false`` (agentactioncapsule.org's setup
+#: guide, Rung 1) with actual library behavior — previously this env var was
+#: not read anywhere in ``capsule_emit`` itself, only by a handful of example
+#: scripts that did their own parsing before passing an explicit ``anchor=``.
+ANCHOR_ENV_VAR = "CAPSULE_ANCHOR"
+_ANCHOR_OFF_VALUES = {"off", "0", "false", "no"}
+
+
+def _anchor_enabled(explicit: bool | None) -> bool:
+    """Resolve the on/off decision: ``explicit`` (the ``anchor=`` kwarg) wins
+    when set; otherwise ``CAPSULE_ANCHOR`` is consulted, defaulting to on —
+    matching ``capsule_emit.witness.witness_enabled``'s shape exactly."""
+    if explicit is not None:
+        return explicit
+    return os.environ.get(ANCHOR_ENV_VAR, "").strip().lower() not in _ANCHOR_OFF_VALUES
+
+
+_disclosure_lock = threading.Lock()
+_disclosure_printed = False
+
+
+def _print_first_run_disclosure_once(
+    *, anchor_active: bool, witness_active: bool, anchor_endpoint: str | None, witness_endpoint: str | None
+) -> None:
+    """Print the one-time, first-call network disclosure to stderr.
+
+    Covers BOTH default-on network paths (anchor submission + witness
+    checkpoint) in a single notice, printed synchronously in the calling
+    thread — before ``async_anchor()`` is dispatched and before
+    ``_witness.maybe_checkpoint()`` can register a checkpoint — so no network
+    I/O happens in this process ahead of the disclosure. A call where both
+    paths are disabled (``anchor=False`` and effectively no witnessing) never
+    triggers a network attempt, so it prints nothing. Never raises; a broken
+    stderr must not break ``_emit_capsule()``."""
+    if not (anchor_active or witness_active):
+        return
+    global _disclosure_printed
+    with _disclosure_lock:
+        if _disclosure_printed:
+            return
+        _disclosure_printed = True
+    lines = [
+        "capsule-emit: anchor and/or witness checkpointing are on by default — "
+        "before this process's first network attempt, here is exactly what leaves:"
+    ]
+    if anchor_active:
+        display = anchor_endpoint or "the default anchor endpoint (AAC_ANCHOR_URL unset)"
+        lines.append(
+            f"  - ANCHOR: the capsule_id (a 64-char hex SHA-256 digest — no business "
+            f"content) is submitted to {display} on every seal()/carry()/compose() "
+            "call. Disable with anchor=False or CAPSULE_ANCHOR=off."
+        )
+    if witness_active:
+        display = witness_endpoint or "the default witness endpoint (CAPSULE_WITNESS_URL unset)"
+        lines.append(
+            f"  - WITNESS: a signed checkpoint digest (sha256 of the checkpoint — no "
+            f"capsule content) is sent to {display} once enough ledger entries "
+            "accumulate. Disable with witness=False or CAPSULE_WITNESS=off."
+        )
+    lines.append("Both are digest-only / content-free. (This notice prints once per process.)")
+    try:
+        print("\n".join(lines), file=sys.stderr)
+    except Exception:  # noqa: BLE001 -- a notice must never break _emit_capsule()
+        pass
+
+
+_anchor_deps_lock = threading.Lock()
+_anchor_deps_checked = False
+_anchor_deps_available = True
+
+_dep_notice_lock = threading.Lock()
+_dep_notice_printed = False
+
+
+def _anchor_dependency_available() -> bool:
+    """Cheap, cached, one-time check that the optional SCITT anchor stack
+    (the ``agent-action-capsule[anchor]`` extra: ``scitt_cose`` +
+    ``cryptography``) is importable — the same imports ``submit_anchor``
+    makes internally. Checked once per process, synchronously, at the moment
+    of the first anchor attempt, so a missing dependency is reported plainly
+    and immediately rather than depending on the background worker failing
+    and the atexit sweep still finding its future pending later."""
+    global _anchor_deps_checked, _anchor_deps_available
+    with _anchor_deps_lock:
+        if _anchor_deps_checked:
+            return _anchor_deps_available
+        _anchor_deps_checked = True
+        try:
+            import scitt_cose.statement  # noqa: F401
+            from cryptography.hazmat.primitives.serialization import load_pem_private_key  # noqa: F401,F811
+        except ImportError:
+            _anchor_deps_available = False
+        return _anchor_deps_available
+
+
+def _print_missing_anchor_dependency_notice_once() -> None:
+    """Plain, one-time stderr notice for the case the atexit RuntimeWarning
+    used to report only cryptically (a raw ``repr(ModuleNotFoundError(...))``)
+    and only for whichever anchor futures happened to still be pending at
+    interpreter shutdown — most were silently swept away well before then.
+    Printed once per process regardless of how many ``seal()``/``carry()``/
+    ``compose()`` calls hit the same missing dependency."""
+    global _dep_notice_printed
+    with _dep_notice_lock:
+        if _dep_notice_printed:
+            return
+        _dep_notice_printed = True
+    try:
+        print(
+            "capsule-emit: anchor is on by default but the optional SCITT anchor "
+            "dependency isn't installed (pip install 'agent-action-capsule[anchor]') "
+            "-- anchor submissions in this process cannot succeed. Disable with "
+            "anchor=False or CAPSULE_ANCHOR=off. (This notice prints once per process.)",
+            file=sys.stderr,
+        )
+    except Exception:  # noqa: BLE001 -- a notice must never break _emit_capsule()
+        pass
+
 
 _pending_anchors_lock = threading.Lock()
 # capsule_id -> (AnchorFuture, endpoint-or-None)
@@ -126,12 +250,18 @@ def _join_pending_anchors_at_exit() -> None:
                 stacklevel=1,
             )
         elif isinstance(result, AnchorError):
-            warnings.warn(
-                f"capsule-emit: anchor submission for capsule_id={capsule_id!r} to "
-                f"{result.ts_url} failed: {result.error}",
-                RuntimeWarning,
-                stacklevel=1,
-            )
+            # A missing optional dependency was already reported once, plainly,
+            # by _print_missing_anchor_dependency_notice_once() at dispatch time
+            # (see _anchor_dependency_available()) — repeating it here per
+            # capsule_id, as a raw ModuleNotFoundError repr, is the cryptic
+            # per-call noise this notice replaces, not a second genuine fact.
+            if not (_anchor_deps_checked and not _anchor_deps_available):
+                warnings.warn(
+                    f"capsule-emit: anchor submission for capsule_id={capsule_id!r} to "
+                    f"{result.ts_url} failed: {result.error}",
+                    RuntimeWarning,
+                    stacklevel=1,
+                )
         _untrack_pending_anchor(capsule_id)
 
 
@@ -201,7 +331,8 @@ class EmitResult:
     - ``"failed"`` — a real ``AnchorError`` was obtained (only observable when
       ``anchor_wait`` is set; otherwise a background failure surfaces only via
       the ``atexit`` warning at interpreter shutdown).
-    - ``"skipped"`` — ``anchor=False`` was passed; no submission was attempted.
+    - ``"skipped"`` — ``anchor=False`` was passed, or left unset with
+      ``CAPSULE_ANCHOR`` resolving to off; no submission was attempted.
     """
 
     capsule_id: str
@@ -229,7 +360,7 @@ def _emit_capsule(
     effect: dict[str, Any] | None = None,
     confirms: str | None = None,
     relation: str | None = "confirms",
-    anchor: bool = True,
+    anchor: bool | None = None,
     ledger: str | os.PathLike = _DEFAULT_LEDGER,
     anchor_url: str | None = None,
     anchor_wait: float | None = None,
@@ -265,10 +396,18 @@ def _emit_capsule(
             relation without ``confirms`` set raises ``ValueError`` (a chain relation
             needs a chain target); ``relation=None`` never raises regardless of
             ``confirms``. Default ``"confirms"``.
-        anchor: When True (default), dispatch an async, digest-only SCITT anchor
-            submission (:func:`agent_action_capsule.anchor.async_anchor`). Non-blocking
+        anchor: When ``True`` (default, unless overridden — see below), dispatch an
+            async, digest-only SCITT anchor submission
+            (:func:`agent_action_capsule.anchor.async_anchor`). Non-blocking
             by default — see ``anchor_wait`` to block for a confirmed outcome, and
             ``EmitResult.anchor_status`` for the non-blocking outcome signal.
+            Pass ``False`` to opt out, or set ``CAPSULE_ANCHOR=off`` (also accepts
+            ``0``/``false``/``no``, case-insensitive — matches the site's
+            documented ``CAPSULE_ANCHOR=false``) to opt out everywhere without a
+            code change; an explicit ``anchor=`` kwarg always overrides the env
+            var. A first-run notice (see ``_print_first_run_disclosure_once``)
+            prints to stderr before this process's first anchor or witness
+            network attempt, naming the endpoint(s) and how to disable them.
         ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
         anchor_url: Override the anchor endpoint (else reads ``AAC_ANCHOR_URL`` env var).
         anchor_wait: When set, block up to this many seconds for the anchor
@@ -432,16 +571,31 @@ def _emit_capsule(
 
     append_to_ledger(capsule, ledger)
 
+    anchor_enabled = _anchor_enabled(anchor)
     witness_endpoint = witness_url or os.environ.get(_witness.WITNESS_URL_ENV_VAR, None)
+    anchor_endpoint = anchor_url or os.environ.get("AAC_ANCHOR_URL", None)
+
+    # Single combined notice, before either default network path is dispatched
+    # below — see _print_first_run_disclosure_once's docstring for why this
+    # must run first and print at most once per process.
+    _print_first_run_disclosure_once(
+        anchor_active=anchor_enabled,
+        witness_active=_witness.witness_enabled(witness),
+        anchor_endpoint=anchor_endpoint,
+        witness_endpoint=witness_endpoint,
+    )
+
     _witness.maybe_checkpoint(os.fspath(ledger), ts_url=witness_endpoint, enabled=witness)
 
     capsule_id = capsule["capsule_id"]
     anchored = False
     anchor_status: AnchorStatus
-    if not anchor:
+    if not anchor_enabled:
         anchor_status = "skipped"
     else:
-        endpoint = anchor_url or os.environ.get("AAC_ANCHOR_URL", None)
+        endpoint = anchor_endpoint
+        if not _anchor_dependency_available():
+            _print_missing_anchor_dependency_notice_once()
         future = async_anchor(capsule_id, ts_url=endpoint)
         _track_pending_anchor(capsule_id, future, endpoint)
         if anchor_wait is None:
