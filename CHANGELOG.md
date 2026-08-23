@@ -93,6 +93,65 @@ manual/direct API (`MmrLedger`, `CheckpointConfig`, `emit_checkpoint`,
 `register_checkpoint`) is unchanged and remains independently documented for callers who
 want their own cadence, key, or Transparency Service.
 
+### Fixed — LAUNCH BLOCKER: anchor had no first-run disclosure (emit-anchor-disclosure-and-endpoint-consolidation)
+
+**The bug (found by Ethan, tested against shipped 0.4.0).** `anchor` defaults to
+on, and the very first `seal()`/`carry()`/`compose()` call in a process
+dispatched an async, digest-only SCITT anchor submission with **no disclosure
+at all** — it only became visible as a cryptic `RuntimeWarning` (a raw
+`repr(ModuleNotFoundError(...))`) when the optional `scitt_cose` dependency was
+missing, and even then only for whichever anchor futures happened to still be
+pending at interpreter shutdown; most vanished silently. This violated the
+default-on ruling's safeguard (Amendment E §E.1.4): every default network path
+must disclose before it fires. The witness/checkpoint path already got a
+correctly-ordered first-checkpoint notice in the previous release
+(`emit-witness-0.5.0-followup`) — the anchor path, which fires on every call
+rather than lazily, had never had an equivalent.
+
+**Fixed — one combined first-run disclosure.** Before this process's first
+anchor *or* witness network attempt, `_emit_capsule()` now prints a single
+notice to stderr naming both endpoints (or their env-var overrides) and both
+off switches, synchronously, in the calling thread, ahead of dispatch — proven
+with a mock that fails if the network call is reached before the notice has
+printed (`tests/test_anchor_disclosure_and_capsule_anchor_env.py`). A call
+with both paths disabled triggers no network attempt and prints nothing.
+
+**`CAPSULE_ANCHOR` env var reconciled.** The site's setup guide has long
+documented `Set CAPSULE_ANCHOR=false` to disable anchoring (Rung 1 of the
+adoption ladder) — but `capsule_emit` itself never read that env var; only a
+handful of example scripts did their own parsing before passing an explicit
+`anchor=`. `anchor` now defaults to `None` (was `True`) and, when left at that
+default, resolves via `CAPSULE_ANCHOR` (`off`/`0`/`false`/`no`,
+case-insensitive — matching `CAPSULE_WITNESS`'s existing convention exactly),
+defaulting to on when unset. An explicit `anchor=` kwarg always overrides the
+env var. `CapsuleEmitterBase` and `MCPCapsuleEmitter` (the framework-adapter
+base classes) gain the same `anchor: bool | None = None` default for
+consistency.
+
+**Missing-dependency failure honesty.** A missing `scitt_cose` (the
+`agent-action-capsule[anchor]` extra) is now detected synchronously, once per
+process, at the moment of the first anchor attempt — and reported as one
+plain stderr line (`pip install 'agent-action-capsule[anchor]'`) instead of
+the cryptic per-capsule `ModuleNotFoundError` repr the `atexit` handler used
+to warn with. `EmitResult.anchor_status`/`.anchored` were already honestly
+derived for this case (never reports `anchored=True` without a real
+`AnchorResult`) — only the message was cryptic, not the reported status.
+
+**Endpoint inventory (repo-boundary note).** Three hardcoded anchor-family
+domains exist across the stack: `ts.agentactioncapsule.org` (the actual
+SCITT-submission default in `agent_action_capsule.anchor`, a separate repo),
+`anchor.agentactioncapsule.org` (the domain this repo's docs/examples and the
+site document as canonical), and `witness.agentactioncapsule.org` (this
+repo's own `capsule_emit.checkpoint.emit.DEFAULT_TS_URL`, already
+single-sourced — CNAME onto `anchor.` pending). `ts.` and `anchor.` already
+resolve to the same live service via DNS today (confirmed in
+`capsule-anchor/README.md`), so this is a naming-hygiene gap, not a live bug —
+but true single-sourcing requires a change in `agent-action-capsule` (a
+different repo, out of this task's boundary) plus the pending CNAME (an ops
+action). Flagged for a follow-up rather than reached into here. This repo's
+own disclosure text never hardcodes a domain — it names the resolved
+override or the env var, deferring to whichever repo owns the actual default.
+
 ### Added — BREAKING: `canonicalization_id` in `compute_attestation` (mesh-llm #1332)
 
 Every emitted capsule now carries `compute_attestation.canonicalization_id: "jcs-n"`,

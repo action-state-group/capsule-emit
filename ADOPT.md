@@ -365,6 +365,15 @@ known limitations (L1–L7), and a side-by-side comparison with the Go adapter.
 > export AAC_ANCHOR_URL=https://your-anchor.example.com/v1/digest
 > ```
 > or pass `anchor_url=...` to `emit()`.
+>
+> To turn anchoring off everywhere without a code change:
+> ```bash
+> export CAPSULE_ANCHOR=false   # also accepts off/0/no, case-insensitive
+> ```
+> or pass `anchor=False` for one call. An explicit `anchor=` kwarg always wins
+> over `CAPSULE_ANCHOR`. Before this process's first anchor (or witness)
+> network attempt, a one-time notice prints to stderr naming the endpoint(s)
+> and both off switches.
 
 ---
 

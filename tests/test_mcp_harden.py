@@ -13,7 +13,7 @@ Covers:
 - output serialization: non-JSON-serializable output digested safely
 - output serialization: bytes output digested safely
 - emit resilience: tool returns normally when emit_capsule() raises (sync + async)
-- constructor default: anchor=True by default
+- constructor default: anchor=None, resolving to on via CAPSULE_ANCHOR (unset -> on)
 - FastMCP integration: functools.wraps preserves signature for schema gen
 - FastMCP integration: sync tool emits capsule with correct I/O digests
 - FastMCP integration: async tool works end-to-end through double-decorator
@@ -533,10 +533,20 @@ def test_emit_error_does_not_propagate_async_tool(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_anchor_true_is_constructor_default():
-    """MCPCapsuleEmitter must default anchor=True."""
+def test_anchor_defaults_to_none_resolving_on_via_capsule_anchor_env(monkeypatch):
+    """MCPCapsuleEmitter must default anchor=None -- left unresolved at
+    construction so CAPSULE_ANCHOR can be consulted at emit time (same shape
+    as capsule_emit.core._emit_capsule's own anchor param). With the env var
+    unset this still resolves to on, preserving the "anchors by default"
+    contract this test previously asserted via a literal ``is True``."""
+    monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
     emitter = MCPCapsuleEmitter(
         operator="test-org",
         developer="agent@v1",
     )
-    assert emitter._anchor is True, "anchor must default to True"
+    assert emitter._anchor is None, "anchor must default to None, not a resolved bool"
+    from capsule_emit.core import _anchor_enabled
+
+    assert _anchor_enabled(emitter._anchor) is True, (
+        "an unset CAPSULE_ANCHOR must still resolve the constructor default to on"
+    )

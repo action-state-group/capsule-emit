@@ -288,7 +288,9 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         operator: Accountable tenant / org identifier.
         developer: Agent name + version string.
         ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
-        anchor: Fire-and-forget anchor on every emit (default: True).
+        anchor: Fire-and-forget anchor on every emit. ``None`` (default) resolves
+            via ``CAPSULE_ANCHOR`` (defaulting to on when unset) — see
+            ``capsule_emit.core._emit_capsule``'s ``anchor`` param.
             Pass ``anchor=False`` for offline/sandbox use.  Never poke
             ``emitter._anchor`` directly.
         anchor_url: Override the anchor endpoint.
@@ -340,7 +342,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         operator: str,
         developer: str,
         ledger: str | os.PathLike = "ledger.jsonl",
-        anchor: bool = True,
+        anchor: bool | None = None,
         anchor_url: str | None = None,
         anchor_wait: float | None = None,
         model: dict[str, str] | None = None,

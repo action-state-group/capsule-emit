@@ -78,7 +78,8 @@ The unit is the **capsule** (one action). What you keep and grow is the **ledger
 - **What's logged:** a SHA-256 digest — nothing else. Your payloads never leave your machine.
 - **Where:** the free hosted log at `https://anchor.agentactioncapsule.org/v1/digest` (no signup, no key) — a single-operator log.
 - **Self-host or repoint:** the log service ([`capsule-anchor`](https://github.com/action-state-group/capsule-anchor)) is open-source — `AAC_ANCHOR_URL=…` or `emit(..., anchor_url=…)`.
-- **Offline:** `emit(..., anchor=False)` seals locally, skips the network.
+- **Offline:** `emit(..., anchor=False)` for one call, `CAPSULE_ANCHOR=off` for every call — no code change.
+- **First-run notice:** before this process's first anchor *or* witness network attempt, one combined line prints to stderr — naming both endpoints and both off switches — so a default-on network path is never silent on the very first call.
 
 *Why bother:* a self-hosted log you control isn't proof to an outsider; a shared, append-only transparency log is checkable by someone who trusts neither you nor the log's contents (though not, without a witness, someone unwilling to trust the log's operator at all — that step is registered vs. witnessed, not shared vs. unshared).
 
