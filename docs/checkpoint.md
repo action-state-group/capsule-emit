@@ -273,11 +273,20 @@ the log still retains it.
 `checkpoint.verify_checkpoint_signature_offline`, which needs only the
 checkpoint's own `key_id`, never a private key or a live `Signer` — this is
 what makes bundle verification possible for a stranger at all), the
-`prev_size`/`prev_root` linkage, and the consistency proof. It deliberately
-does **not** re-confirm witness stamps (`checkpoint.witnesses`) — that needs
-a network fetch of the Transparency Service's public key (or a cached
-`ts_pubkey_pem`), so it stays a separate, explicit step via
-`checkpoint.verify_receipt_offline` per `WitnessRecord`.
+`prev_size`/`prev_root` linkage, and the consistency proof — all entirely
+offline. A passing consistency check is labelled for exactly what it proves:
+`"history intact between checkpoints N and M"` (anti-**rewrite**, i.e. the
+history *within this bundle* wasn't reordered/truncated) — never "no fork" /
+"not equivocated", since one offline bundle can never rule out a divergent
+history it doesn't see; that guarantee is the witness's and multi-witness
+config's job. It also checks witness-stamp authenticity
+(`checkpoint.verify_witness_stamp_offline` per `WitnessRecord`, per
+[stamp-authenticity-on-read-not-presence]): a stamp from the pinned default
+witness (`DEFAULT_TS_PUBLIC_KEY_PEM`) is signature-verified with no network
+call and no caller setup; a stamp from any other Transparency Service, with
+no caller-supplied `ts_pubkey_pem`, verifies as a genuine receipt *shape*
+only and does not confer full trust — a checkpoint that claims witness
+stamps but has none that verify at all is fatal (`ok=False`).
 
 `Bundle.to_dict()` / `Bundle.from_dict()` round-trip through plain JSON —
 the point of "standalone": a bundle survives being written to a file and

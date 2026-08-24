@@ -24,7 +24,40 @@ from capsule_emit.checkpoint.emit import (
     lag_exceeded,
     verify_checkpoint_consistency,
     verify_checkpoint_signature,
+    verify_witness_stamp_offline,
 )
+
+
+def _test_ts_private_key_pem() -> bytes:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+
+    return Ed25519PrivateKey.generate().private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+
+
+_TEST_TS_PRIVATE_KEY_PEM = _test_ts_private_key_pem()
+
+
+def _test_ts_public_key_pem() -> bytes:
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_private_key
+
+    return (
+        load_pem_private_key(_TEST_TS_PRIVATE_KEY_PEM, password=None)
+        .public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    )
+
+
+def _pin_test_key_as_default(monkeypatch) -> None:
+    """[verify-batch-fastfollow] item D: simulate that ``DEFAULT_TS_URL`` is
+    pinned to this file's fixed test keypair, so a genuine ``WitnessRecord``
+    built with ``ts_url=DEFAULT_TS_URL`` and signed with
+    ``_TEST_TS_PRIVATE_KEY_PEM`` auto-verifies via the DEFAULT (no
+    ``ts_pubkey_pem``) read path -- exactly the common-case guarantee the
+    pin exists to provide. monkeypatch reverts per test."""
+    from capsule_emit.checkpoint import emit as emit_mod
+
+    monkeypatch.setattr(emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", _test_ts_public_key_pem())
 
 
 class HmacSigner:
@@ -187,7 +220,38 @@ def test_digest_changes_with_log_id():
 # -- grade: the self-attested -> witnessed ladder transition (O16 item 11) --
 
 
-def _stub_witness_record(ts_url: str = "https://witness.example") -> WitnessRecord:
+def _genuine_witness_record(cp, ts_url: str = "https://witness.example") -> WitnessRecord:
+    """A ``WitnessRecord`` bound to ``cp`` with a real, structurally valid
+    COSE Receipt -- what ``grade()``'s stamp-authenticity check
+    ([stamp-authenticity-on-read-not-presence]) requires. A hand-fabricated
+    ``entry_hash``/``receipt_b64`` (this helper's pre-fix shape) is now
+    exactly the file-forger attack ``grade()`` must reject -- see
+    ``test_grade_rejects_a_hand_fabricated_witness_record`` below."""
+    import base64
+
+    from scitt_cose import build_receipt
+
+    entry_hash = hashlib.sha256(bytes.fromhex(cp.digest())).hexdigest()
+    receipt_bytes = build_receipt(
+        leaf_entry_hex=entry_hash,
+        leaf_index=0,
+        tree_entries_hex=[entry_hash],
+        alg="EdDSA",
+        log_private_key_pem=_TEST_TS_PRIVATE_KEY_PEM,
+    )
+    return WitnessRecord(
+        ts_url=ts_url,
+        entry_hash=entry_hash,
+        receipt_b64=base64.b64encode(receipt_bytes).decode(),
+        leaf_index=0,
+        tree_size=1,
+    )
+
+
+def _forged_witness_record(ts_url: str = "https://attacker.example") -> WitnessRecord:
+    """A hand-fabricated stamp: no real Transparency Service ever
+    contacted, ``entry_hash``/``receipt_b64`` invented -- exactly what a
+    file-level forger writes directly into a ledger."""
     return WitnessRecord(
         ts_url=ts_url,
         entry_hash="ab" * 32,
@@ -205,25 +269,261 @@ def test_grade_is_self_attested_with_no_witnesses():
     assert cp.grade() == Grade.SELF_ATTESTED
 
 
-def test_grade_is_witnessed_once_a_single_stamp_lands():
+def test_grade_is_witnessed_once_a_single_stamp_lands(monkeypatch):
+    _pin_test_key_as_default(monkeypatch)
     mmr = _mmr_with(5)
     cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
                           timestamp="2026-08-21T00:00:00Z")
-    cp.witnesses.append(_stub_witness_record())
+    cp.witnesses.append(_genuine_witness_record(cp, DEFAULT_TS_URL))
     assert cp.grade() == Grade.WITNESSED
 
 
-def test_grade_is_any_of_not_all_of_across_multiple_witnesses():
+def test_grade_is_any_of_not_all_of_across_multiple_witnesses(monkeypatch):
     # Multi-witness any-of (frozen surface §2a.3): the first stamp already
-    # flips the grade; a second, independently-operated witness compounds
-    # independence, it does not gate the grade back down or up further.
+    # flips the grade; a second, independently-operated (here: unpinned,
+    # shape-valid-but-identity-unverified -- item D) witness compounds
+    # independence without gating the grade back down.
+    _pin_test_key_as_default(monkeypatch)
     mmr = _mmr_with(5)
     cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
                           timestamp="2026-08-21T00:00:00Z")
-    cp.witnesses.append(_stub_witness_record("https://witness-a.example"))
+    cp.witnesses.append(_genuine_witness_record(cp, DEFAULT_TS_URL))
     assert cp.grade() == Grade.WITNESSED
-    cp.witnesses.append(_stub_witness_record("https://witness-b.example"))
+    cp.witnesses.append(_genuine_witness_record(cp, "https://witness-b.example"))
     assert cp.grade() == Grade.WITNESSED
+
+
+def test_grade_rejects_a_hand_fabricated_witness_record():
+    """[stamp-authenticity-on-read-not-presence]: a file-level forger who
+    appends a fabricated ``WitnessRecord`` (no real TS ever contacted) does
+    NOT launder a checkpoint to WITNESSED -- presence in ``witnesses`` alone
+    no longer counts."""
+    mmr = _mmr_with(5)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
+                          timestamp="2026-08-21T00:00:00Z")
+    cp.witnesses.append(_forged_witness_record())
+    assert cp.grade() == Grade.SELF_ATTESTED
+
+
+def test_grade_any_of_one_genuine_one_forged_still_witnessed(monkeypatch):
+    """Any-of holds for authenticity too: one genuine, identity-verified
+    stamp is enough even alongside a forged one appended into the same
+    list."""
+    _pin_test_key_as_default(monkeypatch)
+    mmr = _mmr_with(5)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
+                          timestamp="2026-08-21T00:00:00Z")
+    cp.witnesses.append(_genuine_witness_record(cp, DEFAULT_TS_URL))
+    cp.witnesses.append(_forged_witness_record())
+    assert cp.grade() == Grade.WITNESSED
+
+
+# -- verify_witness_stamp_offline: each sub-check in isolation --------------
+
+
+def _cp_for_stamp_tests():
+    mmr = _mmr_with(5)
+    return emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
+                            timestamp="2026-08-21T00:00:00Z")
+
+
+def test_verify_witness_stamp_offline_rejects_garbage_receipt_b64():
+    # Correct entry_hash (so the binding check passes and the base64 stage
+    # is what's actually isolated) but garbage receipt bytes.
+    cp = _cp_for_stamp_tests()
+    entry_hash = hashlib.sha256(bytes.fromhex(cp.digest())).hexdigest()
+    forged = WitnessRecord(
+        ts_url="https://attacker.example", entry_hash=entry_hash,
+        receipt_b64="forged", leaf_index=0, tree_size=1,
+    )
+    ok, errors = verify_witness_stamp_offline(cp, forged)
+    assert ok is False
+    assert any("base64" in e for e in errors)
+
+
+def test_verify_witness_stamp_offline_rejects_entry_hash_not_bound_to_this_checkpoint():
+    """A stamp genuinely built for a DIFFERENT checkpoint (real COSE bytes,
+    real entry_hash -- just not THIS checkpoint's) must fail: replay/reuse
+    across checkpoints is exactly what the binding check exists to catch."""
+    cp = _cp_for_stamp_tests()
+    other_cp = _cp_for_stamp_tests()
+    other_cp.mmr_size += 1  # force a different digest() from cp
+    replayed = _genuine_witness_record(other_cp)
+    ok, errors = verify_witness_stamp_offline(cp, replayed)
+    assert ok is False
+    assert any("not bound to this checkpoint" in e for e in errors)
+
+
+def test_verify_witness_stamp_offline_unpinned_ts_reports_shape_valid_identity_unverified():
+    """[verify-threestate-trustanchor] (revises [verify-batch-fastfollow]
+    item D's message text): a genuine, structurally valid receipt from a TS
+    that is neither the pinned default nor caller-supplied does NOT confer
+    WITNESSED on shape alone -- it must fail closed on the two-state
+    ``bool`` projection (ok is False) with the honest "pin not supplied"
+    message, distinct from the garbage-bytes case."""
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp)  # ts_url defaults to a non-pinned host
+    ok, errors = verify_witness_stamp_offline(cp, genuine)
+    assert ok is False
+    assert any("pin not supplied" in e and "unverified stamp" in e for e in errors)
+    assert any(genuine.ts_url in e for e in errors)
+
+
+def test_verify_witness_stamp_tristate_unpinned_ts_is_unverified_not_invalid():
+    """[verify-threestate-trustanchor]: the THREE-STATE form must resolve
+    this exact case to UNVERIFIED, not INVALID -- an unpinned TS is not
+    evidence of forgery, only evidence we cannot check. This is the state
+    ``verify_bundle``/``verify_disclosure`` key off of to avoid false-
+    accusing a self-hosted/zero-egress TS deployment."""
+    from capsule_emit.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp)  # ts_url defaults to a non-pinned host
+    verdict, errors = verify_witness_stamp_tristate(cp, genuine)
+    assert verdict is StampVerdict.UNVERIFIED
+    assert any("pin not supplied" in e and "unverified stamp" in e for e in errors)
+
+
+def test_verify_witness_stamp_tristate_pinned_good_stamp_is_witnessed():
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_private_key
+
+    from capsule_emit.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp)
+    correct_pubkey_pem = (
+        load_pem_private_key(_TEST_TS_PRIVATE_KEY_PEM, password=None)
+        .public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    )
+    verdict, errors = verify_witness_stamp_tristate(cp, genuine, ts_pubkey_pem=correct_pubkey_pem)
+    assert verdict is StampVerdict.WITNESSED
+    assert errors == []
+
+
+def test_verify_witness_stamp_tristate_pinned_forged_signature_is_invalid():
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from capsule_emit.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp)  # signed with _TEST_TS_PRIVATE_KEY_PEM
+    wrong_pubkey_pem = Ed25519PrivateKey.generate().public_key().public_bytes(
+        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+    )
+    verdict, errors = verify_witness_stamp_tristate(cp, genuine, ts_pubkey_pem=wrong_pubkey_pem)
+    assert verdict is StampVerdict.INVALID
+    assert errors
+
+
+def test_verify_witness_stamp_tristate_garbage_receipt_is_invalid_even_unpinned():
+    """Structural corruption is INVALID regardless of pin status -- this is
+    not identity ambiguity, it is not even a well-formed stamp."""
+    from capsule_emit.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+
+    cp = _cp_for_stamp_tests()
+    entry_hash = hashlib.sha256(bytes.fromhex(cp.digest())).hexdigest()
+    forged = WitnessRecord(
+        ts_url="https://attacker.example", entry_hash=entry_hash,
+        receipt_b64="forged", leaf_index=0, tree_size=1,
+    )
+    verdict, errors = verify_witness_stamp_tristate(cp, forged)
+    assert verdict is StampVerdict.INVALID
+
+
+def test_verify_witness_stamp_offline_auto_pins_default_witness_url(monkeypatch):
+    """The DEFAULT (no ``ts_pubkey_pem``) read path auto-verifies a genuine
+    stamp from the pinned default witness -- the common case gets the full
+    identity-bound guarantee with no caller setup."""
+    _pin_test_key_as_default(monkeypatch)
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp, DEFAULT_TS_URL)
+    ok, errors = verify_witness_stamp_offline(cp, genuine)
+    assert ok is True
+    assert errors == []
+
+
+def test_verify_witness_stamp_offline_default_url_wrong_pinned_key_fails_closed(monkeypatch):
+    """A stamp claiming ``ts_url == DEFAULT_TS_URL`` but signed with a key
+    other than the pinned one must fail -- the pin is keyed to a fixed
+    constant, never trusted just because a ``WitnessRecord`` claims the
+    right URL. Also the sophisticated-forger shape one level up from
+    attack45's garbage-bytes forger: real receipt, correct entry_hash,
+    wrong (attacker's) key."""
+    _pin_test_key_as_default(monkeypatch)
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp, DEFAULT_TS_URL)  # signed with _TEST_TS_PRIVATE_KEY_PEM
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from capsule_emit.checkpoint import emit as emit_mod
+
+    attacker_pubkey_pem = Ed25519PrivateKey.generate().public_key().public_bytes(
+        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+    )
+    monkeypatch.setattr(emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", attacker_pubkey_pem)
+
+    ok, errors = verify_witness_stamp_offline(cp, genuine)
+    assert ok is False
+    assert errors
+
+
+def test_verify_witness_stamp_offline_pubkey_pinned_accepts_correct_key():
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_private_key
+
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp)
+    correct_pubkey_pem = (
+        load_pem_private_key(_TEST_TS_PRIVATE_KEY_PEM, password=None)
+        .public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    )
+    ok, errors = verify_witness_stamp_offline(cp, genuine, ts_pubkey_pem=correct_pubkey_pem)
+    assert ok is True
+    assert errors == []
+
+    wrong_pubkey_pem = Ed25519PrivateKey.generate().public_key().public_bytes(
+        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+    )
+    ok2, errors2 = verify_witness_stamp_offline(cp, genuine, ts_pubkey_pem=wrong_pubkey_pem)
+    assert ok2 is False
+    assert errors2
+
+
+# -- item D: the pinned DEFAULT_TS_PUBLIC_KEY_PEM constant itself ----------
+
+
+def test_default_ts_public_key_pem_matches_its_recorded_key_id():
+    """Guards the two pinned constants against an edit-one-not-the-other
+    mistake on a future rotation: DEFAULT_TS_PUBLIC_KEY_ID must be exactly
+    sha256(<raw pubkey bytes>)[:16] of DEFAULT_TS_PUBLIC_KEY_PEM, the same
+    derivation capsule-anchor's own /anchor/authority-pubkey and /health
+    endpoints publish for the live signing key."""
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
+
+    from capsule_emit.checkpoint.emit import DEFAULT_TS_PUBLIC_KEY_ID, DEFAULT_TS_PUBLIC_KEY_PEM
+
+    raw = load_pem_public_key(DEFAULT_TS_PUBLIC_KEY_PEM).public_bytes(Encoding.Raw, PublicFormat.Raw)
+    assert len(raw) == 32
+    assert hashlib.sha256(raw).hexdigest()[:16] == DEFAULT_TS_PUBLIC_KEY_ID
+
+
+def test_attacker_impersonating_pinned_default_witness_url_fails_signature_check():
+    """Even against the REAL pinned constant (no monkeypatch): a forger who
+    sets ``ts_url`` to the exact ``DEFAULT_TS_URL`` string, hoping to
+    trigger the auto-pin path, and mints a real, structurally valid,
+    checkpoint-bound receipt signed with a key of their own choosing still
+    fails -- the pin is a fixed constant, never influenced by what a
+    WitnessRecord merely claims about itself."""
+    cp = _cp_for_stamp_tests()
+    forged = _genuine_witness_record(cp, DEFAULT_TS_URL)  # signed with _TEST_TS_PRIVATE_KEY_PEM,
+    # NOT the real pinned production key -- exactly an attacker's situation.
+    ok, errors = verify_witness_stamp_offline(cp, forged)
+    assert ok is False
+    assert errors
 
 
 # -- config: cadence/max-lag + the commented-out witness default ------------

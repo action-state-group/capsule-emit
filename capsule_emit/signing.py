@@ -62,6 +62,7 @@ __all__ = [
     "SIGNING_KEY_PATH_ENV_VAR",
     "resolve_signer",
     "verify_capsule_signature",
+    "verify_store_signed",
 ]
 
 #: Overrides the default per-ledger key path with one shared producer
@@ -247,3 +248,48 @@ def verify_capsule_signature(capsule: dict) -> bool:
         return True
     except (KeyError, ValueError, InvalidSignature, TypeError):
         return False
+
+
+def verify_store_signed(records: list[dict]) -> list:
+    """``agent_action_capsule.verify_store(records)``, plus the producer
+    signature check that verifier deliberately never performs.
+
+    ``agent_action_capsule.verify`` is the neutral Class 1 payload verifier
+    (spec §6): its own docstring excludes "the COSE_Sign1 signature ...
+    by reference" as substrate-verifier territory. ``capsule_emit``'s
+    self-attested Ed25519 signature (this module) is exactly that substrate
+    layer for the self-attested rung -- it is a ``capsule_emit`` concept, not
+    part of the neutral spec, so it does not belong inside
+    ``agent_action_capsule`` itself. Every ``capsule-emit`` surface that
+    renders a verify verdict (CLI ``verify``, ``ledger view``'s inline verify
+    column, ``permalink``'s ``check_capsules``) must compose the two checks
+    here rather than trust ``verify_store`` alone, or a key-less forgery
+    (attacker-authored content + invented signature + a ``capsule_id``
+    recomputed to match) reports VALID: ``capsule_id`` folds in
+    ``signature``/``key_id``, so a *tampered* signature is already caught
+    indirectly by ``verify_store``'s own checks, but a *self-consistent
+    forgery* is not -- only :func:`verify_capsule_signature` catches that.
+
+    Mutates and returns the same ``VerificationResult`` list
+    ``verify_store`` produces (``result.ok``/``result.findings`` gain the
+    producer-signature verdict) so every existing caller of ``verify_store``
+    becomes a drop-in caller of this instead. Never raises.
+    """
+    from agent_action_capsule import Finding, verify_store
+
+    results = verify_store(records)
+    for record, result in zip(records, results):
+        if not isinstance(record, dict) or not verify_capsule_signature(record):
+            result.ok = False
+            result.findings.append(
+                Finding(
+                    code="producer_signature_invalid",
+                    detail=(
+                        f"capsule_id={record.get('capsule_id', '<none>') if isinstance(record, dict) else '<none>'}: "
+                        "self-attested Ed25519 signature does not verify against key_id -- "
+                        "content, signature, or key_id was tampered or forged"
+                    ),
+                    severity="error",
+                )
+            )
+    return results

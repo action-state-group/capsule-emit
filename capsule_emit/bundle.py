@@ -258,13 +258,28 @@ def bundle(path: Any, capsule_id: str) -> Bundle:
     )
 
 
-def verify_bundle(b: Bundle) -> tuple[bool, list[str]]:
+def verify_bundle(
+    b: Bundle, *, trust_anchor: dict[str, bytes | str] | None = None
+) -> tuple[bool, list[str]]:
     """Pure, offline, total verification of a standalone :class:`Bundle` —
-    no reader, no network, never raises. Confirms every link the two-sided
-    append bracket depends on:
+    no reader, no network, never raises. ``trust_anchor``
+    [verify-threestate-trustanchor] is an optional caller-supplied mapping
+    of ``ts_url -> pubkey_pem`` — one or several pins for Transparency
+    Services the caller trusts beyond the built-in pinned default witness
+    (``capsule_emit.checkpoint.DEFAULT_TS_URL`` /
+    ``DEFAULT_TS_PUBLIC_KEY_PEM``, always consulted regardless of
+    ``trust_anchor``). Confirms every link the two-sided append bracket
+    depends on:
 
       1. the receipt's own ``capsule_id`` matches the leaf the inclusion
-         proof was built for;
+         proof was built for, AND is recomputed from the receipt's own
+         content (not just compared as an opaque label) — a bundle whose
+         receipt body was tampered but whose ``capsule_id`` was left alone
+         is caught here; AND its self-attested producer signature verifies
+         (``capsule_emit.signing.verify_capsule_signature``) — a receipt
+         body rewritten with a matching, recomputed ``capsule_id`` (the
+         [verify-checks-producer-signature] forgery, replayed against a
+         bundle) is caught here instead;
       2. inclusion — the receipt is genuinely a leaf under the covering
          checkpoint's root, at this bundle's ``seq``;
       3. the covering checkpoint's own signature, offline
@@ -273,28 +288,84 @@ def verify_bundle(b: Bundle) -> tuple[bool, list[str]]:
          needed);
       4. if a prior checkpoint is present: its signature too, that the
          covering checkpoint's ``prev_size``/``prev_root`` genuinely name
-         it, and the consistency proof bridging the two roots; if absent:
-         that ``checkpoint.prev_size == 0`` — this is honestly the log's
-         first checkpoint, not a silently dropped lower bound.
+         it, and the consistency proof (the ``bryce-cose-receipts-mmr-profile``
+         relation, verified via ``capsule_emit.checkpoint.core
+         .verify_consistency``) bridging the two roots; if absent: that
+         ``checkpoint.prev_size == 0`` — this is honestly the log's first
+         checkpoint, not a silently dropped lower bound. **Label honestly
+         (Decision 2):** a passing consistency check proves the history
+         *within this bundle* was not rewritten/reordered/truncated between
+         the two checkpoints (anti-REWRITE) — it does NOT prove no divergent
+         history exists elsewhere (anti-FORK/anti-equivocation), since a
+         forker can build two internally-consistent bundles and one offline
+         verifier never sees both sides. The success notice reads exactly
+         "history intact between checkpoints N and M" and never "no fork" /
+         "not equivocated" — that guarantee is the witness's and
+         multi-witness config's job, never this offline check's;
+      5. witness stamp authenticity, if the covering checkpoint carries any
+         (``capsule_emit.checkpoint.verify_witness_stamp_tristate`` per
+         ``WitnessRecord`` — [stamp-authenticity-on-read-not-presence],
+         revised to THREE-STATE by [verify-threestate-trustanchor]). Each
+         stamp resolves to one of three states, per ``ts_url`` matched
+         against ``trust_anchor``/the pinned default witness:
+           - WITNESSED (a supplied/pinned key verifies it) — the checkpoint
+             genuinely is witnessed via this stamp;
+           - UNVERIFIED (well-formed, checkpoint-bound, but its TS has no
+             supplied pin) — reported as a non-fatal notice
+             (``"witnessed by <url>, pin not supplied — unverified
+             stamp"``), NEVER fatal on its own: a self-hosted/zero-egress
+             TS a caller has not pinned is not evidence of forgery, and
+             treating it as fatal false-accused exactly the deployments
+             frozen §1a.2 promises zero-egress operation to;
+           - INVALID (not even a well-formed checkpoint-bound stamp, or a
+             KNOWN/pinned TS's signature that fails) — a fatal notice,
+             UNLESS at least one other stamp is WITNESSED (any-of, matching
+             ``grade()``), in which case it demotes to a non-fatal notice
+             since the checkpoint genuinely IS witnessed via the valid one.
+         The bundle is fatal on the witness dimension iff no stamp is
+         WITNESSED **and** at least one is INVALID — a checkpoint whose
+         only stamps are all UNVERIFIED (every TS unpinned) is NOT fatal;
+         it is exactly the "self-attested, unverified" bundle #94's default
+         (no ``trust_anchor``) path now honestly reports for a self-hosted
+         TS rather than false-accusing it of forgery.
 
-    Deliberately does NOT re-confirm witness stamps
-    (``b.checkpoint.witnesses`` / ``b.prior_checkpoint.witnesses``) — that
-    is a separate, optional step
-    (``capsule_emit.checkpoint.verify_receipt_offline`` per
-    ``WitnessRecord``), since it may need a network fetch of the
-    Transparency Service's public key; a caller holding a cached
-    ``ts_pubkey_pem`` can do that step fully offline too, just not as part
-    of this pure check.
-
-    Returns ``(ok, errors)`` — ``errors`` is empty iff ``ok``.
+    Returns ``(ok, errors)`` — ``ok`` is false iff a FATAL problem was
+    found; ``errors`` also carries non-fatal notices: the point-4 honest
+    consistency/first-checkpoint label, and point-5's unverified/mixed
+    stamp notices — so it is not empty on plenty of fully-passing bundles,
+    not just the mixed-witness case.
     """
+    from agent_action_capsule.canonical import compute_capsule_id
+
     from .checkpoint import core as mmr_core
-    from .checkpoint.emit import verify_checkpoint_signature_offline
+    from .checkpoint.emit import (
+        StampVerdict,
+        verify_checkpoint_signature_offline,
+        verify_witness_stamp_tristate,
+    )
+    from .signing import verify_capsule_signature
 
     errors: list[str] = []
+    notices: list[str] = []
     try:
         if b.receipt.get("capsule_id") != b.capsule_id:
             errors.append("receipt.capsule_id does not match bundle.capsule_id")
+
+        try:
+            recomputed_capsule_id = compute_capsule_id(b.receipt)
+        except Exception as exc:
+            errors.append(f"receipt {b.capsule_id} content could not be hashed: {exc}")
+        else:
+            if recomputed_capsule_id != b.receipt.get("capsule_id"):
+                errors.append(
+                    f"receipt {b.capsule_id} does not hash to its own capsule_id -- "
+                    "receipt body was tampered"
+                )
+        if not verify_capsule_signature(b.receipt):
+            errors.append(
+                f"receipt {b.capsule_id} signature does not verify -- receipt content, signature, "
+                "or key_id was tampered, forged, or unsigned"
+            )
 
         body_digest = bytes.fromhex(b.capsule_id)
         root = bytes.fromhex(b.checkpoint.root)
@@ -325,13 +396,58 @@ def verify_bundle(b: Bundle) -> tuple[bool, list[str]]:
                     b.consistency_proof,
                 ):
                     errors.append("consistency proof does not bridge prior_checkpoint to checkpoint")
+                else:
+                    # Honest label (Decision 2): anti-REWRITE only, never
+                    # "no fork" / "not equivocated" -- see the docstring.
+                    notices.append(
+                        "history intact between checkpoints "
+                        f"{b.prior_checkpoint.mmr_size} and {b.checkpoint.mmr_size} "
+                        "(consistency proof verified) -- rules out rewrite/reorder/"
+                        "truncation between them; does not rule out a divergent fork, "
+                        "which only a witness attests to"
+                    )
         else:
             if b.checkpoint.prev_size != 0:
                 errors.append("prior_checkpoint is missing but checkpoint.prev_size != 0")
             if b.consistency_proof is not None:
                 errors.append("consistency_proof present without a prior_checkpoint")
+            if b.checkpoint.prev_size == 0 and b.consistency_proof is None:
+                notices.append(
+                    f"no prior checkpoint -- checkpoint at mmr_size={b.checkpoint.mmr_size} "
+                    "is this log's first; there is no earlier history to check continuity "
+                    "against"
+                )
+
+        if b.checkpoint.witnesses:
+            stamp_checks = [
+                (
+                    w,
+                    verify_witness_stamp_tristate(
+                        b.checkpoint, w, ts_pubkey_pem=(trust_anchor or {}).get(w.ts_url)
+                    ),
+                )
+                for w in b.checkpoint.witnesses
+            ]
+            any_witnessed = any(v is StampVerdict.WITNESSED for _, (v, _) in stamp_checks)
+            any_invalid = any(v is StampVerdict.INVALID for _, (v, _) in stamp_checks)
+            for w, (verdict, werrs) in stamp_checks:
+                if verdict is StampVerdict.WITNESSED:
+                    continue
+                if verdict is StampVerdict.UNVERIFIED:
+                    # Non-fatal always -- an unpinned TS is not evidence of
+                    # forgery, just evidence we cannot check.
+                    notices.extend(werrs)
+                    continue
+                detail = "; ".join(werrs) if werrs else "does not verify"
+                msg = f"witness stamp ({w.ts_url}) INVALID: {detail}"
+                (notices if any_witnessed else errors).append(msg)
+            if not any_witnessed and any_invalid:
+                errors.append(
+                    f"checkpoint claims {len(b.checkpoint.witnesses)} witness stamp(s) but none "
+                    "verify as authentic TS Receipts for this checkpoint"
+                )
     except Exception as exc:  # noqa: BLE001 — pure verifier, never raises
         errors.append(f"unexpected error: {exc}")
-        return False, errors
+        return False, errors + notices
 
-    return not errors, errors
+    return not errors, errors + notices

@@ -6,6 +6,62 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — the verify surface authenticates cryptography, not just structure ([verify-authenticates-nothing])
+
+**What changed.** An adversarial run against `origin/main` (`_work/adv-migration-run-2026-08-24.md`)
+found the offline read/verify surface authenticated almost nothing: the self-attested Ed25519
+signature (`#80`) was minted on every capsule but never checked by a shipped verify path, `verify_bundle`
+never content-authenticated the receipt it hands a stranger, and the `witnessed` grade was
+presence-only (`len(witnesses) > 0`), so a hand-fabricated stamp laundered a self-attested checkpoint
+to `witnessed` on every offline read path. Three fixes, landed together (they share one root — the
+read path trusted structure over cryptography):
+
+- **BLOCKER-1** — `capsule_emit.signing.verify_store_signed` composes `agent_action_capsule.verify_store`
+  with `verify_capsule_signature`, so a key-less forgery (attacker-authored content, invented
+  signature/key_id, `capsule_id` recomputed to match) reports INVALID naming the record. Wired into
+  CLI `capsule-emit verify`, `ledger view`'s inline verify column, and `permalink`/`evidence`'s
+  `check_capsules`.
+- **HIGH-2** — `verify_bundle` now recomputes the receipt's own `capsule_id` from its content and
+  checks its self-attested signature before reporting VALID — a bundle whose receipt body was
+  tampered but `capsule_id` left alone is now caught.
+- **HIGH-3** — `capsule_emit.checkpoint.verify_witness_stamp_offline` is a new primitive: a witness
+  stamp must be bound to its checkpoint (`entry_hash` recomputed, not trusted) and decode as a
+  structurally valid COSE Receipt before it counts. `CheckpointRecord.grade()` and `verify_bundle`
+  both use it now — presence in `witnesses` alone no longer grades `witnessed`. Pass a pinned
+  `ts_pubkey_pem` for the full identity-bound signature check on top of the structural one.
+
+The three original attack scripts (`/tmp/atk/attack_forge_sig.py`, `attack6b.py`, `attack45.py`) are
+reconstructed as permanent regression tests in `tests/test_verify_authenticates_nothing_regressions.py`.
+
+### Fixed — fast-follow hardening on the verify surface ([verify-batch-fastfollow])
+
+**What changed.** Manager review of the above batch found a residual gap and an honesty gap; both
+close here, on the same `verify_bundle`/`grade()` surface:
+
+- **Consistency-proof label (Decision 2).** `verify_bundle` already verified the MMR consistency
+  proof bridging `prior_checkpoint` to the covering checkpoint; it now labels a pass for exactly what
+  it proves — a notice reading `"history intact between checkpoints N and M"` (anti-**rewrite**) that
+  never says or implies `"no fork"` / `"not equivocated"`. Anti-equivocation is the witness's and
+  multi-witness config's job, never this offline check's. The first-checkpoint edge
+  (`prev_size == 0`, no prior to check continuity against) gets its own honest notice too.
+- **Sophisticated-forger closure.** `verify_witness_stamp_offline`'s default (no `ts_pubkey_pem`) tier
+  graded `WITNESSED` on receipt *shape* alone — a forger with the public `scitt_cose.build_receipt`
+  could mint a well-formed, checkpoint-bound receipt signed with a key of their own choosing and
+  launder self-attested to witnessed, one sophistication level up from a garbage-bytes forgery. Fixed
+  by pinning the known default witness's (`witness.agentactioncapsule.org`) Ed25519 public key
+  (`DEFAULT_TS_PUBLIC_KEY_PEM`) in the default read path: a stamp whose `ts_url` matches the pinned
+  default is now signature-verified for the full `WITNESSED` guarantee automatically; a stamp from any
+  other TS, with no caller-supplied key, reports `"witness shape valid; TS identity unverified"` and
+  grades `SELF_ATTESTED` rather than `WITNESSED`.
+- **Doc note.** `CheckpointRecord.grade()`'s two rungs (self-attested/witnessed) are correct as
+  shipped — `countersigned`, the ladder's third rung, is a receipt-level property from a
+  counterparty/operator's countersign path, not a checkpoint-level fact, so it has no representation
+  in `grade()`.
+
+`disclose.verify_disclosure` was adjusted to only fold a bundle's fatal errors (not its non-fatal
+notices) into its own result, so the new consistency/first-checkpoint notices don't flip an otherwise
+valid disclosure to invalid.
+
 ### Added — flock-based one-log-one-writer locking (O16 audit item 12, "Flock locking")
 
 **What changed.** No OS-level write coordination existed: `git grep` for

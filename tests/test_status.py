@@ -26,7 +26,6 @@ Covers:
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import http.server
 import io
@@ -35,8 +34,10 @@ import threading
 import time
 
 import pytest
+from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64
 
 from capsule_emit import cli, ledger, seal, status, witness
+from capsule_emit.checkpoint import emit as checkpoint_emit_mod
 
 # ---------------------------------------------------------------------------
 # Hermetic stub Transparency Service -- same shape as
@@ -61,7 +62,7 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
             entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
             resp = {
                 "entry_hash": entry_hash,
-                "receipt_b64": base64.b64encode(b"stub-receipt-not-a-real-cose-receipt").decode(),
+                "receipt_b64": build_stub_receipt_b64(entry_hash),
                 "leaf_index": 0,
                 "tree_size": 1,
             }
@@ -93,8 +94,15 @@ def _start_stub_ts():
 
 
 @pytest.fixture
-def stub_ts():
+def stub_ts(monkeypatch):
+    # Simulate that this hermetic stub IS the pinned default witness
+    # ([verify-batch-fastfollow] item D) so fixtures built with it still
+    # signature-verify as WITNESSED via the DEFAULT (no-key) read path,
+    # instead of correctly-but-inconveniently demoting to "TS identity
+    # unverified" for being an unpinned TS. monkeypatch reverts per test.
     base_url, received, stop = _start_stub_ts()
+    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
 

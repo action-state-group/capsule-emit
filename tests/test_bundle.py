@@ -11,7 +11,6 @@ mutant is caught).
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import http.server
 import json
@@ -20,11 +19,13 @@ import time
 from dataclasses import replace
 
 import pytest
+from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64
 
 from capsule_emit import ledger as ledger_mod
 from capsule_emit import seal, witness
 from capsule_emit.bundle import Bundle, BundleError, bundle, verify_bundle
 from capsule_emit.checkpoint import core as mmr_core
+from capsule_emit.checkpoint import emit as checkpoint_emit_mod
 
 # ---------------------------------------------------------------------------
 # Hermetic stub Transparency Service — same shape as test_checkpoint_signer.py
@@ -47,7 +48,7 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
             entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
             resp = {
                 "entry_hash": entry_hash,
-                "receipt_b64": base64.b64encode(b"stub-receipt-not-a-real-cose-receipt").decode(),
+                "receipt_b64": build_stub_receipt_b64(entry_hash),
                 "leaf_index": 0,
                 "tree_size": 1,
             }
@@ -75,8 +76,20 @@ def _start_stub_ts():
 
 
 @pytest.fixture
-def stub_ts():
+def stub_ts(monkeypatch):
+    # Simulate that this hermetic stub IS the operator's pinned default
+    # witness ([verify-batch-fastfollow] item D): the DEFAULT read path only
+    # signature-verifies a stamp as WITNESSED when its ts_url matches the
+    # pinned DEFAULT_TS_URL and the receipt verifies against
+    # DEFAULT_TS_PUBLIC_KEY_PEM. Without this, every stamp this stub mints
+    # would correctly demote to "shape valid; TS identity unverified" (an
+    # unpinned TS), which is exactly right in production but would make
+    # every "genuinely witnessed" fixture in this file fail for the wrong
+    # reason. monkeypatch reverts both per test, so ephemeral ports never
+    # leak across tests.
     base_url, received, stop = _start_stub_ts()
+    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
 
@@ -175,6 +188,52 @@ def test_bundle_second_checkpoint_record_has_prior_and_consistency(two_checkpoin
     assert ok, errors
 
 
+# ---------------------------------------------------------------------------
+# [verify-batch-fastfollow] item A / Decision 2 — the consistency-proof
+# check's PASSING message must label itself honestly: anti-REWRITE only,
+# never implying anti-FORK / anti-equivocation (that is the witness's job).
+# ---------------------------------------------------------------------------
+
+
+_FORBIDDEN_OVERCLAIM_PHRASES = ("no fork", "not equivocated", "no equivocation")
+
+
+def test_verify_bundle_labels_passing_consistency_proof_as_history_intact_not_fork(
+    two_checkpoint_ledger,
+):
+    ledger_path, caps = two_checkpoint_ledger
+    b = bundle(ledger_path, caps[2]["capsule_id"])
+    assert b.prior_checkpoint is not None  # exercising the WITH-prior branch
+
+    ok, notices = verify_bundle(b)
+    assert ok, notices
+
+    history_notices = [n for n in notices if "history intact between checkpoints" in n]
+    assert len(history_notices) == 1, notices
+    msg = history_notices[0]
+    assert f"{b.prior_checkpoint.mmr_size} and {b.checkpoint.mmr_size}" in msg
+    for phrase in _FORBIDDEN_OVERCLAIM_PHRASES:
+        assert phrase not in msg.lower(), f"{msg!r} must never say/imply {phrase!r}"
+
+
+def test_verify_bundle_labels_first_checkpoint_edge_honestly(two_checkpoint_ledger):
+    ledger_path, caps = two_checkpoint_ledger
+    b = bundle(ledger_path, caps[0]["capsule_id"])
+    assert b.prior_checkpoint is None  # exercising the first-checkpoint branch
+
+    ok, notices = verify_bundle(b)
+    assert ok, notices
+
+    first_notices = [n for n in notices if "no prior checkpoint" in n]
+    assert len(first_notices) == 1, notices
+    msg = first_notices[0]
+    assert "first" in msg
+    for phrase in _FORBIDDEN_OVERCLAIM_PHRASES:
+        assert phrase not in msg.lower(), f"{msg!r} must never say/imply {phrase!r}"
+    # Never confused with the WITH-prior notice.
+    assert "history intact between checkpoints" not in msg
+
+
 def test_bundle_accepts_unambiguous_prefix(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
     prefix = caps[0]["capsule_id"][:10]
@@ -250,6 +309,87 @@ def test_bundle_self_attested_checkpoint_still_verifies(tmp_path, monkeypatch):
     assert b.checkpoint.witnesses == []
     ok, errors = verify_bundle(b)
     assert ok, errors
+
+
+# ---------------------------------------------------------------------------
+# [verify-threestate-trustanchor] -- a well-formed stamp from an UNPINNED
+# witness (no caller-supplied pin, and not the built-in default) must NOT
+# make the bundle INVALID: it is exactly what a self-hosted/zero-egress TS
+# a caller hasn't pinned yet looks like, and frozen §1a.2 promises that
+# deployment shape works. Three states: unpinned -> unverified (bundle OK);
+# pinned + genuine -> witnessed; pinned + forged -> INVALID.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def self_hosted_stub_ts():
+    """A stub TS whose URL is deliberately NOT ``DEFAULT_TS_URL`` (never
+    monkeypatched) -- simulating a self-hosted/zero-egress deployment's own
+    Transparency Service, which has no built-in pin."""
+    base_url, received, stop = _start_stub_ts()
+    yield base_url, received
+    stop()
+
+
+def test_bundle_self_hosted_unpinned_witness_is_not_invalid(
+    tmp_path, self_hosted_stub_ts, monkeypatch
+):
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "1")
+    ts_url, _received = self_hosted_stub_ts
+    ledger_path = tmp_path / "ledger.jsonl"
+    result = seal(None, action="solo", operator="acme", anchor=False,
+                   ledger=ledger_path, witness_url=ts_url)
+    assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
+
+    b = bundle(ledger_path, result.capsule["capsule_id"])
+    assert len(b.checkpoint.witnesses) == 1
+    assert b.checkpoint.witnesses[0].ts_url == ts_url
+    assert ts_url != checkpoint_emit_mod.DEFAULT_TS_URL
+
+    ok, notices = verify_bundle(b)  # no trust_anchor supplied
+    assert ok is True, notices
+    assert any("pin not supplied" in n and "unverified stamp" in n for n in notices)
+    assert any(ts_url in n for n in notices)
+
+
+def test_bundle_self_hosted_witness_pinned_via_trust_anchor_is_witnessed(
+    tmp_path, self_hosted_stub_ts, monkeypatch
+):
+    from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM
+
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "1")
+    ts_url, _received = self_hosted_stub_ts
+    ledger_path = tmp_path / "ledger.jsonl"
+    result = seal(None, action="solo", operator="acme", anchor=False,
+                   ledger=ledger_path, witness_url=ts_url)
+    assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
+
+    b = bundle(ledger_path, result.capsule["capsule_id"])
+    ok, errors = verify_bundle(b, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM})
+    assert ok is True, errors
+    assert not any("unverified" in e for e in errors)
+
+
+def test_bundle_self_hosted_witness_pinned_but_forged_signature_is_invalid(
+    tmp_path, self_hosted_stub_ts, monkeypatch
+):
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "1")
+    ts_url, _received = self_hosted_stub_ts
+    ledger_path = tmp_path / "ledger.jsonl"
+    result = seal(None, action="solo", operator="acme", anchor=False,
+                   ledger=ledger_path, witness_url=ts_url)
+    assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
+
+    b = bundle(ledger_path, result.capsule["capsule_id"])
+    wrong_pubkey_pem = Ed25519PrivateKey.generate().public_key().public_bytes(
+        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+    )
+    ok, errors = verify_bundle(b, trust_anchor={ts_url: wrong_pubkey_pem})
+    assert ok is False
+    assert any("witness stamp" in e and "INVALID" in e for e in errors)
 
 
 # ---------------------------------------------------------------------------

@@ -58,6 +58,8 @@ from .core import (
     verify_inclusion,
 )
 from .emit import (
+    DEFAULT_TS_PUBLIC_KEY_ID,
+    DEFAULT_TS_PUBLIC_KEY_PEM,
     DEFAULT_TS_URL,
     EXAMPLE_CONFIG_TOML,
     CheckpointConfig,
@@ -66,6 +68,7 @@ from .emit import (
     Grade,
     RollbackError,
     Signer,
+    StampVerdict,
     WitnessRecord,
     due_for_checkpoint,
     emit_checkpoint,
@@ -75,6 +78,8 @@ from .emit import (
     verify_checkpoint_signature,
     verify_checkpoint_signature_offline,
     verify_receipt_offline,
+    verify_witness_stamp_offline,
+    verify_witness_stamp_tristate,
 )
 from .index import LogSource, MmrLedger, RangeProof, verify_range
 from .store import MemoryNodeStore
@@ -103,6 +108,8 @@ __all__ = [
     "verify_range",
     "MemoryNodeStore",
     "DEFAULT_TS_URL",
+    "DEFAULT_TS_PUBLIC_KEY_PEM",
+    "DEFAULT_TS_PUBLIC_KEY_ID",
     "EXAMPLE_CONFIG_TOML",
     "CheckpointConfig",
     "CheckpointError",
@@ -110,6 +117,7 @@ __all__ = [
     "Grade",
     "RollbackError",
     "Signer",
+    "StampVerdict",
     "WitnessRecord",
     "due_for_checkpoint",
     "emit_checkpoint",
@@ -119,4 +127,6 @@ __all__ = [
     "verify_checkpoint_signature",
     "verify_checkpoint_signature_offline",
     "verify_receipt_offline",
+    "verify_witness_stamp_offline",
+    "verify_witness_stamp_tristate",
 ]
