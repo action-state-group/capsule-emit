@@ -14,12 +14,19 @@ only via `cp.witnesses.append(...)` — an in-memory mutation of a `CheckpointRe
 was never itself written anywhere; a process restart discarded it. Now every checkpoint
 `capsule_emit.witness` builds (witnessed or, if every endpoint failed, still
 self-attested) is written back into the *same ledger it covers* as its own JSONL entry —
-`{"kind": "checkpoint_stamp", "v": 1, "capsule_id": <checkpoint digest>, "checkpoint":
-{...}}` — through the same `capsule_emit.ledger.append_to_ledger` every capsule already
-goes through. That entry becomes an MMR leaf the *next* checkpoint's `mmr.sync()` folds
-in, so checkpoint N's stamp is genuinely covered by checkpoint N+1, matching the frozen
-v4 surface's §2.3: "the stamp does land as its own log entry ... checkpoint N's stamp is
-covered by checkpoint N+1."
+`{"kind": "checkpoint_stamp", "v": 1, "capsule_id": <checkpoint.entry_digest()>,
+"checkpoint": {...}}` — through the same `capsule_emit.ledger.append_to_ledger` every
+capsule already goes through. That entry becomes an MMR leaf the *next* checkpoint's
+`mmr.sync()` folds in, so checkpoint N's stamp is genuinely covered by checkpoint N+1,
+matching the frozen v4 surface's §2.3: "the stamp does land as its own log entry ...
+checkpoint N's stamp is covered by checkpoint N+1."
+
+**Leaf coverage (PM gate ruling 2026-08-24).** The leaf commits to the checkpoint entry
+AS PERSISTED — signature and witnesses included — via the new
+`CheckpointRecord.entry_digest()`, not `CheckpointRecord.digest()` (the signing-body-only
+value registered with the TS, unchanged for that purpose). Flipping or deleting a byte of
+a persisted stamp's `witnesses` now changes its leaf and breaks the covering checkpoint's
+root; see `test_tampering_with_persisted_stamp_witnesses_breaks_inclusion_under_the_covering_root`.
 
 **Read-path compatibility.** `capsule_emit.ledger.read_ledger` filters checkpoint-stamp
 entries out by default, so every existing capsule-only consumer (the CLI, `ledger.view` /

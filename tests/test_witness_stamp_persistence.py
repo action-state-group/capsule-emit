@@ -157,7 +157,14 @@ def test_checkpoint_is_persisted_as_its_own_ledger_entry(tmp_path, stub_ts, monk
     assert cp["kind"] == "mmr_checkpoint"
     # mmr_size is total MMR *node* count, not leaf count -- node_count(f) = 2f - popcount(f).
     assert cp["mmr_size"] == mmr_core.node_count(3)
-    assert stamp["capsule_id"] == _sha256_of_signing_body(cp)
+    # The leaf commits to the FULL persisted entry (signature + witnesses),
+    # not just the signing body cp.digest() would cover -- see O16-16's
+    # leaf-coverage fix (CheckpointRecord.entry_digest()).
+    assert stamp["capsule_id"] == _sha256_of_full_entry(cp)
+    assert stamp["capsule_id"] != _sha256_of_signing_body(cp), (
+        "leaf must not be the signing-body-only digest -- it must cover "
+        "signature and witnesses too"
+    )
     assert cp["witnesses"], "checkpoint was registered but no WitnessRecord was persisted"
     assert cp["witnesses"][0]["ts_url"] == ts_url
 
@@ -175,6 +182,14 @@ def _sha256_of_signing_body(cp: dict) -> str:
         "timestamp": cp["timestamp"],
     }
     return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _sha256_of_full_entry(cp: dict) -> str:
+    """Recomputes the leaf digest a persisted checkpoint entry's ``capsule_id``
+    must equal: sha256 of the *entire* persisted ``checkpoint`` dict (the
+    exact shape ``CheckpointRecord.to_dict()``/``entry_digest()`` produce),
+    signature and witnesses included."""
+    return hashlib.sha256(json.dumps(cp, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -301,12 +316,93 @@ def test_stamp_entry_is_a_leaf_covered_by_the_next_checkpoint(tmp_path, stub_ts,
         e for e in ledger.read_ledger_entries(ledger_path) if e.get("kind") == ledger.CHECKPOINT_STAMP_KIND
     ]
     assert len(stamp_entries) == 2, "expected the first checkpoint's stamp plus the second's own"
-    first_stamp = next(e for e in stamp_entries if e["capsule_id"] == first_cp.digest())
+    first_stamp = next(e for e in stamp_entries if e["capsule_id"] == first_cp.entry_digest())
     stamp_digest = bytes.fromhex(first_stamp["capsule_id"])
     proof = mmr.inclusion_proof(3, size=second_cp.mmr_size)
     assert mmr_core.verify_inclusion(
         bytes.fromhex(second_cp.root), second_cp.mmr_size, 2, stamp_digest, proof
     ), "the first checkpoint's stamp entry does not verify as included under the second checkpoint's root"
+
+
+# ---------------------------------------------------------------------------
+# (d2) mutation test -- the leaf covers the persisted stamp AS STAMPED
+# (signature + witnesses), not just its body: tampering with a persisted
+# stamp's witnesses must change its leaf digest and break inclusion under
+# the covering checkpoint's root.
+# ---------------------------------------------------------------------------
+
+
+def test_tampering_with_persisted_stamp_witnesses_breaks_inclusion_under_the_covering_root(
+    tmp_path, stub_ts, monkeypatch
+):
+    from capsule_emit.checkpoint import core as mmr_core
+    from capsule_emit.checkpoint.emit import CheckpointRecord
+
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "2")
+    ts_url, received = stub_ts
+    ledger_path = tmp_path / "ledger.jsonl"
+
+    for i in range(2):
+        seal(None, action=f"action-{i}", operator="acme", anchor=False,
+             ledger=ledger_path, witness_url=ts_url)
+
+    assert _wait_for(lambda: len(received) >= 1)
+    key = witness._resolve_key(str(ledger_path))
+    assert _wait_for(lambda: witness._states.get(key) is not None and witness._states[key].prev is not None)
+    first_cp = witness._states[key].prev
+    assert _wait_for(
+        lambda: any(
+            e.get("kind") == ledger.CHECKPOINT_STAMP_KIND
+            for e in ledger.read_ledger_entries(ledger_path)
+        )
+    )
+
+    for i in range(2, 4):
+        seal(None, action=f"action-{i}", operator="acme", anchor=False,
+             ledger=ledger_path, witness_url=ts_url)
+
+    assert _wait_for(lambda: len(received) >= 2)
+    assert _wait_for(lambda: witness._states[key].prev is not first_cp)
+    second_cp = witness._states[key].prev
+
+    mmr = witness._states[key].mmr
+    stamp_entries = [
+        e for e in ledger.read_ledger_entries(ledger_path) if e.get("kind") == ledger.CHECKPOINT_STAMP_KIND
+    ]
+    first_stamp = next(e for e in stamp_entries if e["capsule_id"] == first_cp.entry_digest())
+    leaf_seq, leaf_index = 3, 2  # the first stamp's position, established above
+    proof = mmr.inclusion_proof(leaf_seq, size=second_cp.mmr_size)
+    root = bytes.fromhex(second_cp.root)
+
+    # Positive control: the real, untampered leaf verifies -- the root
+    # genuinely covers the stamp as persisted.
+    real_digest = bytes.fromhex(first_stamp["capsule_id"])
+    assert mmr_core.verify_inclusion(root, second_cp.mmr_size, leaf_index, real_digest, proof)
+
+    # Mutant A: flip a byte inside the persisted witness's receipt.
+    flipped = json.loads(json.dumps(first_stamp["checkpoint"]))  # deep copy
+    w = flipped["witnesses"][0]
+    w["receipt_b64"] = ("A" if w["receipt_b64"][0] != "A" else "B") + w["receipt_b64"][1:]
+    flipped_digest_hex = CheckpointRecord.from_dict(flipped).entry_digest()
+    assert flipped_digest_hex != first_stamp["capsule_id"], (
+        f"leaf digest for seq={leaf_seq} (leaf_index={leaf_index}) did not change "
+        "when a byte of its persisted witnesses was flipped"
+    )
+    assert not mmr_core.verify_inclusion(
+        root, second_cp.mmr_size, leaf_index, bytes.fromhex(flipped_digest_hex), proof
+    ), f"tampered witnesses at seq={leaf_seq} (leaf_index={leaf_index}) still verified -- leaf coverage gap"
+
+    # Mutant B: delete the witnesses array entirely.
+    deleted = json.loads(json.dumps(first_stamp["checkpoint"]))
+    del deleted["witnesses"]
+    deleted_digest_hex = CheckpointRecord.from_dict(deleted).entry_digest()
+    assert deleted_digest_hex != first_stamp["capsule_id"], (
+        f"leaf digest for seq={leaf_seq} (leaf_index={leaf_index}) did not change "
+        "when its persisted witnesses were deleted"
+    )
+    assert not mmr_core.verify_inclusion(
+        root, second_cp.mmr_size, leaf_index, bytes.fromhex(deleted_digest_hex), proof
+    ), f"deleted witnesses at seq={leaf_seq} (leaf_index={leaf_index}) still verified -- leaf coverage gap"
 
 
 # ---------------------------------------------------------------------------

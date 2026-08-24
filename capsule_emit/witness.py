@@ -326,7 +326,11 @@ def _persist_checkpoint_stamp(cp: Any, ledger_path: str) -> None:
     entry = {
         "kind": CHECKPOINT_STAMP_KIND,
         "v": 1,
-        "capsule_id": cp.digest(),
+        # entry_digest(), not digest(): the leaf this entry becomes must
+        # commit to the FULL persisted checkpoint -- signature and
+        # witnesses included -- not just the signing body. See
+        # CheckpointRecord.entry_digest()'s docstring.
+        "capsule_id": cp.entry_digest(),
         "checkpoint": cp.to_dict(),
     }
     try:

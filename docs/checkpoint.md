@@ -118,7 +118,7 @@ writes every checkpoint it builds — signature, `mmr_size`, and whatever
 JSONL line:
 
 ```json
-{"kind": "checkpoint_stamp", "v": 1, "capsule_id": "<checkpoint.digest()>",
+{"kind": "checkpoint_stamp", "v": 1, "capsule_id": "<checkpoint.entry_digest()>",
  "checkpoint": {"v": 1, "kind": "mmr_checkpoint", "log_id": "...",
                 "mmr_size": 100, "root": "...", "prev_size": 0,
                 "prev_root": "", "key_id": "...", "timestamp": "...",
@@ -126,14 +126,19 @@ JSONL line:
 ```
 
 This is not a re-issue of any capsule and does not change any capsule's
-`capsule_id` — it is a distinct entry, addressed by the checkpoint's own
-digest, that becomes an MMR leaf the *next* checkpoint's `mmr.sync()` folds
-in. That is what "checkpoint N's stamp is covered by checkpoint N+1" means in
-practice: the history carries the evidence of its own witnessing, rather than
-that evidence living only in the `CheckpointRecord.witnesses` list of a
-process-local object a restart discards. Stamp entries never wake the
-cadence/idle timer — they aren't written through `core.emit()`, so they never
-touch `witness.maybe_checkpoint`'s per-`emit()`-call counter.
+`capsule_id` — it is a distinct entry that becomes an MMR leaf the *next*
+checkpoint's `mmr.sync()` folds in. The leaf is addressed by
+`CheckpointRecord.entry_digest()` — a hash over the *entire* persisted entry
+(`to_dict()`: signing body, `signature`, and `witnesses` alike) — not
+`CheckpointRecord.digest()` (the signing-body-only value registered with the
+TS). That is what "checkpoint N's stamp is covered by checkpoint N+1" means
+in practice: the history carries the evidence of its own witnessing, so
+flipping or deleting a byte of a persisted stamp's `witnesses` changes its
+leaf and breaks the covering checkpoint's root, rather than that evidence
+living only in the `CheckpointRecord.witnesses` list of a process-local
+object a restart discards. Stamp entries never wake the cadence/idle
+timer — they aren't written through `core.emit()`, so they never touch
+`witness.maybe_checkpoint`'s per-`emit()`-call counter.
 
 `kind`/`v` are the entry's format-version marker: `capsule_emit.ledger.read_ledger`
 filters `checkpoint_stamp` entries out by default, so every capsule-only
