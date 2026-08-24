@@ -14,11 +14,23 @@ from typing import Any
 
 from agent_action_capsule.canonical import CHAIN_LINKAGE_FIELDS, jcs, normalize
 
-_VINTAGE_ALGORITHM = "jcs-n"
+VINTAGE_CANONICALIZATION_ID = "jcs-n"
 
 
 class UnsupportedCanonicalizationError(ValueError):
     """The declared algorithm cannot be recomputed from a capsule object."""
+
+
+def resolve_canonicalization_id(capsule: dict[str, Any]) -> Any:
+    """Resolve an absent binding slot to the pre-slot ``jcs-n`` algorithm.
+
+    Legacy normalization removes null-valued members, so an explicit JSON
+    ``null`` has the same digest meaning as an omitted slot. Other false-y
+    values, especially the empty string, remain declared values and fail
+    closed during dispatch.
+    """
+    declared = capsule.get("canonicalization_id")
+    return VINTAGE_CANONICALIZATION_ID if declared is None else declared
 
 
 def canonical_capsule_bytes(capsule: dict[str, Any]) -> bytes:
@@ -29,7 +41,7 @@ def canonical_capsule_bytes(capsule: dict[str, Any]) -> bytes:
     available here because parsing a wire record discards its original bytes.
     """
     canonical = {key: value for key, value in capsule.items() if key not in CHAIN_LINKAGE_FIELDS}
-    algorithm = capsule.get("canonicalization_id", _VINTAGE_ALGORITHM)
+    algorithm = resolve_canonicalization_id(capsule)
 
     if algorithm == "jcs-n":
         return jcs(normalize(canonical))

@@ -276,7 +276,9 @@ def verify_store_signed(records: list[dict]) -> list:
     producer-signature verdict) so every existing caller of ``verify_store``
     becomes a drop-in caller of this instead. Never raises.
     """
-    from agent_action_capsule import Finding, verify_store
+    from agent_action_capsule import Finding
+
+    from .verification import verify_store
 
     results = verify_store(records)
     for record, result in zip(records, results):
