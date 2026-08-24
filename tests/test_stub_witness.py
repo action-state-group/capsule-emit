@@ -107,7 +107,7 @@ def test_stub_in_production_refuses_at_seal_before_any_write(tmp_path, monkeypat
     ledger = tmp_path / "ledger.jsonl"
 
     with pytest.raises(witness.StubWitnessInProductionError):
-        seal(b"payload", action="mint", operator="acme", anchor=False, ledger=ledger)
+        seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
 
     assert not ledger.exists(), (
         "the refusal must fire before the capsule is ever appended to the ledger"
@@ -130,7 +130,7 @@ def test_capsule_env_production_case_insensitive(tmp_path, monkeypatch):
     ledger = tmp_path / "ledger.jsonl"
 
     with pytest.raises(witness.StubWitnessInProductionError):
-        seal(b"payload", action="mint", operator="acme", anchor=False, ledger=ledger)
+        seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
 
 
 def test_stub_outside_production_runs_fine(tmp_path, monkeypatch):
@@ -138,7 +138,7 @@ def test_stub_outside_production_runs_fine(tmp_path, monkeypatch):
     monkeypatch.delenv(witness.CAPSULE_ENV_VAR, raising=False)
     ledger = tmp_path / "ledger.jsonl"
 
-    capsule = seal(b"payload", action="mint", operator="acme", anchor=False, ledger=ledger)
+    capsule = seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
     assert ledger.exists()
     assert capsule.capsule_id
 
@@ -148,7 +148,7 @@ def test_capsule_env_development_with_stub_runs_fine(tmp_path, monkeypatch):
     monkeypatch.setenv(witness.CAPSULE_ENV_VAR, "development")
     ledger = tmp_path / "ledger.jsonl"
 
-    seal(b"payload", action="mint", operator="acme", anchor=False, ledger=ledger)
+    seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
     assert ledger.exists()
 
 
@@ -159,7 +159,7 @@ def test_production_without_stub_is_never_refused(tmp_path, monkeypatch):
     monkeypatch.setenv(witness.CAPSULE_ENV_VAR, "production")
     ledger = tmp_path / "ledger.jsonl"
 
-    seal(b"payload", action="mint", operator="acme", anchor=False, ledger=ledger, witness=False)
+    seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger, witness=False)
     assert ledger.exists()
 
 
@@ -174,7 +174,7 @@ def test_production_explicit_witness_true_is_never_refused_by_stub_check(tmp_pat
     ledger = tmp_path / "ledger.jsonl"
 
     seal(
-        b"payload", action="mint", operator="acme", anchor=False, ledger=ledger,
+        "payload", action="mint", operator="acme", anchor=False, ledger=ledger,
         witness=True, witness_url="http://127.0.0.1:1",
     )
     assert ledger.exists()
@@ -191,7 +191,7 @@ def test_stub_mode_makes_no_network_call_and_grade_stays_self_attested(tmp_path,
     monkeypatch.setattr("urllib.request.urlopen", _refuse_network)
     ledger = tmp_path / "ledger.jsonl"
 
-    seal(b"payload", action="mint", operator="acme", anchor=False, ledger=ledger)
+    seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
 
     key = witness._resolve_key(str(ledger))
     assert _wait_for(lambda: witness._states.get(key) is not None and witness._states[key].prev is not None)
@@ -215,7 +215,7 @@ def test_stub_mode_ignores_a_configured_witness_url_for_labeling(tmp_path, monke
     ledger = tmp_path / "ledger.jsonl"
 
     seal(
-        b"payload", action="mint", operator="acme", anchor=False, ledger=ledger,
+        "payload", action="mint", operator="acme", anchor=False, ledger=ledger,
         witness_url="https://looks-real.example",
     )
 
@@ -234,7 +234,7 @@ def test_stub_first_use_notice_is_distinct_and_prints_once(tmp_path, monkeypatch
     monkeypatch.setenv(witness.WITNESS_ENV_VAR, "stub")
     ledger = tmp_path / "ledger.jsonl"
 
-    seal(b"payload", action="mint", operator="acme", anchor=False, ledger=ledger)
+    seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
     err = capsys.readouterr().err
     assert err.count("STUB WITNESS is armed") == 1
     assert "ZERO network" in err
@@ -243,7 +243,7 @@ def test_stub_first_use_notice_is_distinct_and_prints_once(tmp_path, monkeypatch
     # never claims to actually send anything, unlike the real-witness notice:
     assert "will be sent to" not in err
 
-    seal(b"payload-2", action="mint", operator="acme", anchor=False, ledger=ledger)
+    seal("payload-2", action="mint", operator="acme", anchor=False, ledger=ledger)
     err_after = capsys.readouterr().err
     assert "STUB WITNESS is armed" not in err_after, "must print at most once per process"
 
@@ -255,7 +255,7 @@ def test_stub_mode_never_prints_the_real_network_disclosure(tmp_path, monkeypatc
     monkeypatch.setenv(witness.WITNESS_ENV_VAR, "stub")
     ledger = tmp_path / "ledger.jsonl"
 
-    seal(b"payload", action="mint", operator="acme", anchor=False, ledger=ledger)
+    seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
     err = capsys.readouterr().err
     assert "before this process's first network attempt" not in err
 
@@ -266,7 +266,7 @@ def test_status_marks_a_stub_only_checkpoint_loudly(tmp_path, monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", _refuse_network)
     ledger = tmp_path / "ledger.jsonl"
 
-    seal(b"payload", action="mint", operator="acme", anchor=False, ledger=ledger)
+    seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
     key = witness._resolve_key(str(ledger))
     assert _wait_for(lambda: witness._states.get(key) is not None and witness._states[key].prev is not None)
 
@@ -290,7 +290,7 @@ def test_status_marks_a_stub_only_checkpoint_loudly(tmp_path, monkeypatch):
 def test_status_witnessing_mode_now_reports_stub(tmp_path, monkeypatch):
     monkeypatch.setenv(witness.WITNESS_ENV_VAR, "stub")
     ledger = tmp_path / "ledger.jsonl"
-    seal(b"payload", action="mint", operator="acme", anchor=False, ledger=ledger)
+    seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
 
     result = compute_status(str(ledger), offline=True)
     assert result["witnessing_mode_now"] == "stub"
