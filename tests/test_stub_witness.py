@@ -9,12 +9,16 @@ refusal", frozen dev-surface v4 §1a.4):
 - the scream: a distinct first-use notice, and ``status`` marking a
   stub-only checkpoint loudly.
 
-The CONDITION on this item (Steven, 2026-08-24): the normative stub marker
-is the CLL I-D's deliverable (tracked as O10), not yet landed. What's tested
-here is everything that does NOT depend on that marker's exact bytes: our
-own grade/refusal/scream mechanics. The literal "a third-party verifier
-reading only the I-D grades a stub-stamped record self-attested" acceptance
-test needs the real marker and is deferred until O10 lands.
+The CONDITION on this item (Steven, 2026-08-24, un-held 2026-08-24): the
+normative stub marker's name and value (``cll-stub`` / ``true``) are now
+fixed by draft-mih-scitt-checkpointed-local-log-00 ("Stub
+Countersignatures") -- see ``tests/checkpoint/test_checkpoint_emit.py`` for
+the marker-alignment tests. The real COSE wire encoding (a protected-header
+parameter, listed in ``crit``) is separate COSE-wire work not yet landed;
+until then ``register_checkpoint_stub`` emits a JSON placeholder using that
+same marker name/value, so the literal "a third-party verifier reading only
+the I-D grades a stub-stamped record self-attested" acceptance test still
+needs the real COSE encoding and stays deferred to that follow-on work.
 """
 from __future__ import annotations
 

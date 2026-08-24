@@ -305,12 +305,15 @@ class WitnessRecord:
     dev-surface §1a.4) rather than a real Transparency Service. It is a
     convenience flag for this codebase's own grade computation
     (:meth:`CheckpointRecord.grade`) and rendering -- **not** the normative
-    stub marker itself. The normative marker is a CLL I-D format-level edit
-    (tracked as O10, not yet landed); once it lands, a stub-produced
-    ``receipt_b64``/``entry_hash`` carries it directly, so a third-party
-    verifier who has never read this codebase can still tell a stub record
-    apart from a real one from the bytes alone. Until then, ``receipt_b64``
-    holds an interim, self-evidently-non-conformant placeholder (see
+    stub marker itself. The normative marker's name and value (``cll-stub``
+    / ``true``, see ``STUB_MARKER``) are now fixed by the CLL I-D
+    (draft-mih-scitt-checkpointed-local-log-00, "Stub Countersignatures"),
+    but the wire encoding is still pending separate COSE-wire work -- once
+    that lands, a stub-produced ``receipt_b64``/``entry_hash`` carries the
+    real COSE protected-header parameter directly, so a third-party verifier
+    who has never read this codebase can still tell a stub record apart from
+    a real one from the bytes alone. Until then, ``receipt_b64`` holds an
+    interim JSON placeholder using that same marker name/value (see
     :func:`register_checkpoint_stub`) -- it cannot pass as a real COSE
     Receipt, so ``verify_receipt_offline`` fails closed on it rather than
     mistaking it for one.
@@ -686,17 +689,25 @@ def register_checkpoint(
 #: caller supplies none -- never dialled, a plain label.
 STUB_TS_URL = "stub://local"
 
-#: Interim, placeholder stub marker -- **NOT the normative marker.** The
-#: normative stub marker is a CLL I-D format-level edit (tracked as O10;
-#: 0.5.0 migration audit item 6's CONDITION: code ships now, this constant's
-#: value is expected to change once that spec text lands). It exists so the
-#: bytes ``register_checkpoint_stub`` produces are self-evidently not a real
-#: COSE Receipt -- ``scitt_cose.verify_receipt`` (via
-#: ``verify_receipt_offline``) fails closed on it rather than accepting it,
-#: which is the property that matters even before the normative encoding
-#: ships: a stub record can never be mistaken for a real one by any verifier,
-#: ours or a stranger's.
-STUB_MARKER = "capsule-emit-stub-witness-v0-PLACEHOLDER-pending-O10"
+#: The normative stub marker's name, now defined by the CLL I-D
+#: (draft-mih-scitt-checkpointed-local-log-00, "Stub Countersignatures"):
+#: a stub countersignature's COSE protected header MUST carry the parameter
+#: ``cll-stub`` (label TBD1, pending IANA assignment) with value ``true``,
+#: and MUST list that label in ``crit`` ({{Section 3.1 of RFC9052}}) -- a
+#: verifier that recognizes it treats the countersignature as conferring no
+#: witnessing; one that doesn't rejects it under ``crit`` processing. Either
+#: way the result is unwitnessed, never witnessed, which is exactly
+#: ``CheckpointRecord.grade()``'s stub exclusion below.
+#:
+#: capsule-emit does not yet speak real COSE for stub receipts -- that lands
+#: with separate COSE-wire work -- so :func:`register_checkpoint_stub`'s
+#: ``receipt_b64`` is still a JSON placeholder, not a COSE_Sign1
+#: countersignature. It is built to be forward-compatible with the spec
+#: now that the marker's name and value are fixed: the same key
+#: (``STUB_MARKER`` == ``"cll-stub"``), the same value (``true``), and a
+#: ``crit``-shaped list naming it -- so when the wire format lands, only the
+#: encoding (JSON -> COSE protected header) changes, not the marker itself.
+STUB_MARKER = "cll-stub"
 
 
 def register_checkpoint_stub(cp: CheckpointRecord, ts_url: str | None = None) -> WitnessRecord:
@@ -718,7 +729,8 @@ def register_checkpoint_stub(cp: CheckpointRecord, ts_url: str | None = None) ->
     entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
     stub_receipt = json.dumps(
         {
-            "capsule_emit_stub_witness": STUB_MARKER,
+            STUB_MARKER: True,
+            "crit": [STUB_MARKER],
             "note": "not a real COSE Receipt -- CAPSULE_WITNESS=stub was set; "
             "this checkpoint was never sent to a Transparency Service",
             "digest": digest,

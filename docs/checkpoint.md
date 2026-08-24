@@ -157,15 +157,23 @@ Three hard rules, enforced in code, not just documented:
    checkpoint as `self-attested` with an explicit `⚠ STUB WITNESS` line, and
    each stub `WitnessRecord` in `witnesses` is labeled `is_stub: true`.
 
-**The normative stub marker is not this repo's to define.** The bytes a real
-Transparency Service's COSE Receipt would carry are one thing; the bytes that
-mark a stub-produced stamp as *not* that are a wire-format question owned by
-the CLL I-D (tracked there as O10). `register_checkpoint_stub`'s
-`receipt_b64` today carries an interim, self-evidently-non-conformant
-placeholder (`capsule_emit.checkpoint.STUB_MARKER`) — enough that this
-codebase's own `verify_receipt_offline`/`grade()` never mistake it for a real
-receipt, but **not yet the normative, spec-defined marker** a stranger's
-verifier would recognize from the I-D alone. That lands once O10 does.
+**The normative stub marker.** The CLL I-D's "Stub Countersignatures" section
+(draft-mih-scitt-checkpointed-local-log-00) defines it: a stub
+countersignature's COSE protected header MUST carry the parameter
+`cll-stub` (label TBD1, pending IANA assignment) with value `true`, and
+MUST list that label in `crit` ({{Section 3.1 of RFC9052}}) — a verifier
+that recognizes `cll-stub` treats the countersignature as conferring no
+witnessing; one that doesn't rejects it under `crit` processing. Either way
+the result is unwitnessed, never witnessed — exactly what `grade()`'s stub
+exclusion enforces here. `capsule_emit.checkpoint.STUB_MARKER` is
+`"cll-stub"`, matching the spec's name and value. What's still pending is
+the wire encoding, not the marker itself: capsule-emit's stub receipts are
+still a JSON placeholder (`register_checkpoint_stub`'s `receipt_b64`), not a
+real COSE_Sign1 countersignature — that lands with separate COSE-wire work.
+The placeholder already uses `cll-stub: true` (plus a `crit`-shaped list
+naming it), so a real Transparency Service's `verify_receipt_offline` never
+mistakes it for a real receipt today, and only the encoding — not the
+marker's name or value — changes once COSE-wire work ships.
 
 ## Direct / manual use
 

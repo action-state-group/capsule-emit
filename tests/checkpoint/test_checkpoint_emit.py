@@ -763,7 +763,13 @@ def test_register_checkpoint_stub_receipt_is_not_a_real_cose_receipt():
         cbor2.loads(raw)
 
 
-def test_register_checkpoint_stub_receipt_carries_the_placeholder_marker():
+def test_stub_marker_name_matches_the_cll_id():
+    # draft-mih-scitt-checkpointed-local-log-00, "Stub Countersignatures":
+    # the protected-header parameter name is "cll-stub" (label TBD1).
+    assert STUB_MARKER == "cll-stub"
+
+
+def test_register_checkpoint_stub_receipt_carries_the_cll_stub_marker():
     import base64
     import json as _json
 
@@ -772,7 +778,11 @@ def test_register_checkpoint_stub_receipt_carries_the_placeholder_marker():
     witness_record = register_checkpoint_stub(cp)
 
     decoded = _json.loads(base64.b64decode(witness_record.receipt_b64))
-    assert decoded["capsule_emit_stub_witness"] == STUB_MARKER
+    # Same name and value the I-D fixes for the real COSE header param
+    # (value `true`) -- forward-compatible with the wire format once it
+    # lands, and the label MUST be listed in `crit` per the spec.
+    assert decoded[STUB_MARKER] is True
+    assert decoded["crit"] == [STUB_MARKER]
 
 
 def test_register_checkpoint_stub_respects_a_given_label_url():
