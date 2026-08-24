@@ -119,20 +119,40 @@ from . import signing as _signing
 __all__ = [
     "maybe_checkpoint",
     "witness_enabled",
+    "witness_mode",
+    "witness_is_stub",
+    "refuse_stub_in_production",
+    "StubWitnessInProductionError",
     "WITNESS_ENV_VAR",
     "WITNESS_URL_ENV_VAR",
     "CADENCE_ENV_VAR",
     "DEFAULT_CADENCE_ENTRIES",
     "AGE_CADENCE_ENV_VAR",
     "DEFAULT_CADENCE_SECONDS",
+    "CAPSULE_ENV_VAR",
 ]
 
 #: Explicit ``witness=`` always wins; this env var is consulted only when the
 #: caller leaves ``witness`` at its default (``None``). Any of these values
-#: (case-insensitive) turns witnessing off; anything else -- including unset
+#: (case-insensitive) turns witnessing off; ``"stub"`` arms the in-process
+#: stub witness (see :func:`witness_mode`); anything else -- including unset
 #: -- leaves it on, matching the anchor's already-default-ON posture.
 WITNESS_ENV_VAR = "CAPSULE_WITNESS"
 _OFF_VALUES = {"off", "0", "false", "no"}
+_STUB_VALUES = {"stub"}
+
+#: Deployment-posture env var (frozen surface §1a.4). Only ever consulted to
+#: refuse ``CAPSULE_WITNESS=stub`` at startup -- it names no other behavior
+#: here. Case-insensitive; only the literal value below is production.
+CAPSULE_ENV_VAR = "CAPSULE_ENV"
+_PRODUCTION_ENV_VALUES = {"production"}
+
+
+class StubWitnessInProductionError(RuntimeError):
+    """Raised when ``CAPSULE_WITNESS=stub`` and ``CAPSULE_ENV=production`` are
+    both set. The stub witness proves nothing beyond self-attested (frozen
+    surface §1a.4) -- shipping to production on it must never happen
+    silently, so this is a hard, synchronous refusal, not a warning."""
 
 #: Overrides the default TS URL for the witness path specifically (mirrors
 #: ``AAC_ANCHOR_URL`` for the anchor path). ``emit(..., witness_url=...)``
@@ -161,12 +181,66 @@ DEFAULT_CADENCE_SECONDS = 900
 _ATEXIT_WITNESS_TIMEOUT = float(os.environ.get("CAPSULE_EMIT_ATEXIT_WITNESS_TIMEOUT", "5.0"))
 
 
-def witness_enabled(explicit: bool | None) -> bool:
-    """Resolve the on/off decision: ``explicit`` (the ``witness=`` kwarg) wins
-    when set; otherwise ``CAPSULE_WITNESS`` is consulted, defaulting to on."""
+def witness_mode(explicit: bool | None) -> str:
+    """Resolve the three-way mode: ``"off"``, ``"on"`` (real witness), or
+    ``"stub"`` (in-process, zero-network -- frozen surface §1a.4).
+
+    ``explicit`` (the ``witness=`` kwarg) always wins when set -- ``True`` is
+    ``"on"``, ``False`` is ``"off"``; there is no explicit-kwarg spelling of
+    stub mode, only the env var (test/dev/CI posture, not a per-call
+    choice). ``CAPSULE_WITNESS`` is consulted only when ``explicit`` is
+    ``None``: any of ``_OFF_VALUES`` is ``"off"``, ``"stub"`` (case-
+    insensitive) is ``"stub"``, anything else -- including unset -- is
+    ``"on"``."""
     if explicit is not None:
-        return explicit
-    return os.environ.get(WITNESS_ENV_VAR, "").strip().lower() not in _OFF_VALUES
+        return "on" if explicit else "off"
+    raw = os.environ.get(WITNESS_ENV_VAR, "").strip().lower()
+    if raw in _OFF_VALUES:
+        return "off"
+    if raw in _STUB_VALUES:
+        return "stub"
+    return "on"
+
+
+def witness_enabled(explicit: bool | None) -> bool:
+    """Resolve the on/off decision: ``True`` whenever checkpoint mechanics
+    should run at all -- i.e. mode is ``"on"`` OR ``"stub"`` (frozen surface
+    §1a.4: the stub runs "the full mechanics ... against a local in-process
+    stub"). Callers that need to distinguish real vs. stub use
+    :func:`witness_mode` or :func:`witness_is_stub`."""
+    return witness_mode(explicit) != "off"
+
+
+def witness_is_stub(explicit: bool | None) -> bool:
+    """``True`` iff the resolved mode is the in-process stub witness."""
+    return witness_mode(explicit) == "stub"
+
+
+def refuse_stub_in_production(explicit: bool | None) -> None:
+    """Hard, synchronous refusal (frozen surface §1a.4): ``CAPSULE_WITNESS=stub``
+    together with ``CAPSULE_ENV=production`` must never run -- "teams cannot
+    ship to prod on stub without noticing." Raises
+    :class:`StubWitnessInProductionError` immediately; never a warning, never
+    silent. A no-op for every other mode/env combination, including
+    production with a REAL witness (``CAPSULE_ENV=production`` alone is not
+    an error -- only paired with stub).
+
+    Called from two places, deliberately: ``core._emit_capsule()`` (before
+    anything is written -- the primary, fail-fast path every ``seal()``/
+    ``carry()``/``compose()`` call goes through) and :func:`maybe_checkpoint`
+    itself (a safety net for a caller driving the checkpoint layer directly,
+    per this module's docstring, without going through ``_emit_capsule``)."""
+    if witness_mode(explicit) != "stub":
+        return
+    env = os.environ.get(CAPSULE_ENV_VAR, "").strip().lower()
+    if env in _PRODUCTION_ENV_VALUES:
+        raise StubWitnessInProductionError(
+            f"capsule-emit: {WITNESS_ENV_VAR}=stub is set while {CAPSULE_ENV_VAR}=production -- "
+            "refusing to run. The stub witness proves nothing beyond self-attested and must "
+            "never ship to production. Fix one of: unset CAPSULE_WITNESS (uses the default "
+            "hosted witness), set CAPSULE_WITNESS_URL to point at your own witness, or unset "
+            "CAPSULE_ENV if this process is not actually production."
+        )
 
 
 def _resolved_cadence(override: int | None) -> int:
@@ -219,20 +293,40 @@ _notice_lock = threading.Lock()
 _notice_printed = False
 
 
-def _print_first_use_notice_once(urls: list[str]) -> None:
+def _print_first_use_notice_once(urls: list[str], *, stub: bool = False) -> None:
     """Print the one-time, first-use witness notice to stderr.
 
     Fires exactly once per process, at the first ``maybe_checkpoint()`` call
     where witnessing is enabled -- i.e. at the first ``seal()``, before any
     checkpoint has actually gone out over the network, not gated on the
     cadence counter reaching its threshold. Never raises; a broken stderr
-    must not break emit()."""
+    must not break emit().
+
+    ``stub=True`` (``CAPSULE_WITNESS=stub``) prints the distinct scream this
+    mode requires (frozen surface §1a.4: "the scream is everywhere the
+    developer is: at the first stub-armed seal()...") instead of the normal
+    witnessing notice -- it cannot be mistaken for the real thing, states
+    plainly that nothing leaves the process, and names both exits (point at
+    the hosted witness, or self-host one)."""
     global _notice_printed
     with _notice_lock:
         if _notice_printed:
             return
         _notice_printed = True
     try:
+        if stub:
+            print(
+                "capsule-emit: STUB WITNESS is armed for this process (CAPSULE_WITNESS=stub) "
+                "-- checkpoints will form and stamps will come back, but ZERO network is used "
+                "and the grade never leaves self-attested; this mode proves nothing beyond "
+                "self-attested to anyone but you. Never set CAPSULE_WITNESS=stub in production "
+                "-- CAPSULE_ENV=production with stub set refuses to run. To get a real witness: "
+                "unset CAPSULE_WITNESS to use the default hosted witness, or set "
+                "CAPSULE_WITNESS_URL to point at your own. "
+                "(This notice prints once per process.)",
+                file=sys.stderr,
+            )
+            return
         endpoints = ", ".join(urls) if urls else "the default witness endpoint"
         print(
             "capsule-emit: witnessing is on for this process -- once a checkpoint "
@@ -443,16 +537,22 @@ def _persist_checkpoint_stamp(cp: Any, ledger_path: str) -> None:
         )
 
 
-def _build_and_register(state: _WitnessState, ts_urls: list[str]) -> None:
+def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool = False) -> None:
     from .checkpoint import (
         DEFAULT_TS_URL,
+        STUB_TS_URL,
         CheckpointError,
         RollbackError,
         emit_checkpoint,
         register_checkpoint,
+        register_checkpoint_stub,
     )
 
-    resolved_urls = ts_urls or [DEFAULT_TS_URL]
+    # In stub mode, never label a stamp with a real-looking endpoint (a
+    # configured CAPSULE_WITNESS_URL, or the real hosted default) -- nothing
+    # is actually dialed, so the label must say so plainly (STUB_TS_URL),
+    # not borrow a URL that would read as "this really reached that host."
+    resolved_urls = [STUB_TS_URL] if stub else (ts_urls or [DEFAULT_TS_URL])
 
     with state.lock:
         state.mmr.sync()
@@ -469,10 +569,17 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str]) -> None:
         state.prev = cp
 
     # Fan the same checkpoint out to every endpoint independently -- one
-    # endpoint failing must never block registration with the others.
+    # endpoint failing must never block registration with the others. In
+    # stub mode this never dials out (register_checkpoint_stub is local,
+    # zero-network) but still runs once per named URL (or once, unlabeled,
+    # if none were given) so the fan-out shape matches the real path exactly
+    # -- the point of the stub is to exercise the real code, not a shortcut
+    # around it.
     for url in resolved_urls:
         try:
-            witness_record = register_checkpoint(cp, url)
+            witness_record = (
+                register_checkpoint_stub(cp, url) if stub else register_checkpoint(cp, url)
+            )
             cp.witnesses.append(witness_record)
         except Exception as exc:  # noqa: BLE001 -- fire-and-forget, never raises into emit()
             warnings.warn(
@@ -530,12 +637,22 @@ def maybe_checkpoint(
     Prints the one-time first-use notice (see :func:`_print_first_use_notice_once`)
     on the first call where witnessing is enabled -- before the cadence check,
     so it fires at the first ``seal()``, not the first checkpoint actually due.
+
+    Raises :class:`StubWitnessInProductionError` immediately (before the
+    notice, before anything else) if ``CAPSULE_WITNESS=stub`` and
+    ``CAPSULE_ENV=production`` are both set -- see
+    :func:`refuse_stub_in_production`. This is a safety net for a caller
+    driving this function directly; ``core._emit_capsule()`` already checks
+    before this point is ever reached.
     """
-    if not witness_enabled(enabled):
+    mode = witness_mode(enabled)
+    if mode == "off":
         return
+    refuse_stub_in_production(enabled)
+    is_stub = mode == "stub"
 
     urls = _parse_witness_urls(ts_url)
-    _print_first_use_notice_once(urls)
+    _print_first_use_notice_once(urls, stub=is_stub)
 
     cadence = _resolved_cadence(cadence_entries)
     age_cadence = _resolved_age_cadence(cadence_seconds)
@@ -574,7 +691,7 @@ def maybe_checkpoint(
 
     def _worker() -> None:
         try:
-            _build_and_register(state, urls)
+            _build_and_register(state, urls, stub=is_stub)
         finally:
             with _pending_lock:
                 _pending.pop(state.log_id, None)

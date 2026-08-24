@@ -124,6 +124,49 @@ replaced an earlier ephemeral, in-process-only HMAC key
 again once the signing process exited. Use the manual API below with your
 own `Signer` if you want a different identity.
 
+## Test & dev — the stub witness
+
+`CAPSULE_WITNESS=stub` runs the identical checkpoint mechanics — MMR sync,
+checkpoint build, signature, stamp persistence — against a local, in-process
+stub instead of a real Transparency Service: **zero network**, and the grade
+**never leaves self-attested**, no matter how many stub stamps accumulate
+(`CheckpointRecord.grade()` excludes stub-sourced `WitnessRecord`s from the
+witnessed any-of). Use it for unit tests, CI, and eval-before-procurement —
+it exercises the real code path, not a mock, with no endpoint to stand up and
+no network flake to work around.
+
+```bash
+export CAPSULE_WITNESS=stub       # this process's checkpoints run through the stub
+```
+
+**`CAPSULE_ENV` × `CAPSULE_WITNESS` matrix:**
+
+| `CAPSULE_ENV`           | `CAPSULE_WITNESS=stub`                          | anything else |
+|--------------------------|--------------------------------------------------|----------------|
+| `production`              | **refuses to run** — `StubWitnessInProductionError`, raised synchronously at the first `seal()`/`carry()`/`compose()`, before anything is written | normal (real witness, or off) |
+| unset / anything else     | stub mode runs; a scream prints once to stderr at the first stub-armed `seal()`, and `status`/`--json` mark the checkpoint `"stub_witness": true` | normal |
+
+Three hard rules, enforced in code, not just documented:
+
+1. **Explicit opt-in only, never a fallback.** An unreachable real witness
+   endpoint is a warning and a retry concern (see the idle-silence /
+   `status` lag numbers above) — it never silently downgrades to stub.
+2. **`CAPSULE_ENV=production` + stub set is a startup error**, not a
+   warning — see the matrix above.
+3. **Stub stamps never reach rung 2.** `status` reports a stub-only latest
+   checkpoint as `self-attested` with an explicit `⚠ STUB WITNESS` line, and
+   each stub `WitnessRecord` in `witnesses` is labeled `is_stub: true`.
+
+**The normative stub marker is not this repo's to define.** The bytes a real
+Transparency Service's COSE Receipt would carry are one thing; the bytes that
+mark a stub-produced stamp as *not* that are a wire-format question owned by
+the CLL I-D (tracked there as O10). `register_checkpoint_stub`'s
+`receipt_b64` today carries an interim, self-evidently-non-conformant
+placeholder (`capsule_emit.checkpoint.STUB_MARKER`) — enough that this
+codebase's own `verify_receipt_offline`/`grade()` never mistake it for a real
+receipt, but **not yet the normative, spec-defined marker** a stranger's
+verifier would recognize from the I-D alone. That lands once O10 does.
+
 ## Direct / manual use
 
 The primitives below remain independently usable, and stay opt-in in the

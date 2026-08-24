@@ -532,7 +532,14 @@ def _emit_capsule(
             to opt out everywhere without a code change (an explicit
             ``witness=`` kwarg always overrides the env var). Never blocks —
             there is no ``witness_wait`` because a checkpoint reports on a
-            *stream*, not this one call.
+            *stream*, not this one call. For test/dev/CI, ``CAPSULE_WITNESS=stub``
+            runs the identical mechanics against a local, zero-network stub —
+            the grade never leaves self-attested (see
+            ``capsule_emit.witness.witness_mode`` and
+            ``docs/checkpoint.md``'s "Test & dev" section). **Refuses to run**
+            (``capsule_emit.witness.StubWitnessInProductionError``) if
+            ``CAPSULE_ENV=production`` is also set — stub must never ship to
+            production silently.
         witness_url: Override the witness Transparency Service endpoint(s)
             (else reads ``CAPSULE_WITNESS_URL`` env var, else the free
             public-good tier at ``witness.agentactioncapsule.org`` --
@@ -601,6 +608,10 @@ def _emit_capsule(
             f"relation={relation!r} requires confirms=<capsule_id> — "
             "a chain relation needs a chain target"
         )
+    # CAPSULE_WITNESS=stub + CAPSULE_ENV=production refuses to run, before
+    # anything is written (frozen surface §1a.4) — see
+    # capsule_emit.witness.refuse_stub_in_production.
+    _witness.refuse_stub_in_production(witness)
 
     # Per-emit random salt for digest privacy (opt-in — see salt_digests above).
     emit_salt: str | None = secrets.token_hex(16) if salt_digests else None
@@ -733,10 +744,20 @@ def _emit_capsule(
 
     # Single combined notice, before either default network path is dispatched
     # below — see _print_first_run_disclosure_once's docstring for why this
-    # must run first and print at most once per process.
+    # must run first and print at most once per process. Stub witnessing
+    # (CAPSULE_WITNESS=stub) is deliberately excluded from "network path
+    # active" here — it never dials out, and _witness.maybe_checkpoint()
+    # below prints its OWN, stub-specific scream instead (frozen surface
+    # §1a.4); this notice must never claim a network attempt that isn't real.
     _print_first_run_disclosure_once(
         anchor_active=anchor_enabled,
-        witness_active=witness_enabled_now,
+        # NOT witness_enabled_now (the O16-03 kill-switch gate, True for
+        # both "on" and "stub" -- stub is not the kill switch, and anchor's
+        # own decision must still govern when a caller explicitly opts it
+        # back in). This notice specifically claims a NETWORK attempt, which
+        # stub mode never makes -- see maybe_checkpoint()'s own stub-specific
+        # scream instead.
+        witness_active=_witness.witness_mode(witness) == "on",
         anchor_endpoint=anchor_endpoint,
         witness_endpoint=witness_endpoint,
     )

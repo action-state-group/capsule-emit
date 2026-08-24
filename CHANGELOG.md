@@ -62,6 +62,35 @@ close here, on the same `verify_bundle`/`grade()` surface:
 notices) into its own result, so the new consistency/first-checkpoint notices don't flip an otherwise
 valid disclosure to invalid.
 
+### Added — stub witness + `CAPSULE_ENV=production` refusal (O16 audit item 6, "Stub mode + env refusal")
+
+**What changed.** `CAPSULE_WITNESS=stub` previously had no dedicated behavior at all —
+only `{"off","0","false","no"}` were recognized as off-values, so a stray `stub` would
+have been treated as "on" and attempted a real network call. It is now a distinct
+third mode (`capsule_emit.witness.witness_mode()`): the real checkpoint mechanics run —
+MMR sync, checkpoint build, signature, stamp persistence — against a new in-process
+stub (`capsule_emit.checkpoint.register_checkpoint_stub`), zero network, and the grade
+never leaves `Grade.SELF_ATTESTED` no matter how many stub stamps accumulate
+(`WitnessRecord.is_stub`, excluded from `CheckpointRecord.grade()`'s witnessed any-of).
+`CAPSULE_ENV=production` together with a stub-armed witness now refuses to run —
+`capsule_emit.witness.StubWitnessInProductionError`, raised synchronously at the top of
+`seal()`/`carry()`/`compose()`, before the capsule is ever written. The scream
+(frozen dev-surface v4 §1a.4) surfaces at the first stub-armed `seal()` (a distinct
+first-use notice, never conflated with the real witnessing notice) and in `status`
+(`"stub_witness": true`, a loud `⚠ STUB WITNESS` line, `witnessing_mode_now`).
+
+**Marker alignment (2026-08-24).** The CLL I-D's "Stub Countersignatures" section
+(draft-mih-scitt-checkpointed-local-log-00) now fixes the normative stub marker: a
+stub countersignature's COSE protected header MUST carry `cll-stub` (label TBD1,
+pending IANA assignment) with value `true`, listed in `crit`. `STUB_MARKER` is now
+`"cll-stub"`, and `register_checkpoint_stub`'s placeholder JSON receipt uses that same
+name/value plus a `crit`-shaped list naming it — forward-compatible with the real COSE
+protected-header encoding once separate COSE-wire work lands the wire format itself
+(capsule-emit's stub receipts are still JSON, not COSE_Sign1, today).
+
+See `tests/test_stub_witness.py`, `tests/checkpoint/test_checkpoint_emit.py`, and
+`docs/checkpoint.md`'s "Test & dev — the stub witness" section.
+
 ### Added — flock-based one-log-one-writer locking (O16 audit item 12, "Flock locking")
 
 **What changed.** No OS-level write coordination existed: `git grep` for

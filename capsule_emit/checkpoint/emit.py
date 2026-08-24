@@ -95,6 +95,7 @@ __all__ = [
     "verify_checkpoint_signature",
     "verify_checkpoint_consistency",
     "register_checkpoint",
+    "register_checkpoint_stub",
     "verify_receipt_offline",
     "verify_checkpoint_signature_offline",
     "verify_witness_stamp_offline",
@@ -104,6 +105,8 @@ __all__ = [
     "DEFAULT_TS_URL",
     "DEFAULT_TS_PUBLIC_KEY_PEM",
     "DEFAULT_TS_PUBLIC_KEY_ID",
+    "STUB_TS_URL",
+    "STUB_MARKER",
     "EXAMPLE_CONFIG_TOML",
 ]
 
@@ -253,12 +256,15 @@ def lag_exceeded(cfg: CheckpointConfig, entries_since_last: int) -> bool:
 
 class Grade(str, Enum):
     """A checkpoint's position on the ladder (frozen surface §4):
-    ``self-attested`` until at least one witness stamp lands, then
+    ``self-attested`` until at least one REAL witness stamp lands, then
     ``witnessed`` -- an any-of transition (§2a.3): the first stamp flips the
     grade, additional stamps only ever compound independence, never gate it.
-    ``countersigned``, the ladder's third rung, is a distinct mechanism (a
-    counterparty/operator receipt citing this one, not a witness stamp) and
-    has no representation here."""
+    A stub stamp (``WitnessRecord.is_stub``, see ``capsule_emit.witness``'s
+    ``CAPSULE_WITNESS=stub`` mode) never counts toward this any-of -- frozen
+    surface §1a.4: "stub stamps never reach rung 2, because a rung you can
+    grant yourself isn't a rung." ``countersigned``, the ladder's third rung,
+    is a distinct mechanism (a counterparty/operator receipt citing this one,
+    not a witness stamp) and has no representation here."""
 
     SELF_ATTESTED = "self-attested"
     WITNESSED = "witnessed"
@@ -292,22 +298,42 @@ class StampVerdict(str, Enum):
 
 @dataclass
 class WitnessRecord:
-    """Evidence that a checkpoint's digest was seen by one Transparency Service."""
+    """Evidence that a checkpoint's digest was seen by one Transparency Service.
+
+    ``is_stub`` marks a record produced by the in-process stub witness
+    (``CAPSULE_WITNESS=stub`` -- see ``capsule_emit.witness`` and frozen
+    dev-surface §1a.4) rather than a real Transparency Service. It is a
+    convenience flag for this codebase's own grade computation
+    (:meth:`CheckpointRecord.grade`) and rendering -- **not** the normative
+    stub marker itself. The normative marker is a CLL I-D format-level edit
+    (tracked as O10, not yet landed); once it lands, a stub-produced
+    ``receipt_b64``/``entry_hash`` carries it directly, so a third-party
+    verifier who has never read this codebase can still tell a stub record
+    apart from a real one from the bytes alone. Until then, ``receipt_b64``
+    holds an interim, self-evidently-non-conformant placeholder (see
+    :func:`register_checkpoint_stub`) -- it cannot pass as a real COSE
+    Receipt, so ``verify_receipt_offline`` fails closed on it rather than
+    mistaking it for one.
+    """
 
     ts_url: str
     entry_hash: str  # sha256(bytes.fromhex(checkpoint_digest)).hex() -- TS-derived
     receipt_b64: str  # base64-encoded COSE Receipt (COSE_Sign1, CBOR tag 18)
     leaf_index: int
     tree_size: int
+    is_stub: bool = False
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "ts_url": self.ts_url,
             "entry_hash": self.entry_hash,
             "receipt_b64": self.receipt_b64,
             "leaf_index": self.leaf_index,
             "tree_size": self.tree_size,
         }
+        if self.is_stub:
+            d["is_stub"] = True
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> WitnessRecord:
@@ -317,6 +343,7 @@ class WitnessRecord:
             receipt_b64=d["receipt_b64"],
             leaf_index=int(d["leaf_index"]),
             tree_size=int(d["tree_size"]),
+            is_stub=bool(d.get("is_stub", False)),
         )
 
 
@@ -384,17 +411,26 @@ class CheckpointRecord:
 
     def grade(self, *, ts_pubkey_pem: bytes | str | None = None) -> Grade:
         """This checkpoint's ladder position: ``WITNESSED`` once any-of
-        ``witnesses`` holds at least one stamp that verifies as an
-        authentic, checkpoint-bound TS Receipt via
+        ``witnesses`` holds at least one REAL (non-stub) stamp that ALSO
+        verifies as an authentic, checkpoint-bound TS Receipt via
         :func:`verify_witness_stamp_offline` -- not merely present in the
-        list. A file-level forger who hand-appends a fabricated
-        ``WitnessRecord`` (no real Transparency Service ever contacted)
-        grades ``SELF_ATTESTED``: presence in ``witnesses`` alone no longer
-        counts as "valid stamp" (closes
+        list, and not a stub. A file-level forger who hand-appends a
+        fabricated ``WitnessRecord`` (no real Transparency Service ever
+        contacted) grades ``SELF_ATTESTED``: presence in ``witnesses`` alone
+        no longer counts as "valid stamp" (closes
         [stamp-authenticity-on-read-not-presence] -- presence-equals-success
         is a produce-side invariant that does not bind a file-level reader).
-        Any-of semantics are unchanged (§2a.3): the first VALID stamp flips
-        the grade; additional stamps, valid or not, never gate it.
+        Any-of semantics are unchanged (§2a.3): the first VALID, non-stub
+        stamp flips the grade; additional stamps, valid or not, never gate
+        it.
+
+        Stub-sourced records (``is_stub=True``, ``CAPSULE_WITNESS=stub``)
+        are excluded from this any-of explicitly, by design -- not merely
+        as an incidental effect of their placeholder ``receipt_b64`` failing
+        COSE-shape verification. The stub proves the mechanics work, never
+        that a third party saw anything (frozen surface §1a.4); a future
+        real COSE-wire stub encoding that happened to parse structurally
+        must still never grade WITNESSED.
 
         Without ``ts_pubkey_pem``, a stamp from the pinned default witness
         (``DEFAULT_TS_URL``) is still signature-verified automatically; any
@@ -416,7 +452,8 @@ class CheckpointRecord:
         return (
             Grade.WITNESSED
             if any(
-                verify_witness_stamp_offline(self, w, ts_pubkey_pem=ts_pubkey_pem)[0]
+                not w.is_stub
+                and verify_witness_stamp_offline(self, w, ts_pubkey_pem=ts_pubkey_pem)[0]
                 for w in self.witnesses
             )
             else Grade.SELF_ATTESTED
@@ -642,6 +679,61 @@ def register_checkpoint(
         receipt_b64=body["receipt_b64"],
         leaf_index=int(body["leaf_index"]),
         tree_size=int(body["tree_size"]),
+    )
+
+
+#: The (non-)URL recorded on a stub-produced ``WitnessRecord`` when the
+#: caller supplies none -- never dialled, a plain label.
+STUB_TS_URL = "stub://local"
+
+#: Interim, placeholder stub marker -- **NOT the normative marker.** The
+#: normative stub marker is a CLL I-D format-level edit (tracked as O10;
+#: 0.5.0 migration audit item 6's CONDITION: code ships now, this constant's
+#: value is expected to change once that spec text lands). It exists so the
+#: bytes ``register_checkpoint_stub`` produces are self-evidently not a real
+#: COSE Receipt -- ``scitt_cose.verify_receipt`` (via
+#: ``verify_receipt_offline``) fails closed on it rather than accepting it,
+#: which is the property that matters even before the normative encoding
+#: ships: a stub record can never be mistaken for a real one by any verifier,
+#: ours or a stranger's.
+STUB_MARKER = "capsule-emit-stub-witness-v0-PLACEHOLDER-pending-O10"
+
+
+def register_checkpoint_stub(cp: CheckpointRecord, ts_url: str | None = None) -> WitnessRecord:
+    """Build a :class:`WitnessRecord` for ``cp`` via the in-process stub
+    witness -- zero network, exercises the identical call shape a real
+    ``register_checkpoint`` call would (same return type, same fields) so a
+    caller (or test) driving the stub path runs the real code, not a mock.
+
+    Never contacts ``ts_url`` -- it is recorded on the returned
+    ``WitnessRecord`` purely as a label (``STUB_TS_URL`` when omitted), the
+    same way a real TS URL is recorded, so ``status``/rendering code needs no
+    special case to display it. ``is_stub=True`` is always set; grading
+    (:meth:`CheckpointRecord.grade`) excludes stub records from the
+    witnessed any-of, so a checkpoint registered only via this function stays
+    ``Grade.SELF_ATTESTED`` -- frozen surface §1a.4: "the grade never leaves
+    self-attested."
+    """
+    digest = cp.digest()
+    entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
+    stub_receipt = json.dumps(
+        {
+            "capsule_emit_stub_witness": STUB_MARKER,
+            "note": "not a real COSE Receipt -- CAPSULE_WITNESS=stub was set; "
+            "this checkpoint was never sent to a Transparency Service",
+            "digest": digest,
+        },
+        sort_keys=True,
+    ).encode()
+    import base64
+
+    return WitnessRecord(
+        ts_url=ts_url or STUB_TS_URL,
+        entry_hash=entry_hash,
+        receipt_b64=base64.b64encode(stub_receipt).decode(),
+        leaf_index=-1,
+        tree_size=-1,
+        is_stub=True,
     )
 
 
