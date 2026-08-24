@@ -1,9 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 """Ledger read/write utilities and the ledger view renderer.
 
-The ledger is a newline-delimited JSON (JSONL) file — one capsule dict per line.
+The ledger is a newline-delimited JSON (JSONL) file — one JSON dict per line.
+Two kinds of entry share the same file and the same append path:
 
-Four rendering levels:
+- **capsule records** — every sealed capsule, unchanged since before this
+  module supported a second kind. No ``kind`` field.
+- **checkpoint-stamp records** (``kind == CHECKPOINT_STAMP_KIND``, added
+  0.5.0 -- see ``capsule_emit.witness``) -- a persisted
+  ``capsule_emit.checkpoint.CheckpointRecord`` (with whatever
+  ``WitnessRecord`` s it collected), written back into the *same* ledger it
+  covers so the stamp becomes a leaf the *next* checkpoint's MMR root
+  genuinely commits over: "checkpoint N's stamp is covered by checkpoint
+  N+1" (frozen surface §2.3). ``read_ledger`` filters these out by default
+  so every existing capsule-only consumer (CLI, server, permalink,
+  approval, holds, the view/show renderers below) keeps seeing exactly the
+  capsule stream it always has; ``read_ledger_entries`` returns the raw,
+  unfiltered file for consumers that must see every leaf (currently only
+  ``capsule_emit.witness._JsonlLogSource.scan``, so the MMR indexes stamp
+  entries as leaves too).
+
+Four rendering levels (capsule records only):
 
 - ``view()``        — L1 one-line-per-capsule summary table (default)
 - ``view_chains()`` — L2 tree grouped by chain.parent_capsule_id
@@ -18,7 +35,21 @@ import threading
 from pathlib import Path
 from typing import Any
 
-__all__ = ["append_to_ledger", "read_ledger", "view", "view_chains", "show"]
+__all__ = [
+    "append_to_ledger",
+    "read_ledger",
+    "read_ledger_entries",
+    "CHECKPOINT_STAMP_KIND",
+    "view",
+    "view_chains",
+    "show",
+]
+
+#: Marks a ledger line as a persisted checkpoint/witness record rather than
+#: a capsule. ``v: 1`` on the entry itself is the format-version marker for
+#: this shape (see ``capsule_emit.witness._build_and_register``) -- a future,
+#: incompatible stamp-entry shape bumps that number rather than reusing it.
+CHECKPOINT_STAMP_KIND = "checkpoint_stamp"
 
 # Physical write safety: two threads calling append_to_ledger for
 # *different* files never contend, but two threads appending to the SAME
@@ -34,8 +65,9 @@ def append_to_ledger(capsule: dict, path: str | os.PathLike = "ledger.jsonl") ->
         fh.write(json.dumps(capsule, separators=(",", ":")) + "\n")
 
 
-def read_ledger(path: str | os.PathLike) -> list[dict]:
-    """Read all capsule records from a JSONL ledger file.
+def read_ledger_entries(path: str | os.PathLike) -> list[dict]:
+    """Read every line of a JSONL ledger file, capsules and checkpoint-stamp
+    records alike, in append order.
 
     Corrupt lines (truncated writes, disk errors) are skipped with a warning so
     that one bad line never makes the entire ledger unreadable.
@@ -58,6 +90,16 @@ def read_ledger(path: str | os.PathLike) -> list[dict]:
                     "read_ledger: skipping corrupt line %d in %s: %r", lineno, p, line[:80]
                 )
     return records
+
+
+def read_ledger(path: str | os.PathLike) -> list[dict]:
+    """Read all capsule records from a JSONL ledger file.
+
+    Checkpoint-stamp records (``kind == CHECKPOINT_STAMP_KIND``) are excluded
+    -- this is the capsule-only view every existing consumer expects. Use
+    ``read_ledger_entries`` to see the raw file, stamps included.
+    """
+    return [r for r in read_ledger_entries(path) if r.get("kind") != CHECKPOINT_STAMP_KIND]
 
 
 # ---------------------------------------------------------------------------
