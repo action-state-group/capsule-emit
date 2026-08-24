@@ -288,3 +288,94 @@ def test_emit_is_a_removed_raising_stub():
     # one release so callers get a clear error instead of an ImportError.
     with pytest.raises(RuntimeError, match="emit\\(\\) was renamed"):
         emit("mint", agent_input={"x": 1})
+
+
+# --- O16-07 follow-up: Ethan's #97 review (PR #97 review 5012424851) ---
+
+
+def test_seal_on_received_rejects_outer_ledger_and_signer_instead_of_dropping_them(tmp_path, monkeypatch):
+    # HIGH (surface.py:137): seal(received(...), ledger=other, signing_key_path=key)
+    # must not silently use the wrong ledger/signer -- it must raise and name
+    # the fix (pass the option to received()/carry() instead).
+    monkeypatch.chdir(tmp_path)
+    effect = received(b'{"iss": "acme-mandates"}', type="machine-mandate", anchor=False)
+    with pytest.raises(TypeError, match="ledger"):
+        seal(effect, ledger=tmp_path / "other.jsonl")
+    with pytest.raises(TypeError, match="signing_key_path"):
+        seal(effect, signing_key_path=tmp_path / "other.signing_key.pem")
+
+
+def test_seal_on_received_rejects_witness_false_rather_than_silently_dropping_it(tmp_path, monkeypatch):
+    # HIGH (surface.py:137) -- the safety-critical case: an outer
+    # witness=False on seal(received(...)) must never be silently dropped,
+    # because a drop here means witnessing could arm despite an explicit
+    # opt-out. The call must raise regardless of the value.
+    monkeypatch.chdir(tmp_path)
+    effect = received(b'{"iss": "acme-mandates"}', type="machine-mandate", anchor=False)
+    with pytest.raises(TypeError, match="witness"):
+        seal(effect, witness=False)
+
+
+def test_seal_on_received_rejects_an_explicit_outer_action(tmp_path, monkeypatch):
+    # The acceptance check calls out "incl. an explicit action" -- even
+    # passing the same default value explicitly must raise, since seal()
+    # cannot tell "explicit action='seal'" from "no action passed" any other
+    # way once a sentinel default is in place.
+    monkeypatch.chdir(tmp_path)
+    effect = received(b'{"iss": "acme-mandates"}', type="machine-mandate", anchor=False)
+    with pytest.raises(TypeError, match="action"):
+        seal(effect, action="seal")
+
+
+def test_seal_on_received_with_no_outer_options_still_passes_through_unchanged(tmp_path, monkeypatch):
+    # Regression guard for the fix itself: the nested-dispatch pass-through
+    # (test_seal_nested_received_is_byte_identical_and_does_not_double_append)
+    # must keep working when genuinely no outer options are passed.
+    monkeypatch.chdir(tmp_path)
+    effect = received(b'{"iss": "acme-mandates"}', type="machine-mandate", anchor=False)
+    assert seal(effect) is effect
+
+
+def test_received_rejects_null_empty_and_non_string_type(tmp_path, monkeypatch):
+    # MED (surface.py:209): type=None/""/123 must never mint a signed capsule
+    # with a null/absent/wrong committed type.
+    monkeypatch.chdir(tmp_path)
+    for bad_type in (None, "", 123):
+        with pytest.raises(TypeError, match="type"):
+            received(b'{"iss": "acme-mandates"}', type=bad_type, anchor=False)
+
+
+def test_received_rejects_int_and_int_list_instead_of_silently_recoercing_them(tmp_path, monkeypatch):
+    # MED (surface.py:157): bytes(value) silently turns an int into a
+    # NUL-padded buffer and a list of ints into a byte sequence -- neither is
+    # the bytes the caller actually transmitted, so both must raise instead
+    # of minting a capsule over reinterpreted content.
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(TypeError, match="artifact_bytes"):
+        received(7, type="machine-mandate", anchor=False)
+    with pytest.raises(TypeError, match="artifact_bytes"):
+        received([1, 2, 3], type="machine-mandate", anchor=False)
+    with pytest.raises(TypeError, match="artifact_bytes"):
+        received(None, type="machine-mandate", anchor=False)
+
+
+def test_received_accepts_memoryview_as_a_valid_explicit_buffer(tmp_path, monkeypatch):
+    # surface.py:157 -- unlike the bare-byte guard at surface.py:128,
+    # received() legitimately accepts memoryview as one of the explicit
+    # buffer types (str/bytes/bytearray/memoryview); it must round-trip to
+    # the same digest as the underlying bytes.
+    monkeypatch.chdir(tmp_path)
+    raw = b'{"iss": "acme-mandates"}'
+    effect = received(memoryview(raw), type="machine-mandate", anchor=False)
+    carried_ref = effect.capsule["model_attestation"]["compute_attestation"]["carried_artifact"]
+    assert carried_ref["digest"] == hashlib.sha256(raw).hexdigest()
+
+
+def test_seal_refuses_bare_memoryview_naming_received(tmp_path, monkeypatch):
+    # MED (surface.py:128): the bare-byte guard omitted memoryview, so a bare
+    # memoryview handed to seal() fell through to the generic digest fallback
+    # and produced a process-dependent, unreproducible digest instead of
+    # being refused like bare bytes/bytearray.
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(TypeError, match=r"received\("):
+        seal(memoryview(b'{"provider_ack": "PO-9182"}'), anchor=False)
