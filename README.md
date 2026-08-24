@@ -67,7 +67,7 @@ The unit is the **capsule** (one action). What you keep and grow is the **ledger
 
 ## What you get back
 
-`emit()` returns an **`EmitResult`** — `cap.capsule_id`, `cap.anchored`, and `cap.capsule` (the capsule itself, plain JSON you can store or hand to anyone). It carries the `capsule_id` (a SHA-256 content address), the accountable `operator` + `developer`, the **may/did verdict**, the **effect** (and its dispatched-vs-confirmed status), and **digests of your input and output** — your inputs and outputs are committed by hash; **you hold the raw values, the capsule does not** (only their digests).
+`seal()` returns an **`EmitResult`** — `cap.capsule_id`, `cap.anchored`, `cap.signature`, `cap.key_id`, and `cap.capsule` (the capsule itself, plain JSON you can store or hand to anyone). It carries the `capsule_id` (a SHA-256 content address), a **self-attested `signature`** over that content by a persisted producer key (verify it straight from the capsule via `verify_capsule_signature` — see `capsule_emit.signing`), the accountable `operator` + `developer`, the **may/did verdict**, the **effect** (and its dispatched-vs-confirmed status), and **digests of your input and output** — your inputs and outputs are committed by hash; **you hold the raw values, the capsule does not** (only their digests).
 
 → Field-by-field, the two-tier structure, and how each layer is captured: **[docs/anatomy.md](docs/anatomy.md)**.
 

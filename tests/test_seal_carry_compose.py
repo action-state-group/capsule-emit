@@ -119,7 +119,16 @@ def test_seal_is_a_thin_alias_of_the_internal_primitive(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     fixed_uuid = uuid.UUID(int=0)
     fixed_ts = "2026-01-01T00:00:00Z"
-    kwargs = {"operator": "acme-co", "developer": "po-agent@v1", "anchor": False}
+    # Same signing key for both calls -- the default key is scoped per ledger
+    # path, and this test intentionally writes to two different ledger files,
+    # which would otherwise sign with two different (and thus divergent)
+    # auto-generated keys and break the "identical output" comparison below.
+    kwargs = {
+        "operator": "acme-co",
+        "developer": "po-agent@v1",
+        "anchor": False,
+        "signing_key_path": tmp_path / "shared.signing_key.pem",
+    }
 
     with (
         mock.patch.object(_base_emit_module.uuid, "uuid4", return_value=fixed_uuid),
