@@ -41,7 +41,6 @@ the record; it does not seal one.
 """
 from __future__ import annotations
 
-import hashlib
 import os
 import threading
 from dataclasses import dataclass
