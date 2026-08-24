@@ -59,8 +59,11 @@ with more than one independently-operated Transparency Service is what climbs
 from the *witnessed (single witness)* tier to the *multi-witness,
 equivocation-resistant* tier -- see ``docs/checkpoint.md``.
 
-**First-use notice.** The first time a checkpoint actually goes out over the
-network for a process, this module prints one line to stderr: what's sent (a
+**First-use notice.** Printed once per process, to stderr, at the first
+``maybe_checkpoint()`` call where witnessing is enabled -- before the first
+byte ever leaves the process, independent of whether a checkpoint is
+actually due yet (the cadence counter may not cross its threshold for a
+long time, or ever, in a short-lived process). States what will be sent (a
 32-byte digest -- structurally incapable of carrying capsule content), where
 (the resolved endpoint(s)), and how to turn it off. Printed exactly once per
 process regardless of how many ledgers or checkpoints follow (see
@@ -162,11 +165,13 @@ _notice_printed = False
 
 
 def _print_first_use_notice_once(urls: list[str]) -> None:
-    """Print the one-time, first-checkpoint transparency notice to stderr.
+    """Print the one-time, first-use witness notice to stderr.
 
-    Fires exactly once per process, at the moment the first checkpoint is
-    actually dispatched over the network -- not merely because witnessing is
-    nominally on. Never raises; a broken stderr must not break emit()."""
+    Fires exactly once per process, at the first ``maybe_checkpoint()`` call
+    where witnessing is enabled -- i.e. at the first ``seal()``, before any
+    checkpoint has actually gone out over the network, not gated on the
+    cadence counter reaching its threshold. Never raises; a broken stderr
+    must not break emit()."""
     global _notice_printed
     with _notice_lock:
         if _notice_printed:
@@ -175,11 +180,11 @@ def _print_first_use_notice_once(urls: list[str]) -> None:
     try:
         endpoints = ", ".join(urls) if urls else "the default witness endpoint"
         print(
-            "capsule-emit: this process just sent its first witness checkpoint -- "
-            "a 32-byte digest (sha256 of the checkpoint, structurally incapable of "
-            f"carrying your capsule content) to {endpoints}. "
+            "capsule-emit: witnessing is on for this process -- once a checkpoint "
+            "is due, a signed ~32-byte digest (sha256 of the checkpoint, structurally "
+            f"incapable of carrying your capsule content) will be sent to {endpoints}. "
             "Disable with emit(..., witness=False) or CAPSULE_WITNESS=off. "
-            "(This notice prints once per process.)",
+            "(This notice prints once per process, before any checkpoint goes out.)",
             file=sys.stderr,
         )
     except Exception:  # noqa: BLE001 -- a notice must never break emit()
@@ -327,8 +332,6 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str]) -> None:
             return
         state.prev = cp
 
-    _print_first_use_notice_once(resolved_urls)
-
     # Fan the same checkpoint out to every endpoint independently -- one
     # endpoint failing must never block registration with the others.
     for url in resolved_urls:
@@ -363,11 +366,17 @@ def maybe_checkpoint(
     ``ts_url`` accepts a single endpoint or several (a list, or a
     comma-separated string) -- the due checkpoint is registered with every
     endpoint named, independently (see :func:`_parse_witness_urls`).
+
+    Prints the one-time first-use notice (see :func:`_print_first_use_notice_once`)
+    on the first call where witnessing is enabled -- before the cadence check,
+    so it fires at the first ``seal()``, not the first checkpoint actually due.
     """
     if not witness_enabled(enabled):
         return
 
     urls = _parse_witness_urls(ts_url)
+    _print_first_use_notice_once(urls)
+
     cadence = _resolved_cadence(cadence_entries)
     key = _resolve_key(ledger_path)
     with _count_lock:

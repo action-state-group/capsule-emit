@@ -7,6 +7,9 @@
 - one witness endpoint failing never blocks registration with the others.
 - the first-use notice prints exactly once per process, to stderr, and
   states what's sent, where, and how to disable.
+- the notice fires at the first ``seal()`` where witnessing is enabled --
+  not gated on the cadence counter reaching its threshold (0.5.0 migration
+  audit item 4) -- and its exact wording is pinned by a snapshot test.
 """
 from __future__ import annotations
 
@@ -19,6 +22,7 @@ import time
 
 import pytest
 
+import capsule_emit.core as core
 from capsule_emit import seal, witness
 
 _ = base64, hashlib  # re-exported for parity with the stub TS handler below
@@ -82,11 +86,13 @@ def _clean_witness_state():
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False
+    core._disclosure_printed = False
     yield
     witness._counts.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False
+    core._disclosure_printed = False
 
 
 def _wait_for(predicate, timeout=5.0):
@@ -222,7 +228,7 @@ def test_first_use_notice_prints_once_with_disable_instructions(tmp_path, stub_t
     time.sleep(0.1)  # let the notice print land before we capture it
 
     err = capsys.readouterr().err
-    assert err.count("this process just sent its first witness checkpoint") == 1
+    assert err.count("capsule-emit: witnessing is on for this process") == 1
     assert "32-byte digest" in err
     assert ts_url in err
     assert "witness=False" in err
@@ -236,12 +242,16 @@ def test_first_use_notice_prints_once_with_disable_instructions(tmp_path, stub_t
     time.sleep(0.1)
 
     err_after = capsys.readouterr().err
-    assert "this process just sent its first witness checkpoint" not in err_after, (
+    assert "capsule-emit: witnessing is on for this process" not in err_after, (
         "the first-use notice must print at most once per process"
     )
 
 
-def test_first_use_notice_not_printed_before_any_checkpoint_is_due(tmp_path, stub_ts_single, capsys):
+def test_first_use_notice_printed_at_first_seal_before_any_checkpoint_is_due(tmp_path, stub_ts_single, capsys):
+    """Item 4 of the 0.5.0 migration audit: the notice fires at the first
+    ``seal()`` where witnessing is enabled, not gated on the cadence counter
+    reaching its threshold -- a short-lived process must still see it even
+    though it never crosses the real default cadence (100)."""
     ts_url, received = stub_ts_single
     ledger = tmp_path / "ledger.jsonl"
 
@@ -249,5 +259,28 @@ def test_first_use_notice_not_printed_before_any_checkpoint_is_due(tmp_path, stu
     seal(None, action="single-shot", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
 
     err = capsys.readouterr().err
-    assert "this process just sent its first witness checkpoint" not in err
-    assert received == []
+    assert "capsule-emit: witnessing is on for this process" in err
+    assert received == [], "no checkpoint should actually be due yet at this cadence"
+
+
+def test_first_use_notice_exact_text_snapshot(tmp_path, stub_ts_single, capsys):
+    """Pins the notice's exact wording so an accidental rewording is caught
+    (bundles the O2 snapshot-test requirement referenced by audit item 4).
+
+    The unrelated combined anchor+witness disclosure (``core.py``) is
+    pre-silenced so this snapshot isolates the witness-specific notice under
+    test here."""
+    core._disclosure_printed = True
+    ts_url, _received = stub_ts_single
+    ledger = tmp_path / "ledger.jsonl"
+
+    seal(None, action="single-shot", operator="acme", anchor=False, ledger=ledger, witness_url=ts_url)
+
+    err = capsys.readouterr().err.strip()
+    assert err == (
+        "capsule-emit: witnessing is on for this process -- once a checkpoint "
+        "is due, a signed ~32-byte digest (sha256 of the checkpoint, structurally "
+        f"incapable of carrying your capsule content) will be sent to {ts_url}. "
+        "Disable with emit(..., witness=False) or CAPSULE_WITNESS=off. "
+        "(This notice prints once per process, before any checkpoint goes out.)"
+    )
