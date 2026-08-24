@@ -733,16 +733,17 @@ def test_register_checkpoint_stub_grade_stays_self_attested():
     )
 
 
-def test_one_real_stamp_still_grades_witnessed_even_with_a_stub_stamp_present():
+def test_one_real_stamp_still_grades_witnessed_even_with_a_stub_stamp_present(monkeypatch):
     # A stub stamp must never be able to drag a genuinely witnessed
     # checkpoint back down, nor substitute for a real one -- the any-of is
-    # over REAL stamps only, in both directions.
+    # over REAL, cryptographically-verified stamps only, in both directions.
+    _pin_test_key_as_default(monkeypatch)
     mmr = _mmr_with(3)
     cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a")
     cp.witnesses.append(register_checkpoint_stub(cp))
     assert cp.grade() == Grade.SELF_ATTESTED
 
-    cp.witnesses.append(_stub_witness_record("https://real-witness.example"))
+    cp.witnesses.append(_genuine_witness_record(cp, DEFAULT_TS_URL))
     assert cp.grade() == Grade.WITNESSED
 
 
