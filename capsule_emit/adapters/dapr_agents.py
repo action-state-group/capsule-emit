@@ -132,7 +132,8 @@ class DaprAgentsCapsuleEmitter(CapsuleEmitterBase):
             dapr_agents extension.  Can be overridden per-call.  Not
             auto-captured from the Python SDK at v1.0 (see L2 in LIMITATIONS).
         ledger: Path to the JSONL ledger file (default: "ledger.jsonl").
-        anchor: Fire-and-forget anchor on every emit (default True).
+        anchor: Legacy, non-default fire-and-forget anchor channel (default
+            False; pass True or set CAPSULE_ANCHOR=legacy-on to opt in).
         anchor_url: Override the anchor endpoint.
         model: Default {"provider": ..., "model_id": ...} for all capsules.
     """

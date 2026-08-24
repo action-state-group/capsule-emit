@@ -21,7 +21,7 @@ cap = emit(
     verdict="executed",                  # executed | confirmed | denied | blocked
     effect={"type": "write_order", "status": "dispatched"},
 )
-print(cap.capsule_id, cap.anchored)      # sealed; anchor submitted async (offline? emit(..., anchor=False))
+print(cap.capsule_id, cap.anchored)      # sealed, witnessed by default; anchor is a legacy opt-in (emit(..., anchor=True))
 ```
 
 ```bash
@@ -73,13 +73,25 @@ The unit is the **capsule** (one action). What you keep and grow is the **ledger
 
 ## Anchoring — where the proof lives
 
-**Anchor is on by default.** On `emit()`, the capsule's **digest only** is submitted — async, non-blocking — to an [RFC 9162](https://www.rfc-editor.org/rfc/rfc9162) SCITT transparency log, so this exact capsule's existence is recorded at that time and checkable against the log by a party who trusts neither you nor your runtime. (`cap.anchored` reports the submission; surfacing the log's inclusion **receipt** back onto the result is on the near-term roadmap — today the digest is on the log and checkable there.) That's **registered**, not automatically **witnessed** — see [why anchoring makes it trustworthy](docs/why-anchoring.md) for the honest ladder.
+**Anchor is a legacy, non-default channel as of 0.5.0.** The checkpoint/witness
+stream below is the only default egress path; this per-capsule anchor exists
+only as an explicit opt-in (`emit(..., anchor=True)` or
+`CAPSULE_ANCHOR=legacy-on`), kept for one release as a rollback path. When
+engaged, the capsule's **digest only** is submitted — async, non-blocking —
+to an [RFC 9162](https://www.rfc-editor.org/rfc/rfc9162) SCITT transparency
+log, so this exact capsule's existence is recorded at that time and checkable
+against the log by a party who trusts neither you nor your runtime.
+(`cap.anchored` reports the submission; surfacing the log's inclusion
+**receipt** back onto the result is on the near-term roadmap — today the
+digest is on the log and checkable there.) That's **registered**, not
+automatically **witnessed** — see [why anchoring makes it trustworthy](docs/why-anchoring.md)
+for the honest ladder.
 
 - **What's logged:** a SHA-256 digest — nothing else. Your payloads never leave your machine.
 - **Where:** the free hosted log at `https://anchor.agentactioncapsule.org/v1/digest` (no signup, no key) — a single-operator log.
 - **Self-host or repoint:** the log service ([`capsule-anchor`](https://github.com/action-state-group/capsule-anchor)) is open-source — `AAC_ANCHOR_URL=…` or `emit(..., anchor_url=…)`.
-- **Offline:** `emit(..., anchor=False)` for one call, `CAPSULE_ANCHOR=off` for every call — no code change.
-- **First-run notice:** before this process's first anchor *or* witness network attempt, one combined line prints to stderr — naming both endpoints and both off switches — so a default-on network path is never silent on the very first call.
+- **Off by default; explicitly off:** leave `anchor` unset (the default), or pass `emit(..., anchor=False)`.
+- **First-run notice:** before this process's first anchor *or* witness network attempt, one line prints to stderr — naming the active endpoint(s) and how to turn each off — so an active network path is never silent on the very first call.
 
 *Why bother:* a self-hosted log you control isn't proof to an outsider; a shared, append-only transparency log is checkable by someone who trusts neither you nor the log's contents (though not, without a witness, someone unwilling to trust the log's operator at all — that step is registered vs. witnessed, not shared vs. unshared).
 

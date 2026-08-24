@@ -7,15 +7,26 @@ It wraps ``agent_action_capsule.emit()`` with:
 - Digest-only commitment of agent_input / agent_output (content stays local)
 - Optional per-emit digest salting (``salt_digests=True``), for a privacy-sensitive
   deployment that wants cross-capsule input correlation resistance
-- Async anchor on by default (digest-only; no business content crosses the wire)
 - Async checkpoint/witness on by default, lazy per ledger (digest-only; see
-  ``capsule_emit.witness`` and ``docs/checkpoint.md``)
+  ``capsule_emit.witness`` and ``docs/checkpoint.md``) — the only default
+  egress channel as of 0.5.0 (see "Single egress" below)
 - Every capsule cryptographically signed over its ``capsule_id`` by a
   persisted producer key -- self-attested strength, by default, on every
   call (see ``capsule_emit.signing``)
 - Automatic JSONL ledger append
 - A typed EmitResult with .capsule_id, .anchored, .anchor_status, .signature,
-  and .key_id
+  and .key_id (.anchored / .anchor_status report the legacy, non-default
+  anchor channel — see below)
+
+**Single egress (2026-08, O16 items 1-2):** the per-seal SCITT anchor
+submission that used to dispatch on every ``seal()``/``carry()``/``compose()``
+call by default has been killed as a default. The checkpoint/witness stream
+is now the only default network path. The old anchor channel still exists as
+an explicit, non-default opt-in — pass ``anchor=True``, or set
+``CAPSULE_ANCHOR=legacy-on`` (a deliberately distinct value from the old
+on-values, so an existing ``CAPSULE_ANCHOR=true`` config does not silently
+keep double-egress alive across the upgrade) — kept only as a rollback path
+for one release. See ``docs/why-anchoring.md`` and ``docs/checkpoint.md``.
 
 The ``confirms`` parameter threads a "did → confirmed" chain without a scheduler.
 
@@ -76,24 +87,27 @@ _ATEXIT_ANCHOR_TIMEOUT = float(
 )
 
 #: Explicit ``anchor=`` always wins; this env var is consulted only when the
-#: caller leaves ``anchor`` at its default (``None``) — the same "explicit
-#: kwarg beats env var, env var beats built-in default" shape as
-#: ``capsule_emit.witness.WITNESS_ENV_VAR``. Reconciles the site's
-#: documented ``CAPSULE_ANCHOR=false`` (agentactioncapsule.org's setup
-#: guide, Rung 1) with actual library behavior — previously this env var was
-#: not read anywhere in ``capsule_emit`` itself, only by a handful of example
-#: scripts that did their own parsing before passing an explicit ``anchor=``.
+#: caller leaves ``anchor`` at its default (``None``). Unlike
+#: ``capsule_emit.witness.WITNESS_ENV_VAR`` (which defaults ON), this
+#: defaults OFF as of 0.5.0 (O16 items 1-2: the per-seal anchor channel is
+#: killed as a default egress path) — only the exact value ``"legacy-on"``
+#: re-enables it, kept as a one-release rollback escape hatch. Pre-0.5.0
+#: on-values (``"true"``/``"1"``/``"yes"``/unset) no longer enable anchor —
+#: an existing ``CAPSULE_ANCHOR=true`` config silently downgrades to
+#: single-egress (checkpoint-only) rather than continuing double-egress.
 ANCHOR_ENV_VAR = "CAPSULE_ANCHOR"
-_ANCHOR_OFF_VALUES = {"off", "0", "false", "no"}
+_ANCHOR_LEGACY_ON_VALUE = "legacy-on"
 
 
 def _anchor_enabled(explicit: bool | None) -> bool:
-    """Resolve the on/off decision: ``explicit`` (the ``anchor=`` kwarg) wins
-    when set; otherwise ``CAPSULE_ANCHOR`` is consulted, defaulting to on —
-    matching ``capsule_emit.witness.witness_enabled``'s shape exactly."""
+    """Resolve the on/off decision for the legacy per-seal anchor channel.
+
+    ``explicit`` (the ``anchor=`` kwarg) always wins when set. Otherwise the
+    channel stays off unless ``CAPSULE_ANCHOR=legacy-on`` — the deliberately
+    narrow escape hatch described on ``ANCHOR_ENV_VAR`` above."""
     if explicit is not None:
         return explicit
-    return os.environ.get(ANCHOR_ENV_VAR, "").strip().lower() not in _ANCHOR_OFF_VALUES
+    return os.environ.get(ANCHOR_ENV_VAR, "").strip().lower() == _ANCHOR_LEGACY_ON_VALUE
 
 
 _disclosure_lock = threading.Lock()
@@ -121,15 +135,16 @@ def _print_first_run_disclosure_once(
             return
         _disclosure_printed = True
     lines = [
-        "capsule-emit: anchor and/or witness checkpointing are on by default — "
-        "before this process's first network attempt, here is exactly what leaves:"
+        "capsule-emit: before this process's first network attempt, here is exactly what leaves:"
     ]
     if anchor_active:
         display = anchor_endpoint or "the default anchor endpoint (AAC_ANCHOR_URL unset)"
         lines.append(
-            f"  - ANCHOR: the capsule_id (a 64-char hex SHA-256 digest — no business "
+            f"  - ANCHOR: (legacy, non-default channel — explicitly opted into for this "
+            f"process) the capsule_id (a 64-char hex SHA-256 digest — no business "
             f"content) is submitted to {display} on every seal()/carry()/compose() "
-            "call. Disable with anchor=False or CAPSULE_ANCHOR=off."
+            "call. Disable with anchor=False, or unset CAPSULE_ANCHOR / remove "
+            "CAPSULE_ANCHOR=legacy-on."
         )
     if witness_active:
         display = witness_endpoint or "the default witness endpoint (CAPSULE_WITNESS_URL unset)"
@@ -324,6 +339,14 @@ def _digest(value: Any, salt: str | None = None) -> str:
 class EmitResult:
     """The result of a capsule-emit _emit_capsule() call.
 
+    ``anchored`` / ``anchor_status`` report the legacy, non-default anchor
+    channel (see ``ANCHOR_ENV_VAR`` / ``_anchor_enabled`` above) — as of
+    0.5.0 the checkpoint/witness stream is the only default egress path, so
+    for the overwhelming majority of calls ``anchor_status`` is
+    ``"skipped"``. These fields only become meaningful when the legacy
+    channel was explicitly opted into (``anchor=True`` or
+    ``CAPSULE_ANCHOR=legacy-on``).
+
     ``anchored`` is ``True`` ONLY when a real ``AnchorResult`` confirmed the
     submission (i.e. ``anchor_wait`` was set and the future resolved to a
     success before the wait elapsed). The default non-blocking anchor path
@@ -332,13 +355,14 @@ class EmitResult:
 
     - ``"confirmed"`` — a real ``AnchorResult`` was obtained (``anchored`` is True).
     - ``"submitted"`` — the anchor POST was dispatched but the outcome is not
-      yet known (the default; the background thread is still in flight, or
+      yet known (the background thread is still in flight, or
       ``anchor_wait`` timed out before a result arrived).
     - ``"failed"`` — a real ``AnchorError`` was obtained (only observable when
       ``anchor_wait`` is set; otherwise a background failure surfaces only via
       the ``atexit`` warning at interpreter shutdown).
-    - ``"skipped"`` — ``anchor=False`` was passed, or left unset with
-      ``CAPSULE_ANCHOR`` resolving to off; no submission was attempted.
+    - ``"skipped"`` — the legacy anchor channel was never engaged: either
+      ``anchor=False`` was passed, or it was left unset with no
+      ``CAPSULE_ANCHOR=legacy-on`` opt-in (the default as of 0.5.0).
 
     ``signature`` / ``key_id`` mirror ``capsule["signature"]`` /
     ``capsule["key_id"]`` — the self-attested Ed25519 signature over
@@ -412,16 +436,17 @@ def _emit_capsule(
             relation without ``confirms`` set raises ``ValueError`` (a chain relation
             needs a chain target); ``relation=None`` never raises regardless of
             ``confirms``. Default ``"confirms"``.
-        anchor: When ``True`` (default, unless overridden — see below), dispatch an
-            async, digest-only SCITT anchor submission
-            (:func:`agent_action_capsule.anchor.async_anchor`). Non-blocking
-            by default — see ``anchor_wait`` to block for a confirmed outcome, and
-            ``EmitResult.anchor_status`` for the non-blocking outcome signal.
-            Pass ``False`` to opt out, or set ``CAPSULE_ANCHOR=off`` (also accepts
-            ``0``/``false``/``no``, case-insensitive — matches the site's
-            documented ``CAPSULE_ANCHOR=false``) to opt out everywhere without a
-            code change; an explicit ``anchor=`` kwarg always overrides the env
-            var. A first-run notice (see ``_print_first_run_disclosure_once``)
+        anchor: Legacy, non-default channel — killed as a default in 0.5.0 (O16
+            items 1-2). ``None`` (default) never dispatches. Pass ``True``, or
+            set ``CAPSULE_ANCHOR=legacy-on``, to opt back into the old
+            per-seal, async, digest-only SCITT anchor submission
+            (:func:`agent_action_capsule.anchor.async_anchor`) — kept only as
+            a one-release rollback path (see ``docs/why-anchoring.md``). Non-
+            blocking by default — see ``anchor_wait`` to block for a confirmed
+            outcome, and ``EmitResult.anchor_status`` for the non-blocking
+            outcome signal. Pass ``False`` (or leave unset) to keep it off; an
+            explicit ``anchor=`` kwarg always overrides the env var. A
+            first-run notice (see ``_print_first_run_disclosure_once``)
             prints to stderr before this process's first anchor or witness
             network attempt, naming the endpoint(s) and how to disable them.
         ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).

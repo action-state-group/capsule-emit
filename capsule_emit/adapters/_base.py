@@ -24,10 +24,11 @@ class CapsuleEmitterBase:
         operator: Tenant/org identifier stamped on every capsule.
         developer: Agent name + version.
         ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
-        anchor: Fire-and-forget anchor on every emit. ``None`` (default) resolves
-            via ``CAPSULE_ANCHOR`` (defaulting to on when unset) — see
-            ``capsule_emit.core._emit_capsule``'s ``anchor`` param. Pass an
-            explicit ``True``/``False`` to override the env var for this instance.
+        anchor: Legacy, non-default fire-and-forget anchor channel. ``None``
+            (default) resolves via ``CAPSULE_ANCHOR`` (off unless it is the
+            exact value ``"legacy-on"``) — see ``capsule_emit.core._emit_capsule``'s
+            ``anchor`` param. Pass an explicit ``True``/``False`` to override
+            the env var for this instance.
         anchor_url: Override anchor endpoint (else ``AAC_ANCHOR_URL`` env var).
         anchor_wait: When set, block up to this many seconds per emit for the
             real anchor outcome, so ``EmitResult.anchored`` / ``.anchor_status``

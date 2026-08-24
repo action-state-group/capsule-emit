@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """MCP-first capsule adapter (capsule-emit primary adapter).
 
-Wraps an MCP tool function so every call emits a sealed, anchored capsule.
+Wraps an MCP tool function so every call emits a sealed, witnessed capsule.
 No MCP SDK dependency required — the wrapper works with any callable.
 
     from capsule_emit.adapters.mcp import MCPCapsuleEmitter
@@ -9,7 +9,7 @@ No MCP SDK dependency required — the wrapper works with any callable.
     emitter = MCPCapsuleEmitter(
         operator="acme-co",
         developer="po-agent@v1",
-        anchor=False,           # True (default) → fire-and-forget digest anchor
+        anchor=True,            # off (default) → opt into the legacy, non-default digest anchor
         action_type="act",      # default for all tools (MCP tools do things)
     )
 
@@ -100,7 +100,7 @@ No MCP SDK dependency required — the wrapper works with any callable.
     # you have confirmation.
     #
     # ── Anchor at construction ───────────────────────────────────────────
-    # Pass anchor=True (the default) or anchor=False to the constructor.
+    # Pass anchor=True or anchor=False (the default) to the constructor.
     # Never poke emitter._anchor directly.
 """
 from __future__ import annotations
@@ -288,10 +288,11 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         operator: Accountable tenant / org identifier.
         developer: Agent name + version string.
         ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
-        anchor: Fire-and-forget anchor on every emit. ``None`` (default) resolves
-            via ``CAPSULE_ANCHOR`` (defaulting to on when unset) — see
+        anchor: Legacy, non-default fire-and-forget anchor channel. ``None``
+            (default) resolves via ``CAPSULE_ANCHOR`` (off unless it is the
+            exact value ``"legacy-on"``) — see
             ``capsule_emit.core._emit_capsule``'s ``anchor`` param.
-            Pass ``anchor=False`` for offline/sandbox use.  Never poke
+            Pass ``anchor=True`` to opt in.  Never poke
             ``emitter._anchor`` directly.
         anchor_url: Override the anchor endpoint.
         anchor_wait: When set, block up to this many seconds per tool call for
