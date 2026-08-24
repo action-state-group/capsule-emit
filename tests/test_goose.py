@@ -99,6 +99,26 @@ def test_server_capsule_verify_ok(tmp_path):
     assert reply.startswith("ok=True")
 
 
+def test_server_capsule_verify_honors_declared_jcs(tmp_path):
+    """The MCP verifier uses the same declared canonicalization as emission."""
+    ledger = tmp_path / "l.jsonl"
+    result = seal(
+        None,
+        action="test_action",
+        operator="org",
+        developer="dev@v1",
+        anchor=False,
+        witness=False,
+        ledger=ledger,
+        canonicalization_id="jcs",
+        extra_compute={"null_member": None, "empty_array": [], "empty_object": {}},
+    )
+    from capsule_emit.server import capsule_verify
+
+    reply = capsule_verify(capsule_id=result.capsule_id, ledger=str(ledger))
+    assert reply.startswith("ok=True")
+
+
 def test_server_capsule_ledger_summary(tmp_path):
     """capsule_ledger returns a summary with row count and action names."""
     ledger = tmp_path / "l.jsonl"
