@@ -79,6 +79,7 @@ def test_default_witness_endpoint_resolves_to_witness_host_end_to_end(tmp_path, 
     monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "3")
 
     witness._counts.clear()
+    witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False
@@ -130,6 +131,7 @@ def test_default_witness_endpoint_resolves_to_witness_host_end_to_end(tmp_path, 
     )
 
     witness._counts.clear()
+    witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False
@@ -146,6 +148,7 @@ def test_rollback_to_anchor_host_still_works_via_explicit_config(tmp_path, monke
     monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "3")
 
     witness._counts.clear()
+    witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False
@@ -179,6 +182,7 @@ def test_rollback_to_anchor_host_still_works_via_explicit_config(tmp_path, monke
     )
 
     witness._counts.clear()
+    witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False

@@ -434,11 +434,15 @@ def _emit_capsule(
         witness: When ``True`` (default, unless overridden — see below),
             this ledger participates in the default CLL checkpoint/witness
             stream: once enough entries accumulate (see
-            ``capsule_emit.witness.DEFAULT_CADENCE_ENTRIES``), a signed peaks
-            checkpoint over this ledger's MMR is built and registered with a
-            Transparency Service — async, digest-only, lazy (nothing is
-            imported or computed until a checkpoint is actually due; see
-            ``capsule_emit.witness`` and ``docs/checkpoint.md``). Pass
+            ``capsule_emit.witness.DEFAULT_CADENCE_ENTRIES``) or enough time
+            has passed since the first unwitnessed entry (see
+            ``capsule_emit.witness.DEFAULT_CADENCE_SECONDS`` — 15 minutes,
+            whichever comes first; never fires on age alone with no
+            unwitnessed work), a signed peaks checkpoint over this ledger's
+            MMR is built and registered with a Transparency Service — async,
+            digest-only, lazy (nothing is imported or computed until a
+            checkpoint is actually due; see ``capsule_emit.witness`` and
+            ``docs/checkpoint.md``). Pass
             ``False`` to opt this ledger out, or set ``CAPSULE_WITNESS=off``
             to opt out everywhere without a code change (an explicit
             ``witness=`` kwarg always overrides the env var). Never blocks —

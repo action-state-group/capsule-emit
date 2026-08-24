@@ -6,14 +6,27 @@
 required. Every ledger you `emit()` into participates in a checkpoint/witness
 stream automatically:
 
-- Once a ledger accumulates `capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`
-  (100) entries since its last checkpoint, a signed peaks checkpoint over
-  that ledger's MMR is built and registered with a Transparency Service —
-  the same free public-good tier the per-emit anchor already uses by
-  default, `witness.agentactioncapsule.org` (semantically a witness, not
-  the anchor — **[currently served via `anchor.agentactioncapsule.org`;
-  the `witness.` CNAME is pending]**, see `capsule_emit.checkpoint.emit.
-  DEFAULT_TS_URL` / `_PENDING_CNAME_TARGETS`).
+- **Cadence: 100 entries or 15 minutes, whichever comes first, both
+  configurable.** Once a ledger accumulates
+  `capsule_emit.witness.DEFAULT_CADENCE_ENTRIES` (100) entries since its
+  last checkpoint — **or** `capsule_emit.witness.DEFAULT_CADENCE_SECONDS`
+  (900) seconds have elapsed since the first unwitnessed entry after the
+  last checkpoint — a signed peaks checkpoint over that ledger's MMR is
+  built and registered with a Transparency Service — the same free
+  public-good tier the per-emit anchor already uses by default,
+  `witness.agentactioncapsule.org` (semantically a witness, not the anchor —
+  **[currently served via `anchor.agentactioncapsule.org`; the `witness.`
+  CNAME is pending]**, see `capsule_emit.checkpoint.emit. DEFAULT_TS_URL` /
+  `_PENDING_CNAME_TARGETS`).
+- **An idle log is silent, never a heartbeat.** The age leg is checked
+  lazily, only inside `witness.maybe_checkpoint` — which itself only ever
+  runs right after a real `emit()` call appends a new entry. There is no
+  background timer or polling thread, so a ledger with no new activity is
+  never checkpointed on age alone: it is structurally impossible, not a
+  runtime guard. Checkpoint-stamp entries (see below) reinforce this —
+  they're written directly through `ledger.append_to_ledger`, never through
+  `core.emit()`, so persisting a stamp never advances the entry counter
+  *or* resets the age clock.
 - **Multiple witnesses.** `witness_url=` (and `CAPSULE_WITNESS_URL`) accept a
   single endpoint or several — a list, or a comma-separated string — and the
   same checkpoint is registered with *every* endpoint named, independently;
@@ -54,8 +67,9 @@ export CAPSULE_WITNESS=off        # opt out everywhere, no code change
 
 An explicit `witness=` kwarg always overrides the env var. Repoint the
 endpoint (or add more) with `emit(..., witness_url=...)` or
-`CAPSULE_WITNESS_URL=…`; override the cadence with
-`CAPSULE_WITNESS_CADENCE_ENTRIES=…`.
+`CAPSULE_WITNESS_URL=…`; override the entry-count cadence with
+`CAPSULE_WITNESS_CADENCE_ENTRIES=…` and the age-based cadence with
+`CAPSULE_WITNESS_CADENCE_SECONDS=…`.
 
 **What trust tier this reaches — be precise.** A single-TS default checkpoint
 is **witnessed (single witness)**: it upgrades the stream from
@@ -139,7 +153,10 @@ leaf and breaks the covering checkpoint's root, rather than that evidence
 living only in the `CheckpointRecord.witnesses` list of a process-local
 object a restart discards. Stamp entries never wake the cadence/idle
 timer — they aren't written through `core.emit()`, so they never touch
-`witness.maybe_checkpoint`'s per-`emit()`-call counter.
+`witness.maybe_checkpoint`'s per-`emit()`-call counter *or* its age clock;
+persisting a stamp neither advances the entry count nor resets (nor starts)
+the 15-minute window (`tests/test_witness_stamp_persistence.py`,
+`tests/test_witness_idle_silence_and_age_cadence.py`).
 
 `kind`/`v` are the entry's format-version marker: `capsule_emit.ledger.read_ledger`
 filters `checkpoint_stamp` entries out by default, so every capsule-only
@@ -168,13 +185,22 @@ tied to one operator.
 ```python
 from capsule_emit.checkpoint import CheckpointConfig, due_for_checkpoint, lag_exceeded
 
-cfg = CheckpointConfig(cadence_entries=100, max_lag_entries=200)
+cfg = CheckpointConfig(cadence_entries=100, cadence_seconds=900, max_lag_entries=200)
 # cfg.ts_urls == [] until you set it — e.g. cfg.ts_urls = [DEFAULT_TS_URL]
+
+due_for_checkpoint(cfg, entries_since_last=3, seconds_since_last=920)  # True: age leg
+due_for_checkpoint(cfg, entries_since_last=0, seconds_since_last=920)  # False: no unwitnessed work
 ```
 
 Cadence and scheduling are yours: `due_for_checkpoint`/`lag_exceeded` are
 pure helpers over your own counter — this package never runs a timer or a
 cron of its own (no timing-jitter, no scheduling as a service).
+`due_for_checkpoint` takes an optional `seconds_since_last` for the age leg
+("100 entries or 15 minutes, whichever first") — pass the time since the
+*first* unwitnessed entry, not since your last poll. Omitting it (or passing
+`entries_since_last=0`) falls back to the entry-count leg alone: the age leg
+never fires when there's no unwitnessed work, matching the default `emit()`
+wiring's idle-silence guarantee above.
 
 ## Minimal example
 

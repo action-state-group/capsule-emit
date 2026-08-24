@@ -108,6 +108,7 @@ _PENDING_CNAME_TARGETS = {DEFAULT_TS_URL: "https://anchor.agentactioncapsule.org
 EXAMPLE_CONFIG_TOML = f"""\
 [checkpoint]
 cadence_entries = 100
+cadence_seconds = 900  # 15 minutes -- age leg; only fires with unwitnessed entries
 max_lag_entries = 200
 # ts_urls = ["{DEFAULT_TS_URL}"]
 """
@@ -139,12 +140,14 @@ class CheckpointConfig:
 
     ts_urls: list[str] = field(default_factory=list)
     cadence_entries: int = 100
+    cadence_seconds: int = 900  # 15 minutes -- age leg, see due_for_checkpoint
     max_lag_entries: int = 200
 
     def to_dict(self) -> dict:
         return {
             "ts_urls": self.ts_urls,
             "cadence_entries": self.cadence_entries,
+            "cadence_seconds": self.cadence_seconds,
             "max_lag_entries": self.max_lag_entries,
         }
 
@@ -153,13 +156,34 @@ class CheckpointConfig:
         return cls(
             ts_urls=list(d.get("ts_urls", [])),
             cadence_entries=int(d.get("cadence_entries", 100)),
+            cadence_seconds=int(d.get("cadence_seconds", 900)),
             max_lag_entries=int(d.get("max_lag_entries", 200)),
         )
 
 
-def due_for_checkpoint(cfg: CheckpointConfig, entries_since_last: int) -> bool:
-    """True once ``entries_since_last`` reaches the declared cadence."""
-    return entries_since_last >= cfg.cadence_entries
+def due_for_checkpoint(
+    cfg: CheckpointConfig,
+    entries_since_last: int,
+    *,
+    seconds_since_last: float | None = None,
+) -> bool:
+    """True once ``entries_since_last`` reaches the declared cadence, or
+    ``seconds_since_last`` reaches ``cfg.cadence_seconds`` -- whichever comes
+    first ("100 entries or 15 minutes", frozen surface §0, both configurable).
+
+    The age leg only ever applies when there is at least one unwitnessed
+    entry: with ``entries_since_last == 0`` this is always ``False``
+    regardless of ``seconds_since_last`` -- an idle log is silent, never a
+    heartbeat. Callers driving their own cron/timer should pass
+    ``seconds_since_last`` as the time since the first unwitnessed entry
+    (not since the last check) to get this behavior; omitting it falls back
+    to the entry-count leg alone, matching the pre-existing signature.
+    """
+    if entries_since_last <= 0:
+        return False
+    if entries_since_last >= cfg.cadence_entries:
+        return True
+    return seconds_since_last is not None and seconds_since_last >= cfg.cadence_seconds
 
 
 def lag_exceeded(cfg: CheckpointConfig, entries_since_last: int) -> bool:

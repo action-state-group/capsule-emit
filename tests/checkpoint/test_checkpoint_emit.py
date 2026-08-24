@@ -237,6 +237,58 @@ def test_due_for_checkpoint_and_lag_exceeded():
     assert lag_exceeded(cfg, 201)
 
 
+# -- O16 audit item 5: the age-based cadence leg (+ idle-silence guard) -----
+
+
+def test_checkpoint_config_defaults_cadence_seconds_to_15_minutes():
+    cfg = CheckpointConfig()
+    assert cfg.cadence_seconds == 900
+
+
+def test_due_for_checkpoint_age_leg_fires_before_entry_count_cadence():
+    """"100 entries or 15 minutes, whichever first" -- the age leg alone,
+    with the entry count nowhere near cadence_entries, must still come due."""
+    cfg = CheckpointConfig(cadence_entries=100, cadence_seconds=900)
+    assert not due_for_checkpoint(cfg, 3, seconds_since_last=899)
+    assert due_for_checkpoint(cfg, 3, seconds_since_last=900)
+
+
+def test_due_for_checkpoint_entry_count_leg_still_fires_before_age_cadence():
+    cfg = CheckpointConfig(cadence_entries=100, cadence_seconds=900)
+    assert due_for_checkpoint(cfg, 100, seconds_since_last=1)
+
+
+def test_due_for_checkpoint_age_leg_never_fires_with_zero_unwitnessed_entries():
+    """The idle-silence guarantee at the function level: an idle log
+    (entries_since_last == 0) must never come due on age alone, no matter
+    how much time has elapsed -- never a heartbeat."""
+    cfg = CheckpointConfig(cadence_entries=100, cadence_seconds=900)
+    assert not due_for_checkpoint(cfg, 0, seconds_since_last=10_000_000)
+
+
+def test_due_for_checkpoint_omitting_seconds_since_last_is_entry_count_only():
+    """Back-compat: a caller that never passes seconds_since_last keeps the
+    pre-item-5 entry-count-only behavior exactly."""
+    cfg = CheckpointConfig(cadence_entries=100, cadence_seconds=1)
+    assert not due_for_checkpoint(cfg, 99)
+    assert due_for_checkpoint(cfg, 100)
+
+
+def test_example_config_documents_cadence_seconds():
+    assert "cadence_seconds = 900" in EXAMPLE_CONFIG_TOML
+
+
+def test_checkpoint_config_to_dict_from_dict_roundtrips_cadence_seconds():
+    cfg = CheckpointConfig(cadence_entries=50, cadence_seconds=60, max_lag_entries=75)
+    restored = CheckpointConfig.from_dict(cfg.to_dict())
+    assert restored == cfg
+
+
+def test_checkpoint_config_from_dict_defaults_cadence_seconds_when_absent():
+    restored = CheckpointConfig.from_dict({"cadence_entries": 50, "max_lag_entries": 75})
+    assert restored.cadence_seconds == 900
+
+
 def test_checkpoint_config_ts_urls_empty_by_default():
     cfg = CheckpointConfig()
     assert cfg.ts_urls == []  # registration is opt-in, never assumed

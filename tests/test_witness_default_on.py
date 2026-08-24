@@ -94,11 +94,13 @@ def _clean_witness_state():
     design (cheap counters + lazily-built MMR state). Reset it around every
     test so no test's counter/lock leaks into another's."""
     witness._counts.clear()
+    witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False
     yield
     witness._counts.clear()
+    witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False
