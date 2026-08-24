@@ -15,6 +15,8 @@ from capsule_emit.checkpoint import CheckpointConfig, MmrLedger
 from capsule_emit.checkpoint.emit import (
     DEFAULT_TS_URL,
     EXAMPLE_CONFIG_TOML,
+    STUB_MARKER,
+    STUB_TS_URL,
     CheckpointError,
     Grade,
     RollbackError,
@@ -22,6 +24,7 @@ from capsule_emit.checkpoint.emit import (
     due_for_checkpoint,
     emit_checkpoint,
     lag_exceeded,
+    register_checkpoint_stub,
     verify_checkpoint_consistency,
     verify_checkpoint_signature,
     verify_witness_stamp_offline,
@@ -694,3 +697,121 @@ def test_register_checkpoint_explicit_non_default_url_is_never_rewritten(monkeyp
 
     assert captured["full_url"] == "https://my-own-ts.example.org/v1/digest"
     assert witness_record.ts_url == custom_url
+
+
+# ---------------------------------------------------------------------------
+# register_checkpoint_stub -- the in-process stub witness (0.5.0 migration
+# audit item 6, frozen surface §1a.4). Zero network, exercises the real
+# checkpoint-build path, and the grade must never leave self-attested no
+# matter how many stub stamps land.
+# ---------------------------------------------------------------------------
+
+
+def test_register_checkpoint_stub_makes_no_network_call(monkeypatch):
+    def _fail_if_called(*_a, **_k):
+        raise AssertionError("register_checkpoint_stub must never touch the network")
+
+    monkeypatch.setattr("urllib.request.urlopen", _fail_if_called)
+
+    mmr = _mmr_with(3)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a")
+    witness_record = register_checkpoint_stub(cp)
+
+    assert witness_record.ts_url == STUB_TS_URL
+    assert witness_record.is_stub is True
+
+
+def test_register_checkpoint_stub_grade_stays_self_attested():
+    mmr = _mmr_with(3)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a")
+    cp.witnesses.append(register_checkpoint_stub(cp))
+
+    assert cp.witnesses, "stub registration should still produce a WitnessRecord"
+    assert cp.grade() == Grade.SELF_ATTESTED, (
+        "frozen surface §1a.4: stub stamps never reach rung 2 -- the grade "
+        "must never leave self-attested"
+    )
+
+
+def test_one_real_stamp_still_grades_witnessed_even_with_a_stub_stamp_present(monkeypatch):
+    # A stub stamp must never be able to drag a genuinely witnessed
+    # checkpoint back down, nor substitute for a real one -- the any-of is
+    # over REAL, cryptographically-verified stamps only, in both directions.
+    _pin_test_key_as_default(monkeypatch)
+    mmr = _mmr_with(3)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a")
+    cp.witnesses.append(register_checkpoint_stub(cp))
+    assert cp.grade() == Grade.SELF_ATTESTED
+
+    cp.witnesses.append(_genuine_witness_record(cp, DEFAULT_TS_URL))
+    assert cp.grade() == Grade.WITNESSED
+
+
+def test_register_checkpoint_stub_receipt_is_not_a_real_cose_receipt():
+    # "Distinguishability lives in the bytes, not the rendering" (§1a.4) --
+    # this is the interim placeholder pending O10's normative marker text,
+    # but it must already be true that the bytes cannot pass as a real
+    # receipt: base64-decoding them must never yield valid COSE_Sign1 CBOR.
+    cbor2 = pytest.importorskip("cbor2", reason="optional 'checkpoint' extra not installed")
+    import base64
+
+    mmr = _mmr_with(3)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a")
+    witness_record = register_checkpoint_stub(cp)
+
+    raw = base64.b64decode(witness_record.receipt_b64)
+    with pytest.raises(cbor2.CBORDecodeError):
+        cbor2.loads(raw)
+
+
+def test_stub_marker_name_matches_the_cll_id():
+    # draft-mih-scitt-checkpointed-local-log-00, "Stub Countersignatures":
+    # the protected-header parameter name is "cll-stub" (label TBD1).
+    assert STUB_MARKER == "cll-stub"
+
+
+def test_register_checkpoint_stub_receipt_carries_the_cll_stub_marker():
+    import base64
+    import json as _json
+
+    mmr = _mmr_with(3)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a")
+    witness_record = register_checkpoint_stub(cp)
+
+    decoded = _json.loads(base64.b64decode(witness_record.receipt_b64))
+    # Same name and value the I-D fixes for the real COSE header param
+    # (value `true`) -- forward-compatible with the wire format once it
+    # lands, and the label MUST be listed in `crit` per the spec.
+    assert decoded[STUB_MARKER] is True
+    assert decoded["crit"] == [STUB_MARKER]
+
+
+def test_register_checkpoint_stub_respects_a_given_label_url():
+    mmr = _mmr_with(3)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a")
+    witness_record = register_checkpoint_stub(cp, "stub://my-label")
+    assert witness_record.ts_url == "stub://my-label"
+
+
+def test_witness_record_roundtrip_preserves_is_stub():
+    record = register_checkpoint_stub(
+        emit_checkpoint(_mmr_with(3), HmacSigner("node-a"), log_id="log-a")
+    )
+    restored = WitnessRecord.from_dict(record.to_dict())
+    assert restored.is_stub is True
+    assert restored == record
+
+
+def test_witness_record_from_dict_defaults_is_stub_false_for_old_persisted_records():
+    # A checkpoint stamp persisted before this field existed has no
+    # "is_stub" key at all -- it must be read back as a real (non-stub)
+    # witness, not silently downgraded or upgraded.
+    old_style = {
+        "ts_url": "https://witness.example",
+        "entry_hash": "ab" * 32,
+        "receipt_b64": "c3R1Yg==",
+        "leaf_index": 0,
+        "tree_size": 1,
+    }
+    restored = WitnessRecord.from_dict(old_style)
+    assert restored.is_stub is False

@@ -79,6 +79,7 @@ def compute_status(path: str, *, offline: bool = False) -> dict:
         "records_awaiting_checkpoint": records_awaiting_checkpoint,
         "checkpoints_awaiting_stamp": checkpoints_awaiting_stamp,
         "witnessing_enabled_now": witnessing_enabled_now,
+        "witnessing_mode_now": witness.witness_mode(None),
         "latest_checkpoint": None,
     }
 
@@ -89,8 +90,12 @@ def compute_status(path: str, *, offline: bool = False) -> dict:
         # switch that zeroes all egress, not just an alias for --offline.
         skip_network_recheck = offline or not witnessing_enabled_now
         for w in last_cp.witnesses:
-            info: dict[str, Any] = {"ts_url": w.ts_url, "confirmed": None}
-            if not skip_network_recheck:
+            info: dict[str, Any] = {"ts_url": w.ts_url, "is_stub": w.is_stub, "confirmed": None}
+            if w.is_stub:
+                # Never re-checked over the network -- a stub stamp was never
+                # registered with anything, so there is nothing to confirm.
+                info["confirmed"] = False
+            elif not skip_network_recheck:
                 from .checkpoint import verify_receipt_offline
 
                 ok, errors = verify_receipt_offline(w, ts_base_url=w.ts_url)
@@ -98,10 +103,16 @@ def compute_status(path: str, *, offline: bool = False) -> dict:
                 if not ok:
                     info["errors"] = errors
             witnesses_info.append(info)
+        # Stub scream (frozen surface §1a.4): the latest checkpoint's grade
+        # already stays self-attested when its witnesses are stub-only (see
+        # CheckpointRecord.grade()) -- this flag is what render_status uses
+        # to make that loud instead of silently correct.
+        stub_witness_only = bool(last_cp.witnesses) and all(w.is_stub for w in last_cp.witnesses)
         result["latest_checkpoint"] = {
             "mmr_size": last_cp.mmr_size,
             "leaf_count": covered_leaves,
             "grade": last_cp.grade().value,
+            "stub_witness": stub_witness_only,
             "timestamp": last_cp.timestamp,
             "key_id": last_cp.key_id,
             "witnesses": witnesses_info,
@@ -126,6 +137,11 @@ def render_status(status: dict, *, out: Any = None) -> None:
         print(f"  {'latest checkpoint':<30}none yet", file=out)
     else:
         print(f"  {'latest checkpoint grade':<30}{cp['grade']}", file=out)
+        if cp.get("stub_witness"):
+            print(
+                f"  {'':<30}⚠ STUB WITNESS — proves nothing beyond self-attested",
+                file=out,
+            )
         print(
             f"  {'latest checkpoint covers':<30}{cp['leaf_count']} leaf(ves) "
             f"(mmr_size={cp['mmr_size']}, at {cp['timestamp']})",
@@ -134,16 +150,16 @@ def render_status(status: dict, *, out: Any = None) -> None:
 
     print(f"  {'records awaiting checkpoint':<30}{status['records_awaiting_checkpoint']}", file=out)
     print(f"  {'checkpoints awaiting stamp':<30}{status['checkpoints_awaiting_stamp']}", file=out)
-    print(
-        f"  {'witnessing (this process)':<30}"
-        f"{'on' if status['witnessing_enabled_now'] else 'off'}",
-        file=out,
-    )
+    mode = status.get("witnessing_mode_now", "on" if status["witnessing_enabled_now"] else "off")
+    mode_display = "STUB (proves nothing beyond self-attested)" if mode == "stub" else mode
+    print(f"  {'witnessing (this process)':<30}{mode_display}", file=out)
 
     if cp is not None and cp["witnesses"]:
         print("\n  witnesses (latest checkpoint):", file=out)
         for w in cp["witnesses"]:
-            if not status["witnessing_enabled_now"]:
+            if w.get("is_stub"):
+                state = "STUB — not a real Transparency Service"
+            elif not status["witnessing_enabled_now"]:
                 state = "unconfirmed (witness disabled)"
             elif status["offline"]:
                 state = "unconfirmed (--offline)"
