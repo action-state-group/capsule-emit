@@ -10,6 +10,13 @@ Four rendering levels for the ledger:
 
     capsule-emit verify --store <path>           — verify all capsules in a ledger
 
+    capsule-emit status <path> [--offline]       — ladder position: what's
+                                                    logged, which checkpoint
+                                                    covers what, which stamps
+                                                    are back, honest lag;
+                                                    read-only witness re-check
+                                                    unless --offline
+
     capsule-emit permalink <capsule.json ...>    — build a demo verify-surface
                                                     permalink (withheld/bundle,
                                                     or disclosed via --reveal
@@ -111,6 +118,21 @@ def _build_parser() -> argparse.ArgumentParser:
     # verify
     verify_p = sub.add_parser("verify", help="verify capsules")
     verify_p.add_argument("--store", dest="store_path", metavar="PATH", help="JSONL ledger to verify")
+
+    # status
+    status_p = sub.add_parser(
+        "status",
+        help="ladder position: what's logged, which checkpoint covers what, which "
+        "stamps are back, honest witnessing lag -- contacts the witness read-only "
+        "to re-confirm existing receipts unless --offline",
+    )
+    status_p.add_argument("path", help="path to a JSONL ledger file")
+    status_p.add_argument(
+        "--offline",
+        action="store_true",
+        help="skip the read-only witness re-check; report only what the ledger already holds",
+    )
+    status_p.add_argument("--json", dest="as_json", action="store_true", help="raw JSON output")
 
     # permalink
     from .permalink import DEFAULT_BASE_URL
@@ -271,6 +293,23 @@ def _cmd_verify(args: argparse.Namespace) -> int:
         print(f"  {status}  {findings[0] if findings else ''}")
     print(f"\n{ok_count}/{len(results)} VALID" + (f"  — {fail_count} INVALID" if fail_count else ""))
     return 0 if fail_count == 0 else 1
+
+
+def _cmd_status(args: argparse.Namespace) -> int:
+    from .status import compute_status, render_status
+
+    result = compute_status(args.path, offline=args.offline)
+
+    if args.as_json:
+        print(json.dumps(result, indent=2, default=str))
+        return 0
+
+    if result["capsule_count"] == 0 and result["checkpoint_count"] == 0:
+        print(f"status: {args.path} — empty or not found")
+        return 0
+
+    render_status(result)
+    return 0
 
 
 _REVEALABLE_FIELDS = ("agent_input", "agent_output")
@@ -456,6 +495,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "verify":
         return _cmd_verify(args)
+
+    if args.command == "status":
+        return _cmd_status(args)
 
     if args.command == "permalink":
         return _cmd_permalink(args)
