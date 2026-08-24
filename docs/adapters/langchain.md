@@ -1,74 +1,40 @@
-# LangChain adapter
+# LangChain
 
-`LangChainCapsuleEmitter` is a **callback handler**. You don't wrap individual
-tools — you hand it to LangChain and it fires on `on_tool_start` / `on_tool_end`,
-emitting one capsule per completed tool call. It captures the tool input and output
-automatically.
+Two integration shapes ship in `capsule-emit[langchain]`:
 
-```python
-from capsule_emit.adapters.langchain import LangChainCapsuleEmitter   # needs: pip install langchain-core
+## `LangChainCapsuleListener` — recommended
 
-emitter = LangChainCapsuleEmitter(operator="acme-co", developer="research-agent@v1")
-```
-
-## Where to put the call
-
-A LangChain callback can be attached at two scopes — same handler, different reach.
-
-### Option A — per invocation (narrow)
-
-Pass it in `config={"callbacks": [...]}` on the specific `.invoke()` you care about.
-Only that run is sealed. Use this when you want to seal **one workflow** and leave
-the rest of your app untouched.
+A `BaseCallbackHandler` registered once via `config={"callbacks": [listener]}`;
+every tool call seals evidence with a planned → outcome chain:
 
 ```python
-agent.invoke(payload, config={"callbacks": [emitter]})
+from capsule_emit.adapters.langchain_listener import LangChainCapsuleListener
+
+listener = LangChainCapsuleListener(operator="acme-co", developer="my-agent@v1")
+agent.invoke(..., config={"callbacks": [listener]})
 ```
 
-### Option B — constructor-level (every run)
+| LangChain callback | Capsule |
+|---|---|
+| `on_tool_start` | `effect.status="planned"` — the commitment record |
+| `on_tool_end` | `effect.status="confirmed"`, `confirms`-chained to the planned capsule |
+| `on_tool_error` | `verdict_class="errored"`, `effect.status="failed"`, chained — errors are evidence |
+| root `on_chain_start/end/error` | fyi lifecycle capsules (root runs only; `include_lifecycle=False` to disable) |
+| `on_llm_start` / `on_chat_model_start` | model auto-capture threaded into tool capsules; LLM call capsules off by default (`include_llm=True`) |
 
-Attach it where you build the agent/executor so **every** run through that object is
-sealed, no matter who calls it. Use this for a service where all tool calls should
-be on the record.
+Pairing is `run_id`-exact (LangChain supplies it), so concurrent calls to the
+same tool chain correctly. Handlers never raise into the host application;
+raw floats in tool payloads fail closed at the digest layer (warning, no
+capsule, run unaffected). Each capsule verifies offline — content digests and chain links over what the listener recorded. `verify()` checks structure and consistency: it proves the record's integrity, not that the tools executed. Tamper-evidence to a third party comes from the anchoring/receipt path (a sealed digest registered with a transparency service); none of it replaces review.
 
-```python
-agent = AgentExecutor(agent=..., tools=..., callbacks=[emitter])
-agent.invoke(payload)   # sealed; so is every other call
-```
+Quickstart: `python examples/langchain-listener/demo.py` (hermetic — no LLM
+key, no live services; ends with offline `verify()` + a `capsule-emit
+evidence` render).
 
-**The difference:** Option A scopes sealing to *one call* (explicit, opt-in per
-run); Option B scopes it to *the agent* (every run, can't be forgotten). Reach
-differs; the capsule is identical.
+## `LangChainCapsuleEmitter` — surgical
 
-## Add it yourself
-
-```python
-from capsule_emit.adapters.langchain import LangChainCapsuleEmitter   # 1
-emitter = LangChainCapsuleEmitter(operator="acme-co", developer="research-agent@v1")  # 2
-
-agent.invoke(payload, config={"callbacks": [emitter]})                # 3  (+ existing callbacks, if any)
-```
-
-If you already pass callbacks, just add `emitter` to the list — order doesn't
-matter.
-
-## Or tell your coding agent
-
-> Add `capsule-emit` to our LangChain agent. `pip install capsule-emit langchain-core`,
-> create one `LangChainCapsuleEmitter(operator="<our-org>", developer="<this-agent>@<version>")`,
-> and attach it as a callback at the **AgentExecutor constructor** so every run is
-> sealed (append to existing `callbacks`, don't replace). Don't change tool or
-> prompt logic. Show me the diff first.
-
-## Notes
-
-- **No effect block by default.** Capsules emitted here carry no `effect` key; the
-  *dispatched → confirmed* chain requires dropping to `emit()` directly. This adapter
-  records the action; effect-chain coverage is the boundary/gate layer above it.
-- Tool input/output are captured from `on_tool_start`/`on_tool_end` and
-  digest-committed automatically.
-- **Model auto-capture is the one place LangChain can give us the model** (via
-  `on_llm_start`). That enhancement is on the roadmap;
-  until it lands, pass `model=` explicitly if you need it sealed.
-- `on_tool_error` discards the pending capsule — errored tool calls don't silently
-  seal as successes.
+The original single-capsule-per-tool-call handler
+(`capsule_emit.adapters.langchain.LangChainCapsuleEmitter`): one confirmed
+capsule per completed tool call, no planned/outcome chain, errors not sealed.
+Use when you want minimal ledger volume for a narrow surface; the listener is
+the recommended default.
