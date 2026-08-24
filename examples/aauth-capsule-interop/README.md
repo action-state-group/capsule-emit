@@ -18,8 +18,8 @@ depend on any particular anchor operator.
 2. **Bilateral seal = the "did", both directions.** Both agents independently
    seal a capsule over the **same shared action digest**
    `subject_digest = SHA-256(JCS(action))`. Each capsule is bound to that one
-   action and signed by its own org, so the two records are joined by the digest
-   without either side being able to rewrite the other's.
+   action and sealed (content-addressed) by its own org, so the two records are
+   joined by the digest without either side being able to rewrite the other's.
 3. **Anchor → verify.** Each capsule is anchored (digest-only) to a transparency
    log, then `agent-action-capsule verify` confirms inclusion. A relying party
    that trusts neither the planner nor the DJ can check the shared action

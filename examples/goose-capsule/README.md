@@ -178,8 +178,8 @@ time Goose calls `submit_order` or `get_price`, the call is sealed into `ledger.
 
 ## What gets recorded
 
-Each tool call is sealed into an **Agent Action Capsule**: a small signed JSON record
-committing to what the agent did, not what it said. It carries digests of the tool input and
+Each tool call is sealed into an **Agent Action Capsule**: a small content-addressed JSON
+record committing to what the agent did, not what it said. It carries digests of the tool input and
 output, the verdict (`executed` / `blocked`), and — when a call chains to a prior one — a
 `chain.parent_capsule_id` link. The raw tool input/output never leaves the process; only their
 SHA-256 digests are committed into the capsule.
