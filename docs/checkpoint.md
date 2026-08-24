@@ -33,13 +33,14 @@ stream automatically:
   what keeps `import capsule_emit` (and a single below-cadence `emit()`
   call) exactly as cheap as before this default flipped on.
 
-**First-use notice.** The first time a checkpoint actually goes out over the
-network for a process (not merely because witnessing is nominally on — the
-default cadence is 100 entries, so a short-lived process may never trigger
-one), `capsule-emit` prints one line to stderr, once: what's sent (a 32-byte
-digest, structurally incapable of carrying capsule content), where (the
-resolved endpoint(s)), and how to turn it off. It never prints a second time
-in the same process.
+**First-use notice.** `capsule-emit` prints one line to stderr, once per
+process, at the first `emit()`/`seal()` call where witnessing is enabled —
+before the first byte ever leaves the process, not gated on a checkpoint
+actually being due (the default cadence is 100 entries, so a short-lived
+process might otherwise never trigger one and never see the notice). It
+states what will be sent (a 32-byte digest, structurally incapable of
+carrying capsule content), where (the resolved endpoint(s)), and how to turn
+it off. It never prints a second time in the same process.
 
 **Turning it off:**
 
