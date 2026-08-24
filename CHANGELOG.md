@@ -6,6 +6,25 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — `status` CLI verb (O16 audit item 17, "status's fetch-fold")
+
+**What changed.** No `status` verb existed at all (confirmed against `cli.py`'s actual
+subparser list), and there was no separate `fetch` verb either. `capsule-emit status
+<ledger> [--offline] [--json]` is net-new (`capsule_emit/status.py`): it reports each
+checkpoint's ladder rung (`self-attested` / `witnessed`, via O16-11's `grade()`), and two
+honest lag numbers — records awaiting the next checkpoint (sealed capsules, and a
+checkpoint's own not-yet-covered stamp entry, past the latest checkpoint's covered leaf
+count per O16-16) and checkpoints still awaiting a witness stamp (persisted checkpoints
+graded `self-attested`). Unless `--offline`, it makes exactly one read-only network
+call — a GET of the Transparency Service's public key to independently re-confirm the
+latest checkpoint's already-held witness receipt(s) (`verify_receipt_offline`); it never
+re-registers a self-attested checkpoint to obtain a new stamp, since that would write a
+new TS log entry — writes belong to `push`, not to a read verb. This folds the audit's
+"fetch" concept into `status` per the frozen surface's read-verb table, matching every
+other read verb's "reads never write" rule.
+
+See `tests/test_status.py` and `docs/checkpoint.md`'s "Checking status" section.
+
 ### Added — checkpoint grade: self-attested / witnessed (O16 audit item 11, "Multi-witness any-of grading")
 
 **What changed.** `CheckpointRecord` gains a `grade()` method and a new `Grade` enum

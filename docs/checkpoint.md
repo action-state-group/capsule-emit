@@ -171,6 +171,34 @@ read the raw file, stamps included — that's what the checkpoint layer's own
 MMR indexing (`capsule_emit.witness._JsonlLogSource.scan`) does, so stamp
 entries are indexed as leaves too.
 
+## Checking status — `capsule-emit status`
+
+```bash
+capsule-emit status ./ledger.jsonl              # renders text, re-checks the latest witness receipt
+capsule-emit status ./ledger.jsonl --offline    # local-only, no network call
+capsule-emit status ./ledger.jsonl --json       # machine-readable
+```
+
+`status` answers, from the ledger alone: how many capsules are sealed, how
+many checkpoints exist and each one's ladder rung (`self-attested` /
+`witnessed` — `CheckpointRecord.grade()`), and two honest lag numbers —
+**records awaiting the next checkpoint** (sealed capsules, and a
+checkpoint's own not-yet-covered stamp entry, past the latest checkpoint's
+covered leaf count) and **checkpoints awaiting a witness stamp** (persisted
+checkpoints still graded `self-attested`).
+
+This is the CLI's read-verb family (`log`, `status`, `show`, `bundle`,
+`disclose`, `verify`): **reads never write.** Unless `--offline` is given,
+`status` makes exactly one kind of network call — a read-only GET of a
+Transparency Service's public key (`capsule_emit.checkpoint
+.verify_receipt_offline`) to independently re-confirm a witness receipt the
+ledger *already* holds for its latest checkpoint. It never re-registers a
+self-attested checkpoint to try to obtain a new stamp — that would create a
+new Transparency Service log entry, i.e. a write, and `push` (which forces
+a *new* checkpoint), not `status`, is where writes belong. `--offline`
+skips even the read-only re-check and reports only what the ledger already
+records.
+
 ## Registration is opt-in, always — for direct/manual use of this API
 
 `CheckpointConfig.ts_urls` defaults to an **empty list** — nothing is
