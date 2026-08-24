@@ -52,21 +52,29 @@ see ``capsule_emit.checkpoint.emit``). No capsule content, no capsule_id list,
 no ledger path, ever leaves the process -- same posture as the anchor.
 
 **Signing (checkpoint layer only -- this is NOT capsule content signing).**
-No external key management is required to get the default path working: an
-ephemeral HMAC-SHA256 key is generated once per ledger path, in-process
-(:class:`_AutoSigner`). It is good enough for what the default path's own
-checkpoint chain needs (rollback/consistency self-detection across the
-*lifetime of one process*) but is not persisted, so it does not survive a
-process restart and is not suitable for a deployment that wants a stable,
-externally-attributable signing identity -- that caller should use
-``capsule_emit.checkpoint``'s primitives directly with their own
-:class:`~capsule_emit.checkpoint.Signer`. **This signer only ever signs MMR
-checkpoint digests, never capsule content.** Every capsule's own content is
-signed separately and unconditionally, by a persisted (not ephemeral) local
-keypair, at ``seal()`` time -- see ``capsule_emit.signing`` and
-``docs/anatomy.md``. The two signers are deliberately independent: this
-module still works with nothing configured even though capsule-level
-signing now always runs.
+No extra key management is required to get the default path working: since
+0.5.0's checkpoint-signer precondition, a checkpoint is signed by the SAME
+persisted Ed25519 identity that signs capsule content -- resolved via
+``capsule_emit.signing.resolve_signer`` with the identical precedence
+``seal()`` uses (an explicit ``signer=`` object, else ``signing_key_path=``,
+else ``CAPSULE_SIGNING_KEY_PATH``, else a key file next to the ledger). A
+checkpoint signed in one process therefore verifies in a later one -- the
+persisted key survives a restart, unlike this module's old default,
+:class:`_AutoSigner` (ephemeral, in-process HMAC-SHA256, regenerated every
+process -- retired from the default path because a checkpoint signed with it
+could never be verified again once that process exited). ``_AutoSigner``
+stays defined for direct, explicit use (e.g. a test double that wants a
+signer with zero filesystem footprint); nothing in the default ``emit()``
+path reaches for it anymore. **The checkpoint signer only ever signs MMR
+checkpoint digests, never capsule content** -- see
+:class:`_PersistedCheckpointSigner`, the thin adapter that lets a
+``capsule_emit.signing.Signer`` (atomic ``sign(bytes) -> (signature,
+key_id)``) satisfy the checkpoint layer's own ``Signer`` protocol (a static
+``key_id`` attribute plus ``sign(digest_hex) -> str``). The two call sites
+remain independent modules for the same reason as before: this one still
+works with nothing configured even though capsule-level signing now always
+runs -- they merely resolve to the same key by default now, instead of two
+unrelated ones.
 
 **Off switch.** ``emit(..., witness=False)`` or the ``CAPSULE_WITNESS=off``
 env var (checked only when the ``witness`` kwarg is left at its default,
@@ -105,6 +113,8 @@ import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from . import signing as _signing
 
 __all__ = [
     "maybe_checkpoint",
@@ -237,8 +247,12 @@ def _print_first_use_notice_once(urls: list[str]) -> None:
 
 
 class _AutoSigner:
-    """Zero-config default checkpoint signer -- see the module docstring's
-    "Signing" section for what this does and does not provide."""
+    """Ephemeral, in-process HMAC-SHA256 checkpoint signer -- RETIRED from the
+    default checkpoint path (see the module docstring's "Signing" section):
+    its secret is never persisted, so a checkpoint it signs cannot be
+    verified once the process that produced it exits. Kept only as an
+    explicit opt-in test double for a caller that wants a signer with zero
+    filesystem footprint."""
 
     def __init__(self, key_id: str) -> None:
         self.key_id = key_id
@@ -246,6 +260,24 @@ class _AutoSigner:
 
     def sign(self, digest_hex: str) -> str:
         return hmac.new(self._secret, digest_hex.encode("ascii"), hashlib.sha256).hexdigest()
+
+
+class _PersistedCheckpointSigner:
+    """Adapts a ``capsule_emit.signing.Signer`` (frozen §7d: atomic
+    ``sign(bytes) -> (signature, key_id)``) to the checkpoint layer's own
+    ``Signer`` protocol (a static ``key_id`` attribute plus
+    ``sign(digest_hex) -> str``, see ``capsule_emit.checkpoint.emit.Signer``)
+    -- this is what lets the default checkpoint path sign with the SAME
+    persisted Ed25519 identity ``seal()`` uses for capsule content, instead
+    of :class:`_AutoSigner`'s ephemeral per-process key."""
+
+    def __init__(self, signing_signer: _signing.Signer) -> None:
+        self._signing_signer = signing_signer
+        self.key_id = signing_signer.key_id
+
+    def sign(self, digest_hex: str) -> str:
+        signature_hex, _key_id = self._signing_signer.sign(digest_hex.encode("ascii"))
+        return signature_hex
 
 
 @dataclass(frozen=True)
@@ -345,18 +377,28 @@ def _resolve_key(ledger_path: str) -> str:
     return str(Path(ledger_path).resolve())
 
 
-def _get_state(ledger_path: str) -> _WitnessState:
+def _get_state(ledger_path: str, signer: _signing.Signer | None = None) -> _WitnessState:
     """Only ever called once a checkpoint is actually due -- this is the one
-    place that imports ``capsule_emit.checkpoint``."""
+    place that imports ``capsule_emit.checkpoint``.
+
+    ``signer`` is the already-resolved ``capsule_emit.signing.Signer``
+    ``core.emit()`` just signed this capsule with (same key resolution as
+    ``seal()``: ``signer=``/``signing_key_path=``/env/per-ledger default) --
+    passed through so the checkpoint layer signs with the identical
+    persisted identity instead of resolving (and potentially caching) a
+    second one. When omitted (a caller driving ``maybe_checkpoint`` directly)
+    it is resolved here, against this same ``ledger_path``, with that same
+    precedence."""
     from .checkpoint import MmrLedger
 
     key = _resolve_key(ledger_path)
     with _state_lock:
         state = _states.get(key)
         if state is None:
+            resolved_signer = signer if signer is not None else _signing.resolve_signer(ledger_path)
             state = _WitnessState(
                 mmr=MmrLedger(_JsonlLogSource(ledger_path)),
-                signer=_AutoSigner(f"capsule-emit-auto/{secrets.token_hex(4)}"),
+                signer=_PersistedCheckpointSigner(resolved_signer),
                 log_id=key,
             )
             _states[key] = state
@@ -457,6 +499,7 @@ def maybe_checkpoint(
     enabled: bool | None = None,
     cadence_entries: int | None = None,
     cadence_seconds: float | None = None,
+    signer: _signing.Signer | None = None,
 ) -> None:
     """Call once per ``emit()``, after the capsule is appended to the ledger.
 
@@ -475,6 +518,14 @@ def maybe_checkpoint(
     ``ts_url`` accepts a single endpoint or several (a list, or a
     comma-separated string) -- the due checkpoint is registered with every
     endpoint named, independently (see :func:`_parse_witness_urls`).
+
+    ``signer`` is the ``capsule_emit.signing.Signer`` already resolved for
+    this ``ledger_path`` (``core.emit()`` passes the same object it just
+    signed the capsule with); omitted, it is resolved here against
+    ``ledger_path`` with the same precedence -- see :func:`_get_state`. Only
+    consulted the first time a given ``ledger_path`` actually reaches its
+    checkpoint-due state (the resolved signer is then cached on that
+    ledger's :class:`_WitnessState` for every checkpoint after).
 
     Prints the one-time first-use notice (see :func:`_print_first_use_notice_once`)
     on the first call where witnessing is enabled -- before the cadence check,
@@ -519,7 +570,7 @@ def maybe_checkpoint(
 
     # Only now -- once a checkpoint is actually due -- does this touch the
     # MMR-bearing state, which is what imports capsule_emit.checkpoint.
-    state = _get_state(ledger_path)
+    state = _get_state(ledger_path, signer)
 
     def _worker() -> None:
         try:

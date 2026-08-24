@@ -674,7 +674,9 @@ def _emit_capsule(
         witness_endpoint=witness_endpoint,
     )
 
-    _witness.maybe_checkpoint(os.fspath(ledger), ts_url=witness_endpoint, enabled=witness)
+    _witness.maybe_checkpoint(
+        os.fspath(ledger), ts_url=witness_endpoint, enabled=witness, signer=signer_obj
+    )
 
     capsule_id = capsule["capsule_id"]
     anchored = False
