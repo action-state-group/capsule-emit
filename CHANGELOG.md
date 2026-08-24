@@ -6,6 +6,43 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — checkpoint/witness stamps are now persisted ledger entries (O16 audit item 16, "Stamp-as-log-entry")
+
+**What changed.** Previously, once `capsule_emit.witness`'s default checkpoint/witness
+wiring built and registered a checkpoint, the returned `WitnessRecord`(s) were attached
+only via `cp.witnesses.append(...)` — an in-memory mutation of a `CheckpointRecord` that
+was never itself written anywhere; a process restart discarded it. Now every checkpoint
+`capsule_emit.witness` builds (witnessed or, if every endpoint failed, still
+self-attested) is written back into the *same ledger it covers* as its own JSONL entry —
+`{"kind": "checkpoint_stamp", "v": 1, "capsule_id": <checkpoint.entry_digest()>,
+"checkpoint": {...}}` — through the same `capsule_emit.ledger.append_to_ledger` every
+capsule already goes through. That entry becomes an MMR leaf the *next* checkpoint's
+`mmr.sync()` folds in, so checkpoint N's stamp is genuinely covered by checkpoint N+1,
+matching the frozen v4 surface's §2.3: "the stamp does land as its own log entry ...
+checkpoint N's stamp is covered by checkpoint N+1."
+
+**Leaf coverage (PM gate ruling 2026-08-24).** The leaf commits to the checkpoint entry
+AS PERSISTED — signature and witnesses included — via the new
+`CheckpointRecord.entry_digest()`, not `CheckpointRecord.digest()` (the signing-body-only
+value registered with the TS, unchanged for that purpose). Flipping or deleting a byte of
+a persisted stamp's `witnesses` now changes its leaf and breaks the covering checkpoint's
+root; see `test_tampering_with_persisted_stamp_witnesses_breaks_inclusion_under_the_covering_root`.
+
+**Read-path compatibility.** `capsule_emit.ledger.read_ledger` filters checkpoint-stamp
+entries out by default, so every existing capsule-only consumer (the CLI, `ledger.view` /
+`view_chains` / `show`, `server`, `permalink`, `approval`, `holds`) keeps seeing exactly
+the capsule stream it always has. `capsule_emit.ledger.read_ledger_entries` returns the
+raw file, stamps included — `capsule_emit.witness._JsonlLogSource.scan` now uses this so
+the checkpoint layer's own MMR indexes stamp entries as leaves too.
+
+**Foundational.** Audit items 5 (idle-silence's stamp-exclusion leg), 11 (multi-witness
+grading), 14 (`bundle`), and 17 (`status`) depend on stamp entries existing in the log at
+all. Stamp entries never advance `witness.maybe_checkpoint`'s cadence/idle counter — they
+are written directly via `append_to_ledger`, not through `core.emit()`.
+
+See `tests/test_witness_stamp_persistence.py` and `docs/checkpoint.md`'s new
+"Checkpoint/stamp persistence" section.
+
 ## [0.5.0] — 2026-08-23
 
 ### Added — BREAKING (capsule shape): every `seal()`/`carry()`/`compose()` result is now cryptographically signed (O16-13, "Signer protocol seam")

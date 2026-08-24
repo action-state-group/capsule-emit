@@ -106,8 +106,48 @@ Transparency Service (TS) for independent, third-party freshness evidence.
   your own append-only capsule log with inclusion and range proofs.
 - **`emit`** — builds, signs, and (optionally) registers a checkpoint:
   `{log_id, mmr_size, root, prev_size, prev_root, key_id, timestamp,
-  signature}`. `key_id` doubles as a peer identifier when a deployment
+  signature}`, plus `witnesses` once one or more Transparency Services have
+  stamped it. `key_id` doubles as a peer identifier when a deployment
   checkpoints several independent logs (e.g. one per mesh node).
+
+## Checkpoint/stamp persistence — the stamp is a log entry, not just an in-memory field
+
+Since 0.5.0, `capsule_emit.core.emit()`'s default wiring (`capsule_emit.witness`)
+writes every checkpoint it builds — signature, `mmr_size`, and whatever
+`witnesses` it collected — back into the *same ledger it covers*, as its own
+JSONL line:
+
+```json
+{"kind": "checkpoint_stamp", "v": 1, "capsule_id": "<checkpoint.entry_digest()>",
+ "checkpoint": {"v": 1, "kind": "mmr_checkpoint", "log_id": "...",
+                "mmr_size": 100, "root": "...", "prev_size": 0,
+                "prev_root": "", "key_id": "...", "timestamp": "...",
+                "signature": "...", "witnesses": [...]}}
+```
+
+This is not a re-issue of any capsule and does not change any capsule's
+`capsule_id` — it is a distinct entry that becomes an MMR leaf the *next*
+checkpoint's `mmr.sync()` folds in. The leaf is addressed by
+`CheckpointRecord.entry_digest()` — a hash over the *entire* persisted entry
+(`to_dict()`: signing body, `signature`, and `witnesses` alike) — not
+`CheckpointRecord.digest()` (the signing-body-only value registered with the
+TS). That is what "checkpoint N's stamp is covered by checkpoint N+1" means
+in practice: the history carries the evidence of its own witnessing, so
+flipping or deleting a byte of a persisted stamp's `witnesses` changes its
+leaf and breaks the covering checkpoint's root, rather than that evidence
+living only in the `CheckpointRecord.witnesses` list of a process-local
+object a restart discards. Stamp entries never wake the cadence/idle
+timer — they aren't written through `core.emit()`, so they never touch
+`witness.maybe_checkpoint`'s per-`emit()`-call counter.
+
+`kind`/`v` are the entry's format-version marker: `capsule_emit.ledger.read_ledger`
+filters `checkpoint_stamp` entries out by default, so every capsule-only
+consumer (the CLI, `ledger.view`/`view_chains`/`show`, `server`, `permalink`,
+`approval`, `holds`) keeps seeing exactly the capsule stream it always has,
+unaffected by this change. Use `capsule_emit.ledger.read_ledger_entries` to
+read the raw file, stamps included — that's what the checkpoint layer's own
+MMR indexing (`capsule_emit.witness._JsonlLogSource.scan`) does, so stamp
+entries are indexed as leaves too.
 
 ## Registration is opt-in, always — for direct/manual use of this API
 

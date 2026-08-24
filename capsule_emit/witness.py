@@ -221,9 +221,13 @@ class _JsonlLogSource:
         self._path = path
 
     def scan(self, query: Any = None):
-        from .ledger import read_ledger
+        from .ledger import read_ledger_entries
 
-        for i, record in enumerate(read_ledger(self._path), start=1):
+        # The raw, unfiltered file -- checkpoint-stamp records included -- so
+        # a stamp this module persists (see ``_build_and_register``) is
+        # itself indexed as an MMR leaf and ends up covered by the *next*
+        # checkpoint, same as any capsule.
+        for i, record in enumerate(read_ledger_entries(self._path), start=1):
             yield _Rec(seq=i, capsule_id=record["capsule_id"])
 
     def append(self, capsule: dict, *, consequential: bool = True) -> Any:
@@ -309,6 +313,44 @@ def _get_state(ledger_path: str) -> _WitnessState:
         return state
 
 
+def _persist_checkpoint_stamp(cp: Any, ledger_path: str) -> None:
+    """Write ``cp`` (with whatever ``WitnessRecord`` s it collected) back into
+    its own ledger as a checkpoint-stamp entry -- see ``ledger.py``'s module
+    docstring for the shape and why. Never called before ``cp.witnesses`` is
+    final for this round: once written, the entry is immediately eligible to
+    be folded into the MMR by the next ``state.mmr.sync()``, so writing it
+    mid-registration could let a later witness append race an already-synced
+    read of ``cp.witnesses`` elsewhere.
+
+    Best-effort: a failure to persist the stamp must not raise into
+    ``emit()`` (this already runs on the fire-and-forget witness thread) --
+    it only means this checkpoint's evidence-of-witnessing isn't itself
+    logged; the checkpoint and any COSE receipts already obtained are
+    unaffected.
+    """
+    from .ledger import CHECKPOINT_STAMP_KIND, append_to_ledger
+
+    entry = {
+        "kind": CHECKPOINT_STAMP_KIND,
+        "v": 1,
+        # entry_digest(), not digest(): the leaf this entry becomes must
+        # commit to the FULL persisted checkpoint -- signature and
+        # witnesses included -- not just the signing body. See
+        # CheckpointRecord.entry_digest()'s docstring.
+        "capsule_id": cp.entry_digest(),
+        "checkpoint": cp.to_dict(),
+    }
+    try:
+        append_to_ledger(entry, ledger_path)
+    except OSError as exc:  # noqa: BLE001 -- fire-and-forget, never raises into emit()
+        warnings.warn(
+            f"capsule-emit: failed to persist checkpoint stamp for log_id="
+            f"{cp.log_id!r} mmr_size={cp.mmr_size} to {ledger_path!r}: {exc}",
+            RuntimeWarning,
+            stacklevel=1,
+        )
+
+
 def _build_and_register(state: _WitnessState, ts_urls: list[str]) -> None:
     from .checkpoint import (
         DEFAULT_TS_URL,
@@ -349,6 +391,15 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str]) -> None:
                 RuntimeWarning,
                 stacklevel=1,
             )
+
+    # Persist the finished checkpoint (witnessed or, if every endpoint
+    # failed above, still self-attested) as its own log entry -- it becomes
+    # a leaf ``state.mmr.sync()`` folds in on the *next* due cycle, so the
+    # next checkpoint's root genuinely covers this one's stamp. Written
+    # regardless of registration outcome: even a self-attested checkpoint is
+    # history worth logging, and item 5's idle-silence/stamp-exclusion rule
+    # (audit item 5) depends on stamp entries existing in the log at all.
+    _persist_checkpoint_stamp(cp, state.log_id)
 
 
 def maybe_checkpoint(

@@ -240,6 +240,24 @@ class CheckpointRecord:
         """
         return hashlib.sha256(self.signing_body().encode()).hexdigest()
 
+    def entry_digest(self) -> str:
+        """64-char lowercase hex: sha256 of the FULL persisted entry --
+        ``to_dict()`` (signing body, ``signature``, and ``witnesses`` alike),
+        canonical JSON, ``sort_keys=True``.
+
+        This -- not ``digest()`` -- is the value the checkpoint's own ledger
+        stamp commits to the MMR as (see ``capsule_emit.witness
+        ._persist_checkpoint_stamp``): the stamp's leaf must cover the entry
+        AS PERSISTED, including ``witnesses``, so that flipping or deleting a
+        byte in a persisted stamp's ``witnesses`` changes this leaf and
+        breaks the covering checkpoint's root. ``digest()`` deliberately
+        excludes ``signature``/``witnesses`` (it is the value the signature
+        itself covers, and what is registered with the TS) and stays
+        unchanged for that purpose.
+        """
+        body = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(body.encode()).hexdigest()
+
     def to_dict(self) -> dict:
         d = {
             "v": self.v,
