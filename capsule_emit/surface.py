@@ -108,7 +108,14 @@ def _carried_artifact_ref(capsule: Capsule) -> dict[str, Any] | None:
     )
 
 
-def seal(payload: Any, *, action: str = "seal", **kwargs: Any) -> Capsule:
+#: Sentinel distinguishing "caller did not pass action" from "caller passed
+#: action='seal' explicitly" — seal()'s carried-Capsule pass-through path
+#: (below) must reject an explicit action just as it rejects any other outer
+#: option, so the default cannot be the literal string "seal".
+_ACTION_UNSET = object()
+
+
+def seal(payload: Any, *, action: Any = _ACTION_UNSET, **kwargs: Any) -> Capsule:
     """Mint a capsule you authored. The canonical line: ``capsule = seal(payload)``.
 
     Wraps the internal ``_emit_capsule`` primitive — *payload* is sealed as
@@ -116,16 +123,25 @@ def seal(payload: Any, *, action: str = "seal", **kwargs: Any) -> Capsule:
     process). Any keyword the primitive accepts (``operator``,
     ``developer``, ``model``, ``effect``, ...) may be passed through.
 
-    **Dispatch is never guessed.** Raw ``bytes``/``bytearray`` are always
-    refused — undeclared foreign bytes are ambiguous (content you authored,
-    or someone else's signed artifact?) and the error names the fix:
-    ``seal(received(bytes, type=...))``. A :data:`Capsule` already produced
-    by ``received()``/``carry()`` (detected by its ``carried_artifact``
-    field) is passed through unchanged rather than re-sealed — this is the
-    nested-in-``seal()`` dispatch form, and it is byte-identical to calling
-    ``received()`` standalone.
+    **Dispatch is never guessed.** Raw ``bytes``/``bytearray``/``memoryview``
+    are always refused — undeclared foreign bytes are ambiguous (content you
+    authored, or someone else's signed artifact?) and the error names the
+    fix: ``seal(received(bytes, type=...))``. A :data:`Capsule` already
+    produced by ``received()``/``carry()`` (detected by its
+    ``carried_artifact`` field) is passed through unchanged rather than
+    re-sealed — this is the nested-in-``seal()`` dispatch form, and it is
+    byte-identical to calling ``received()`` standalone.
+
+    **Outer options on an already-carried Capsule are rejected, not
+    dropped.** ``received()``/``carry()`` already ran ``_emit_capsule`` (and
+    so already fixed the ledger, signer, and witness disposition) by the
+    time ``seal()`` sees the result — any ``ledger=``/``signing_key_path=``/
+    ``witness=``/``action=``/other keyword passed to this outer ``seal()``
+    call would be silently thrown away, which for ``witness=False``
+    specifically means witnessing could fire despite an explicit opt-out.
+    Pass those options to ``received()``/``carry()`` itself instead.
     """
-    if isinstance(payload, (bytes, bytearray)):
+    if isinstance(payload, (bytes, bytearray, memoryview)):
         raise TypeError(
             "seal() does not accept raw bytes as payload — undeclared foreign "
             "bytes are always ambiguous (content you authored, or someone "
@@ -134,12 +150,29 @@ def seal(payload: Any, *, action: str = "seal", **kwargs: Any) -> Capsule:
             "seal(received(bytes, type=...))."
         )
     if isinstance(payload, EmitResult) and _carried_artifact_ref(payload) is not None:
+        offending = sorted(kwargs) + (["action"] if action is not _ACTION_UNSET else [])
+        if offending:
+            raise TypeError(
+                "seal() was called on an already-carried Capsule (from "
+                f"received()/carry()) together with outer option(s) {offending} "
+                "— seal() only passes such a Capsule through unchanged, so "
+                "these options would be silently dropped, and witness=False "
+                "specifically could be silently ignored, arming witnessing "
+                "despite an explicit opt-out. Pass ledger / signing_key_path / "
+                "witness / action / etc. to received()/carry() itself instead: "
+                "received(bytes, type=..., ledger=..., witness=False)."
+            )
         return payload
-    return _emit_capsule(action, agent_input=payload, **kwargs)
+    resolved_action = "seal" if action is _ACTION_UNSET else action
+    return _emit_capsule(resolved_action, agent_input=payload, **kwargs)
 
 
 def _carry(
-    artifact_bytes: bytes | bytearray | str, *, carried_type: str, action: str, kwargs: dict[str, Any]
+    artifact_bytes: bytes | bytearray | memoryview | str,
+    *,
+    carried_type: str,
+    action: str,
+    kwargs: dict[str, Any],
 ) -> Capsule:
     """Shared carry mechanism behind ``carry()`` and ``received()``.
 
@@ -153,8 +186,28 @@ def _carry(
     ``SHA-256(JCS(agent_input))`` over a JSON-native value; a carried artifact
     is opaque bytes that must never be JCS-reinterpreted, so it gets its own,
     equally-raw digest field instead.
+
+    **No implicit buffer coercion.** ``bytes(value)`` accepts far more than
+    "an explicit buffer" — ``bytes(7)`` NUL-pads to 7 bytes, ``bytes(True)``
+    becomes a single ``\\x01`` byte, ``bytes([1, 2, 3])`` treats a list of
+    ints as a byte sequence — and every one of those silently commits the
+    capsule to bytes the caller never actually transmitted. Only ``str`` (utf-8
+    encoded) and explicit buffer types (``bytes``/``bytearray``/``memoryview``)
+    are accepted; anything else is a caller error, raised rather than guessed.
     """
-    raw = artifact_bytes.encode("utf-8") if isinstance(artifact_bytes, str) else bytes(artifact_bytes)
+    if isinstance(artifact_bytes, str):
+        raw = artifact_bytes.encode("utf-8")
+    elif isinstance(artifact_bytes, (bytes, bytearray, memoryview)):
+        raw = bytes(artifact_bytes)
+    else:
+        raise TypeError(
+            "received()/carry() artifact_bytes must be str (utf-8 encoded) or "
+            "an explicit buffer (bytes/bytearray/memoryview) — got "
+            f"{type(artifact_bytes).__name__}. Implicit coercions like "
+            "bytes(some_int) or bytes(list_of_ints) would commit the capsule "
+            "to bytes the caller never actually transmitted, so they are "
+            "refused rather than guessed at."
+        )
     carried_digest = hashlib.sha256(raw).hexdigest()
     carried_ref = {
         "type": carried_type,
@@ -167,7 +220,7 @@ def _carry(
     return _emit_capsule(action, extra_compute=extra_compute, **kwargs)
 
 
-def carry(receipt_bytes: bytes | bytearray | str, *, action: str = "carry", **kwargs: Any) -> Capsule:
+def carry(receipt_bytes: bytes | bytearray | memoryview | str, *, action: str = "carry", **kwargs: Any) -> Capsule:
     """Bring in a foreign, already-signed artifact, bound as-transmitted.
 
     *receipt_bytes* is someone else's already-signed record — it is committed
@@ -185,7 +238,9 @@ def carry(receipt_bytes: bytes | bytearray | str, *, action: str = "carry", **kw
     return _carry(receipt_bytes, carried_type=_CARRIED_TYPE, action=action, kwargs=kwargs)
 
 
-def received(artifact_bytes: bytes | bytearray | str, *, type: str, action: str = "carry", **kwargs: Any) -> Capsule:
+def received(
+    artifact_bytes: bytes | bytearray | memoryview | str, *, type: str, action: str = "carry", **kwargs: Any
+) -> Capsule:
     """Bring in a foreign, already-signed artifact under its own declared type.
 
     *artifact_bytes* is someone else's already-signed record — committed by
@@ -193,7 +248,9 @@ def received(artifact_bytes: bytes | bytearray | str, *, type: str, action: str 
     re-canonicalization; that would silently reinterpret bytes you did not
     sign). *type* is the artifact's own registered CPB type (e.g.
     ``"machine-mandate"``) — declared by the caller, never guessed, and never
-    re-signed.
+    re-signed. Must be a non-empty string; a null/empty/non-string *type*
+    would mint a signed capsule with a null, absent, or wrong committed type
+    after jcs-normalization, so it is rejected rather than minted.
 
     **Two dispatch forms, one result.** Called directly —
     ``effect = received(bytes, type=...)`` — this performs the carry now and
@@ -206,6 +263,13 @@ def received(artifact_bytes: bytes | bytearray | str, *, type: str, action: str 
     ambiguity between "content I authored" and "bytes someone else signed"
     is never guessed.
     """
+    if not isinstance(type, str) or not type:
+        raise TypeError(
+            f"received() requires type to be a non-empty string naming the "
+            f"artifact's own registered CPB type (e.g. type=\"machine-mandate\") "
+            f"— got {type!r}. A null/empty/non-string type would mint a signed "
+            "capsule with a null, absent, or wrong committed type."
+        )
     return _carry(artifact_bytes, carried_type=type, action=action, kwargs=kwargs)
 
 
