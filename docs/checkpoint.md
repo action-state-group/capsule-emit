@@ -75,6 +75,28 @@ endpoint (or add more) with `emit(..., witness_url=...)` or
 `CAPSULE_WITNESS_CADENCE_ENTRIES=…` and the age-based cadence with
 `CAPSULE_WITNESS_CADENCE_SECONDS=…`.
 
+### Kill switch scope (O16-03)
+
+**`witness=False` / `CAPSULE_WITNESS=off` is ONE switch that zeroes ALL
+egress, not just the checkpoint stream.** It also gates:
+
+- **`status`'s stamp-fetch** — the read-only GET that independently
+  re-confirms a witness receipt (see [Checking status](#checking-status---capsule-emit-status)
+  below). It skips this network call whenever the kill switch is set, even
+  if you didn't also pass `--offline` — `status ./ledger.jsonl` on a process
+  with `CAPSULE_WITNESS=off` never touches the network, full stop.
+- **The legacy anchor channel** — even if it was explicitly re-enabled via
+  `anchor=True` / `CAPSULE_ANCHOR=legacy-on` (see
+  [`docs/why-anchoring.md`](why-anchoring.md#in-practice)), the witness kill
+  switch overrides it. An `anchor=True, witness=False` call never dispatches
+  the legacy channel.
+
+This is what makes the **local-only posture** (turning witnessing off) an
+honest, absolute "nothing leaves this process" guarantee rather than one
+that a separately-configured legacy channel or a `status` call could quietly
+poke a hole in. A no-network test in CI asserts zero egress across all three
+paths simultaneously.
+
 **What trust tier this reaches — be precise.** A single-TS default checkpoint
 is **witnessed (single witness)**: it upgrades the stream from
 *self-attested* to third-party-checkable — the witness vouches that the
@@ -202,7 +224,10 @@ self-attested checkpoint to try to obtain a new stamp — that would create a
 new Transparency Service log entry, i.e. a write, and `push` (which forces
 a *new* checkpoint), not `status`, is where writes belong. `--offline`
 skips even the read-only re-check and reports only what the ledger already
-records.
+records. So does `CAPSULE_WITNESS=off` (the kill switch, see
+[Kill switch scope](#kill-switch-scope-o16-03) above) — a witness-disabled
+process reports each witness as `unconfirmed (witness disabled)` and never
+attempts the GET, whether or not `--offline` was also given.
 
 ## Bundle — the hand-to-anyone artifact (O16 audit item 14)
 

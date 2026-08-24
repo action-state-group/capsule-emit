@@ -18,6 +18,14 @@ Transparency Service's public key (``capsule_emit.checkpoint
 the ledger *already* holds. It never registers a *new* stamp for a
 self-attested checkpoint -- that is a write (it creates a TS log entry),
 and ``push`` -- not ``status`` -- is the verb that writes checkpoints.
+
+**O16-03: the witness kill switch also gates this fetch.** ``--offline`` is
+one way to skip the re-check; ``witness=False`` / ``CAPSULE_WITNESS=off`` is
+the other, and it applies here even without ``--offline`` -- the kill switch
+is meant to be a single, absolute "zero network egress" guarantee (frozen
+surface §1a.3, "local-only"), and a `status` call that quietly re-opened a
+network path around it would violate that. See ``docs/checkpoint.md``'s
+"Kill switch scope" section.
 """
 from __future__ import annotations
 
@@ -61,6 +69,7 @@ def compute_status(path: str, *, offline: bool = False) -> dict:
         )
 
     checkpoints_awaiting_stamp = sum(1 for cp in checkpoints if cp.grade() == Grade.SELF_ATTESTED)
+    witnessing_enabled_now = witness.witness_enabled(None)
 
     result: dict[str, Any] = {
         "path": str(path),
@@ -69,15 +78,19 @@ def compute_status(path: str, *, offline: bool = False) -> dict:
         "checkpoint_count": len(checkpoints),
         "records_awaiting_checkpoint": records_awaiting_checkpoint,
         "checkpoints_awaiting_stamp": checkpoints_awaiting_stamp,
-        "witnessing_enabled_now": witness.witness_enabled(None),
+        "witnessing_enabled_now": witnessing_enabled_now,
         "latest_checkpoint": None,
     }
 
     if last_cp is not None:
         witnesses_info = []
+        # O16-03: the kill switch (CAPSULE_WITNESS=off) skips this network
+        # re-check even when --offline was NOT passed -- it is the one
+        # switch that zeroes all egress, not just an alias for --offline.
+        skip_network_recheck = offline or not witnessing_enabled_now
         for w in last_cp.witnesses:
             info: dict[str, Any] = {"ts_url": w.ts_url, "confirmed": None}
-            if not offline:
+            if not skip_network_recheck:
                 from .checkpoint import verify_receipt_offline
 
                 ok, errors = verify_receipt_offline(w, ts_base_url=w.ts_url)
@@ -130,7 +143,9 @@ def render_status(status: dict, *, out: Any = None) -> None:
     if cp is not None and cp["witnesses"]:
         print("\n  witnesses (latest checkpoint):", file=out)
         for w in cp["witnesses"]:
-            if status["offline"]:
+            if not status["witnessing_enabled_now"]:
+                state = "unconfirmed (witness disabled)"
+            elif status["offline"]:
                 state = "unconfirmed (--offline)"
             elif w["confirmed"]:
                 state = "confirmed"

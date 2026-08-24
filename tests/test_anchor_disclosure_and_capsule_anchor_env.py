@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Acceptance tests for [emit-anchor-disclosure-and-endpoint-consolidation],
 updated for [O16-01-02] (per-seal ``anchor=True`` killed as a default /
-single egress channel):
+single egress channel) and [O16-03] (the witness kill switch scopes ALL
+egress, including this legacy channel):
 
 - a first-run disclosure prints to stderr BEFORE the legacy anchor channel's
   network path is dispatched -- verified with a network-mocked first call
@@ -15,6 +16,11 @@ single egress channel):
   old on-values (``"true"``/``"1"``/``"yes"``/unset) no longer enable it --
   only the exact value ``CAPSULE_ANCHOR=legacy-on`` does. An explicit
   ``anchor=`` kwarg always wins over the env var either direction.
+- [O16-03] ``witness=False`` / ``CAPSULE_WITNESS=off`` kills the legacy
+  anchor channel too, even when it is explicitly re-enabled -- so every test
+  below that needs the legacy channel to actually fire now runs with witness
+  ON (it never reaches its own cadence threshold in these single/few-call
+  tests, so this adds no real network path).
 - a missing optional anchor dependency (``scitt_cose`` not installed) is
   reported once, plainly, in the calling thread -- not as a cryptic
   per-capsule ``ModuleNotFoundError`` repr at interpreter shutdown -- when
@@ -77,7 +83,9 @@ def test_disclosure_prints_before_anchor_network_attempt(tmp_path, monkeypatch, 
     (mocked) network call would fire -- fails against the pre-fix code path,
     passes once the disclosure is moved ahead of the dispatch. The legacy
     anchor channel is off by default as of 0.5.0, so this exercises the
-    explicit ``anchor=True`` opt-in."""
+    explicit ``anchor=True`` opt-in -- with witness explicitly ON, since
+    O16-03 makes the legacy channel additionally subject to the witness kill
+    switch (see ``test_witness_off_kills_legacy_anchor_...`` below)."""
     calls = []
 
     def fake_async_anchor(capsule_id, *, ts_url=None, **kw):
@@ -90,14 +98,13 @@ def test_disclosure_prints_before_anchor_network_attempt(tmp_path, monkeypatch, 
     monkeypatch.setattr(core, "async_anchor", fake_async_anchor)
 
     seal(
-        {"x": 1}, action="test", operator="acme", anchor=True, witness=False,
+        {"x": 1}, action="test", operator="acme", anchor=True, witness=True,
         ledger=str(tmp_path / "ledger.jsonl"),
     )
 
     assert len(calls) == 1
     err = capsys.readouterr().err
     assert "ANCHOR:" in err
-    assert "WITNESS:" not in err  # witness=False on this call
     assert "capsule_id" not in err.split("ANCHOR:")[0]  # sanity: notice text, not a warning
 
 
@@ -105,9 +112,9 @@ def test_disclosure_prints_at_most_once_per_process(tmp_path, monkeypatch, capsy
     monkeypatch.setattr(core, "async_anchor", lambda *a, **kw: _fake_future())
     ledger = str(tmp_path / "ledger.jsonl")
 
-    seal({"x": 1}, action="a", operator="acme", anchor=True, witness=False, ledger=ledger)
+    seal({"x": 1}, action="a", operator="acme", anchor=True, witness=True, ledger=ledger)
     capsys.readouterr()  # drain first notice
-    seal({"x": 2}, action="b", operator="acme", anchor=True, witness=False, ledger=ledger)
+    seal({"x": 2}, action="b", operator="acme", anchor=True, witness=True, ledger=ledger)
 
     err = capsys.readouterr().err
     assert "ANCHOR:" not in err, "the disclosure must print at most once per process"
@@ -143,14 +150,38 @@ def test_no_disclosure_and_no_anchor_call_by_default(tmp_path, monkeypatch, caps
 
 
 def test_disclosure_mentions_only_the_active_path(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(core, "async_anchor", lambda *a, **kw: _fake_future())
+    """Anchor stays off by default, so witness-only (the 0.5.0 default) is
+    the achievable "only one path active" case -- the reverse, anchor active
+    with witness off, is now structurally impossible per O16-03 (the witness
+    kill switch also gates the legacy anchor channel)."""
     seal(
-        {"x": 1}, action="test", operator="acme", anchor=True, witness=False,
+        {"x": 1}, action="test", operator="acme",
         ledger=str(tmp_path / "ledger.jsonl"),
     )
     err = capsys.readouterr().err
-    assert "ANCHOR:" in err
-    assert "WITNESS:" not in err
+    assert "WITNESS:" in err
+    assert "ANCHOR:" not in err
+
+
+def test_witness_off_kills_legacy_anchor_even_when_explicitly_enabled(tmp_path, monkeypatch, capsys):
+    """O16-03: the witness kill switch is the ONE switch that zeroes all
+    egress -- including the legacy anchor channel, even when a caller has
+    explicitly re-enabled it via ``anchor=True`` / ``CAPSULE_ANCHOR=legacy-on``.
+    Before this fix, ``witness=False`` alone left anchor egress fully live."""
+    monkeypatch.setenv("CAPSULE_ANCHOR", "legacy-on")
+    monkeypatch.setattr(
+        core, "async_anchor", lambda *a, **kw: pytest.fail("anchor must not be attempted -- witness kill switch is set")
+    )
+    r = seal(
+        {"x": 1}, action="test", operator="acme", anchor=True, witness=False,
+        ledger=str(tmp_path / "ledger.jsonl"),
+    )
+    assert r.anchor_status == "skipped", (
+        "witness=False must kill the legacy anchor channel even with anchor=True + "
+        "CAPSULE_ANCHOR=legacy-on both explicitly set"
+    )
+    err = capsys.readouterr().err
+    assert err == "", "no active network path -- nothing to disclose"
 
 
 # ---------------------------------------------------------------------------
@@ -176,20 +207,26 @@ def test_capsule_anchor_env_non_legacy_values_all_skip_anchor(tmp_path, monkeypa
 
 
 def test_capsule_anchor_legacy_on_value_enables_anchor(tmp_path, monkeypatch):
+    # witness left at its default (on) -- O16-03 makes the legacy channel
+    # additionally subject to the witness kill switch, so witness=False here
+    # would mask what this test is checking (see the dedicated kill-switch
+    # test above).
     monkeypatch.setenv("CAPSULE_ANCHOR", "legacy-on")
     monkeypatch.setattr(core, "async_anchor", lambda *a, **kw: _fake_future())
     r = seal(
-        {"x": 1}, action="test", operator="acme", witness=False,
+        {"x": 1}, action="test", operator="acme",
         ledger=str(tmp_path / "ledger.jsonl"),
     )
     assert r.anchor_status != "skipped", "CAPSULE_ANCHOR=legacy-on must re-enable the legacy anchor channel"
 
 
 def test_explicit_anchor_true_overrides_capsule_anchor_off(tmp_path, monkeypatch):
+    # witness left at its default (on) -- see the comment on
+    # test_capsule_anchor_legacy_on_value_enables_anchor above.
     monkeypatch.setenv("CAPSULE_ANCHOR", "off")
     monkeypatch.setattr(core, "async_anchor", lambda *a, **kw: _fake_future())
     r = seal(
-        {"x": 1}, action="test", operator="acme", anchor=True, witness=False,
+        {"x": 1}, action="test", operator="acme", anchor=True,
         ledger=str(tmp_path / "ledger.jsonl"),
     )
     assert r.anchor_status != "skipped", "an explicit anchor=True kwarg must win over CAPSULE_ANCHOR=off"
@@ -238,7 +275,7 @@ def _missing_scitt_cose(monkeypatch):
 def test_missing_dependency_prints_plain_notice_once(tmp_path, _missing_scitt_cose, capsys):
     ledger = str(tmp_path / "ledger.jsonl")
     for i in range(3):
-        seal({"x": i}, action=f"a{i}", operator="acme", anchor=True, witness=False, ledger=ledger)
+        seal({"x": i}, action=f"a{i}", operator="acme", anchor=True, witness=True, ledger=ledger)
 
     err = capsys.readouterr().err
     assert err.count("the optional SCITT anchor dependency isn't installed") == 1, (
@@ -253,7 +290,7 @@ def test_missing_dependency_does_not_warn_cryptically_at_exit(tmp_path, _missing
     still be pending. Once the plain notice has fired, the atexit sweep must
     not also emit the cryptic per-capsule warning for the same cause."""
     ledger = str(tmp_path / "ledger.jsonl")
-    seal({"x": 1}, action="a", operator="acme", anchor=True, witness=False, ledger=ledger)
+    seal({"x": 1}, action="a", operator="acme", anchor=True, witness=True, ledger=ledger)
     # Give the background worker a moment to fail (fast: import error, no I/O).
     import time
 
@@ -269,7 +306,7 @@ def test_missing_dependency_does_not_warn_cryptically_at_exit(tmp_path, _missing
 
 def test_missing_dependency_never_reports_anchored_true(tmp_path, _missing_scitt_cose):
     r = seal(
-        {"x": 1}, action="a", operator="acme", anchor=True, witness=False, anchor_wait=2.0,
+        {"x": 1}, action="a", operator="acme", anchor=True, witness=True, anchor_wait=2.0,
         ledger=str(tmp_path / "ledger.jsonl"),
     )
     assert r.anchored is False
