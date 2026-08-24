@@ -375,9 +375,14 @@ def _seal_record(record: dict, ledger_path: str, *, signer: Any = None, signing_
     return record
 
 
-def verify_disclosure(d: Disclosure) -> tuple[bool, list[str]]:
+def verify_disclosure(
+    d: Disclosure, *, trust_anchor: dict[str, bytes | str] | None = None
+) -> tuple[bool, list[str]]:
     """Pure, offline, total verification of a standalone :class:`Disclosure`
-    — no reader, no network, never raises.
+    — no reader, no network, never raises. ``trust_anchor``
+    [verify-threestate-trustanchor] is forwarded unchanged to every
+    ``capsule_emit.bundle.verify_bundle`` call below — see that function's
+    docstring for its three-state witness-stamp semantics.
 
     Checks: the disclosure record's own signature
     (``capsule_emit.signing.verify_capsule_signature``); that the record's
@@ -410,7 +415,7 @@ def verify_disclosure(d: Disclosure) -> tuple[bool, list[str]]:
             if b is None:
                 errors.append(f"{cid}: missing bundle")
                 continue
-            ok, berrors = verify_bundle(b)
+            ok, berrors = verify_bundle(b, trust_anchor=trust_anchor)
             if not ok:
                 errors.extend(f"{cid}: {e}" for e in berrors)
 

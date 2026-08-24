@@ -85,6 +85,7 @@ if TYPE_CHECKING:
 __all__ = [
     "CheckpointConfig",
     "Grade",
+    "StampVerdict",
     "WitnessRecord",
     "CheckpointRecord",
     "Signer",
@@ -97,6 +98,7 @@ __all__ = [
     "verify_receipt_offline",
     "verify_checkpoint_signature_offline",
     "verify_witness_stamp_offline",
+    "verify_witness_stamp_tristate",
     "due_for_checkpoint",
     "lag_exceeded",
     "DEFAULT_TS_URL",
@@ -260,6 +262,32 @@ class Grade(str, Enum):
 
     SELF_ATTESTED = "self-attested"
     WITNESSED = "witnessed"
+
+
+class StampVerdict(str, Enum):
+    """Three-state per-stamp verdict [verify-threestate-trustanchor] --
+    finer-grained than :func:`verify_witness_stamp_offline`'s ``bool``,
+    which two-rung callers (``grade()``) still use unchanged. Callers that
+    must tell "no trust anchor for this witness" apart from "this witness's
+    signature is wrong" -- ``verify_bundle``/``verify_disclosure``, deciding
+    whether an unverifiable stamp is fatal to the artifact -- read this
+    instead. See :func:`verify_witness_stamp_tristate`.
+    """
+
+    WITNESSED = "witnessed"
+    """Stamp verifies under a supplied or pinned trust-anchor key."""
+
+    UNVERIFIED = "unverified"
+    """Well-formed, checkpoint-bound stamp from a TS with no pin supplied --
+    NOT evidence of forgery, just evidence we cannot check. A self-hosted/
+    zero-egress TS a caller has not (yet) pinned lands here, never
+    ``INVALID`` -- conflating the two false-accused exactly the deployments
+    frozen §1a.2 promises zero-egress operation to."""
+
+    INVALID = "invalid"
+    """Either not even a well-formed, checkpoint-bound stamp (garbage bytes,
+    wrong ``entry_hash``, undecodable COSE), or a stamp claiming a KNOWN/
+    pinned TS whose signature fails to verify under that pin -- forgery."""
 
 
 @dataclass
@@ -700,20 +728,21 @@ def _structural_probe_pubkey_pem() -> bytes:
     return _structural_probe_pubkey_pem_cache
 
 
-def verify_witness_stamp_offline(
+def verify_witness_stamp_tristate(
     cp: CheckpointRecord,
     witness: WitnessRecord,
     *,
     ts_pubkey_pem: bytes | str | None = None,
-) -> tuple[bool, list[str]]:
-    """Verify one witness stamp is a cryptographically authentic TS Receipt
-    bound to ``cp`` -- never raises. This is the read-side check
-    [stamp-authenticity-on-read-not-presence] adds: ``grade()`` and
-    ``capsule_emit.bundle.verify_bundle`` both call this instead of trusting
-    a stamp's mere presence in ``witnesses``.
-
-    Two tiers, mirroring ``capsule_emit.signing.verify_capsule_signature``'s
-    self-attested/identity split:
+) -> tuple[StampVerdict, list[str]]:
+    """Verify one witness stamp against ``cp``, returning the THREE-STATE
+    verdict [verify-threestate-trustanchor] -- never raises. This is the
+    finer-grained sibling of :func:`verify_witness_stamp_offline` (which
+    collapses to a ``bool`` for ``grade()``'s two-rung ladder, correctly --
+    see ``CheckpointRecord.grade``'s docstring). Callers that must decide
+    whether an unverifiable stamp is FATAL to a hand-to-a-stranger artifact
+    (``capsule_emit.bundle.verify_bundle``, ``capsule_emit.disclose
+    .verify_disclosure``) need this distinction; ``grade()`` does not, since
+    both non-WITNESSED states already mean SELF_ATTESTED to it.
 
     Always (no key needed): the stamp must be BOUND to this exact
     checkpoint -- ``witness.entry_hash`` must equal
@@ -723,42 +752,49 @@ def verify_witness_stamp_offline(
     draft-ietf-cose-merkle-tree-proofs) whose inclusion proof reconstructs a
     Merkle root for that entry_hash (via a key-independent probe -- see
     :func:`_structural_probe_pubkey_pem`). A hand-fabricated stamp (garbage
-    ``receipt_b64``, exactly what a file-level forger who never talked to a
-    real Transparency Service would write) fails here.
+    ``receipt_b64``, wrong ``entry_hash`` -- exactly what a file-level
+    forger who never talked to a real Transparency Service would write)
+    fails here, returning :attr:`StampVerdict.INVALID` regardless of
+    pinning -- these are hygiene failures, not identity-ambiguity ones.
 
-    Structural validity alone is deliberately NOT enough to grade WITNESSED
-    -- root reconstruction is key-independent, so a *sophisticated* forger
-    with the public ``scitt_cose.build_receipt`` can mint a well-formed
-    receipt over the correct ``entry_hash`` signed with a key of their own
-    choosing (no producer or TS key needed), one level up from the garbage-
-    bytes forger above. Two tiers close that:
+    Structural validity alone is deliberately NOT enough to grade
+    :attr:`StampVerdict.WITNESSED` -- root reconstruction is key-independent,
+    so a *sophisticated* forger with the public ``scitt_cose.build_receipt``
+    can mint a well-formed receipt over the correct ``entry_hash`` signed
+    with a key of their own choosing (no producer or TS key needed), one
+    level up from the garbage-bytes forger above. Three states resolve that,
+    not two [verify-threestate-trustanchor] (supersedes the two-state
+    collapse in [verify-batch-fastfollow] item D, which reported this same
+    case as an unqualified failure -- fatal to a bundle when the ts_url
+    happened to be unpinned, which false-accused every self-hosted/
+    zero-egress TS deployment frozen §1a.2 promises, indistinguishable at
+    the wire from this forger):
 
-    With ``ts_pubkey_pem`` (a caller-pinned/cached TS public key): verifies
-    the Receipt's COSE_Sign1 signature under that specific key -- the full
-    identity-bound guarantee ("a specific trusted TS actually witnessed
-    this").
+    With ``ts_pubkey_pem`` (a caller-pinned/cached TS public key) -- OR no
+    ``ts_pubkey_pem`` but ``witness.ts_url == DEFAULT_TS_URL``, which
+    auto-pins to :data:`DEFAULT_TS_PUBLIC_KEY_PEM`: the TS is KNOWN. The
+    Receipt's COSE_Sign1 signature is checked under that specific key --
+    verifies -> :attr:`StampVerdict.WITNESSED` (the full identity-bound
+    guarantee); fails -> :attr:`StampVerdict.INVALID` (a KNOWN TS's
+    signature not matching is forgery, not ambiguity).
 
-    Without it, but ``witness.ts_url == DEFAULT_TS_URL``: automatically
-    verified against :data:`DEFAULT_TS_PUBLIC_KEY_PEM`, the pinned key for
-    the default free public-good witness -- the common case gets the full
-    identity-bound guarantee with no caller setup.
-
-    Without it, and any other ``ts_url``: this function proves only that the
-    stamp is a genuine, checkpoint-bound Receipt SHAPE and not a
-    fabrication -- it does NOT prove which Transparency Service produced it,
-    so it returns ``ok=False`` with an explicit "shape valid; TS identity
-    unverified" message rather than conferring WITNESSED on shape alone.
-    Pass ``ts_pubkey_pem`` (or register with the pinned default witness) for
-    the stronger guarantee.
+    Without a pin, and any other ``ts_url``: the TS is UNKNOWN -- this
+    function proves only that the stamp is a genuine, checkpoint-bound
+    Receipt SHAPE, not a fabrication; it does NOT and cannot prove which
+    Transparency Service produced it. That is :attr:`StampVerdict.UNVERIFIED`,
+    not :attr:`StampVerdict.INVALID` -- a caller-supplied pin (or
+    registering with the pinned default witness) upgrades it to the
+    stronger guarantee; nothing about the shape being merely unverifiable
+    justifies treating it as forged.
     """
     import base64
 
     try:
         expected_entry_hash = hashlib.sha256(bytes.fromhex(cp.digest())).hexdigest()
     except Exception as exc:
-        return False, [f"checkpoint digest could not be computed: {exc}"]
+        return StampVerdict.INVALID, [f"checkpoint digest could not be computed: {exc}"]
     if witness.entry_hash != expected_entry_hash:
-        return False, [
+        return StampVerdict.INVALID, [
             "witness.entry_hash does not match this checkpoint's digest -- "
             "stamp is not bound to this checkpoint"
         ]
@@ -766,12 +802,14 @@ def verify_witness_stamp_offline(
     try:
         receipt_bytes = base64.b64decode(witness.receipt_b64, validate=True)
     except Exception as exc:
-        return False, [f"receipt_b64 is not valid base64: {exc}"]
+        return StampVerdict.INVALID, [f"receipt_b64 is not valid base64: {exc}"]
 
     try:
         from scitt_cose import verify_receipt
     except ImportError:
-        return False, ["scitt-cose is not installed; run: pip install 'capsule-emit[checkpoint]'"]
+        return StampVerdict.INVALID, [
+            "scitt-cose is not installed; run: pip install 'capsule-emit[checkpoint]'"
+        ]
 
     if ts_pubkey_pem is None and witness.ts_url == DEFAULT_TS_URL:
         ts_pubkey_pem = DEFAULT_TS_PUBLIC_KEY_PEM
@@ -782,8 +820,12 @@ def verify_witness_stamp_offline(
                 receipt_bytes, leaf_entry_hex=witness.entry_hash, log_public_key_pem=ts_pubkey_pem
             )
         except Exception as exc:
-            return False, [f"receipt could not be evaluated: {exc}"]
-        return result.ok, list(result.errors)
+            return StampVerdict.INVALID, [f"receipt could not be evaluated: {exc}"]
+        if result.ok:
+            return StampVerdict.WITNESSED, []
+        return StampVerdict.INVALID, (
+            list(result.errors) or ["receipt signature does not verify under the pinned/supplied key"]
+        )
 
     try:
         probe = verify_receipt(
@@ -792,13 +834,37 @@ def verify_witness_stamp_offline(
             log_public_key_pem=_structural_probe_pubkey_pem(),
         )
     except Exception as exc:
-        return False, [f"receipt could not be evaluated: {exc}"]
+        return StampVerdict.INVALID, [f"receipt could not be evaluated: {exc}"]
     if probe.root is None:
-        return False, [
+        return StampVerdict.INVALID, [
             "receipt is not a structurally valid COSE Receipt bound to this checkpoint"
         ] + list(probe.errors)
-    return False, [
-        "witness shape valid; TS identity unverified -- ts_url is not the "
-        "pinned default witness and no ts_pubkey_pem was supplied, so this "
-        "does not confer WITNESSED (grades as self-attested)"
+    return StampVerdict.UNVERIFIED, [
+        f"witnessed by {witness.ts_url}, pin not supplied — unverified stamp"
     ]
+
+
+def verify_witness_stamp_offline(
+    cp: CheckpointRecord,
+    witness: WitnessRecord,
+    *,
+    ts_pubkey_pem: bytes | str | None = None,
+) -> tuple[bool, list[str]]:
+    """Verify one witness stamp is a cryptographically authentic TS Receipt
+    bound to ``cp`` -- never raises. This is the read-side check
+    [stamp-authenticity-on-read-not-presence] adds: ``grade()`` calls this
+    (not :func:`verify_witness_stamp_tristate`) because its two-rung ladder
+    treats :attr:`StampVerdict.UNVERIFIED` and :attr:`StampVerdict.INVALID`
+    identically (both mean SELF_ATTESTED) -- see ``CheckpointRecord.grade``'s
+    docstring for why two rungs is correct there. ``capsule_emit.bundle
+    .verify_bundle`` and ``capsule_emit.disclose.verify_disclosure`` need
+    the finer THREE-STATE distinction (an unpinned witness is not fatal
+    evidence; a known witness's failed signature is) and call
+    :func:`verify_witness_stamp_tristate` directly instead.
+
+    A thin ``bool`` projection of :func:`verify_witness_stamp_tristate`:
+    ``True`` iff :attr:`StampVerdict.WITNESSED`, ``False`` for either
+    non-witnessed state. See that function for the full tier documentation.
+    """
+    verdict, errors = verify_witness_stamp_tristate(cp, witness, ts_pubkey_pem=ts_pubkey_pem)
+    return verdict is StampVerdict.WITNESSED, errors

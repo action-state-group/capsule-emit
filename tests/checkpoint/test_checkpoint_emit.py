@@ -355,15 +355,81 @@ def test_verify_witness_stamp_offline_rejects_entry_hash_not_bound_to_this_check
 
 
 def test_verify_witness_stamp_offline_unpinned_ts_reports_shape_valid_identity_unverified():
-    """[verify-batch-fastfollow] item D: a genuine, structurally valid
-    receipt from a TS that is neither the pinned default nor caller-supplied
-    does NOT confer WITNESSED on shape alone -- it must fail closed (ok is
-    False) with an honest, distinct message from the garbage-bytes case."""
+    """[verify-threestate-trustanchor] (revises [verify-batch-fastfollow]
+    item D's message text): a genuine, structurally valid receipt from a TS
+    that is neither the pinned default nor caller-supplied does NOT confer
+    WITNESSED on shape alone -- it must fail closed on the two-state
+    ``bool`` projection (ok is False) with the honest "pin not supplied"
+    message, distinct from the garbage-bytes case."""
     cp = _cp_for_stamp_tests()
     genuine = _genuine_witness_record(cp)  # ts_url defaults to a non-pinned host
     ok, errors = verify_witness_stamp_offline(cp, genuine)
     assert ok is False
-    assert any("witness shape valid" in e and "TS identity unverified" in e for e in errors)
+    assert any("pin not supplied" in e and "unverified stamp" in e for e in errors)
+    assert any(genuine.ts_url in e for e in errors)
+
+
+def test_verify_witness_stamp_tristate_unpinned_ts_is_unverified_not_invalid():
+    """[verify-threestate-trustanchor]: the THREE-STATE form must resolve
+    this exact case to UNVERIFIED, not INVALID -- an unpinned TS is not
+    evidence of forgery, only evidence we cannot check. This is the state
+    ``verify_bundle``/``verify_disclosure`` key off of to avoid false-
+    accusing a self-hosted/zero-egress TS deployment."""
+    from capsule_emit.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp)  # ts_url defaults to a non-pinned host
+    verdict, errors = verify_witness_stamp_tristate(cp, genuine)
+    assert verdict is StampVerdict.UNVERIFIED
+    assert any("pin not supplied" in e and "unverified stamp" in e for e in errors)
+
+
+def test_verify_witness_stamp_tristate_pinned_good_stamp_is_witnessed():
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_private_key
+
+    from capsule_emit.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp)
+    correct_pubkey_pem = (
+        load_pem_private_key(_TEST_TS_PRIVATE_KEY_PEM, password=None)
+        .public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    )
+    verdict, errors = verify_witness_stamp_tristate(cp, genuine, ts_pubkey_pem=correct_pubkey_pem)
+    assert verdict is StampVerdict.WITNESSED
+    assert errors == []
+
+
+def test_verify_witness_stamp_tristate_pinned_forged_signature_is_invalid():
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from capsule_emit.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp)  # signed with _TEST_TS_PRIVATE_KEY_PEM
+    wrong_pubkey_pem = Ed25519PrivateKey.generate().public_key().public_bytes(
+        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+    )
+    verdict, errors = verify_witness_stamp_tristate(cp, genuine, ts_pubkey_pem=wrong_pubkey_pem)
+    assert verdict is StampVerdict.INVALID
+    assert errors
+
+
+def test_verify_witness_stamp_tristate_garbage_receipt_is_invalid_even_unpinned():
+    """Structural corruption is INVALID regardless of pin status -- this is
+    not identity ambiguity, it is not even a well-formed stamp."""
+    from capsule_emit.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+
+    cp = _cp_for_stamp_tests()
+    entry_hash = hashlib.sha256(bytes.fromhex(cp.digest())).hexdigest()
+    forged = WitnessRecord(
+        ts_url="https://attacker.example", entry_hash=entry_hash,
+        receipt_b64="forged", leaf_index=0, tree_size=1,
+    )
+    verdict, errors = verify_witness_stamp_tristate(cp, forged)
+    assert verdict is StampVerdict.INVALID
 
 
 def test_verify_witness_stamp_offline_auto_pins_default_witness_url(monkeypatch):

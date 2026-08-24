@@ -312,6 +312,87 @@ def test_bundle_self_attested_checkpoint_still_verifies(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# [verify-threestate-trustanchor] -- a well-formed stamp from an UNPINNED
+# witness (no caller-supplied pin, and not the built-in default) must NOT
+# make the bundle INVALID: it is exactly what a self-hosted/zero-egress TS
+# a caller hasn't pinned yet looks like, and frozen §1a.2 promises that
+# deployment shape works. Three states: unpinned -> unverified (bundle OK);
+# pinned + genuine -> witnessed; pinned + forged -> INVALID.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def self_hosted_stub_ts():
+    """A stub TS whose URL is deliberately NOT ``DEFAULT_TS_URL`` (never
+    monkeypatched) -- simulating a self-hosted/zero-egress deployment's own
+    Transparency Service, which has no built-in pin."""
+    base_url, received, stop = _start_stub_ts()
+    yield base_url, received
+    stop()
+
+
+def test_bundle_self_hosted_unpinned_witness_is_not_invalid(
+    tmp_path, self_hosted_stub_ts, monkeypatch
+):
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "1")
+    ts_url, _received = self_hosted_stub_ts
+    ledger_path = tmp_path / "ledger.jsonl"
+    result = seal(None, action="solo", operator="acme", anchor=False,
+                   ledger=ledger_path, witness_url=ts_url)
+    assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
+
+    b = bundle(ledger_path, result.capsule["capsule_id"])
+    assert len(b.checkpoint.witnesses) == 1
+    assert b.checkpoint.witnesses[0].ts_url == ts_url
+    assert ts_url != checkpoint_emit_mod.DEFAULT_TS_URL
+
+    ok, notices = verify_bundle(b)  # no trust_anchor supplied
+    assert ok is True, notices
+    assert any("pin not supplied" in n and "unverified stamp" in n for n in notices)
+    assert any(ts_url in n for n in notices)
+
+
+def test_bundle_self_hosted_witness_pinned_via_trust_anchor_is_witnessed(
+    tmp_path, self_hosted_stub_ts, monkeypatch
+):
+    from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM
+
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "1")
+    ts_url, _received = self_hosted_stub_ts
+    ledger_path = tmp_path / "ledger.jsonl"
+    result = seal(None, action="solo", operator="acme", anchor=False,
+                   ledger=ledger_path, witness_url=ts_url)
+    assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
+
+    b = bundle(ledger_path, result.capsule["capsule_id"])
+    ok, errors = verify_bundle(b, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM})
+    assert ok is True, errors
+    assert not any("unverified" in e for e in errors)
+
+
+def test_bundle_self_hosted_witness_pinned_but_forged_signature_is_invalid(
+    tmp_path, self_hosted_stub_ts, monkeypatch
+):
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "1")
+    ts_url, _received = self_hosted_stub_ts
+    ledger_path = tmp_path / "ledger.jsonl"
+    result = seal(None, action="solo", operator="acme", anchor=False,
+                   ledger=ledger_path, witness_url=ts_url)
+    assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
+
+    b = bundle(ledger_path, result.capsule["capsule_id"])
+    wrong_pubkey_pem = Ed25519PrivateKey.generate().public_key().public_bytes(
+        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+    )
+    ok, errors = verify_bundle(b, trust_anchor={ts_url: wrong_pubkey_pem})
+    assert ok is False
+    assert any("witness stamp" in e and "INVALID" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
 # Serialization round-trip — the whole point of "standalone": it must
 # survive being written to a file and read back by a different process.
 # ---------------------------------------------------------------------------

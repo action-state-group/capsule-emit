@@ -68,6 +68,7 @@ from .emit import (
     Grade,
     RollbackError,
     Signer,
+    StampVerdict,
     WitnessRecord,
     due_for_checkpoint,
     emit_checkpoint,
@@ -78,6 +79,7 @@ from .emit import (
     verify_checkpoint_signature_offline,
     verify_receipt_offline,
     verify_witness_stamp_offline,
+    verify_witness_stamp_tristate,
 )
 from .index import LogSource, MmrLedger, RangeProof, verify_range
 from .store import MemoryNodeStore
@@ -115,6 +117,7 @@ __all__ = [
     "Grade",
     "RollbackError",
     "Signer",
+    "StampVerdict",
     "WitnessRecord",
     "due_for_checkpoint",
     "emit_checkpoint",
@@ -125,4 +128,5 @@ __all__ = [
     "verify_checkpoint_signature_offline",
     "verify_receipt_offline",
     "verify_witness_stamp_offline",
+    "verify_witness_stamp_tristate",
 ]

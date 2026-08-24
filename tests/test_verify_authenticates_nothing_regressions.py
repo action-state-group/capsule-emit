@@ -455,11 +455,34 @@ def test_attack_sophisticated_forger_correct_entry_hash_attacker_key_stays_self_
     result = status.compute_status(str(ledger_path), offline=True)
     assert result["latest_checkpoint"]["grade"] == "self-attested"
 
-    # (c) bundle/verify_bundle: must grade the bundle INVALID, not VALID over
-    # an attacker-key stamp -- same fatal-if-none-valid path attack45 proved
-    # for the garbage-bytes forger.
+    # (c) bundle/verify_bundle -- REVISED by [verify-threestate-trustanchor]
+    # (supersedes the two-state assertion this test used to make): with no
+    # trust_anchor supplied, an unpinned ts_url is cryptographically
+    # indistinguishable from a legitimate self-hosted/zero-egress TS the
+    # caller simply hasn't pinned yet -- the bundle must NOT be INVALID over
+    # that ambiguity alone (§1a.2 honesty), it must render the stamp as an
+    # honest, non-fatal "unverified" notice. A caller who actually wants
+    # the identity-bound guarantee for this ts_url passes it via
+    # trust_anchor -- proven below, where the SAME attacker-key stamp fails
+    # closed once its (invented) ts_url is pinned to a DIFFERENT key.
     record_id = ledger_mod.read_ledger(ledger_path)[0]["capsule_id"]
     b = bundle(ledger_path, record_id)
     ok, errors = verify_bundle(b)
-    assert ok is False
-    assert any("TS identity unverified" in e for e in errors)
+    assert ok is True
+    assert any("pin not supplied" in e and "unverified stamp" in e for e in errors)
+
+    # If the caller DOES supply a trust anchor for this ts_url, the same
+    # attacker-signed stamp must fail closed as INVALID (forgery under a
+    # known pin) -- proving the trust_anchor param actually gates identity.
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey as _Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding as _Encoding
+    from cryptography.hazmat.primitives.serialization import PublicFormat as _PublicFormat
+
+    operators_real_pubkey_pem = _Ed25519PrivateKey.generate().public_key().public_bytes(
+        _Encoding.PEM, _PublicFormat.SubjectPublicKeyInfo
+    )
+    ok_pinned, errors_pinned = verify_bundle(
+        b, trust_anchor={"https://attacker.example": operators_real_pubkey_pem}
+    )
+    assert ok_pinned is False
+    assert any("witness stamp" in e and "INVALID" in e for e in errors_pinned)
