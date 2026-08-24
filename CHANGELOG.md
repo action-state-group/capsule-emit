@@ -242,6 +242,17 @@ purposes). See the O16 migration audit, items 1-2.
 **Rollback.** `CAPSULE_ANCHOR=legacy-on` restores the pre-0.5.0 per-seal anchor
 dispatch for one release; not a code revert.
 
+### Added — one-time stderr notice for stale `CAPSULE_ANCHOR=true`/`1`/`yes` (#81 follow-up 1)
+
+**What changed.** The O16-01-02 flip above was documented but silent at runtime: a
+pre-0.5.0 affirmative `CAPSULE_ANCHOR` value (`true`/`1`/`yes`, case-insensitive) now
+resolves to single-egress with no signal that the setting stopped doing anything.
+`seal()`/`carry()`/`compose()` now print a one-time stderr notice, the first time such
+a value is seen, naming the value, explaining it is now a no-op, and pointing at
+`CAPSULE_ANCHOR=legacy-on` to restore the old behavior. `off`/`0`/`false`/`no`/unset/
+`legacy-on` never trigger it, and an explicit `anchor=` kwarg (which always wins over
+the env var) suppresses it too, since nothing was silently overridden in that case.
+
 ## [0.5.0] — 2026-08-23
 
 ### Added — BREAKING (capsule shape): every `seal()`/`carry()`/`compose()` result is now cryptographically signed (O16-13, "Signer protocol seam")
