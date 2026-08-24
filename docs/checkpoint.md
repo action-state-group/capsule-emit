@@ -283,6 +283,71 @@ a network fetch of the Transparency Service's public key (or a cached
 the point of "standalone": a bundle survives being written to a file and
 handed to someone else's process.
 
+## Disclose — bundle's conscious sibling (O16 audit item 10)
+
+`bundle` above is always safe — digests only, no producer decision needed.
+`capsule-emit disclose` is the deliberate, recorded act of handing
+**bundle plus content** to a named audience:
+
+```bash
+capsule-emit disclose ledger.jsonl <id|range> --audience auditor \
+  --reveal <id>:agent_input=input.json --reveal <id>:agent_output=output.json
+```
+
+```python
+from capsule_emit.disclose import disclose, verify_disclosure
+
+d = disclose(
+    "ledger.jsonl", capsule_id, audience="auditor",
+    reveal={capsule_id: {"agent_input": payload_in, "agent_output": payload_out}},
+)
+ok, errors = verify_disclosure(d)   # pure, offline, never raises
+```
+
+`<id|range>` selects records three ways: a single `capsule_id` (or an
+unambiguous >=8-char prefix); `id1..id2`, a contiguous range inclusive in
+ledger order; or `id1,id2,...`, an explicit list. The first two always
+produce the honest `"contiguous"` completeness mode; the explicit-list form
+always produces `"producer-selected"`, regardless of whether the ids happen
+to be contiguous, because the caller chose to enumerate rather than bound a
+range — a completeness statement can never quietly overstate what was
+disclosed.
+
+`--payloads all` (the default) requires a supplied payload
+(`--reveal id:field=payload.json`) for every disclosure-eligible field
+(`agent_input`/`agent_output`) that has a committed digest on every
+selected record, unless the field is named in `--suppress` — this is the
+equivocation-honesty rule: a partial disclosure can never masquerade as a
+complete one. `--payloads selected` discloses exactly the payloads
+supplied, nothing implied either way. `--suppress FIELD` withholds a field
+for this audience even when a payload is available, and is recorded on the
+disclosure record rather than silently dropped — suppression is a per-call
+choice, never a default.
+
+**The act seals its own receipt.** `disclose()` builds one
+`capsule_emit.disclosure.build_disclosure_envelope` per selected record
+(the existing single-capsule payload primitive — see `disclosure.py`), then
+appends a **disclosure record** — who disclosed what range to which
+audience, when — to the SAME ledger, signed with the same producer
+`Signer` `seal()` uses (`kind: "disclosure_record"`,
+`capsule_emit.ledger.DISCLOSURE_RECORD_KIND`). It becomes an MMR leaf like
+any other entry the next time a checkpoint covers it: disclosures are
+receipts too, and the audit trail of showing evidence is part of the
+history. It is excluded from `read_ledger()` (and therefore `ledger
+view`/`show`/`verify`) and from `bundle()`'s own record resolution — it is
+the log's bookkeeping, never a bundle target itself.
+
+**Viewing is not disclosing.** Reading your own ledger — `ledger show`,
+`status` — mints no receipt; only a `disclose()` call, when content is
+about to cross a boundary to another party, does.
+
+`Disclosure.to_dict()` / `Disclosure.from_dict()` round-trip through plain
+JSON, same as `Bundle`. `verify_disclosure()` checks the disclosure
+record's own signature, that it agrees with the `Disclosure` object, every
+bundle it carries, and — for every disclosed payload field — that it
+recomputes to the digest committed on that record's receipt: a tampered
+payload names itself the same way a tampered bundle does.
+
 ## Registration is opt-in, always — for direct/manual use of this API
 
 `CheckpointConfig.ts_urls` defaults to an **empty list** — nothing is

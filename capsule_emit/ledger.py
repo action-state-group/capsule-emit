@@ -12,13 +12,20 @@ Two kinds of entry share the same file and the same append path:
   ``WitnessRecord`` s it collected), written back into the *same* ledger it
   covers so the stamp becomes a leaf the *next* checkpoint's MMR root
   genuinely commits over: "checkpoint N's stamp is covered by checkpoint
-  N+1" (frozen surface §2.3). ``read_ledger`` filters these out by default
-  so every existing capsule-only consumer (CLI, server, permalink,
-  approval, holds, the view/show renderers below) keeps seeing exactly the
-  capsule stream it always has; ``read_ledger_entries`` returns the raw,
-  unfiltered file for consumers that must see every leaf (currently only
-  ``capsule_emit.witness._JsonlLogSource.scan``, so the MMR indexes stamp
-  entries as leaves too).
+  N+1" (frozen surface §2.3).
+- **disclosure records** (``kind == DISCLOSURE_RECORD_KIND``, added 0.5.0 --
+  see ``capsule_emit.disclose``) -- a self-sealed receipt of a *disclose*
+  act (who disclosed what range to which audience, when), appended to the
+  same ledger so the audit trail of showing evidence is itself evidence
+  (frozen surface §7b: "disclosures are receipts too").
+
+``read_ledger`` filters both non-capsule kinds out by default so every
+existing capsule-only consumer (CLI, server, permalink, approval, holds,
+the view/show renderers below) keeps seeing exactly the capsule stream it
+always has; ``read_ledger_entries`` returns the raw, unfiltered file for
+consumers that must see every leaf (currently
+``capsule_emit.witness._JsonlLogSource.scan``, so the MMR indexes stamp and
+disclosure entries as leaves too).
 
 Four rendering levels (capsule records only):
 
@@ -58,6 +65,8 @@ __all__ = [
     "read_ledger",
     "read_ledger_entries",
     "CHECKPOINT_STAMP_KIND",
+    "DISCLOSURE_RECORD_KIND",
+    "NON_CAPSULE_KINDS",
     "LedgerLockedError",
     "view",
     "view_chains",
@@ -69,6 +78,18 @@ __all__ = [
 #: this shape (see ``capsule_emit.witness._build_and_register``) -- a future,
 #: incompatible stamp-entry shape bumps that number rather than reusing it.
 CHECKPOINT_STAMP_KIND = "checkpoint_stamp"
+
+#: Marks a ledger line as a persisted disclosure record rather than a
+#: capsule -- see ``capsule_emit.disclose`` (O16 audit item 10).
+DISCLOSURE_RECORD_KIND = "disclosure_record"
+
+#: Every ``kind`` a ledger line can carry that is NOT a capsule -- the
+#: log's own bookkeeping. Consumers that must resolve a *record* (a sealed
+#: capsule -- ``capsule_emit.bundle``, ``capsule_emit.disclose``) filter
+#: these out the same way ``read_ledger`` does, so bookkeeping entries are
+#: never mistaken for the capsule they happen to share a ``capsule_id``-shaped
+#: field with.
+NON_CAPSULE_KINDS = (CHECKPOINT_STAMP_KIND, DISCLOSURE_RECORD_KIND)
 
 # Physical write safety: two threads calling append_to_ledger for
 # *different* files never contend, but two threads appending to the SAME
@@ -237,11 +258,12 @@ def read_ledger_entries(path: str | os.PathLike) -> list[dict]:
 def read_ledger(path: str | os.PathLike) -> list[dict]:
     """Read all capsule records from a JSONL ledger file.
 
-    Checkpoint-stamp records (``kind == CHECKPOINT_STAMP_KIND``) are excluded
-    -- this is the capsule-only view every existing consumer expects. Use
-    ``read_ledger_entries`` to see the raw file, stamps included.
+    Non-capsule bookkeeping entries (``kind`` in ``NON_CAPSULE_KINDS`` --
+    checkpoint-stamp and disclosure records) are excluded -- this is the
+    capsule-only view every existing consumer expects. Use
+    ``read_ledger_entries`` to see the raw file, every kind included.
     """
-    return [r for r in read_ledger_entries(path) if r.get("kind") != CHECKPOINT_STAMP_KIND]
+    return [r for r in read_ledger_entries(path) if r.get("kind") not in NON_CAPSULE_KINDS]
 
 
 # ---------------------------------------------------------------------------

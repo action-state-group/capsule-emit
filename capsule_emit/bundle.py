@@ -155,14 +155,16 @@ def _consistency_proof_from_dict(d: dict) -> Any:
 def _find_record(entries: list[dict], capsule_id: str) -> int:
     """Resolve ``capsule_id`` (full, or an unambiguous >=8-char prefix — same
     convention as ``ledger.show``/CLI ``--reveal``) to its 0-based index in
-    ``entries``. Checkpoint-stamp entries are never a match — a bundle is
-    for a record (capsule), never for the log's own bookkeeping."""
-    from .ledger import CHECKPOINT_STAMP_KIND
+    ``entries``. Checkpoint-stamp and disclosure-record entries are never a
+    match — a bundle is for a record (capsule), never for the log's own
+    bookkeeping (both share the ``capsule_id``-shaped leaf field, since both
+    become MMR leaves too — see ``ledger.NON_CAPSULE_KINDS``)."""
+    from .ledger import NON_CAPSULE_KINDS
 
     matches = [
         i
         for i, e in enumerate(entries)
-        if e.get("kind") != CHECKPOINT_STAMP_KIND
+        if e.get("kind") not in NON_CAPSULE_KINDS
         and (
             e.get("capsule_id") == capsule_id
             or (len(capsule_id) >= 8 and str(e.get("capsule_id", "")).startswith(capsule_id))
