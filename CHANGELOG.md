@@ -8,6 +8,38 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [0.5.0] — 2026-08-23
 
+### Added — BREAKING (capsule shape): every `seal()`/`carry()`/`compose()` result is now cryptographically signed (O16-13, "Signer protocol seam")
+
+**What changed.** `seal()` (`capsule_emit.core._emit_capsule`) never touched a `Signer`
+at all — no cryptographic signature existed over sealed capsule content anywhere outside
+the opt-in checkpoint layer, and that layer's own default signer (`witness._AutoSigner`)
+is ephemeral HMAC-SHA256, not a persisted asymmetric keypair. Now every capsule carries
+`signature` (an Ed25519 signature, hex) and `key_id` (the raw Ed25519 public key, hex —
+verify straight from the capsule, no registry lookup) by default, signed by a new
+`capsule_emit.signing.LocalKeypairSigner`: an Ed25519 keypair auto-generated on first use
+and persisted to disk (mode 0600, one key per ledger path by default) so the SAME key
+signs every capsule across process restarts. `capsule_id` is computed AFTER
+`signature`/`key_id` are added, so it commits to them too — stripping or swapping either
+changes `capsule_id`.
+
+**No opt-out, only a choice of key.** `seal(..., signer=<your Signer>)` or
+`seal(..., signing_key_path=...)` (or `CAPSULE_SIGNING_KEY_PATH`) bring your own
+KMS/HSM/TPM signer or relocate the default key file; there is no way to seal an
+unsigned capsule. `capsule_emit.signing.verify_capsule_signature(capsule)` checks the
+signature; `LocalKeypairSigner.rotate()` generates a new keypair and returns a
+`RotationRecord` binding the old key to the new one (the OLD key signs the NEW
+`key_id`), the substrate for a future key-binding WHO-slot receipt.
+
+**New required dependency.** `cryptography>=42.0` moves from the optional `checkpoint`
+extra to `capsule-emit`'s base `dependencies` — signing is unconditional, so the base
+install needs it. `import capsule_emit` alone still does not import `cryptography` (or
+`capsule_emit.checkpoint`) — the cost lands only on the first actual `seal()` call.
+
+**Docs.** `docs/anatomy.md` no longer claims a producer signature is absent from
+`cap.capsule` by default — see its "Where 'signed' and 'receipt' come in" section for
+what's still layered above `signature`/`key_id` (identity binding, the COSE_Sign1
+Signed-Statement wire format).
+
 ### Changed — BREAKING (default-behavior): CLL checkpoint/witness is now default-ON (emit-witness-default-on)
 
 **What changed.** The CLL checkpoint/witness layer (`capsule_emit.checkpoint`, shipped

@@ -10,8 +10,12 @@ It wraps ``agent_action_capsule.emit()`` with:
 - Async anchor on by default (digest-only; no business content crosses the wire)
 - Async checkpoint/witness on by default, lazy per ledger (digest-only; see
   ``capsule_emit.witness`` and ``docs/checkpoint.md``)
+- Every capsule cryptographically signed over its ``capsule_id`` by a
+  persisted producer key -- self-attested strength, by default, on every
+  call (see ``capsule_emit.signing``)
 - Automatic JSONL ledger append
-- A typed EmitResult with .capsule_id, .anchored, and .anchor_status
+- A typed EmitResult with .capsule_id, .anchored, .anchor_status, .signature,
+  and .key_id
 
 The ``confirms`` parameter threads a "did → confirmed" chain without a scheduler.
 
@@ -53,9 +57,11 @@ from agent_action_capsule.anchor import AnchorError, AnchorFuture, AnchorResult,
 from agent_action_capsule.canonical import compute_capsule_id, jcs, json_digest, normalize
 from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError
 
+from . import signing as _signing
 from . import witness as _witness
 from .ledger import append_to_ledger
 from .numbers import CANONICALIZATION_ID
+from .signing import Signer
 
 __all__ = ["_emit_capsule", "EmitResult"]
 
@@ -333,12 +339,20 @@ class EmitResult:
       the ``atexit`` warning at interpreter shutdown).
     - ``"skipped"`` — ``anchor=False`` was passed, or left unset with
       ``CAPSULE_ANCHOR`` resolving to off; no submission was attempted.
+
+    ``signature`` / ``key_id`` mirror ``capsule["signature"]`` /
+    ``capsule["key_id"]`` — the self-attested Ed25519 signature over
+    ``capsule_id`` and the producer key that made it (see
+    ``capsule_emit.signing``). Always present; every ``EmitResult`` is
+    signed, not just anchored/witnessed ones.
     """
 
     capsule_id: str
     anchored: bool
     capsule: dict
     anchor_status: AnchorStatus
+    signature: str
+    key_id: str
 
     def __repr__(self) -> str:
         return (
@@ -374,6 +388,8 @@ def _emit_capsule(
     disposition_authority: str | None = None,
     salt_digests: bool = False,
     canonicalization_id: str = CANONICALIZATION_ID,
+    signer: Signer | None = None,
+    signing_key_path: str | os.PathLike | None = None,
 ) -> EmitResult:
     """Emit a sealed, optionally anchored Agent Action Capsule.
 
@@ -469,9 +485,21 @@ def _emit_capsule(
             value (e.g. ``"jcs"``) when the profile under which this capsule is
             sealed changes.  The value propagates through the constant —
             call sites need no change when the profile revs.
+        signer: Bring your own :class:`~capsule_emit.signing.Signer` (KMS,
+            HSM, TPM, or any object with ``.key_id`` + ``.sign(bytes)``) to
+            sign this capsule with instead of the default persisted local
+            keypair. Overrides ``signing_key_path`` when both are given.
+        signing_key_path: Override where the default
+            :class:`~capsule_emit.signing.LocalKeypairSigner` persists its
+            key (else ``CAPSULE_SIGNING_KEY_PATH``, else a file next to
+            ``ledger``). Ignored when ``signer`` is given.
 
     Returns:
-        :class:`EmitResult` with ``.capsule_id``, ``.anchored``, and ``.anchor_status``.
+        :class:`EmitResult` with ``.capsule_id``, ``.anchored``,
+        ``.anchor_status``, ``.signature``, and ``.key_id``. Every capsule is
+        signed — there is no way to opt out of the self-attested signature
+        (see ``capsule_emit.signing``); ``signer=``/``signing_key_path=``
+        choose WHICH key signs it, never whether it is signed.
     """
     if human_disposed and approver != "human":
         raise InvariantError(
@@ -563,10 +591,38 @@ def _emit_capsule(
     )
 
     # Write canonicalization_id into the self-describing binding slot (top-level,
-    # inside the signed payload) then recompute capsule_id to commit it.
-    # CHAIN_LINKAGE_FIELDS = ("capsule_id", "chain") — every other top-level field
-    # is in the capsule_id preimage, so the id is fully signature-covered.
+    # inside the signed payload), then sign the content digest, THEN compute the
+    # public capsule_id -- in that order, deliberately:
+    #
+    # 1. content_digest = compute_capsule_id(capsule) over everything above
+    #    (canonicalization_id included; capsule_id/chain excluded as always) --
+    #    this is what gets signed.
+    # 2. signature + key_id are added to the dict.
+    # 3. capsule_id is (re)computed over the FULL dict, now including signature
+    #    and key_id -- CHAIN_LINKAGE_FIELDS = ("capsule_id", "chain") is the
+    #    ONLY exclusion agent_action_capsule.canonical knows about, so any
+    #    other top-level field a verifier finds (including these two) MUST
+    #    already have been present when capsule_id was computed, or a
+    #    downstream `verify()` recomputing capsule_id over the stored dict
+    #    would disagree with what was signed. Folding signature/key_id INTO
+    #    the public capsule_id's preimage (rather than leaving capsule_id as
+    #    it was pre-signature) is what keeps that recompute honest without
+    #    reaching into the neutral canonicalization library to teach it a
+    #    third exclusion.
+    #
+    # capsule_id therefore commits to "content + who signed it", which is
+    # exactly the self-attested claim (frozen dev-surface v4 §2: "your key,
+    # your claim"). capsule_emit.signing.verify_capsule_signature() reverses
+    # step 1 to recover content_digest and checks the signature against it.
     capsule["canonicalization_id"] = canonicalization_id
+    content_digest = compute_capsule_id(capsule)
+
+    signer_obj = _signing.resolve_signer(
+        os.fspath(ledger), signer=signer, key_path=signing_key_path
+    )
+    capsule["signature"] = signer_obj.sign(content_digest.encode("ascii"))
+    capsule["key_id"] = signer_obj.key_id
+
     capsule["capsule_id"] = compute_capsule_id(capsule)
 
     append_to_ledger(capsule, ledger)
@@ -617,4 +673,6 @@ def _emit_capsule(
         anchored=anchored,
         capsule=capsule,
         anchor_status=anchor_status,
+        signature=capsule["signature"],
+        key_id=capsule["key_id"],
     )

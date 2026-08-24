@@ -22,8 +22,11 @@ works, but calling it raises ``RuntimeError`` pointing at ``seal()``/
 
 Anchor is on by default (async, digest-only); so is the CLL checkpoint/witness
 stream (async, digest-only, lazy per ledger — see ``capsule_emit.witness``
-and ``docs/checkpoint.md``). Ledger is written to ``ledger.jsonl`` by
-default. All of the above are configurable.
+and ``docs/checkpoint.md``). Every capsule is also cryptographically signed,
+always, by a persisted producer key (see ``capsule_emit.signing``) — this one
+has no off switch, only a choice of *which* key signs (``signer=``/
+``signing_key_path=``). Ledger is written to ``ledger.jsonl`` by default. All
+of the above are configurable.
 """
 from typing import Any, NoReturn
 
@@ -47,6 +50,7 @@ from .ledger import view as ledger_view
 from .ledger import view_chains as ledger_view_chains
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
 from .numbers import CANONICALIZATION_ID, float_to_str
+from .signing import LocalKeypairSigner, RotationRecord, Signer, verify_capsule_signature
 from .surface import Capsule, carry, compose, seal
 from .verify import InputDigestResult, VerifyReason, verify_input_digest
 from .verify_canonicalization import (
@@ -122,4 +126,9 @@ __all__ = [
     # Disclosure envelope
     "build_disclosure_envelope",
     "DisclosureError",
+    # Signing — seal()'s producer Signer seam (self-attested signature)
+    "Signer",
+    "LocalKeypairSigner",
+    "RotationRecord",
+    "verify_capsule_signature",
 ]

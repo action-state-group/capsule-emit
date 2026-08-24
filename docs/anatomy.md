@@ -1,13 +1,17 @@
 # Anatomy of a capsule — what gets sealed
 
-What `emit()` hands you (`cap.capsule`) is a **content-addressed statement** — one JSON
-object describing one agent action. Its tamper-evidence isn't a signature; it's the
-**`capsule_id`** = the SHA-256 of the canonical capsule. Recompute it and it must match,
-byte for byte. That hash *is* the seal.
+What `seal()` hands you (`cap.capsule`) is a **content-addressed, self-attested
+statement** — one JSON object describing one agent action. Its tamper-evidence starts
+with the **`capsule_id`** = the SHA-256 of the canonical capsule; recompute it and it
+must match, byte for byte. Since 0.5.0 that hash also covers a real **`signature`** —
+every capsule is signed by a persisted Ed25519 producer key at seal() time, no opt-out
+(see `capsule_emit.signing`). The hash plus the signature over it *are* the seal.
 
 ```
-cap.capsule  — a content-addressed JSON statement
-  capsule_id ………… SHA-256 of everything below — the seal / content address
+cap.capsule  — a content-addressed, self-attested JSON statement
+  capsule_id ………… SHA-256 of everything below, INCLUDING signature/key_id — the seal
+  signature ……… Ed25519 signature over the content (see capsule_emit.signing)
+  key_id ………… the raw public key, hex-encoded — verify straight from the capsule
   what/who/when …… action_type, operator, developer, timestamp
   disposition …… the may/did verdict
   effect ………… what was committed (+ confirmed-effect binding)
@@ -16,19 +20,25 @@ cap.capsule  — a content-addressed JSON statement
   chain ………… links to other capsules (only when confirming/superseding)
 ```
 
-**Where "signed" and "receipt" come in (and why they're not in `cap.capsule`).** The
-Agent Action Capsule *spec* defines a richer wrapping — the capsule as a COSE_Sign1
-**Signed Statement** (a signature) carrying an RFC 9162 transparency **receipt**.
-`capsule-emit`'s default `emit()` produces the **statement above** and **anchors its
+**Where "signed" and "receipt" come in.** The Agent Action Capsule *spec* also defines a
+richer wrapping — the capsule as a COSE_Sign1 **Signed Statement** carrying an RFC 9162
+transparency **receipt**. That is still a separate, heavier tier from the `signature`
+field above: `capsule-emit`'s default `seal()` produces the **self-attested statement**
+above (tamper-evident AND self-attested-signed, by construction) and **anchors its
 digest**; the **receipt comes back from the anchor** (you keep it next to the capsule —
-it is *not* a field inside `cap.capsule`), and a producer **signature** is the SCITT
-Signed-Statement tier (the verifier's `--transparent` path), a step up from the default.
-So, concretely:
+it is *not* a field inside `cap.capsule`); the COSE_Sign1 Signed-Statement wrapping (the
+verifier's `--transparent` path) is a further step up, re-expressing the same claim in
+the spec's wire format for a stranger who wants the SCITT-native encoding rather than
+this library's own `signature`/`key_id` fields. So, concretely:
 
 - **Tamper-evidence** is always there — `capsule_id` (recompute and compare).
+- **A producer signature** is always there too, since 0.5.0 — self-attested strength:
+  "your key, your claim," verifiable straight from the capsule, before any witness or
+  anchor ever sees it (see `capsule_emit.signing.verify_capsule_signature`).
 - **Existence proof** comes from anchoring — the **receipt**, held *beside* the capsule.
-- **A producer signature** binding to a key is the Signed-Statement tier — not part of
-  the default `cap.capsule`.
+- **Third-party identity binding** (whose key this really is) and the **COSE_Sign1
+  Signed-Statement wire format** are layered above this — see the frozen dev-surface's
+  §7a identity layers; not part of the default `cap.capsule` shape.
 
 The upshot: the capsule is **content-private by construction** — it carries *digests*
 of your inputs/outputs, never the raw values (see the layers below). You can hand
@@ -41,7 +51,9 @@ seeing your prompts, vendors, or amounts.
 
 | Field | Meaning |
 |---|---|
-| `capsule_id` | SHA-256 of the canonical capsule — the seal / content address |
+| `capsule_id` | SHA-256 of the canonical capsule (including `signature`/`key_id`) — the seal / content address |
+| `signature` | Ed25519 signature (hex) over the capsule's content digest — self-attested, always present since 0.5.0 |
+| `key_id` | the signing key's raw Ed25519 public key, hex-encoded — verify `signature` straight from the capsule, no lookup |
 | `spec_version` / `format_version` | which profile + capsule format this is |
 | `action_id` | the action name + a unique id (e.g. `write_order/39530d9c…`) — chain linkage |
 | `action_type` | the capsule class (`decide` — a decision that produced an effect) |

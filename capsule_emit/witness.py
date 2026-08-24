@@ -36,15 +36,22 @@ own SHA-256 digest (``CheckpointRecord.digest()``, itself a hash of hashes --
 see ``capsule_emit.checkpoint.emit``). No capsule content, no capsule_id list,
 no ledger path, ever leaves the process -- same posture as the anchor.
 
-**Signing.** No external key management is required to get the default path
-working: an ephemeral HMAC-SHA256 key is generated once per ledger path,
-in-process (:class:`_AutoSigner`). It is good enough for what the default
-path's own checkpoint chain needs (rollback/consistency self-detection across
-the *lifetime of one process*) but is not persisted, so it does not survive a
+**Signing (checkpoint layer only -- this is NOT capsule content signing).**
+No external key management is required to get the default path working: an
+ephemeral HMAC-SHA256 key is generated once per ledger path, in-process
+(:class:`_AutoSigner`). It is good enough for what the default path's own
+checkpoint chain needs (rollback/consistency self-detection across the
+*lifetime of one process*) but is not persisted, so it does not survive a
 process restart and is not suitable for a deployment that wants a stable,
 externally-attributable signing identity -- that caller should use
 ``capsule_emit.checkpoint``'s primitives directly with their own
-:class:`~capsule_emit.checkpoint.Signer`.
+:class:`~capsule_emit.checkpoint.Signer`. **This signer only ever signs MMR
+checkpoint digests, never capsule content.** Every capsule's own content is
+signed separately and unconditionally, by a persisted (not ephemeral) local
+keypair, at ``seal()`` time -- see ``capsule_emit.signing`` and
+``docs/anatomy.md``. The two signers are deliberately independent: this
+module still works with nothing configured even though capsule-level
+signing now always runs.
 
 **Off switch.** ``emit(..., witness=False)`` or the ``CAPSULE_WITNESS=off``
 env var (checked only when the ``witness`` kwarg is left at its default,
