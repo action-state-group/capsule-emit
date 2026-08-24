@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the seal() / carry() / compose() Layer-0 developer surface.
+"""Tests for the seal() / carry() / received() / compose() Layer-0 developer surface.
 
-Surface of record: ``_work/api-verb-naming-design-2026-08-21.md`` §7.
+Surface of record: ``_work/api-verb-naming-design-2026-08-21.md`` §7;
+``received()`` dispatch: ``_work/dev-surface-v4-2026-08-24.md`` §1
+(O16 migration audit item 7).
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ from agent_action_capsule.verify import verify
 
 import capsule_emit
 import capsule_emit.surface as surface_module
-from capsule_emit import Capsule, carry, compose, emit, seal
+from capsule_emit import Capsule, carry, compose, emit, received, seal
 from capsule_emit.core import _emit_capsule
 
 # agent_action_capsule/__init__.py does `from .emit import ... emit`, which
@@ -109,6 +111,107 @@ def test_carry_has_two_distinct_addresses(tmp_path, monkeypatch):
 
     result = verify(effect.capsule)
     assert result.ok, result.findings
+
+
+def test_received_standalone_dispatch_is_a_carry(tmp_path, monkeypatch):
+    # O16 audit item 7, standalone-carry case: received(bytes, type=...)
+    # called directly performs the carry now and returns a Capsule — same
+    # mechanism as carry(), but the foreign artifact is recorded under its
+    # own declared registered type rather than the generic marker.
+    monkeypatch.chdir(tmp_path)
+    mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
+    effect = received(mandate_jws, type="machine-mandate", anchor=False)
+    assert isinstance(effect, Capsule)
+
+    carried_ref = effect.capsule["model_attestation"]["compute_attestation"]["carried_artifact"]
+    assert carried_ref["type"] == "machine-mandate"
+    assert carried_ref["digest"] == hashlib.sha256(mandate_jws).hexdigest()
+    assert carried_ref["digest_alg"] == "SHA-256"
+
+    result = verify(effect.capsule)
+    assert result.ok, result.findings
+
+
+def test_received_has_two_distinct_addresses(tmp_path, monkeypatch):
+    # Same two-address mechanism as carry() (dev-surface v4 §1) — verified
+    # independently for received() since it is a distinct public verb.
+    monkeypatch.chdir(tmp_path)
+    mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
+    effect = received(mandate_jws, type="machine-mandate", anchor=False)
+
+    compute_att = effect.capsule["model_attestation"]["compute_attestation"]
+    carried_digest = hashlib.sha256(mandate_jws).hexdigest()
+
+    assert compute_att["carried_artifact"]["digest"] == carried_digest
+    assert compute_att["carried_input_digest"] == carried_digest
+    assert "agent_input_digest" not in compute_att
+    assert effect.capsule_id != carried_digest
+
+
+def test_carry_still_uses_the_generic_carried_type(tmp_path, monkeypatch):
+    # carry() is kept, unchanged, alongside received() this release — it
+    # still records the generic "foreign-artifact" marker rather than a
+    # caller-declared type.
+    monkeypatch.chdir(tmp_path)
+    foreign_receipt = b'{"provider_ack": "PO-9182", "status": "accepted"}'
+    effect = carry(foreign_receipt, anchor=False)
+    carried_ref = effect.capsule["model_attestation"]["compute_attestation"]["carried_artifact"]
+    assert carried_ref["type"] == "foreign-artifact"
+
+
+def test_received_then_compose_round_trips(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    auth = seal({"scope": "write_order"}, action="authorize", anchor=False)
+    act = seal({"vendor": "Frobozz Supply"}, action="write_order", anchor=False)
+    effect = received(b'{"provider_ack": "PO-9182"}', type="provider-ack", anchor=False)
+
+    action = compose([auth, act, effect], anchor=False)
+    members = action.capsule["model_attestation"]["compute_attestation"]["composed_members"]
+    member_digests = {m["digest"] for m in members}
+    assert member_digests == {auth.capsule_id, act.capsule_id, effect.capsule_id}
+
+    result = verify(action.capsule)
+    assert result.ok, result.findings
+
+
+def test_seal_refuses_bare_bytes_naming_received(tmp_path, monkeypatch):
+    # Dispatch-ambiguity refusal: raw bytes/bytearray handed straight to
+    # seal() are never guessed at — the error names received() as the fix.
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(TypeError, match=r"received\("):
+        seal(b'{"provider_ack": "PO-9182"}', anchor=False)
+    with pytest.raises(TypeError, match=r"received\("):
+        seal(bytearray(b'{"provider_ack": "PO-9182"}'), anchor=False)
+
+
+def test_seal_nested_received_is_byte_identical_and_does_not_double_append(tmp_path, monkeypatch):
+    # Nested-in-wrapper dispatch: seal(received(bytes, type=...)) must
+    # produce the identical capsule to calling received() standalone — not a
+    # second, independently-computed one — and must not append twice.
+    monkeypatch.chdir(tmp_path)
+    mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
+    effect = received(mandate_jws, type="machine-mandate", anchor=False)
+
+    ledger_path = tmp_path / "ledger.jsonl"
+    lines_before = ledger_path.read_text().splitlines()
+
+    wrapped = seal(effect)
+    assert wrapped is effect  # byte-identical: literally the same capsule
+
+    lines_after = ledger_path.read_text().splitlines()
+    assert lines_after == lines_before  # seal() did not append a second entry
+
+    result = verify(wrapped.capsule)
+    assert result.ok, result.findings
+
+
+def test_seal_still_refuses_bare_string_payload_that_is_a_capsule_look_alike(tmp_path, monkeypatch):
+    # seal()'s pass-through is scoped to actual carried Capsules only — an
+    # EmitResult without a carried_artifact (e.g. a plain seal()/compose()
+    # result) is not a recognized carry and is not silently special-cased.
+    monkeypatch.chdir(tmp_path)
+    plain = seal({"a": 1}, anchor=False)
+    assert surface_module._carried_artifact_ref(plain) is None
 
 
 def test_compose_rejects_members_that_are_not_already_appended_capsules(tmp_path, monkeypatch):

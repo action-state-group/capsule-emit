@@ -122,6 +122,28 @@ never hid the others having already advanced.
 See `tests/test_witness_outage_queue.py` and `docs/checkpoint.md`'s new "Witness
 outage" section.
 
+### Added — `received()`, standalone + nested-in-`seal()` carry dispatch (O16 audit item 7, "Standalone `received()` dispatch")
+
+**What changed.** There was no `received()` verb — `git grep` for `received` across
+the tree returned zero verb-usage hits, and `seal()` performed zero type-checking on
+its payload, so raw/undeclared foreign bytes were silently digested with no refusal
+and no error naming a fix. New `received(artifact_bytes, *, type, ...)`: the
+standalone carry form (`effect = received(bytes, type="machine-mandate")` — same
+mechanism as `carry()`, but the foreign artifact is recorded under its own declared
+registered type instead of `carry()`'s generic `"foreign-artifact"` marker) and the
+nested-in-`seal()` form (`seal(received(bytes, type=...))`, which `seal()` recognizes
+by the resulting capsule's `carried_artifact` field and returns unchanged rather than
+re-sealing — byte-identical to the standalone form, and it does not append twice).
+`seal()` now refuses raw `bytes`/`bytearray` payloads outright, naming `received()` as
+the fix — dispatch between "content I authored" and "bytes someone else signed" is
+never guessed.
+
+`carry()` is kept, unchanged, alongside `received()` in this release (decouples the
+new-verb risk from a breaking removal); its deprecation is a later, separate change.
+
+See `tests/test_seal_carry_compose.py` (dispatch-ambiguity refusal, standalone-carry,
+and nested-in-wrapper cases) and `capsule_emit/surface.py`'s module docstring.
+
 ### Added — flock-based one-log-one-writer locking (O16 audit item 12, "Flock locking")
 
 **What changed.** No OS-level write coordination existed: `git grep` for
