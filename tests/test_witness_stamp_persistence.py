@@ -101,11 +101,13 @@ def dead_ts():
 @pytest.fixture(autouse=True)
 def _clean_witness_state():
     witness._counts.clear()
+    witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False
     yield
     witness._counts.clear()
+    witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False

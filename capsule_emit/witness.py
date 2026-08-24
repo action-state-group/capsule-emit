@@ -22,14 +22,29 @@ stays honest:
 
 **What "due" means.** Every ``emit()`` call increments an in-process,
 per-ledger-path counter (an int; no I/O). Once ``cadence_entries`` calls have
-accumulated since the last checkpoint for that ledger, the actual checkpoint
-build (an MMR sync + peaks + signature -- all local, no network) and its TS
-registration (the only network call, and the only thing that leaves the
-process) are dispatched on a daemon thread -- async, fire-and-forget, exactly
-like the already-default per-emit anchor. The counter resets synchronously,
-before the thread is dispatched, specifically so a burst of ``emit()`` calls
-crossing the boundary while the worker is still running never pack the queue
-with redundant checkpoint attempts.
+accumulated since the last checkpoint for that ledger -- **or**
+``cadence_seconds`` has elapsed since the first unwitnessed entry after the
+last checkpoint, whichever comes first -- the actual checkpoint build (an MMR
+sync + peaks + signature -- all local, no network) and its TS registration
+(the only network call, and the only thing that leaves the process) are
+dispatched on a daemon thread -- async, fire-and-forget, exactly like the
+already-default per-emit anchor. The counter (and the age clock) reset
+synchronously, before the thread is dispatched, specifically so a burst of
+``emit()`` calls crossing the boundary while the worker is still running never
+pack the queue with redundant checkpoint attempts.
+
+**The age leg only ever fires when there is unwitnessed work.** There is no
+background timer or polling thread -- age is checked lazily, only inside
+``maybe_checkpoint``, which itself only ever runs right after a real
+``emit()`` appended a new entry. An idle log (no ``emit()`` calls) never
+calls this function at all, so it is silent by construction: it is
+structurally impossible for the age leg to fire a checkpoint with zero
+unwitnessed entries. The checkpoint-stamp entries this module persists (see
+``_persist_checkpoint_stamp``) reinforce this rather than undermine it: they
+are written directly through ``ledger.append_to_ledger``, never through
+``core.emit()``/``maybe_checkpoint``, so persisting a stamp never advances the
+counter *or* resets the age clock -- exactly like it never advances the
+entry-count cadence today.
 
 **Digest-only.** The only bytes that ever cross the wire are the checkpoint's
 own SHA-256 digest (``CheckpointRecord.digest()``, itself a hash of hashes --
@@ -98,6 +113,8 @@ __all__ = [
     "WITNESS_URL_ENV_VAR",
     "CADENCE_ENV_VAR",
     "DEFAULT_CADENCE_ENTRIES",
+    "AGE_CADENCE_ENV_VAR",
+    "DEFAULT_CADENCE_SECONDS",
 ]
 
 #: Explicit ``witness=`` always wins; this env var is consulted only when the
@@ -120,6 +137,14 @@ WITNESS_URL_ENV_VAR = "CAPSULE_WITNESS_URL"
 #: default cadence, not two numbers to reconcile in docs.
 CADENCE_ENV_VAR = "CAPSULE_WITNESS_CADENCE_ENTRIES"
 DEFAULT_CADENCE_ENTRIES = 100
+
+#: How many seconds may elapse since the first unwitnessed entry after the
+#: last checkpoint before one comes due on age alone -- the other leg of
+#: "100 entries or 15 minutes, whichever first" (frozen surface §0). Only
+#: ever consulted when at least one unwitnessed entry exists (see the module
+#: docstring's "due" section) -- an idle log never trips this.
+AGE_CADENCE_ENV_VAR = "CAPSULE_WITNESS_CADENCE_SECONDS"
+DEFAULT_CADENCE_SECONDS = 900
 
 #: How long the atexit handler waits, in total, for outstanding witness
 #: threads before giving up and warning. Overridable for tests.
@@ -145,6 +170,19 @@ def _resolved_cadence(override: int | None) -> int:
     except ValueError:
         return DEFAULT_CADENCE_ENTRIES
     return parsed if parsed > 0 else DEFAULT_CADENCE_ENTRIES
+
+
+def _resolved_age_cadence(override: float | None) -> float:
+    if override is not None:
+        return override
+    raw = os.environ.get(AGE_CADENCE_ENV_VAR)
+    if raw is None:
+        return DEFAULT_CADENCE_SECONDS
+    try:
+        parsed = float(raw)
+    except ValueError:
+        return DEFAULT_CADENCE_SECONDS
+    return parsed if parsed > 0 else DEFAULT_CADENCE_SECONDS
 
 
 def _parse_witness_urls(raw: str | list[str] | None) -> list[str]:
@@ -267,6 +305,13 @@ class _WitnessState:
 #: is what keeps that path free of any ``capsule_emit.checkpoint`` import.
 _count_lock = threading.Lock()
 _counts: dict[str, int] = {}
+
+#: ``time.monotonic()`` timestamp of the first unwitnessed entry since the
+#: last checkpoint for this ledger path -- the age leg's clock. Guarded by
+#: ``_count_lock`` (same lifecycle as ``_counts``: set the moment a fresh
+#: window opens, reset at dispatch, left alone when dispatch is deferred to
+#: an in-flight worker).
+_armed_at: dict[str, float] = {}
 
 #: The heavier, MMR-bearing state -- created lazily, only once a ledger path
 #: actually crosses the cadence threshold for the first time.
@@ -411,15 +456,21 @@ def maybe_checkpoint(
     ts_url: str | list[str] | None = None,
     enabled: bool | None = None,
     cadence_entries: int | None = None,
+    cadence_seconds: float | None = None,
 ) -> None:
     """Call once per ``emit()``, after the capsule is appended to the ledger.
 
     Cheap in the common (non-streaming) case: one dict lookup and one int
     increment under a lock, no import of ``capsule_emit.checkpoint``, no
     network call -- until ``cadence_entries`` calls have accumulated since the
-    last checkpoint for this exact ``ledger_path``. At that point the
-    checkpoint build + TS registration is dispatched on a daemon thread and
-    this function returns immediately either way; it never blocks ``emit()``.
+    last checkpoint for this exact ``ledger_path``, **or** ``cadence_seconds``
+    have elapsed since the first unwitnessed entry after the last checkpoint
+    -- whichever comes first. At that point the checkpoint build + TS
+    registration is dispatched on a daemon thread and this function returns
+    immediately either way; it never blocks ``emit()``. The age leg is only
+    ever evaluated here, on the back of a real new entry -- there is no
+    background timer, so a ledger with no new ``emit()`` calls is never
+    checkpointed on age alone (see the module docstring's "due" section).
 
     ``ts_url`` accepts a single endpoint or several (a list, or a
     comma-separated string) -- the due checkpoint is registered with every
@@ -436,28 +487,35 @@ def maybe_checkpoint(
     _print_first_use_notice_once(urls)
 
     cadence = _resolved_cadence(cadence_entries)
+    age_cadence = _resolved_age_cadence(cadence_seconds)
     key = _resolve_key(ledger_path)
+    now = time.monotonic()
     with _count_lock:
         count = _counts.get(key, 0) + 1
-        if count < cadence:
+        armed_at = _armed_at.setdefault(key, now)
+        age = now - armed_at
+        if count < cadence and age < age_cadence:
             _counts[key] = count
             return
 
-    # Due. Claim the per-ledger dispatch slot -- if a worker for this exact
-    # ledger is already in flight, leave the count where it is (still >=
-    # cadence) and defer to that worker; it will observe everything currently
-    # on disk when it runs its own mmr.sync(), so nothing is lost, and the
-    # next call to cross this check (once the in-flight worker releases the
-    # slot) will dispatch the catch-up checkpoint.
+    # Due (entry-count or age leg). Claim the per-ledger dispatch slot -- if
+    # a worker for this exact ledger is already in flight, leave the count
+    # (and the age clock) where they are -- still due -- and defer to that
+    # worker; it will observe everything currently on disk when it runs its
+    # own mmr.sync(), so nothing is lost, and the next call to cross this
+    # check (once the in-flight worker releases the slot) will dispatch the
+    # catch-up checkpoint.
     dispatch_lock = _dispatch_lock_for(key)
     if not dispatch_lock.acquire(blocking=False):
         with _count_lock:
             _counts[key] = count
         return
 
-    # Reset only once dispatch is actually claimed.
+    # Reset only once dispatch is actually claimed -- both the counter and
+    # the age clock, so the next unwitnessed entry opens a fresh window.
     with _count_lock:
         _counts[key] = 0
+        _armed_at[key] = time.monotonic()
 
     # Only now -- once a checkpoint is actually due -- does this touch the
     # MMR-bearing state, which is what imports capsule_emit.checkpoint.

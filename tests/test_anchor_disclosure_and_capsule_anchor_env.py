@@ -34,6 +34,7 @@ def _clean_module_state(monkeypatch):
     core._anchor_deps_available = True
     witness._notice_printed = False
     witness._counts.clear()
+    witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
@@ -46,6 +47,7 @@ def _clean_module_state(monkeypatch):
     core._anchor_deps_available = True
     witness._notice_printed = False
     witness._counts.clear()
+    witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
 

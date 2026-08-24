@@ -32,6 +32,35 @@ exist — this change is additive and does not call `grade()` from anywhere yet.
 See `tests/checkpoint/test_checkpoint_emit.py`'s grade tests and
 `tests/test_witness_multi_and_notice.py::test_one_valid_stamp_grades_witnessed_even_if_another_endpoint_fails`.
 
+### Added — age-based checkpoint cadence + explicit idle-silence guarantee (O16 audit item 5, "Idle silence")
+
+**What changed.** `capsule_emit.witness.maybe_checkpoint` (the default `emit()` wiring)
+and `capsule_emit.checkpoint.emit.due_for_checkpoint` (the manual/direct API) previously
+only ever came due on an entry-count cadence (`cadence_entries`, default 100) — there was
+no age-based leg at all, contrary to the frozen v4 surface's "Cadence: 100 entries or 15
+minutes, whichever first, both configurable." Both now also come due once
+`cadence_seconds` (`CheckpointConfig.cadence_seconds` / new `CAPSULE_WITNESS_CADENCE_SECONDS`
+env var, default 900 — 15 minutes) has elapsed since the first unwitnessed entry after the
+last checkpoint, whichever leg fires first.
+
+**Idle silence, explicitly.** The age leg only ever fires when there is at least one
+unwitnessed entry — `due_for_checkpoint` returns `False` outright when
+`entries_since_last <= 0`, regardless of `seconds_since_last`, and
+`witness.maybe_checkpoint`'s age clock (`witness._armed_at`) is only ever read from
+inside a call that itself only runs on the back of a real `emit()`. There is no
+background timer or polling thread, so an idle log (no new `emit()` calls) never comes
+due on age alone — this is structural, not a runtime guard. Checkpoint-stamp entries
+(O16 audit item 16) reinforce this: they are written directly through
+`ledger.append_to_ledger`, never through `core.emit()`, so persisting a stamp neither
+advances the entry counter nor resets/starts the age clock.
+
+**Compatibility.** `due_for_checkpoint`'s new `seconds_since_last` parameter is
+keyword-only and defaults to `None` (entry-count-only behavior, matching the prior
+signature exactly). `CheckpointConfig.cadence_seconds` defaults to 900 for
+constructors/`from_dict()` that don't set it.
+
+See `tests/test_witness_idle_silence_and_age_cadence.py` and `docs/checkpoint.md`.
+
 ### Changed — checkpoint/witness stamps are now persisted ledger entries (O16 audit item 16, "Stamp-as-log-entry")
 
 **What changed.** Previously, once `capsule_emit.witness`'s default checkpoint/witness
