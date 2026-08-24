@@ -3,10 +3,13 @@
 hold's current status before it is allowed to dispatch."""
 from __future__ import annotations
 
+import json
+
 import pytest
 from agent_action_capsule import verify
 
 from capsule_emit.approval import seal_approval
+from capsule_emit.canonicalization import compute_capsule_id
 from capsule_emit.holds import Action, HoldEngine, HoldStatus
 from capsule_emit.holds.errors import HOLD_ALREADY_TERMINAL, HOLD_STATUS_AMBIGUOUS
 from capsule_emit.ledger import read_ledger
@@ -241,6 +244,22 @@ def test_hold_status_ambiguous_when_reserve_record_missing(tmp_path):
     engine = _engine(tmp_path / "ledger.jsonl")
     status, terminal = engine.hold_status("0" * 64)
     assert status == HoldStatus.AMBIGUOUS
+    assert terminal is None
+
+
+def test_hold_status_honors_declared_jcs(tmp_path):
+    ledger_path = tmp_path / "ledger.jsonl"
+    engine = _engine(ledger_path)
+    reserve = engine.evaluate_and_reserve(_action(amount_minor=1_000, target="acct-1"))
+
+    record = dict(reserve.capsule)
+    record["canonicalization_id"] = "jcs"
+    record["canonicalization_probe"] = {"null_member": None, "empty_array": []}
+    record["capsule_id"] = compute_capsule_id(record)
+    ledger_path.write_text(json.dumps(record) + "\n")
+
+    status, terminal = engine.hold_status(record["capsule_id"])
+    assert status == HoldStatus.ACTIVE
     assert terminal is None
 
 

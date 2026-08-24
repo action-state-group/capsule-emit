@@ -28,13 +28,14 @@ import pytest
 from agent_action_capsule.canonical import compute_capsule_id as compute_legacy_capsule_id
 
 import capsule_emit
-from capsule_emit import CANONICALIZATION_ID, seal
+from capsule_emit import CANONICALIZATION_ID, cli, seal
 from capsule_emit.canonicalization import (
     UnsupportedCanonicalizationError,
     canonical_capsule_bytes,
     compute_capsule_id,
 )
-from capsule_emit.signing import verify_capsule_signature
+from capsule_emit.signing import LocalKeypairSigner, verify_capsule_signature, verify_store_signed
+from capsule_emit.verification import verify_capsule
 from capsule_emit.verify_canonicalization import (
     KNOWN_ALGORITHMS,
     CanonicalizationVerdict,
@@ -163,6 +164,31 @@ class TestAlgorithmDispatch:
         assert r.capsule["capsule_id"] == compute_capsule_id(r.capsule)
         assert r.capsule["capsule_id"] != compute_legacy_capsule_id(r.capsule)
         assert verify_capsule_signature(r.capsule)
+
+    def test_jcs_emission_passes_public_verifiers(self, tmp_path, capsys):
+        ledger = tmp_path / "ledger.jsonl"
+        r = seal(
+            None,
+            action="test_action",
+            anchor=False,
+            witness=False,
+            ledger=ledger,
+            canonicalization_id="jcs",
+            extra_compute=self._MEMBERS,
+        )
+
+        assert verify_capsule(r.capsule).ok
+        assert verify_store_signed([r.capsule])[0].ok
+
+        legacy_digest_mutant = dict(r.capsule)
+        legacy_digest_mutant["capsule_id"] = compute_legacy_capsule_id(legacy_digest_mutant)
+        result = verify_capsule(legacy_digest_mutant)
+        assert not result.ok
+        assert any(finding.code == "capsule_id_mismatch" for finding in result.findings)
+
+        rc = cli.main(["verify", "--store", str(ledger)])
+        assert rc == 0
+        assert "1/1 VALID" in capsys.readouterr().out
 
     def test_jcs_label_with_jcs_n_digest_is_rejected(self):
         r = _emit_no_anchor(
@@ -337,6 +363,28 @@ class TestVintageRule:
     def test_vintage_record_capsule_id_recomputes(self):
         legacy = self._make_legacy_record()
         assert compute_capsule_id(legacy) == legacy["capsule_id"]
+
+    def test_explicit_null_is_the_signed_vintage_shape(self, tmp_path):
+        r = _emit_no_anchor()
+        vintage = {
+            key: value
+            for key, value in r.capsule.items()
+            if key not in {"canonicalization_id", "signature", "key_id", "capsule_id"}
+        }
+        signer = LocalKeypairSigner(tmp_path / "vintage-signing-key.pem")
+        content_digest = compute_capsule_id(vintage)
+        vintage["signature"], vintage["key_id"] = signer.sign(content_digest.encode("ascii"))
+        vintage["capsule_id"] = compute_capsule_id(vintage)
+
+        explicit_null = dict(vintage, canonicalization_id=None)
+        assert compute_capsule_id(explicit_null) == vintage["capsule_id"]
+        assert verify_capsule_signature(explicit_null)
+        assert verify_store_signed([explicit_null])[0].ok
+
+        result = verify_canonicalization_id(explicit_null)
+        assert result.ok
+        assert result.declared is None
+        assert result.resolved == "jcs-n"
 
 
 # ---------------------------------------------------------------------------

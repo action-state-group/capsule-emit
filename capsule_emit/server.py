@@ -72,7 +72,7 @@ from mcp.server.fastmcp import FastMCP
 from capsule_emit import read_ledger, seal
 
 try:
-    from agent_action_capsule import verify as _aac_verify
+    from .verification import verify_capsule as _aac_verify
 
     _VERIFY_OK = True
 except ImportError:

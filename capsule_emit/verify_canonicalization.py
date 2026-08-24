@@ -59,8 +59,10 @@ from enum import Enum
 from typing import Any
 
 from .canonicalization import (
+    VINTAGE_CANONICALIZATION_ID,
     UnsupportedCanonicalizationError,
     compute_capsule_id,
+    resolve_canonicalization_id,
 )
 
 #: CPB Payload Canonicalization Algorithm Registry (normative entries).
@@ -69,7 +71,7 @@ KNOWN_ALGORITHMS: frozenset[str] = frozenset({"jcs-n", "jcs", "as-transmitted"})
 
 #: Vintage inference value — absent canonicalization_id on a pre-G1 record
 #: resolves to this.  Pre-G1 capsule records are unambiguously jcs-n.
-_VINTAGE_ALGORITHM = "jcs-n"
+_VINTAGE_ALGORITHM = VINTAGE_CANONICALIZATION_ID
 
 
 class CanonicalizationVerdict(str, Enum):
@@ -167,7 +169,7 @@ def verify_canonicalization_id(
             )
 
         declared: str | None = capsule.get("canonicalization_id")
-        resolved = _VINTAGE_ALGORITHM if declared is None else declared
+        resolved = resolve_canonicalization_id(capsule)
 
         # Present but not in the registry.
         if declared is not None and declared not in KNOWN_ALGORITHMS:

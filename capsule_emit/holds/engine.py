@@ -14,9 +14,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
-from agent_action_capsule import verify as verify_capsule
-
 from ..ledger import append_to_ledger, read_ledger
+from ..verification import verify_capsule
 from .action import Action
 from .aggregate import active_exposure_minor
 from .capsules import (
