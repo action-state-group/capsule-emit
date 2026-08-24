@@ -95,15 +95,28 @@ def carry(receipt_bytes: bytes | bytearray | str, *, action: str = "carry", **kw
     sign). This localizes the foreign artifact as a capsule in your own log,
     which is what lets ``compose()`` reference it exactly like any member you
     authored yourself (carry-then-compose).
+
+    **Two addresses, two facts.** This capsule's own ``capsule_id`` commits to
+    the carried bytes as ITS payload (``carried_input_digest``, in the same
+    payload-commitment slot ``agent_input_digest``/``agent_output_digest``
+    occupy for ``seal()``) while ``carried_artifact.digest`` keeps identifying
+    the foreign record unchanged — theirs identifies their record, yours
+    identifies your act of holding it. ``carried_input_digest`` is not named
+    ``agent_input_digest`` because that field's contract is
+    ``SHA-256(JCS(agent_input))`` over a JSON-native value; a carried artifact
+    is opaque bytes that must never be JCS-reinterpreted, so it gets its own,
+    equally-raw digest field instead.
     """
     raw = receipt_bytes.encode("utf-8") if isinstance(receipt_bytes, str) else bytes(receipt_bytes)
+    carried_digest = hashlib.sha256(raw).hexdigest()
     carried_ref = {
         "type": _CARRIED_TYPE,
         "digest_alg": _DIGEST_ALG,
-        "digest": hashlib.sha256(raw).hexdigest(),
+        "digest": carried_digest,
     }
     extra_compute = dict(kwargs.pop("extra_compute", None) or {})
     extra_compute["carried_artifact"] = carried_ref
+    extra_compute["carried_input_digest"] = carried_digest
     return _emit_capsule(action, extra_compute=extra_compute, **kwargs)
 
 

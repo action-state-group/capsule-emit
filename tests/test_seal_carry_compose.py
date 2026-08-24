@@ -76,6 +76,41 @@ def test_carry_then_compose_round_trips_a_foreign_receipt(tmp_path, monkeypatch)
     assert result.ok, result.findings
 
 
+def test_carry_has_two_distinct_addresses(tmp_path, monkeypatch):
+    # dev-surface v4 §1: "A carry receipt has its own capsule_id (over the
+    # carried bytes as payload) while preserving the foreign record's own
+    # digest inside — two addresses, two facts: theirs identifies their
+    # record, yours identifies your act of holding it."
+    monkeypatch.chdir(tmp_path)
+    foreign_receipt = b'{"provider_ack": "PO-9182", "status": "accepted"}'
+    effect = carry(foreign_receipt, anchor=False)
+
+    compute_att = effect.capsule["model_attestation"]["compute_attestation"]
+    carried_digest = hashlib.sha256(foreign_receipt).hexdigest()
+
+    # "theirs" — the foreign record's own address, untouched.
+    assert compute_att["carried_artifact"]["digest"] == carried_digest
+    # "yours" — this capsule's own payload commitment, in the same
+    # payload-commitment slot agent_input_digest/agent_output_digest occupy
+    # for seal(), but under its own name (a carried artifact is opaque bytes,
+    # never JCS-reinterpreted, so it can't share agent_input_digest's
+    # SHA-256(JCS(...)) contract).
+    assert compute_att["carried_input_digest"] == carried_digest
+    assert "agent_input_digest" not in compute_att
+
+    # Two addresses, two facts: capsule_id (the whole-envelope commitment to
+    # this act of holding) is never equal to the bare carried-bytes digest.
+    assert effect.capsule_id != carried_digest
+
+    # capsule_id is sensitive to the carried bytes as payload: carrying
+    # different foreign bytes under an otherwise-identical call changes it.
+    other = carry(b'{"provider_ack": "PO-9183", "status": "accepted"}', anchor=False)
+    assert other.capsule_id != effect.capsule_id
+
+    result = verify(effect.capsule)
+    assert result.ok, result.findings
+
+
 def test_compose_rejects_members_that_are_not_already_appended_capsules(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(TypeError):
