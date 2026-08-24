@@ -16,19 +16,18 @@ capsule JSON body, committed to ``capsule_id`` in the signed payload).
 
 ``DIGEST_MISMATCH``
     The ``capsule_id`` does not recompute correctly.  This covers both (a) a
-    tampered record where ``canonicalization_id`` was stripped or altered
-    without recomputing ``capsule_id`` and (b) a known algorithm that does not
-    match the declared profile algorithm (profile cross-check failure, also
-    returned when the declared id is ``"jcs"`` but the verifier profile is
-    ``"jcs-n"``).
+    tampered record where a known ``canonicalization_id`` was stripped or
+    altered without recomputing ``capsule_id`` and (b) a known algorithm that
+    does not match the declared profile algorithm (profile cross-check failure).
 
 ``UNKNOWN_ID``
     The ``canonicalization_id`` field is present but names an algorithm not in
     the CPB registry.  The verifier fails closed; the record is unverifiable.
 
 ``NON_CONFORMING``
-    Structural error — ``capsule_id`` field missing, or the verifier raised
-    unexpectedly.  The record cannot be evaluated.
+    Structural error, an algorithm such as ``as-transmitted`` that cannot be
+    recomputed from parsed JSON, or an unexpected verifier failure. The record
+    cannot be evaluated.
 
 **Vintage rule (absent-id path):**
 
@@ -58,6 +57,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+
+from .canonicalization import (
+    UnsupportedCanonicalizationError,
+    compute_capsule_id,
+)
 
 #: CPB Payload Canonicalization Algorithm Registry (normative entries).
 #: Update here when the registry gains a new entry.
@@ -132,15 +136,16 @@ def verify_canonicalization_id(
     **Algorithm** (in order):
 
     1. Extract ``capsule_id`` from *capsule*.  If absent → NON_CONFORMING.
-    2. Recompute ``capsule_id`` using :func:`agent_action_capsule.canonical.\
-compute_capsule_id`.  If the recomputed value does not match → DIGEST_MISMATCH.
-    3. Read ``canonicalization_id`` from *capsule*.
+    2. Resolve and validate ``canonicalization_id`` from *capsule*. An unknown
+       identifier returns UNKNOWN_ID.
+    3. Recompute ``capsule_id`` using the resolved algorithm. If the
+       recomputed value does not match → DIGEST_MISMATCH.
+    4. Apply the vintage rule or profile match:
 
-       a. **Absent** → vintage rule: infer ``"jcs-n"``, return VERIFIED
+       a. **Absent** → infer ``"jcs-n"``, return VERIFIED
           (``declared=None``, ``resolved="jcs-n"``).
-       b. **Present, unknown** → UNKNOWN_ID.
-       c. **Present, known, mismatches** *profile_algorithm* → DIGEST_MISMATCH.
-       d. **Present, known, matches** *profile_algorithm* → VERIFIED.
+       b. **Present, known, mismatches** *profile_algorithm* → DIGEST_MISMATCH.
+       c. **Present, known, matches** *profile_algorithm* → VERIFIED.
 
     Args:
         capsule:           The capsule dict as produced by :func:`capsule_emit.emit`.
@@ -153,8 +158,6 @@ compute_capsule_id`.  If the recomputed value does not match → DIGEST_MISMATCH
         :class:`CanonicalizationResult` with ``.ok``, ``.verdict``,
         ``.declared``, and ``.resolved``.
     """
-    from agent_action_capsule.canonical import compute_capsule_id
-
     try:
         stored_cid = capsule.get("capsule_id")
         if stored_cid is None:
@@ -163,33 +166,42 @@ compute_capsule_id`.  If the recomputed value does not match → DIGEST_MISMATCH
                 verdict=CanonicalizationVerdict.NON_CONFORMING,
             )
 
-        recomputed = compute_capsule_id(dict(capsule))
+        declared: str | None = capsule.get("canonicalization_id")
+        resolved = _VINTAGE_ALGORITHM if declared is None else declared
+
+        # Present but not in the registry.
+        if declared is not None and declared not in KNOWN_ALGORITHMS:
+            return CanonicalizationResult(
+                ok=False,
+                verdict=CanonicalizationVerdict.UNKNOWN_ID,
+                declared=declared,
+                resolved=None,
+            )
+
+        try:
+            recomputed = compute_capsule_id(dict(capsule))
+        except UnsupportedCanonicalizationError:
+            return CanonicalizationResult(
+                ok=False,
+                verdict=CanonicalizationVerdict.NON_CONFORMING,
+                declared=declared,
+                resolved=resolved,
+            )
         if recomputed != stored_cid:
             return CanonicalizationResult(
                 ok=False,
                 verdict=CanonicalizationVerdict.DIGEST_MISMATCH,
-                declared=capsule.get("canonicalization_id"),
-                resolved=None,
+                declared=declared,
+                resolved=resolved,
             )
 
-        declared: str | None = capsule.get("canonicalization_id")
-
-        # Absent id — vintage rule.
+        # Absent id, with a valid legacy digest, follows the vintage rule.
         if declared is None:
             return CanonicalizationResult(
                 ok=True,
                 verdict=CanonicalizationVerdict.VERIFIED,
                 declared=None,
                 resolved=_VINTAGE_ALGORITHM,
-            )
-
-        # Present but not in the registry.
-        if declared not in KNOWN_ALGORITHMS:
-            return CanonicalizationResult(
-                ok=False,
-                verdict=CanonicalizationVerdict.UNKNOWN_ID,
-                declared=declared,
-                resolved=None,
             )
 
         # Present, registered, but wrong profile.

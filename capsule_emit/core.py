@@ -68,11 +68,12 @@ from typing import Any, Literal
 
 from agent_action_capsule import emit as _base_emit
 from agent_action_capsule.anchor import AnchorError, AnchorFuture, AnchorResult, async_anchor
-from agent_action_capsule.canonical import compute_capsule_id, jcs, json_digest, normalize
+from agent_action_capsule.canonical import jcs, json_digest, normalize
 from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError
 
 from . import signing as _signing
 from . import witness as _witness
+from .canonicalization import compute_capsule_id
 from .ledger import append_to_ledger
 from .numbers import CANONICALIZATION_ID
 from .signing import Signer

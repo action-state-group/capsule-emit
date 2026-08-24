@@ -234,9 +234,10 @@ def verify_capsule_signature(capsule: dict) -> bool:
     fields and recompute via ``compute_capsule_id`` (which already excludes
     ``capsule_id``/``chain``).
     """
-    from agent_action_capsule.canonical import compute_capsule_id
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    from .canonicalization import compute_capsule_id
 
     try:
         signature_hex = capsule["signature"]
