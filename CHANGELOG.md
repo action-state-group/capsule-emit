@@ -6,6 +6,27 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — flock-based one-log-one-writer locking (O16 audit item 12, "Flock locking")
+
+**What changed.** No OS-level write coordination existed: `git grep` for
+`flock|fcntl|filelock|LOCK_EX` across the tree returned zero results, and
+`ledger.py`'s `_append_lock` (`threading.Lock`) only ever protected same-process
+thread races — its own inline comment said so. Two OS *processes* writing to the
+same ledger had no coordination beyond OS append-mode atomicity. `append_to_ledger`
+now takes an OS-level `flock` (POSIX `fcntl`) on a sidecar `<ledger>.lock` file for
+the duration of each append — mandatory, no opt-out. A second process that finds the
+lock held fails immediately with `capsule_emit.ledger.LedgerLockedError`, naming the
+holder (pid/host/timestamp read from the lock file); waiting is opt-in only
+(`append_to_ledger(..., wait=True[, timeout=seconds])`), never silent, because a torn
+log manufactures fork evidence (frozen surface §7d).
+
+This is an intentional behavior change: multi-process writers against one log
+directory (previously undocumented and unsafe) now get a hard, named error instead
+of a silent, lucky-or-not interleave.
+
+See `tests/test_ledger_locking.py` (includes a real two-process test — prior
+concurrency coverage was thread-level only) and `docs/concurrency.md`.
+
 ### Added — `#logged @ leaf N` repr (O16 audit item 9)
 
 **What changed.** `EmitResult.__repr__` and `capsule-emit ledger show` previously gave
