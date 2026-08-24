@@ -29,6 +29,16 @@ Four rendering levels for the ledger:
                                                     evidence comment (markdown)
                                                     from a ledger; fail-closed
 
+    capsule-emit disclose <path> <id|range>      — bundle plus selected
+      --audience NAME [--payloads all|selected]    payload content, a
+      [--reveal SELECTOR:FIELD=payload.json ...]    completeness statement,
+      [--suppress FIELD ...]                        and its own sealed
+                                                      disclosure record —
+                                                      the conscious sibling
+                                                      of bundle; a
+                                                      deliberate, recorded
+                                                      act (never a default)
+
 Exit codes: 0 = ok, 1 = error.
 """
 
@@ -233,6 +243,54 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-viewer-link",
         action="store_true",
         help="omit the verify-viewer permalink (offline verify commands remain)",
+    )
+
+    # disclose
+    disclose_p = sub.add_parser(
+        "disclose",
+        help="bundle plus selected payload content, a completeness statement, and its "
+        "own sealed disclosure record — a deliberate, recorded act (bundle's conscious "
+        "sibling); never a default",
+    )
+    disclose_p.add_argument("path", help="path to a JSONL ledger file")
+    disclose_p.add_argument(
+        "selector",
+        metavar="id|range",
+        help="a capsule_id (full or >=8-char prefix); an id1..id2 contiguous range "
+        "(inclusive, ledger order — 'contiguous' completeness); or an explicit "
+        "id1,id2,... list ('producer-selected' completeness)",
+    )
+    disclose_p.add_argument(
+        "--audience", required=True, metavar="NAME", help="who this disclosure is for"
+    )
+    disclose_p.add_argument(
+        "--payloads",
+        choices=("all", "selected"),
+        default="all",
+        help="'all' (default) requires a --reveal payload for every eligible field not "
+        "in --suppress on every selected record, refusing to under-disclose silently; "
+        "'selected' discloses exactly the --reveal payloads supplied, nothing implied",
+    )
+    disclose_p.add_argument(
+        "--reveal",
+        action="append",
+        metavar="SELECTOR:FIELD=payload.json",
+        default=None,
+        help="disclose a field (agent_input or agent_output) for one selected record — "
+        "SELECTOR is a 1-based record number (over the full ledger) or an >=8-char "
+        "capsule_id prefix; repeat --reveal per field/record",
+    )
+    disclose_p.add_argument(
+        "--suppress",
+        action="append",
+        metavar="FIELD",
+        default=None,
+        help="withhold FIELD (agent_input or agent_output) from every selected record "
+        "for this audience, recorded rather than silently dropped — repeatable",
+    )
+    disclose_p.add_argument("--json", dest="as_json", action="store_true", help="raw JSON output")
+    disclose_p.add_argument(
+        "--out", metavar="FILE.json", default=None, help="write the disclosure to FILE.json"
     )
 
     return parser
@@ -483,6 +541,68 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_disclose(args: argparse.Namespace) -> int:
+    from .disclose import DiscloseError
+    from .disclose import disclose as _disclose_fn
+    from .ledger import read_ledger
+    from .permalink import PermalinkError
+
+    capsules = read_ledger(args.path)
+    if not capsules:
+        print(f"disclose: {args.path} — empty or not found", file=sys.stderr)
+        return 1
+
+    reveal = None
+    if args.reveal:
+        try:
+            reveal = _parse_reveal_args(args.reveal, capsules)
+        except PermalinkError as exc:
+            print(f"disclose: {exc}", file=sys.stderr)
+            return 1
+        mismatches = _check_reveal_digests_per_capsule(capsules, reveal)
+        if mismatches:
+            print(
+                "disclose --reveal: disclosed payload does not match the committed "
+                "digest — refusing to disclose",
+                file=sys.stderr,
+            )
+            for m in mismatches:
+                print(f"  {m}", file=sys.stderr)
+            return 1
+
+    try:
+        d = _disclose_fn(
+            args.path,
+            args.selector,
+            audience=args.audience,
+            payloads=args.payloads,
+            reveal=reveal,
+            suppress=args.suppress,
+        )
+    except DiscloseError as exc:
+        print(f"disclose: {exc}", file=sys.stderr)
+        return 1
+
+    if args.out:
+        Path(args.out).write_text(json.dumps(d.to_dict(), indent=2, default=str))
+
+    if args.as_json:
+        print(json.dumps(d.to_dict(), indent=2, default=str))
+        return 0
+
+    n_fields = sum(len(env.get("disclosures") or {}) for env in d.envelopes.values())
+    print(
+        f"disclose: {len(d.record_ids)} record(s) → audience={d.audience!r}  "
+        f"{n_fields} payload field(s) disclosed"
+    )
+    print(f"  records:  {d.completeness['records_note']}")
+    print(f"  payloads: {d.completeness['payloads_note']}")
+    print(f"  disclosure record: {d.disclosure_record['capsule_id']}")
+    if args.out:
+        print(f"  wrote {args.out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -504,6 +624,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "evidence":
         return _cmd_evidence(args)
+
+    if args.command == "disclose":
+        return _cmd_disclose(args)
 
     parser.error(f"unknown command {args.command!r}")
     return 1

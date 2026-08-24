@@ -7,6 +7,14 @@ verifier (e.g. the neutral web viewer) reads to recompute and check a
 digest-only field's committed content, per the companion profile in
 ``agent-action-capsule``. Reuses the same JCS-SHA256 canonicalization
 :func:`verify_input_digest` uses; this module defines no second hashing path.
+
+This module is the single-capsule payload primitive. The ledger-level
+``disclose`` CLI verb (O16 audit item 10, frozen dev-surface v4 §7b —
+bundle + selected payload content + completeness statement + audience
+suppression + its own sealed disclosure record, over an ``<id|range>``
+selection) is ``capsule_emit.disclose``, which calls
+:func:`build_disclosure_envelope` here once per selected record rather than
+duplicating its digest-check logic.
 """
 from __future__ import annotations
 

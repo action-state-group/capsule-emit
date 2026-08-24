@@ -27,6 +27,31 @@ of a silent, lucky-or-not interleave.
 See `tests/test_ledger_locking.py` (includes a real two-process test — prior
 concurrency coverage was thread-level only) and `docs/concurrency.md`.
 
+### Added — `disclose` CLI verb (O16 audit item 10)
+
+**What changed.** There was no `disclose` verb — only `disclosure.py`'s narrow
+single-capsule Disclosure Envelope builder, with no `--audience`, no range, no
+completeness statement, and no self-sealing disclosure record. New
+`capsule_emit.disclose` module + `capsule-emit disclose <path> <id|range> --audience
+NAME [--payloads all|selected] [--reveal SELECTOR:FIELD=payload.json] [--suppress
+FIELD]` CLI verb: `bundle()` (O16 audit item 14) plus selected payload content (built
+per record via the existing `build_disclosure_envelope`), a **completeness
+statement** (`"contiguous"` for a single id/`id1..id2` range, `"producer-selected"`
+for an explicit `id1,id2,...` list — never overstated), an **audience-suppression
+profile** (`--suppress`, recorded rather than silently dropped), and its own
+**self-sealing disclosure record** — signed with the same producer `Signer` `seal()`
+uses, appended to the same ledger as a new `kind` (`capsule_emit.ledger
+.DISCLOSURE_RECORD_KIND`) so it becomes an MMR leaf like any other entry
+("disclosures are receipts too"). `--payloads all` (default) refuses to build an
+incomplete disclosure that claims completeness (the equivocation-honesty rule);
+`--payloads selected` discloses exactly what's supplied. `read_ledger()` and
+`bundle()`'s own record resolution both exclude the new `disclosure_record` kind, the
+same way they already exclude checkpoint-stamp entries (see `ledger
+.NON_CAPSULE_KINDS`). `--claim`-driven selection is plugin sugar, out of scope for
+this neutral primitive.
+
+See `tests/test_disclose.py`, `docs/checkpoint.md`'s "Disclose" section.
+
 ### Added — `#logged @ leaf N` repr (O16 audit item 9)
 
 **What changed.** `EmitResult.__repr__` and `capsule-emit ledger show` previously gave
