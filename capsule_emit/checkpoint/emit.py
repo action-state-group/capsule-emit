@@ -20,12 +20,23 @@ Verification chain (all links must hold):
   1. MMR inclusion-to-peak: any leaf under ``mmr_size`` is genuinely in the
      log (``MmrLedger.inclusion_proof`` + ``core.verify_inclusion``).
   2. Checkpoint signature: the peak set committed at ``mmr_size`` is
-     operator-signed (``verify_checkpoint_signature``).
+     operator-signed (``verify_checkpoint_signature`` for the producer's own
+     round-trip check with a live ``Signer``; ``verify_checkpoint_signature_offline``
+     for a stranger holding only the checkpoint bytes -- see below).
   3. TS receipt: the checkpoint digest appears in the TS's append-only log
      (``verify_receipt_offline`` via scitt-cose).
   4. Rollback detection: the current MMR's root at the *previous*
      checkpoint's size matches the previous checkpoint's stored root
      (``verify_checkpoint_consistency``).
+
+These four links are still four separate, caller-composed primitives here --
+this module never assembles them itself. ``capsule_emit.bundle.bundle()``
+(O16 audit item 14) is what assembles all of them, plus the record's own
+receipt and the prior checkpoint's consistency proof, into ONE
+standalone-verifiable artifact for one record; ``capsule_emit.bundle
+.verify_bundle()`` is the composed offline check. Reach for the primitives
+directly only when you want something other than "verify one record's
+bundle" (e.g. checking a checkpoint chain's rollback-freedom on its own).
 
 These functions are OPTIONAL and OFF by default when used directly -- nothing
 in this module makes a network call unless the caller invokes
@@ -84,6 +95,7 @@ __all__ = [
     "verify_checkpoint_consistency",
     "register_checkpoint",
     "verify_receipt_offline",
+    "verify_checkpoint_signature_offline",
     "due_for_checkpoint",
     "lag_exceeded",
     "DEFAULT_TS_URL",
@@ -425,6 +437,39 @@ def verify_checkpoint_signature(cp: CheckpointRecord, signer: Signer) -> bool:
     try:
         expected = signer.sign(cp.digest())
         return cp.signature == expected
+    except Exception:
+        return False
+
+
+def verify_checkpoint_signature_offline(cp: CheckpointRecord) -> bool:
+    """Verify ``cp.signature`` using ONLY ``cp`` itself -- no ``Signer``
+    object, no private key, no network.
+
+    ``verify_checkpoint_signature`` above needs a live ``Signer`` capable of
+    reproducing the signature -- i.e. the producer's own private key (or the
+    persisted key file). That is fine for the producer's own round-trip
+    check, but useless to a stranger who holds only a built ``bundle()``
+    (item 14): the whole reason the checkpoint signer moved to a persisted
+    Ed25519 identity (`o16-14-precond-checkpoint-signer`) was so bundles
+    handed to strangers could be verified. This function is that offline
+    check: it reconstructs the Ed25519 public key straight from ``cp.key_id``
+    (the raw public key, hex-encoded -- same convention as
+    ``capsule_emit.signing.verify_capsule_signature`` for capsule content)
+    and verifies ``cp.signature`` over ``cp.digest()``. It proves "the holder
+    of this key signed this exact checkpoint"; it does NOT prove who that key
+    belongs to -- same caveat as capsule-content signature verification.
+
+    A checkpoint signed by a non-Ed25519 ``Signer`` (e.g. the retired
+    in-process HMAC ``witness._AutoSigner``, whose ``key_id`` is an arbitrary
+    label, not a public key) correctly fails here rather than false-passing.
+    Never raises -- any malformed input is a verification failure.
+    """
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(cp.key_id))
+        public_key.verify(bytes.fromhex(cp.signature), cp.digest().encode("ascii"))
+        return True
     except Exception:
         return False
 

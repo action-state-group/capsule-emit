@@ -38,6 +38,34 @@ other read verb's "reads never write" rule.
 
 See `tests/test_status.py` and `docs/checkpoint.md`'s "Checking status" section.
 
+### Added — `bundle()`, the hand-to-anyone artifact (O16 audit item 14, "Bundle contents")
+
+**What changed.** New `capsule_emit.bundle` module: `bundle(path, capsule_id)` assembles
+the frozen surface's §2.5 shape for one record — receipt + inclusion proof + covering
+checkpoint (with its witness stamp(s)) + prior checkpoint + consistency proof between the
+two — into one standalone `Bundle` object, JSON-round-trippable via `to_dict()`/
+`from_dict()`. `verify_bundle(b)` is the pure, offline, total counterpart: it checks
+inclusion, both checkpoints' signatures, the `prev_size`/`prev_root` linkage, and the
+consistency proof, never raising. `prior_checkpoint`/`consistency_proof` are `None`
+together, and only when the covering checkpoint is the log's first (`prev_size == 0`) —
+the honest edge case the two-sided append bracket has no lower bound for yet, not a gap.
+
+Also new: `capsule_emit.checkpoint.verify_checkpoint_signature_offline` — a checkpoint
+signature check using only the checkpoint's own `key_id` (Ed25519 public key, no private
+key, no live `Signer`). The existing `verify_checkpoint_signature` needs a `Signer`
+capable of reproducing the signature (the producer's own round-trip check); that's
+useless to a stranger verifying a bundle, which is the entire reason
+`o16-14-precond-checkpoint-signer` moved the default checkpoint signer to a persisted
+Ed25519 identity ahead of this change.
+
+**Out of scope (per the audit).** No CLI verb yet — `disclose` (item 10), `status`'s
+render surface (item 17), and `verify`'s bundle mode are each their own item and build on
+this library function, not re-planned here. Witness-stamp re-confirmation
+(`checkpoint.verify_receipt_offline`) stays a separate, explicit step in `verify_bundle`
+since it may need a network fetch of the TS public key.
+
+See `tests/test_bundle.py` and `docs/checkpoint.md`'s new "Bundle" section.
+
 ### Added — checkpoint grade: self-attested / witnessed (O16 audit item 11, "Multi-witness any-of grading")
 
 **What changed.** `CheckpointRecord` gains a `grade()` method and a new `Grade` enum

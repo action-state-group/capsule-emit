@@ -73,6 +73,7 @@ from .emit import (
     register_checkpoint,
     verify_checkpoint_consistency,
     verify_checkpoint_signature,
+    verify_checkpoint_signature_offline,
     verify_receipt_offline,
 )
 from .index import LogSource, MmrLedger, RangeProof, verify_range
@@ -116,5 +117,6 @@ __all__ = [
     "register_checkpoint",
     "verify_checkpoint_consistency",
     "verify_checkpoint_signature",
+    "verify_checkpoint_signature_offline",
     "verify_receipt_offline",
 ]

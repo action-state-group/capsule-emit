@@ -90,12 +90,17 @@ one Transparency Service (`emit(..., witness_url=[url1, url2])` or a
 comma-separated `CAPSULE_WITNESS_URL`) to climb from single-witness to
 multi-witness; the zero-config default does not do this for you.
 
-**Signing.** The default path signs checkpoints with an ephemeral,
-per-process HMAC key auto-generated the first time a ledger needs one — good
-enough for that ledger's own rollback/consistency self-check, but not
-persisted across a process restart and not suitable for a deployment that
-wants a stable, externally-attributable signing identity. Use the manual API
-below with your own `Signer` for that.
+**Signing.** The default path signs checkpoints with the SAME persisted
+Ed25519 identity (`capsule_emit.signing.LocalKeypairSigner`) that signs
+capsule content — resolved with the identical precedence `seal()` uses
+(`signer=`/`signing_key_path=`/`CAPSULE_SIGNING_KEY_PATH`/a key file next to
+the ledger). A checkpoint signed in one process therefore verifies in a
+later one, including by a stranger who holds only the checkpoint bytes (see
+"Bundle" below, and `checkpoint.verify_checkpoint_signature_offline`) — this
+replaced an earlier ephemeral, in-process-only HMAC key
+(`witness._AutoSigner`) specifically because that could never be verified
+again once the signing process exited. Use the manual API below with your
+own `Signer` if you want a different identity.
 
 ## Direct / manual use
 
@@ -198,6 +203,60 @@ new Transparency Service log entry, i.e. a write, and `push` (which forces
 a *new* checkpoint), not `status`, is where writes belong. `--offline`
 skips even the read-only re-check and reports only what the ledger already
 records.
+
+## Bundle — the hand-to-anyone artifact (O16 audit item 14)
+
+The verification chain above (`emit.py`'s module docstring) is four
+separate, caller-composed primitives — inclusion, checkpoint signature, TS
+receipt, rollback/consistency. `capsule_emit.bundle.bundle()` assembles all
+of them, plus the record's own receipt and the *prior* checkpoint's
+consistency proof, into one standalone object for a single record — the
+frozen surface's §2.5 shape:
+
+```python
+from capsule_emit.bundle import bundle, verify_bundle
+
+b = bundle("ledger.jsonl", capsule_id)   # or an unambiguous >=8-char prefix
+ok, errors = verify_bundle(b)            # pure, offline, never raises
+```
+
+`Bundle` carries:
+
+- `receipt` — the record itself, as persisted.
+- `inclusion_proof` — proves the receipt is a leaf under `checkpoint`'s root.
+- `checkpoint` — the *covering* checkpoint (the first one whose `mmr_size`
+  reaches this record), carrying whatever witness stamp(s) it collected in
+  `checkpoint.witnesses`.
+- `prior_checkpoint` / `consistency_proof` — the checkpoint immediately
+  before `checkpoint` for this log, and the proof that `checkpoint`'s root
+  genuinely extends it. This is the bracket's *lower* bound: the record
+  wasn't yet in `prior_checkpoint`. Both are `None` together, and only when
+  `checkpoint.prev_size == 0` — the covering checkpoint is the log's first,
+  so there is no earlier checkpoint to bound against; that is the honest
+  edge case, not a gap.
+
+A record only becomes bundle-able once some checkpoint's `mmr_size` reaches
+it — `bundle()` raises `BundleError` for a record still awaiting its first
+checkpoint (see `capsule_emit.status` for a read-only way to check that lag
+first). `bundle()` never caches anything: every call re-reads the ledger and
+re-derives the MMR fresh, so a bundle can be built by a completely different
+process than the one that sealed the record, at any later time, as long as
+the log still retains it.
+
+`verify_bundle()` checks every link the two-sided append bracket depends on
+— inclusion, both checkpoints' signatures (via
+`checkpoint.verify_checkpoint_signature_offline`, which needs only the
+checkpoint's own `key_id`, never a private key or a live `Signer` — this is
+what makes bundle verification possible for a stranger at all), the
+`prev_size`/`prev_root` linkage, and the consistency proof. It deliberately
+does **not** re-confirm witness stamps (`checkpoint.witnesses`) — that needs
+a network fetch of the Transparency Service's public key (or a cached
+`ts_pubkey_pem`), so it stays a separate, explicit step via
+`checkpoint.verify_receipt_offline` per `WitnessRecord`.
+
+`Bundle.to_dict()` / `Bundle.from_dict()` round-trip through plain JSON —
+the point of "standalone": a bundle survives being written to a file and
+handed to someone else's process.
 
 ## Registration is opt-in, always — for direct/manual use of this API
 
