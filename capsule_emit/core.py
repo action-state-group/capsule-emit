@@ -486,9 +486,10 @@ def _emit_capsule(
             sealed changes.  The value propagates through the constant —
             call sites need no change when the profile revs.
         signer: Bring your own :class:`~capsule_emit.signing.Signer` (KMS,
-            HSM, TPM, or any object with ``.key_id`` + ``.sign(bytes)``) to
-            sign this capsule with instead of the default persisted local
-            keypair. Overrides ``signing_key_path`` when both are given.
+            HSM, TPM, or any object with ``.sign(bytes) -> (signature,
+            key_id)``) to sign this capsule with instead of the default
+            persisted local keypair. Overrides ``signing_key_path`` when both
+            are given.
         signing_key_path: Override where the default
             :class:`~capsule_emit.signing.LocalKeypairSigner` persists its
             key (else ``CAPSULE_SIGNING_KEY_PATH``, else a file next to
@@ -620,8 +621,11 @@ def _emit_capsule(
     signer_obj = _signing.resolve_signer(
         os.fspath(ledger), signer=signer, key_path=signing_key_path
     )
-    capsule["signature"] = signer_obj.sign(content_digest.encode("ascii"))
-    capsule["key_id"] = signer_obj.key_id
+    # signature and key_id come from ONE sign() call (frozen §7d:
+    # sign(bytes) -> (signature, key_id)) -- never a separate signer_obj.key_id
+    # read afterward, which would let a rotate() landing in between pair this
+    # signature with a key_id that didn't produce it.
+    capsule["signature"], capsule["key_id"] = signer_obj.sign(content_digest.encode("ascii"))
 
     capsule["capsule_id"] = compute_capsule_id(capsule)
 

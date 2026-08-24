@@ -10,8 +10,16 @@ ever sees the record, and it is what upgrades in place as checkpoints get
 witnessed (see ``capsule_emit.witness``) -- a different, heavier layer that
 signs MMR checkpoint digests, not capsule content, and is not this module.
 
-**Signer protocol.** ``sign(payload: bytes) -> str`` (hex-encoded signature)
-plus a stable ``key_id`` attribute. KMS/HSM/TPM signers are just other
+**Signer protocol.** ``sign(payload: bytes) -> (signature, key_id)`` -- a
+single atomic call returning a hex-encoded signature paired with the
+hex-encoded id of the key that produced it. This is the frozen §7d shape
+verbatim, and it is atomic on purpose: an earlier draft split this into
+``sign(payload) -> str`` plus a separately-read mutable ``key_id``
+attribute, which let a ``rotate()`` land between the two reads and mint a
+capsule signed by the OLD key but labeled with the NEW ``key_id``. Returning
+both from one call makes that pairing correct by construction -- there is no
+window between "which key signed" and "which key_id got recorded" for a
+concurrent rotation to land in. KMS/HSM/TPM signers are just other
 implementations of this protocol -- ``capsule_emit`` never imports one
 concretely, matching the frozen surface's "custody is pluggable at the one
 seam custody flows through" (§7d).
@@ -63,12 +71,12 @@ SIGNING_KEY_PATH_ENV_VAR = "CAPSULE_SIGNING_KEY_PATH"
 
 class Signer(Protocol):
     """``seal()``'s signing seam (frozen dev-surface v4 §7d). Any object with
-    a stable ``key_id`` and a ``sign(payload: bytes) -> str`` method signing
-    over arbitrary bytes and returning a hex-encoded signature."""
+    a ``sign(payload: bytes) -> (signature, key_id)`` method: signs arbitrary
+    bytes and atomically returns the hex-encoded signature together with the
+    hex-encoded id of the key that produced it, so a caller never reads
+    ``key_id`` as a step separate from the signature it labels."""
 
-    key_id: str
-
-    def sign(self, payload: bytes) -> str: ...
+    def sign(self, payload: bytes) -> tuple[str, str]: ...
 
 
 @dataclass(frozen=True)
@@ -131,10 +139,15 @@ class LocalKeypairSigner:
         os.chmod(tmp, 0o600)
         tmp.replace(self._path)
 
-    def sign(self, payload: bytes) -> str:
+    def sign(self, payload: bytes) -> tuple[str, str]:
+        """Sign ``payload`` and return ``(signature, key_id)`` as one atomic
+        pair, both read under the same lock ``rotate()`` swaps them under --
+        so a rotation landing concurrently can never pair a signature from
+        one key with the ``key_id`` of another."""
         with self._lock:
             key = self._private_key
-        return key.sign(payload).hex()
+            key_id = self.key_id
+        return key.sign(payload).hex(), key_id
 
     def rotate(self, key_path: str | os.PathLike | None = None) -> RotationRecord:
         """Generate a new keypair, persist it (replacing the key at

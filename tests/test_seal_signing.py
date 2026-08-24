@@ -132,10 +132,8 @@ def test_custom_signer_overrides_default(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     class StubSigner:
-        key_id = "stub-key"
-
-        def sign(self, payload: bytes) -> str:
-            return "stub-signature"
+        def sign(self, payload: bytes) -> tuple[str, str]:
+            return "stub-signature", "stub-key"
 
     capsule = seal({"n": 1}, anchor=False, witness=False, signer=StubSigner())
     assert capsule.key_id == "stub-key"
@@ -193,3 +191,46 @@ def test_rotation_persists_the_new_key(tmp_path):
 
     reloaded = LocalKeypairSigner(key_path)
     assert reloaded.key_id == new_key_id
+
+
+def test_rotation_landing_between_sign_and_label_cannot_mismatch(tmp_path, monkeypatch):
+    """[O16-13-signer-tuple-fix] Forces the exact race the PR #80 gate review
+    flagged: a `rotate()` landing between a capsule's signature being
+    computed and its `key_id` being read to label it. Under the old
+    `sign(payload) -> str` + separately-read mutable `.key_id` attribute
+    shape, `_emit_capsule` did `capsule["signature"] = signer.sign(...)` then
+    `capsule["key_id"] = signer.key_id` as two unsynchronized steps, so a
+    rotation racing in between would mint a capsule signed by the OLD key but
+    labeled with the NEW key_id -- an honestly-produced capsule that fails
+    verification. The frozen §7d atomic `sign(bytes) -> (signature, key_id)`
+    return closes the window: `_emit_capsule` now assigns both fields from
+    ONE `sign()` call, so it can only ever see a signature and key_id pulled
+    from the same key.
+
+    This test forces the worst-case timing directly: the signer rotates
+    itself immediately after computing the (signature, key_id) pair `sign()`
+    is about to return, simulating another writer's `rotate()` landing in
+    that exact window. If `_emit_capsule` re-read `signer.key_id` afterward
+    (the old shape), it would observe the NEW key_id and the capsule would
+    fail to verify. It doesn't: the capsule is labeled with the key_id
+    `sign()` actually returned, paired with the signature that key produced.
+    """
+    monkeypatch.chdir(tmp_path)
+    signer = LocalKeypairSigner(tmp_path / "ledger.jsonl.signing_key.pem")
+    real_sign = LocalKeypairSigner.sign
+
+    def sign_then_rotate_underneath(self, payload):
+        signature_hex, key_id = real_sign(self, payload)
+        self.rotate()  # a concurrent writer's rotation, landing right now
+        return signature_hex, key_id
+
+    monkeypatch.setattr(LocalKeypairSigner, "sign", sign_then_rotate_underneath)
+
+    result = seal({"n": 1}, anchor=False, witness=False, signer=signer)
+
+    # The signer has since moved on to a new key (the simulated concurrent
+    # rotation actually happened) -- but the minted capsule must still carry
+    # the OLD key_id, atomically paired with the signature the OLD key made.
+    assert result.key_id != signer.key_id
+    assert result.capsule["key_id"] == result.key_id
+    assert verify_capsule_signature(result.capsule)
