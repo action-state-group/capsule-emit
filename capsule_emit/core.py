@@ -26,7 +26,10 @@ an explicit, non-default opt-in — pass ``anchor=True``, or set
 ``CAPSULE_ANCHOR=legacy-on`` (a deliberately distinct value from the old
 on-values, so an existing ``CAPSULE_ANCHOR=true`` config does not silently
 keep double-egress alive across the upgrade) — kept only as a rollback path
-for one release. See ``docs/why-anchoring.md`` and ``docs/checkpoint.md``.
+for one release. **Even when opted back in, the legacy channel stays subject
+to the witness kill switch (O16-03)** — ``witness=False`` /
+``CAPSULE_WITNESS=off`` is the one switch that zeroes ALL egress, anchor
+included. See ``docs/why-anchoring.md`` and ``docs/checkpoint.md``.
 
 The ``confirms`` parameter threads a "did → confirmed" chain without a scheduler.
 
@@ -95,16 +98,27 @@ _ATEXIT_ANCHOR_TIMEOUT = float(
 #: on-values (``"true"``/``"1"``/``"yes"``/unset) no longer enable anchor —
 #: an existing ``CAPSULE_ANCHOR=true`` config silently downgrades to
 #: single-egress (checkpoint-only) rather than continuing double-egress.
+#:
+#: **O16-03: this switch alone is not sufficient to enable the channel.**
+#: The result of :func:`_anchor_enabled` is further gated by the witness
+#: kill switch at the ``_emit_capsule`` call site -- ``witness=False`` /
+#: ``CAPSULE_WITNESS=off`` disables the legacy anchor channel too, even when
+#: ``CAPSULE_ANCHOR=legacy-on`` / ``anchor=True`` is explicitly set. See
+#: ``docs/checkpoint.md``'s "Kill switch scope" section.
 ANCHOR_ENV_VAR = "CAPSULE_ANCHOR"
 _ANCHOR_LEGACY_ON_VALUE = "legacy-on"
 
 
 def _anchor_enabled(explicit: bool | None) -> bool:
-    """Resolve the on/off decision for the legacy per-seal anchor channel.
+    """Resolve the on/off decision for the legacy per-seal anchor channel,
+    from the ``CAPSULE_ANCHOR``/``anchor=`` axis alone.
 
     ``explicit`` (the ``anchor=`` kwarg) always wins when set. Otherwise the
     channel stays off unless ``CAPSULE_ANCHOR=legacy-on`` — the deliberately
-    narrow escape hatch described on ``ANCHOR_ENV_VAR`` above."""
+    narrow escape hatch described on ``ANCHOR_ENV_VAR`` above. Callers must
+    additionally AND this with the witness kill switch (see
+    ``ANCHOR_ENV_VAR``'s O16-03 note) -- this function alone does not apply
+    it."""
     if explicit is not None:
         return explicit
     return os.environ.get(ANCHOR_ENV_VAR, "").strip().lower() == _ANCHOR_LEGACY_ON_VALUE
@@ -668,7 +682,14 @@ def _emit_capsule(
 
     seq = append_to_ledger(capsule, ledger)
 
-    anchor_enabled = _anchor_enabled(anchor)
+    # O16-03: the witness kill switch (``witness=False`` / ``CAPSULE_WITNESS=off``)
+    # is the ONE switch that zeroes all egress -- including the legacy anchor
+    # channel, even when a caller has explicitly opted it back in via
+    # ``anchor=True`` / ``CAPSULE_ANCHOR=legacy-on``. This is what makes the
+    # "local-only" posture (frozen surface §1a.3) an honest zero-network
+    # guarantee rather than a promise the legacy channel can quietly violate.
+    witness_enabled_now = _witness.witness_enabled(witness)
+    anchor_enabled = _anchor_enabled(anchor) and witness_enabled_now
     witness_endpoint = witness_url or os.environ.get(_witness.WITNESS_URL_ENV_VAR, None)
     anchor_endpoint = anchor_url or os.environ.get("AAC_ANCHOR_URL", None)
 
@@ -677,7 +698,7 @@ def _emit_capsule(
     # must run first and print at most once per process.
     _print_first_run_disclosure_once(
         anchor_active=anchor_enabled,
-        witness_active=_witness.witness_enabled(witness),
+        witness_active=witness_enabled_now,
         anchor_endpoint=anchor_endpoint,
         witness_endpoint=witness_endpoint,
     )

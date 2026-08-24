@@ -19,6 +19,23 @@ now returns this position. Both `repr(cap)` and `ledger show`'s header render it
 
 See `tests/test_logged_leaf_repr.py`.
 
+### Changed — kill switch now scopes all egress, not just checkpoint posting (O16 audit item 3)
+
+**What changed.** `witness=False` / `CAPSULE_WITNESS=off` used to gate only checkpoint
+posting — `status`'s witness-receipt re-check (O16-17) had nothing to gate it, and the
+legacy anchor channel (O16-01-02) was gated solely by the separate `CAPSULE_ANCHOR`
+env var, so `CAPSULE_WITNESS=off` alone left it fully live. It is now the single switch
+that zeroes all three: `capsule_emit.core._emit_capsule()` ANDs the legacy anchor
+channel's own on/off decision with the witness kill switch (an explicit `anchor=True` /
+`CAPSULE_ANCHOR=legacy-on` no longer re-enables anchor egress when witnessing is off),
+and `capsule_emit.status.compute_status()` skips its read-only witness-receipt GET
+whenever the kill switch is set, independent of whether `--offline` was also passed.
+**Breaking:** the (until now supported) `anchor=True, witness=False` combination no
+longer dispatches the legacy anchor channel — see `tests/test_anchor_disclosure_and_capsule_anchor_env.py`,
+updated accordingly.
+
+See `tests/test_kill_switch_scope.py`, `docs/checkpoint.md`'s "Kill switch scope" section.
+
 ### Added — `status` CLI verb (O16 audit item 17, "status's fetch-fold")
 
 **What changed.** No `status` verb existed at all (confirmed against `cli.py`'s actual
