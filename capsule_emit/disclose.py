@@ -364,9 +364,8 @@ def _seal_record(record: dict, ledger_path: str, *, signer: Any = None, signing_
     lets ``capsule_emit.signing.verify_capsule_signature`` verify a
     disclosure record unmodified: it operates on any dict with
     ``signature``/``key_id``/``capsule_id``, not just capsules."""
-    from agent_action_capsule.canonical import compute_capsule_id
-
     from . import signing as _signing
+    from .canonicalization import compute_capsule_id
 
     content_digest = compute_capsule_id(record)
     signer_obj = _signing.resolve_signer(ledger_path, signer=signer, key_path=signing_key_path)

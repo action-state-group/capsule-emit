@@ -25,10 +25,16 @@ import os
 import tempfile
 
 import pytest
-from agent_action_capsule.canonical import compute_capsule_id
+from agent_action_capsule.canonical import compute_capsule_id as compute_legacy_capsule_id
 
 import capsule_emit
 from capsule_emit import CANONICALIZATION_ID, seal
+from capsule_emit.canonicalization import (
+    UnsupportedCanonicalizationError,
+    canonical_capsule_bytes,
+    compute_capsule_id,
+)
+from capsule_emit.signing import verify_capsule_signature
 from capsule_emit.verify_canonicalization import (
     KNOWN_ALGORITHMS,
     CanonicalizationVerdict,
@@ -120,6 +126,61 @@ class TestCommitment:
         )
 
 
+class TestAlgorithmDispatch:
+    """The declared identifier selects the bytes, not just a preimage label."""
+
+    _MEMBERS = {
+        "kept": "value",
+        "null_member": None,
+        "empty_array": [],
+        "empty_object": {},
+    }
+
+    def test_jcs_known_answer_retains_null_and_empty_members(self):
+        capsule = {"canonicalization_id": "jcs", **self._MEMBERS}
+        expected = (
+            b'{"canonicalization_id":"jcs","empty_array":[],"empty_object":{},'
+            b'"kept":"value","null_member":null}'
+        )
+        assert canonical_capsule_bytes(capsule) == expected
+        assert compute_capsule_id(capsule) == (
+            "e2039e7d7de5396c470bfd98b70594d281cc091ae6d069adc99f95dea0c1165e"
+        )
+
+    def test_jcs_n_known_answer_removes_null_and_empty_members(self):
+        capsule = {"canonicalization_id": "jcs-n", **self._MEMBERS}
+        expected = b'{"canonicalization_id":"jcs-n","kept":"value"}'
+        assert canonical_capsule_bytes(capsule) == expected
+        assert compute_capsule_id(capsule) == (
+            "6e3ea8090d41c46a493413f7b18d3b69190e03c5712115231ad94362be7e50ba"
+        )
+
+    def test_jcs_emission_uses_plain_jcs_and_signature_verifies(self):
+        r = _emit_no_anchor(
+            canonicalization_id="jcs",
+            extra_compute=self._MEMBERS,
+        )
+        assert r.capsule["capsule_id"] == compute_capsule_id(r.capsule)
+        assert r.capsule["capsule_id"] != compute_legacy_capsule_id(r.capsule)
+        assert verify_capsule_signature(r.capsule)
+
+    def test_jcs_label_with_jcs_n_digest_is_rejected(self):
+        r = _emit_no_anchor(
+            canonicalization_id="jcs",
+            extra_compute=self._MEMBERS,
+        )
+        mutant = dict(r.capsule)
+        mutant["capsule_id"] = compute_legacy_capsule_id(mutant)
+
+        result = verify_canonicalization_id(mutant, profile_algorithm="jcs")
+        assert not result.ok
+        assert result.verdict == CanonicalizationVerdict.DIGEST_MISMATCH
+
+    def test_as_transmitted_fails_closed_without_original_bytes(self):
+        with pytest.raises(UnsupportedCanonicalizationError, match="as-transmitted"):
+            _emit_no_anchor(canonicalization_id="as-transmitted")
+
+
 # ---------------------------------------------------------------------------
 # § Mutant: strip canonicalization_id — MUST reject
 # ---------------------------------------------------------------------------
@@ -166,26 +227,24 @@ class TestMutantStripId:
 
 
 class TestMutantAlterId:
-    """Alter canonicalization_id to an unknown value, recomputing capsule_id.
+    """Alter canonicalization_id to an unknown value.
 
     Expected: UNKNOWN_ID — the altered id is registered-unknown; fail closed.
     """
 
-    def test_mutant_unknown_id_recomputed_fails_verification(self):
-        """GUARD — unknown id (after recompute) returns UNKNOWN_ID."""
+    def test_mutant_unknown_id_fails_verification(self):
+        """GUARD — an unknown id returns UNKNOWN_ID before dispatch."""
         r = _emit_no_anchor()
         mutant = dict(r.capsule)
         mutant["canonicalization_id"] = "evil-algo"
-        mutant["capsule_id"] = compute_capsule_id(mutant)  # consistent but unknown id
-
         result = verify_canonicalization_id(mutant)
         assert not result.ok, "Unknown canonicalization_id must NOT verify"
         assert result.verdict == CanonicalizationVerdict.UNKNOWN_ID, (
             f"Expected UNKNOWN_ID, got {result.verdict}"
         )
 
-    def test_mutant_altered_id_not_recomputed_fails_digest(self):
-        """Alter id WITHOUT recomputing capsule_id → DIGEST_MISMATCH (tamper detected)."""
+    def test_mutant_altered_id_not_recomputed_is_still_unknown(self):
+        """An unknown declaration is rejected before algorithm dispatch."""
         r = _emit_no_anchor()
         mutant = dict(r.capsule)
         mutant["canonicalization_id"] = "evil-algo"
@@ -193,7 +252,7 @@ class TestMutantAlterId:
 
         result = verify_canonicalization_id(mutant)
         assert not result.ok
-        assert result.verdict == CanonicalizationVerdict.DIGEST_MISMATCH
+        assert result.verdict == CanonicalizationVerdict.UNKNOWN_ID
 
     def test_mutant_known_but_wrong_profile_fails(self):
         """Known algorithm that doesn't match the profile → DIGEST_MISMATCH."""
@@ -292,8 +351,6 @@ class TestUnknownIdFixture:
         r = _emit_no_anchor()
         fixture = dict(r.capsule)
         fixture["canonicalization_id"] = "rfc-9999-xyz"
-        fixture["capsule_id"] = compute_capsule_id(fixture)
-
         result = verify_canonicalization_id(fixture)
         assert not result.ok
         assert result.verdict == CanonicalizationVerdict.UNKNOWN_ID
@@ -303,8 +360,6 @@ class TestUnknownIdFixture:
         r = _emit_no_anchor()
         fixture = dict(r.capsule)
         fixture["canonicalization_id"] = ""
-        fixture["capsule_id"] = compute_capsule_id(fixture)
-
         result = verify_canonicalization_id(fixture)
         assert not result.ok
         assert result.verdict == CanonicalizationVerdict.UNKNOWN_ID

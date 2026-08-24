@@ -335,8 +335,7 @@ def verify_bundle(
     stamp notices — so it is not empty on plenty of fully-passing bundles,
     not just the mixed-witness case.
     """
-    from agent_action_capsule.canonical import compute_capsule_id
-
+    from .canonicalization import compute_capsule_id
     from .checkpoint import core as mmr_core
     from .checkpoint.emit import (
         StampVerdict,
