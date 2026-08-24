@@ -65,6 +65,7 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -72,6 +73,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CheckpointConfig",
+    "Grade",
     "WitnessRecord",
     "CheckpointRecord",
     "Signer",
@@ -166,6 +168,19 @@ def lag_exceeded(cfg: CheckpointConfig, entries_since_last: int) -> bool:
     return entries_since_last > cfg.max_lag_entries
 
 
+class Grade(str, Enum):
+    """A checkpoint's position on the ladder (frozen surface §4):
+    ``self-attested`` until at least one witness stamp lands, then
+    ``witnessed`` -- an any-of transition (§2a.3): the first stamp flips the
+    grade, additional stamps only ever compound independence, never gate it.
+    ``countersigned``, the ladder's third rung, is a distinct mechanism (a
+    counterparty/operator receipt citing this one, not a witness stamp) and
+    has no representation here."""
+
+    SELF_ATTESTED = "self-attested"
+    WITNESSED = "witnessed"
+
+
 @dataclass
 class WitnessRecord:
     """Evidence that a checkpoint's digest was seen by one Transparency Service."""
@@ -257,6 +272,16 @@ class CheckpointRecord:
         """
         body = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(body.encode()).hexdigest()
+
+    def grade(self) -> Grade:
+        """This checkpoint's ladder position: ``WITNESSED`` once any-of
+        ``witnesses`` holds at least one stamp, else ``SELF_ATTESTED``. Every
+        entry in ``witnesses`` is already a successful registration --
+        ``capsule_emit.witness._build_and_register`` only appends a
+        ``WitnessRecord`` once ``register_checkpoint`` returns without
+        raising -- so presence in the list is what "valid stamp" means here.
+        """
+        return Grade.WITNESSED if self.witnesses else Grade.SELF_ATTESTED
 
     def to_dict(self) -> dict:
         d = {

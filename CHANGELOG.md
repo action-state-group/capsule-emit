@@ -6,6 +6,32 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — checkpoint grade: self-attested / witnessed (O16 audit item 11, "Multi-witness any-of grading")
+
+**What changed.** `CheckpointRecord` gains a `grade()` method and a new `Grade` enum
+(`capsule_emit.checkpoint.Grade`, also exported from `capsule_emit.checkpoint.emit`):
+`Grade.SELF_ATTESTED` until at least one witness stamp lands, `Grade.WITNESSED`
+afterward. Fan-out-to-all and per-endpoint failure isolation already worked (multiple
+`witness_url`s each get an independent registration attempt — one endpoint failing never
+blocks the others); what was missing was any concept of "grade" at all —
+`git grep grade` in `capsule_emit/` previously returned nothing. The transition is
+any-of, not all-of (frozen v4 surface §2a.3): the first valid stamp already flips the
+grade, and additional independently-operated witnesses only ever compound independence,
+never gate it further. A "valid stamp" here is any `WitnessRecord` present on
+`cp.witnesses` — `capsule_emit.witness._build_and_register` only ever appends one after
+`register_checkpoint` returns without raising, so presence already means a successful
+registration.
+
+**Out of scope (per the audit).** Per-witness cursor/queue state (strict in-order
+draining) is O5/O13's scope, not re-planned here. The ladder's third rung,
+`countersigned`, is a distinct mechanism (a counterparty/operator receipt citing this
+one) with no representation in `Grade`. Wiring `grade()` into a render surface
+(`status`, `show`, `bundle`, `disclose`) is each of those verbs' own item once they
+exist — this change is additive and does not call `grade()` from anywhere yet.
+
+See `tests/checkpoint/test_checkpoint_emit.py`'s grade tests and
+`tests/test_witness_multi_and_notice.py::test_one_valid_stamp_grades_witnessed_even_if_another_endpoint_fails`.
+
 ### Changed — checkpoint/witness stamps are now persisted ledger entries (O16 audit item 16, "Stamp-as-log-entry")
 
 **What changed.** Previously, once `capsule_emit.witness`'s default checkpoint/witness

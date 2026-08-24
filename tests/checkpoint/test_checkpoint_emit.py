@@ -16,7 +16,9 @@ from capsule_emit.checkpoint.emit import (
     DEFAULT_TS_URL,
     EXAMPLE_CONFIG_TOML,
     CheckpointError,
+    Grade,
     RollbackError,
+    WitnessRecord,
     due_for_checkpoint,
     emit_checkpoint,
     lag_exceeded,
@@ -180,6 +182,48 @@ def test_digest_changes_with_log_id():
     cp_b = emit_checkpoint(mmr, signer, log_id="log-b", timestamp="2026-08-21T00:00:00Z")
     assert cp_a.digest() != cp_b.digest()
     assert cp_a.signature != cp_b.signature  # signer covers the digest, so this must differ too
+
+
+# -- grade: the self-attested -> witnessed ladder transition (O16 item 11) --
+
+
+def _stub_witness_record(ts_url: str = "https://witness.example") -> WitnessRecord:
+    return WitnessRecord(
+        ts_url=ts_url,
+        entry_hash="ab" * 32,
+        receipt_b64="c3R1Yg==",
+        leaf_index=0,
+        tree_size=1,
+    )
+
+
+def test_grade_is_self_attested_with_no_witnesses():
+    mmr = _mmr_with(5)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
+                          timestamp="2026-08-21T00:00:00Z")
+    assert cp.witnesses == []
+    assert cp.grade() == Grade.SELF_ATTESTED
+
+
+def test_grade_is_witnessed_once_a_single_stamp_lands():
+    mmr = _mmr_with(5)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
+                          timestamp="2026-08-21T00:00:00Z")
+    cp.witnesses.append(_stub_witness_record())
+    assert cp.grade() == Grade.WITNESSED
+
+
+def test_grade_is_any_of_not_all_of_across_multiple_witnesses():
+    # Multi-witness any-of (frozen surface §2a.3): the first stamp already
+    # flips the grade; a second, independently-operated witness compounds
+    # independence, it does not gate the grade back down or up further.
+    mmr = _mmr_with(5)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
+                          timestamp="2026-08-21T00:00:00Z")
+    cp.witnesses.append(_stub_witness_record("https://witness-a.example"))
+    assert cp.grade() == Grade.WITNESSED
+    cp.witnesses.append(_stub_witness_record("https://witness-b.example"))
+    assert cp.grade() == Grade.WITNESSED
 
 
 # -- config: cadence/max-lag + the commented-out witness default ------------
