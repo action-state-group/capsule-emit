@@ -26,20 +26,39 @@ Four rendering levels (capsule records only):
 - ``view_chains()`` — L2 tree grouped by chain.parent_capsule_id
 - ``show()``        — L3 full single-capsule two-tier layout
 - JSON passthrough  — L4 via CLI ``--json`` flag (not a function here)
+
+Cross-process write safety: one log, one writer (frozen surface §7d) -- see
+``docs/concurrency.md``. An OS-level flock on a sidecar ``<ledger>.lock``
+file, held only for the duration of one append, gives a second *process* the
+same exclusion ``_append_lock`` below already gives a second *thread*. A
+second writer finds the lock held and fails immediately with
+:class:`LedgerLockedError` naming the holder -- waiting is opt-in
+(``append_to_ledger(..., wait=True)``), never silent, because a torn log
+manufactures fork evidence.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import socket
 import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+if os.name == "posix":
+    import fcntl
+else:  # pragma: no cover - CI is Linux-only; documented as a POSIX mechanism.
+    fcntl = None  # type: ignore[assignment]
 
 __all__ = [
     "append_to_ledger",
     "read_ledger",
     "read_ledger_entries",
     "CHECKPOINT_STAMP_KIND",
+    "LedgerLockedError",
     "view",
     "view_chains",
     "show",
@@ -59,8 +78,120 @@ CHECKPOINT_STAMP_KIND = "checkpoint_stamp"
 _append_lock = threading.Lock()
 
 
-def append_to_ledger(capsule: dict, path: str | os.PathLike = "ledger.jsonl") -> int:
+class LedgerLockedError(OSError):
+    """A second writer process found ``append_to_ledger``'s OS-level flock
+    already held. See ``docs/concurrency.md`` ("One log, one writer").
+
+    Subclasses ``OSError`` so existing broad ``except OSError`` write-failure
+    handling (e.g. ``witness._persist_checkpoint_stamp``'s fire-and-forget
+    stamp write) already treats a lock conflict the same as any other write
+    failure, without a new except clause."""
+
+
+def _lock_path(path: Path) -> Path:
+    """The sidecar lock file for a ledger: ``<name>.lock`` beside it. flock
+    exclusion applies per *open file description*, so a second process that
+    opens this same path independently gets its own contending attempt --
+    that's what makes this cross-process, not just cross-thread."""
+    return path.with_name(path.name + ".lock")
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _describe_holder(lock_fh: Any) -> str:
+    """Best-effort holder identity from the lock file's contents. Reading is
+    never blocked by another process's exclusive flock -- only a competing
+    flock attempt is. Degrades to "unknown holder" rather than raising if
+    the holder crashed before its first write, or the read races a write."""
+    try:
+        lock_fh.seek(0)
+        raw = lock_fh.read()
+        info = json.loads(raw) if raw else {}
+    except (OSError, json.JSONDecodeError):
+        info = {}
+    pid = info.get("pid", "?")
+    host = info.get("hostname", "?")
+    since = info.get("acquired_at", "?")
+    return f"pid {pid} on {host} (writer since {since})"
+
+
+def _locked_message(path: Path, lock_fh: Any, *, waited: float | None) -> str:
+    holder = _describe_holder(lock_fh)
+    waited_clause = f" after waiting {waited}s" if waited is not None else ""
+    return (
+        f"ledger {path} is locked by another writer ({holder}){waited_clause}. "
+        "capsule-emit enforces one writer per log -- a torn log manufactures "
+        "fork evidence, so a second writer is never allowed to interleave "
+        "silently. Route writes through the existing writer, or opt in to "
+        "waiting with append_to_ledger(..., wait=True[, timeout=seconds]). "
+        'See docs/concurrency.md ("One log, one writer").'
+    )
+
+
+def _acquire_lock(lock_fh: Any, path: Path, *, wait: bool, timeout: float | None) -> None:
+    if fcntl is None:  # pragma: no cover - CI is Linux-only.
+        raise LedgerLockedError(
+            f"cannot lock ledger {path}: flock is a POSIX mechanism and this "
+            "platform has no fcntl module. See docs/concurrency.md."
+        )
+
+    if not wait:
+        try:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise LedgerLockedError(_locked_message(path, lock_fh, waited=None)) from None
+        return
+
+    if timeout is None:
+        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)  # blocking wait, opted in
+        return
+
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise LedgerLockedError(_locked_message(path, lock_fh, waited=timeout)) from None
+            time.sleep(0.05)
+
+
+@contextlib.contextmanager
+def _writer_lock(path: Path, *, wait: bool = False, timeout: float | None = None):
+    """Hold the cross-process flock for ``path`` for one append. Internal --
+    ``append_to_ledger`` is the public entry point; exposed at module level
+    only so tests can hold the lock across a real second OS process."""
+    lock_fh = open(_lock_path(path), "a+", encoding="utf-8")
+    try:
+        _acquire_lock(lock_fh, path, wait=wait, timeout=timeout)
+        lock_fh.seek(0)
+        lock_fh.truncate()
+        lock_fh.write(json.dumps({"pid": os.getpid(), "hostname": socket.gethostname(), "acquired_at": _utc_now()}))
+        lock_fh.flush()
+        yield
+    finally:
+        if fcntl is not None:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+        lock_fh.close()
+
+
+def append_to_ledger(
+    capsule: dict,
+    path: str | os.PathLike = "ledger.jsonl",
+    *,
+    wait: bool = False,
+    timeout: float | None = None,
+) -> int:
     """Append a sealed capsule dict as a single JSON line.
+
+    Enforces one log, one writer (docs/concurrency.md): a second process
+    already writing this same ledger raises :class:`LedgerLockedError`
+    immediately, naming the holder. Pass ``wait=True`` (optionally with a
+    ``timeout`` in seconds) to block instead of failing -- opt-in only, never
+    the default, so a stalled writer never silently queues callers.
 
     Returns the entry's 1-indexed sequence position within this ledger
     file -- the same ``seq`` ``_JsonlLogSource.scan`` (``capsule_emit.witness``)
@@ -69,8 +200,9 @@ def append_to_ledger(capsule: dict, path: str | os.PathLike = "ledger.jsonl") ->
     under the same lock that serializes the write, so it reflects this
     process's own append order; most callers don't need it and ignore it.
     """
-    with _append_lock:
-        with open(path, "a", encoding="utf-8") as fh:
+    p = Path(path)
+    with _append_lock, _writer_lock(p, wait=wait, timeout=timeout):
+        with open(p, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(capsule, separators=(",", ":")) + "\n")
         return len(read_ledger_entries(path))
 

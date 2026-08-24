@@ -44,7 +44,7 @@ from .gate import (
 )
 from .holds import Action as HoldAction
 from .holds import HoldDecision, HoldEngine, HoldStatus
-from .ledger import append_to_ledger, read_ledger
+from .ledger import LedgerLockedError, append_to_ledger, read_ledger
 from .ledger import show as ledger_show
 from .ledger import view as ledger_view
 from .ledger import view_chains as ledger_view_chains
@@ -104,6 +104,7 @@ __all__ = [
     "HoldStatus",
     # Ledger
     "append_to_ledger",
+    "LedgerLockedError",
     "read_ledger",
     "ledger_view",
     "ledger_view_chains",
