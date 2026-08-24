@@ -12,7 +12,6 @@ is caught).
 
 from __future__ import annotations
 
-import base64
 import copy
 import hashlib
 import http.server
@@ -22,6 +21,7 @@ import time
 from dataclasses import replace
 
 import pytest
+from _stub_receipt import build_stub_receipt_b64
 
 from capsule_emit import ledger as ledger_mod
 from capsule_emit import seal, witness
@@ -49,7 +49,7 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
             entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
             resp = {
                 "entry_hash": entry_hash,
-                "receipt_b64": base64.b64encode(b"stub-receipt-not-a-real-cose-receipt").decode(),
+                "receipt_b64": build_stub_receipt_b64(entry_hash),
                 "leaf_index": 0,
                 "tree_size": 1,
             }

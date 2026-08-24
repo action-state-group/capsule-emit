@@ -13,7 +13,6 @@
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import http.server
 import json
@@ -21,12 +20,11 @@ import threading
 import time
 
 import pytest
+from _stub_receipt import build_stub_receipt_b64
 
 import capsule_emit.core as core
 from capsule_emit import seal, witness
 from capsule_emit.checkpoint import Grade
-
-_ = base64, hashlib  # re-exported for parity with the stub TS handler below
 
 
 class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
@@ -45,7 +43,7 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
             entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
             resp = {
                 "entry_hash": entry_hash,
-                "receipt_b64": base64.b64encode(b"stub-receipt").decode(),
+                "receipt_b64": build_stub_receipt_b64(entry_hash),
                 "leaf_index": 0,
                 "tree_size": 1,
             }

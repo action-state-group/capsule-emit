@@ -6,6 +6,33 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — the verify surface authenticates cryptography, not just structure ([verify-authenticates-nothing])
+
+**What changed.** An adversarial run against `origin/main` (`_work/adv-migration-run-2026-08-24.md`)
+found the offline read/verify surface authenticated almost nothing: the self-attested Ed25519
+signature (`#80`) was minted on every capsule but never checked by a shipped verify path, `verify_bundle`
+never content-authenticated the receipt it hands a stranger, and the `witnessed` grade was
+presence-only (`len(witnesses) > 0`), so a hand-fabricated stamp laundered a self-attested checkpoint
+to `witnessed` on every offline read path. Three fixes, landed together (they share one root — the
+read path trusted structure over cryptography):
+
+- **BLOCKER-1** — `capsule_emit.signing.verify_store_signed` composes `agent_action_capsule.verify_store`
+  with `verify_capsule_signature`, so a key-less forgery (attacker-authored content, invented
+  signature/key_id, `capsule_id` recomputed to match) reports INVALID naming the record. Wired into
+  CLI `capsule-emit verify`, `ledger view`'s inline verify column, and `permalink`/`evidence`'s
+  `check_capsules`.
+- **HIGH-2** — `verify_bundle` now recomputes the receipt's own `capsule_id` from its content and
+  checks its self-attested signature before reporting VALID — a bundle whose receipt body was
+  tampered but `capsule_id` left alone is now caught.
+- **HIGH-3** — `capsule_emit.checkpoint.verify_witness_stamp_offline` is a new primitive: a witness
+  stamp must be bound to its checkpoint (`entry_hash` recomputed, not trusted) and decode as a
+  structurally valid COSE Receipt before it counts. `CheckpointRecord.grade()` and `verify_bundle`
+  both use it now — presence in `witnesses` alone no longer grades `witnessed`. Pass a pinned
+  `ts_pubkey_pem` for the full identity-bound signature check on top of the structural one.
+
+The three original attack scripts (`/tmp/atk/attack_forge_sig.py`, `attack6b.py`, `attack45.py`) are
+reconstructed as permanent regression tests in `tests/test_verify_authenticates_nothing_regressions.py`.
+
 ### Added — flock-based one-log-one-writer locking (O16 audit item 12, "Flock locking")
 
 **What changed.** No OS-level write coordination existed: `git grep` for

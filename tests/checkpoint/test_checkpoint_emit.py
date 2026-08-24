@@ -24,7 +24,18 @@ from capsule_emit.checkpoint.emit import (
     lag_exceeded,
     verify_checkpoint_consistency,
     verify_checkpoint_signature,
+    verify_witness_stamp_offline,
 )
+
+
+def _test_ts_private_key_pem() -> bytes:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+
+    return Ed25519PrivateKey.generate().private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+
+
+_TEST_TS_PRIVATE_KEY_PEM = _test_ts_private_key_pem()
 
 
 class HmacSigner:
@@ -187,7 +198,38 @@ def test_digest_changes_with_log_id():
 # -- grade: the self-attested -> witnessed ladder transition (O16 item 11) --
 
 
-def _stub_witness_record(ts_url: str = "https://witness.example") -> WitnessRecord:
+def _genuine_witness_record(cp, ts_url: str = "https://witness.example") -> WitnessRecord:
+    """A ``WitnessRecord`` bound to ``cp`` with a real, structurally valid
+    COSE Receipt -- what ``grade()``'s stamp-authenticity check
+    ([stamp-authenticity-on-read-not-presence]) requires. A hand-fabricated
+    ``entry_hash``/``receipt_b64`` (this helper's pre-fix shape) is now
+    exactly the file-forger attack ``grade()`` must reject -- see
+    ``test_grade_rejects_a_hand_fabricated_witness_record`` below."""
+    import base64
+
+    from scitt_cose import build_receipt
+
+    entry_hash = hashlib.sha256(bytes.fromhex(cp.digest())).hexdigest()
+    receipt_bytes = build_receipt(
+        leaf_entry_hex=entry_hash,
+        leaf_index=0,
+        tree_entries_hex=[entry_hash],
+        alg="EdDSA",
+        log_private_key_pem=_TEST_TS_PRIVATE_KEY_PEM,
+    )
+    return WitnessRecord(
+        ts_url=ts_url,
+        entry_hash=entry_hash,
+        receipt_b64=base64.b64encode(receipt_bytes).decode(),
+        leaf_index=0,
+        tree_size=1,
+    )
+
+
+def _forged_witness_record(ts_url: str = "https://attacker.example") -> WitnessRecord:
+    """A hand-fabricated stamp: no real Transparency Service ever
+    contacted, ``entry_hash``/``receipt_b64`` invented -- exactly what a
+    file-level forger writes directly into a ledger."""
     return WitnessRecord(
         ts_url=ts_url,
         entry_hash="ab" * 32,
@@ -209,7 +251,7 @@ def test_grade_is_witnessed_once_a_single_stamp_lands():
     mmr = _mmr_with(5)
     cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
                           timestamp="2026-08-21T00:00:00Z")
-    cp.witnesses.append(_stub_witness_record())
+    cp.witnesses.append(_genuine_witness_record(cp))
     assert cp.grade() == Grade.WITNESSED
 
 
@@ -220,10 +262,100 @@ def test_grade_is_any_of_not_all_of_across_multiple_witnesses():
     mmr = _mmr_with(5)
     cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
                           timestamp="2026-08-21T00:00:00Z")
-    cp.witnesses.append(_stub_witness_record("https://witness-a.example"))
+    cp.witnesses.append(_genuine_witness_record(cp, "https://witness-a.example"))
     assert cp.grade() == Grade.WITNESSED
-    cp.witnesses.append(_stub_witness_record("https://witness-b.example"))
+    cp.witnesses.append(_genuine_witness_record(cp, "https://witness-b.example"))
     assert cp.grade() == Grade.WITNESSED
+
+
+def test_grade_rejects_a_hand_fabricated_witness_record():
+    """[stamp-authenticity-on-read-not-presence]: a file-level forger who
+    appends a fabricated ``WitnessRecord`` (no real TS ever contacted) does
+    NOT launder a checkpoint to WITNESSED -- presence in ``witnesses`` alone
+    no longer counts."""
+    mmr = _mmr_with(5)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
+                          timestamp="2026-08-21T00:00:00Z")
+    cp.witnesses.append(_forged_witness_record())
+    assert cp.grade() == Grade.SELF_ATTESTED
+
+
+def test_grade_any_of_one_genuine_one_forged_still_witnessed():
+    """Any-of holds for authenticity too: one genuine stamp is enough even
+    alongside a forged one appended into the same list."""
+    mmr = _mmr_with(5)
+    cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
+                          timestamp="2026-08-21T00:00:00Z")
+    cp.witnesses.append(_genuine_witness_record(cp, "https://witness-real.example"))
+    cp.witnesses.append(_forged_witness_record())
+    assert cp.grade() == Grade.WITNESSED
+
+
+# -- verify_witness_stamp_offline: each sub-check in isolation --------------
+
+
+def _cp_for_stamp_tests():
+    mmr = _mmr_with(5)
+    return emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
+                            timestamp="2026-08-21T00:00:00Z")
+
+
+def test_verify_witness_stamp_offline_rejects_garbage_receipt_b64():
+    # Correct entry_hash (so the binding check passes and the base64 stage
+    # is what's actually isolated) but garbage receipt bytes.
+    cp = _cp_for_stamp_tests()
+    entry_hash = hashlib.sha256(bytes.fromhex(cp.digest())).hexdigest()
+    forged = WitnessRecord(
+        ts_url="https://attacker.example", entry_hash=entry_hash,
+        receipt_b64="forged", leaf_index=0, tree_size=1,
+    )
+    ok, errors = verify_witness_stamp_offline(cp, forged)
+    assert ok is False
+    assert any("base64" in e for e in errors)
+
+
+def test_verify_witness_stamp_offline_rejects_entry_hash_not_bound_to_this_checkpoint():
+    """A stamp genuinely built for a DIFFERENT checkpoint (real COSE bytes,
+    real entry_hash -- just not THIS checkpoint's) must fail: replay/reuse
+    across checkpoints is exactly what the binding check exists to catch."""
+    cp = _cp_for_stamp_tests()
+    other_cp = _cp_for_stamp_tests()
+    other_cp.mmr_size += 1  # force a different digest() from cp
+    replayed = _genuine_witness_record(other_cp)
+    ok, errors = verify_witness_stamp_offline(cp, replayed)
+    assert ok is False
+    assert any("not bound to this checkpoint" in e for e in errors)
+
+
+def test_verify_witness_stamp_offline_accepts_genuine_receipt_without_pubkey():
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp)
+    ok, errors = verify_witness_stamp_offline(cp, genuine)
+    assert ok is True
+    assert errors == []
+
+
+def test_verify_witness_stamp_offline_pubkey_pinned_accepts_correct_key():
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_private_key
+
+    cp = _cp_for_stamp_tests()
+    genuine = _genuine_witness_record(cp)
+    correct_pubkey_pem = (
+        load_pem_private_key(_TEST_TS_PRIVATE_KEY_PEM, password=None)
+        .public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    )
+    ok, errors = verify_witness_stamp_offline(cp, genuine, ts_pubkey_pem=correct_pubkey_pem)
+    assert ok is True
+    assert errors == []
+
+    wrong_pubkey_pem = Ed25519PrivateKey.generate().public_key().public_bytes(
+        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+    )
+    ok2, errors2 = verify_witness_stamp_offline(cp, genuine, ts_pubkey_pem=wrong_pubkey_pem)
+    assert ok2 is False
+    assert errors2
 
 
 # -- config: cadence/max-lag + the commented-out witness default ------------

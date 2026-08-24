@@ -69,9 +69,9 @@ def _cmd_ledger_view(args: argparse.Namespace) -> int:
     verify_results: list | None = None
     if records:
         try:
-            from agent_action_capsule import verify_store
+            from .signing import verify_store_signed
 
-            verify_results = verify_store(records)
+            verify_results = verify_store_signed(records)
         except Exception:
             pass  # viewer degrades gracefully if verify unavailable
 
@@ -333,21 +333,24 @@ def _cmd_evidence(args: argparse.Namespace) -> int:
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
-    from agent_action_capsule import verify_store
-
     from .ledger import read_ledger
+    from .signing import verify_store_signed
 
     path = args.store_path
     records = read_ledger(path)
     if not records:
         print(f"verify: {path} — empty or not found")
         return 1
-    results = verify_store(records)
+    results = verify_store_signed(records)
     ok_count = sum(1 for r in results if r.ok)
     fail_count = len(results) - ok_count
     for r in results:
         status = "VALID" if r.ok else "INVALID"
-        findings = [f"{f.check}: {f.detail}" for f in r.findings if f.severity == "error"]
+        findings = [
+            f"{f.detail}" if f.check is None else f"{f.check}: {f.detail}"
+            for f in r.findings
+            if f.severity == "error"
+        ]
         print(f"  {status}  {findings[0] if findings else ''}")
     print(f"\n{ok_count}/{len(results)} VALID" + (f"  — {fail_count} INVALID" if fail_count else ""))
     return 0 if fail_count == 0 else 1

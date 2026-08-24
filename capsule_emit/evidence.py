@@ -11,10 +11,11 @@ markdown evidence comment built from the ledger the agent sealed while doing
 the work, so the reviewer checks records, not claims.
 
 Fail-closed by construction: every capsule is re-verified locally
-(``agent_action_capsule.verify_store`` — recompute + chain checks, no network)
-at generation time, and no bundle is produced if any capsule fails. A
-contributor structurally cannot hand a reviewer an evidence comment whose
-records don't verify.
+(``capsule_emit.signing.verify_store_signed`` — ``agent_action_capsule.verify_store``'s
+recompute + chain checks, plus the producer Ed25519 signature check that
+verifier deliberately never performs, no network) at generation time, and no
+bundle is produced if any capsule fails. A contributor structurally cannot
+hand a reviewer an evidence comment whose records don't verify.
 
 Honesty rules (spec §3.2 posture): the bundle reports ``attestation_mode``
 exactly as each capsule carries it and makes **no anchoring claim of its own**

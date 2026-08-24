@@ -50,7 +50,13 @@ from .ledger import view as ledger_view
 from .ledger import view_chains as ledger_view_chains
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
 from .numbers import CANONICALIZATION_ID, float_to_str
-from .signing import LocalKeypairSigner, RotationRecord, Signer, verify_capsule_signature
+from .signing import (
+    LocalKeypairSigner,
+    RotationRecord,
+    Signer,
+    verify_capsule_signature,
+    verify_store_signed,
+)
 from .surface import Capsule, carry, compose, seal
 from .verify import InputDigestResult, VerifyReason, verify_input_digest
 from .verify_canonicalization import (
@@ -132,4 +138,5 @@ __all__ = [
     "LocalKeypairSigner",
     "RotationRecord",
     "verify_capsule_signature",
+    "verify_store_signed",
 ]

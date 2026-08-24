@@ -96,6 +96,7 @@ __all__ = [
     "register_checkpoint",
     "verify_receipt_offline",
     "verify_checkpoint_signature_offline",
+    "verify_witness_stamp_offline",
     "due_for_checkpoint",
     "lag_exceeded",
     "DEFAULT_TS_URL",
@@ -309,15 +310,34 @@ class CheckpointRecord:
         body = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(body.encode()).hexdigest()
 
-    def grade(self) -> Grade:
+    def grade(self, *, ts_pubkey_pem: bytes | str | None = None) -> Grade:
         """This checkpoint's ladder position: ``WITNESSED`` once any-of
-        ``witnesses`` holds at least one stamp, else ``SELF_ATTESTED``. Every
-        entry in ``witnesses`` is already a successful registration --
-        ``capsule_emit.witness._build_and_register`` only appends a
-        ``WitnessRecord`` once ``register_checkpoint`` returns without
-        raising -- so presence in the list is what "valid stamp" means here.
+        ``witnesses`` holds at least one stamp that verifies as an
+        authentic, checkpoint-bound TS Receipt via
+        :func:`verify_witness_stamp_offline` -- not merely present in the
+        list. A file-level forger who hand-appends a fabricated
+        ``WitnessRecord`` (no real Transparency Service ever contacted)
+        grades ``SELF_ATTESTED``: presence in ``witnesses`` alone no longer
+        counts as "valid stamp" (closes
+        [stamp-authenticity-on-read-not-presence] -- presence-equals-success
+        is a produce-side invariant that does not bind a file-level reader).
+        Any-of semantics are unchanged (§2a.3): the first VALID stamp flips
+        the grade; additional stamps, valid or not, never gate it.
+
+        Without ``ts_pubkey_pem`` this confirms structural + checkpoint-
+        binding authenticity only -- see
+        :func:`verify_witness_stamp_offline` for exactly what that does and
+        does not prove. Pass a caller-pinned/cached TS public key for the
+        full identity-bound guarantee.
         """
-        return Grade.WITNESSED if self.witnesses else Grade.SELF_ATTESTED
+        return (
+            Grade.WITNESSED
+            if any(
+                verify_witness_stamp_offline(self, w, ts_pubkey_pem=ts_pubkey_pem)[0]
+                for w in self.witnesses
+            )
+            else Grade.SELF_ATTESTED
+        )
 
     def to_dict(self) -> dict:
         d = {
@@ -597,3 +617,110 @@ def verify_receipt_offline(
         return result.ok, result.errors
     except Exception as exc:
         return False, [str(exc)]
+
+
+_structural_probe_pubkey_pem_cache: bytes | None = None
+
+
+def _structural_probe_pubkey_pem() -> bytes:
+    """A syntactically valid Ed25519 public key PEM, generated once per
+    process and cached -- NOT a trust anchor, never used to accept a
+    signature as authentic. Used only to drive ``scitt_cose.verify_receipt``
+    far enough to reconstruct the inclusion proof's root (a purely
+    structural, key-independent step that happens before the signature
+    check) so :func:`verify_witness_stamp_offline` can tell "this receipt is
+    garbage" apart from "this receipt is a well-formed Receipt shape, just
+    not checked against a trusted signer" without reimplementing COSE
+    decoding here.
+    """
+    global _structural_probe_pubkey_pem_cache
+    if _structural_probe_pubkey_pem_cache is None:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+        public_key = Ed25519PrivateKey.generate().public_key()
+        _structural_probe_pubkey_pem_cache = public_key.public_bytes(
+            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+        )
+    return _structural_probe_pubkey_pem_cache
+
+
+def verify_witness_stamp_offline(
+    cp: CheckpointRecord,
+    witness: WitnessRecord,
+    *,
+    ts_pubkey_pem: bytes | str | None = None,
+) -> tuple[bool, list[str]]:
+    """Verify one witness stamp is a cryptographically authentic TS Receipt
+    bound to ``cp`` -- never raises. This is the read-side check
+    [stamp-authenticity-on-read-not-presence] adds: ``grade()`` and
+    ``capsule_emit.bundle.verify_bundle`` both call this instead of trusting
+    a stamp's mere presence in ``witnesses``.
+
+    Two tiers, mirroring ``capsule_emit.signing.verify_capsule_signature``'s
+    self-attested/identity split:
+
+    Always (no key needed): the stamp must be BOUND to this exact
+    checkpoint -- ``witness.entry_hash`` must equal
+    ``sha256(bytes.fromhex(cp.digest())).hexdigest()``, so a stamp copied or
+    replayed from a different checkpoint is rejected -- and ``receipt_b64``
+    must decode as a structurally valid COSE Receipt (RFC 9942 /
+    draft-ietf-cose-merkle-tree-proofs) whose inclusion proof reconstructs a
+    Merkle root for that entry_hash (via a key-independent probe -- see
+    :func:`_structural_probe_pubkey_pem`). A hand-fabricated stamp (garbage
+    ``receipt_b64``, exactly what a file-level forger who never talked to a
+    real Transparency Service would write) fails here.
+
+    With ``ts_pubkey_pem`` (a caller-pinned/cached TS public key): also
+    verifies the Receipt's COSE_Sign1 signature under that specific key --
+    the full identity-bound guarantee ("a specific trusted TS actually
+    witnessed this"). Without it, this function proves the stamp is a
+    genuine, checkpoint-bound Receipt shape and not a fabrication; it does
+    NOT prove which Transparency Service produced it -- the same caveat
+    ``verify_capsule_signature`` documents for the self-attested rung. Pass
+    ``ts_pubkey_pem`` for the stronger guarantee.
+    """
+    import base64
+
+    try:
+        expected_entry_hash = hashlib.sha256(bytes.fromhex(cp.digest())).hexdigest()
+    except Exception as exc:
+        return False, [f"checkpoint digest could not be computed: {exc}"]
+    if witness.entry_hash != expected_entry_hash:
+        return False, [
+            "witness.entry_hash does not match this checkpoint's digest -- "
+            "stamp is not bound to this checkpoint"
+        ]
+
+    try:
+        receipt_bytes = base64.b64decode(witness.receipt_b64, validate=True)
+    except Exception as exc:
+        return False, [f"receipt_b64 is not valid base64: {exc}"]
+
+    try:
+        from scitt_cose import verify_receipt
+    except ImportError:
+        return False, ["scitt-cose is not installed; run: pip install 'capsule-emit[checkpoint]'"]
+
+    if ts_pubkey_pem is not None:
+        try:
+            result = verify_receipt(
+                receipt_bytes, leaf_entry_hex=witness.entry_hash, log_public_key_pem=ts_pubkey_pem
+            )
+        except Exception as exc:
+            return False, [f"receipt could not be evaluated: {exc}"]
+        return result.ok, list(result.errors)
+
+    try:
+        probe = verify_receipt(
+            receipt_bytes,
+            leaf_entry_hex=witness.entry_hash,
+            log_public_key_pem=_structural_probe_pubkey_pem(),
+        )
+    except Exception as exc:
+        return False, [f"receipt could not be evaluated: {exc}"]
+    if probe.root is None:
+        return False, [
+            "receipt is not a structurally valid COSE Receipt bound to this checkpoint"
+        ] + list(probe.errors)
+    return True, []

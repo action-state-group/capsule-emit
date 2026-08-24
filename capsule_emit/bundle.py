@@ -264,7 +264,14 @@ def verify_bundle(b: Bundle) -> tuple[bool, list[str]]:
     append bracket depends on:
 
       1. the receipt's own ``capsule_id`` matches the leaf the inclusion
-         proof was built for;
+         proof was built for, AND is recomputed from the receipt's own
+         content (not just compared as an opaque label) — a bundle whose
+         receipt body was tampered but whose ``capsule_id`` was left alone
+         is caught here; AND its self-attested producer signature verifies
+         (``capsule_emit.signing.verify_capsule_signature``) — a receipt
+         body rewritten with a matching, recomputed ``capsule_id`` (the
+         [verify-checks-producer-signature] forgery, replayed against a
+         bundle) is caught here instead;
       2. inclusion — the receipt is genuinely a leaf under the covering
          checkpoint's root, at this bundle's ``seq``;
       3. the covering checkpoint's own signature, offline
@@ -275,26 +282,51 @@ def verify_bundle(b: Bundle) -> tuple[bool, list[str]]:
          covering checkpoint's ``prev_size``/``prev_root`` genuinely name
          it, and the consistency proof bridging the two roots; if absent:
          that ``checkpoint.prev_size == 0`` — this is honestly the log's
-         first checkpoint, not a silently dropped lower bound.
+         first checkpoint, not a silently dropped lower bound;
+      5. witness stamp authenticity, if the covering checkpoint carries any
+         (``capsule_emit.checkpoint.verify_witness_stamp_offline`` per
+         ``WitnessRecord`` — [stamp-authenticity-on-read-not-presence]): a
+         checkpoint that claims witness stamps but has NONE that verify is
+         fatal (``ok=False``) — an all-forged ``witnesses`` list is exactly
+         the file-forger's grade-laundering attempt, and a bundle handed to
+         a stranger must not report VALID over that. When at least one
+         stamp verifies (any-of, matching ``grade()``), the others are
+         reported as non-fatal notices in the returned message list rather
+         than failing the whole bundle, since the checkpoint genuinely IS
+         witnessed via the valid one.
 
-    Deliberately does NOT re-confirm witness stamps
-    (``b.checkpoint.witnesses`` / ``b.prior_checkpoint.witnesses``) — that
-    is a separate, optional step
-    (``capsule_emit.checkpoint.verify_receipt_offline`` per
-    ``WitnessRecord``), since it may need a network fetch of the
-    Transparency Service's public key; a caller holding a cached
-    ``ts_pubkey_pem`` can do that step fully offline too, just not as part
-    of this pure check.
-
-    Returns ``(ok, errors)`` — ``errors`` is empty iff ``ok``.
+    Returns ``(ok, errors)`` — ``ok`` is false iff a FATAL problem was
+    found; ``errors`` also carries non-fatal stamp notices (see point 5),
+    so it is not empty precisely for a mixed valid/forged witness set even
+    though ``ok`` is true there.
     """
+    from agent_action_capsule.canonical import compute_capsule_id
+
     from .checkpoint import core as mmr_core
-    from .checkpoint.emit import verify_checkpoint_signature_offline
+    from .checkpoint.emit import verify_checkpoint_signature_offline, verify_witness_stamp_offline
+    from .signing import verify_capsule_signature
 
     errors: list[str] = []
+    notices: list[str] = []
     try:
         if b.receipt.get("capsule_id") != b.capsule_id:
             errors.append("receipt.capsule_id does not match bundle.capsule_id")
+
+        try:
+            recomputed_capsule_id = compute_capsule_id(b.receipt)
+        except Exception as exc:
+            errors.append(f"receipt {b.capsule_id} content could not be hashed: {exc}")
+        else:
+            if recomputed_capsule_id != b.receipt.get("capsule_id"):
+                errors.append(
+                    f"receipt {b.capsule_id} does not hash to its own capsule_id -- "
+                    "receipt body was tampered"
+                )
+        if not verify_capsule_signature(b.receipt):
+            errors.append(
+                f"receipt {b.capsule_id} signature does not verify -- receipt content, signature, "
+                "or key_id was tampered, forged, or unsigned"
+            )
 
         body_digest = bytes.fromhex(b.capsule_id)
         root = bytes.fromhex(b.checkpoint.root)
@@ -330,8 +362,24 @@ def verify_bundle(b: Bundle) -> tuple[bool, list[str]]:
                 errors.append("prior_checkpoint is missing but checkpoint.prev_size != 0")
             if b.consistency_proof is not None:
                 errors.append("consistency_proof present without a prior_checkpoint")
+
+        if b.checkpoint.witnesses:
+            stamp_checks = [
+                (w, verify_witness_stamp_offline(b.checkpoint, w)) for w in b.checkpoint.witnesses
+            ]
+            any_valid = any(ok for _, (ok, _) in stamp_checks)
+            for w, (ok, werrs) in stamp_checks:
+                if not ok:
+                    detail = "; ".join(werrs) if werrs else "does not verify"
+                    msg = f"witness stamp ({w.ts_url}) INVALID: {detail}"
+                    (notices if any_valid else errors).append(msg)
+            if not any_valid:
+                errors.append(
+                    f"checkpoint claims {len(b.checkpoint.witnesses)} witness stamp(s) but none "
+                    "verify as authentic TS Receipts for this checkpoint"
+                )
     except Exception as exc:  # noqa: BLE001 — pure verifier, never raises
         errors.append(f"unexpected error: {exc}")
-        return False, errors
+        return False, errors + notices
 
-    return not errors, errors
+    return not errors, errors + notices

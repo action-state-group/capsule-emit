@@ -75,6 +75,7 @@ from .emit import (
     verify_checkpoint_signature,
     verify_checkpoint_signature_offline,
     verify_receipt_offline,
+    verify_witness_stamp_offline,
 )
 from .index import LogSource, MmrLedger, RangeProof, verify_range
 from .store import MemoryNodeStore
@@ -119,4 +120,5 @@ __all__ = [
     "verify_checkpoint_signature",
     "verify_checkpoint_signature_offline",
     "verify_receipt_offline",
+    "verify_witness_stamp_offline",
 ]

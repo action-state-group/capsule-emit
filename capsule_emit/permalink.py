@@ -87,11 +87,13 @@ def load_capsules(
 
 def check_capsules(capsules: list[dict]) -> list[Any]:
     """Run the real, local ``agent_action_capsule.verify()`` (recompute+check) on every
-    capsule, in ledger order, with store-level chain checks. No network. Returns the
+    capsule, in ledger order, with store-level chain checks, plus the producer
+    signature check ``verify_store`` itself never performs (see
+    ``capsule_emit.signing.verify_store_signed``). No network. Returns the
     list of ``VerificationResult`` — callers decide what a failure means."""
-    from agent_action_capsule import verify_store
+    from .signing import verify_store_signed
 
-    return verify_store(capsules)
+    return verify_store_signed(capsules)
 
 
 def _capsule_id_of(capsule: dict) -> str:
