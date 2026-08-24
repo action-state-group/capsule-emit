@@ -369,6 +369,13 @@ class EmitResult:
     ``capsule_id`` and the producer key that made it (see
     ``capsule_emit.signing``). Always present; every ``EmitResult`` is
     signed, not just anchored/witnessed ones.
+
+    ``seq`` is this capsule's 1-indexed position in its ledger file (see
+    ``capsule_emit.ledger.append_to_ledger``) — the log is where every
+    capsule already lives ambiently, per the frozen surface's "already a
+    leaf in your log" (§2.1): once a checkpoint covers this position, ``seq``
+    is the MMR leaf index too. Rendered as ``#logged @ leaf <seq>`` by
+    ``__repr__`` and by ``ledger.show()``.
     """
 
     capsule_id: str
@@ -377,11 +384,12 @@ class EmitResult:
     anchor_status: AnchorStatus
     signature: str
     key_id: str
+    seq: int
 
     def __repr__(self) -> str:
         return (
             f"EmitResult(capsule_id={self.capsule_id!r}, anchored={self.anchored}, "
-            f"anchor_status={self.anchor_status!r})"
+            f"anchor_status={self.anchor_status!r}) #logged @ leaf {self.seq}"
         )
 
 
@@ -658,7 +666,7 @@ def _emit_capsule(
 
     capsule["capsule_id"] = compute_capsule_id(capsule)
 
-    append_to_ledger(capsule, ledger)
+    seq = append_to_ledger(capsule, ledger)
 
     anchor_enabled = _anchor_enabled(anchor)
     witness_endpoint = witness_url or os.environ.get(_witness.WITNESS_URL_ENV_VAR, None)
@@ -710,4 +718,5 @@ def _emit_capsule(
         anchor_status=anchor_status,
         signature=capsule["signature"],
         key_id=capsule["key_id"],
+        seq=seq,
     )

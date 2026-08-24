@@ -6,6 +6,19 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — `#logged @ leaf N` repr (O16 audit item 9)
+
+**What changed.** `EmitResult.__repr__` and `capsule-emit ledger show` previously gave
+no indication that a sealed capsule is already a leaf in your log, ambiently, before any
+checkpoint (frozen v4 surface §2.1). `EmitResult` gains a `seq` field — this capsule's
+1-indexed position in its ledger file, the same `seq` `capsule_emit.witness`'s
+`_JsonlLogSource.scan` assigns per raw line (checkpoint-stamp entries counted too), so it
+becomes the MMR leaf index once a checkpoint covers it. `capsule_emit.ledger.append_to_ledger`
+now returns this position. Both `repr(cap)` and `ledger show`'s header render it as
+`#logged @ leaf <seq>`.
+
+See `tests/test_logged_leaf_repr.py`.
+
 ### Added — `status` CLI verb (O16 audit item 17, "status's fetch-fold")
 
 **What changed.** No `status` verb existed at all (confirmed against `cli.py`'s actual

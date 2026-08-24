@@ -59,10 +59,20 @@ CHECKPOINT_STAMP_KIND = "checkpoint_stamp"
 _append_lock = threading.Lock()
 
 
-def append_to_ledger(capsule: dict, path: str | os.PathLike = "ledger.jsonl") -> None:
-    """Append a sealed capsule dict as a single JSON line."""
-    with _append_lock, open(path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(capsule, separators=(",", ":")) + "\n")
+def append_to_ledger(capsule: dict, path: str | os.PathLike = "ledger.jsonl") -> int:
+    """Append a sealed capsule dict as a single JSON line.
+
+    Returns the entry's 1-indexed sequence position within this ledger
+    file -- the same ``seq`` ``_JsonlLogSource.scan`` (``capsule_emit.witness``)
+    assigns per raw line, checkpoint-stamp entries counted too, i.e. the MMR
+    leaf position this entry occupies once a checkpoint covers it. Computed
+    under the same lock that serializes the write, so it reflects this
+    process's own append order; most callers don't need it and ignore it.
+    """
+    with _append_lock:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(capsule, separators=(",", ":")) + "\n")
+        return len(read_ledger_entries(path))
 
 
 def read_ledger_entries(path: str | os.PathLike) -> list[dict]:
@@ -301,7 +311,12 @@ def show(
         return False
 
     cid = cap.get("capsule_id", "?")
-    print(f"\n── capsule {cid} ──\n", file=out)
+    seq = next(
+        (i for i, r in enumerate(read_ledger_entries(path), start=1) if r.get("capsule_id") == cid),
+        None,
+    )
+    leaf_str = f"  #logged @ leaf {seq}" if seq is not None else ""
+    print(f"\n── capsule {cid} ──{leaf_str}\n", file=out)
 
     # Tier 1: top-level identity fields
     _field(out, "format_version", cap.get("format_version"))
