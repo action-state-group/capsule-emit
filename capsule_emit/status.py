@@ -26,33 +26,46 @@ is meant to be a single, absolute "zero network egress" guarantee (frozen
 surface §1a.3, "local-only"), and a `status` call that quietly re-opened a
 network path around it would violate that. See ``docs/checkpoint.md``'s
 "Kill switch scope" section.
+
+**Witness outage: the lag stays honest even after a late stamp arrives.**
+A checkpoint that was self-attested during an outage and later confirmed by
+a durable retry (``capsule_emit.witness``'s backlog drain -- see that
+module's docstring) is graded from its EFFECTIVE witness set
+(``witness.checkpoint_witness_states`` -- original registration plus any
+later backfill), not from the checkpoint's own, never-updated ``.witnesses``
+list. Get this wrong in either direction and it lies: reading only the
+original list would show "awaiting stamp" forever even after a real stamp
+landed; crediting a backfill that never happened would show "witnessed"
+during an outage that is still ongoing. ``witness_backlog`` below reports,
+per currently-configured witness, how many checkpoints it specifically has
+not yet confirmed -- the per-witness-cursor view (frozen surface's O5 item):
+one witness being down never hides that the others have already advanced.
 """
 from __future__ import annotations
 
 from typing import Any
 
 
-def compute_status(path: str, *, offline: bool = False) -> dict:
+def compute_status(path: str, *, offline: bool = False, ts_url: str | list[str] | None = None) -> dict:
     """Read ``path`` (a JSONL ledger) and report its ladder position.
 
     Returns a plain, JSON-serializable dict -- see the module docstring for
     what each field means. ``offline=True`` skips the network re-check of
     the latest checkpoint's witness receipt(s); ``offline=False`` (default)
-    performs it.
+    performs it. ``ts_url`` resolves which witness(es) ``witness_backlog``
+    is reported for, with the same precedence ``seal()``/``maybe_checkpoint``
+    use: explicit ``ts_url``, else ``CAPSULE_WITNESS_URL``, else the default.
     """
     from . import witness
-    from .checkpoint import CheckpointRecord, Grade, core
-    from .ledger import CHECKPOINT_STAMP_KIND, read_ledger_entries
+    from .checkpoint import core
+    from .ledger import NON_CAPSULE_KINDS, read_ledger_entries
 
     entries = read_ledger_entries(path)
-    capsules = [e for e in entries if e.get("kind") != CHECKPOINT_STAMP_KIND]
-    checkpoints = [
-        CheckpointRecord.from_dict(e["checkpoint"])
-        for e in entries
-        if e.get("kind") == CHECKPOINT_STAMP_KIND
-    ]
+    capsules = [e for e in entries if e.get("kind") not in NON_CAPSULE_KINDS]
+    states = witness.checkpoint_witness_states(path)
 
-    last_cp = checkpoints[-1] if checkpoints else None
+    last_state = states[-1] if states else None
+    last_cp = last_state.checkpoint if last_state is not None else None
     covered_leaves = core.leaf_count(last_cp.mmr_size) if last_cp is not None else 0
 
     if last_cp is None:
@@ -61,35 +74,45 @@ def compute_status(path: str, *, offline: bool = False) -> dict:
         # Everything past the leaf count the latest checkpoint actually
         # covers -- INCLUDING that checkpoint's own stamp entry (appended
         # after its mmr_size was fixed, so it is genuinely uncovered until
-        # the *next* checkpoint folds it in, per item 16). Only capsules
-        # count as "records" here; a checkpoint's own stamp backlog is
-        # reported separately below.
+        # the *next* checkpoint folds it in, per item 16) and any witness
+        # backfill entries. Only capsules count as "records" here; a
+        # checkpoint's own stamp backlog is reported separately below.
         records_awaiting_checkpoint = sum(
-            1 for e in entries[covered_leaves:] if e.get("kind") != CHECKPOINT_STAMP_KIND
+            1 for e in entries[covered_leaves:] if e.get("kind") not in NON_CAPSULE_KINDS
         )
 
-    checkpoints_awaiting_stamp = sum(1 for cp in checkpoints if cp.grade() == Grade.SELF_ATTESTED)
+    # Effective grade -- original registration plus any later backfill --
+    # not CheckpointRecord.grade() (original registration only). See the
+    # module docstring's "Witness outage" section.
+    checkpoints_awaiting_stamp = sum(1 for s in states if not s.effective_witnesses)
     witnessing_enabled_now = witness.witness_enabled(None)
+
+    configured_urls = witness.resolved_witness_urls(ts_url)
+    witness_backlog = {
+        url: sum(1 for s in states if url not in s.effective_witnesses) for url in configured_urls
+    }
 
     result: dict[str, Any] = {
         "path": str(path),
         "offline": offline,
         "capsule_count": len(capsules),
-        "checkpoint_count": len(checkpoints),
+        "checkpoint_count": len(states),
         "records_awaiting_checkpoint": records_awaiting_checkpoint,
         "checkpoints_awaiting_stamp": checkpoints_awaiting_stamp,
         "witnessing_enabled_now": witnessing_enabled_now,
         "witnessing_mode_now": witness.witness_mode(None),
+        "configured_witness_urls": configured_urls,
+        "witness_backlog": witness_backlog,
         "latest_checkpoint": None,
     }
 
-    if last_cp is not None:
+    if last_state is not None:
         witnesses_info = []
         # O16-03: the kill switch (CAPSULE_WITNESS=off) skips this network
         # re-check even when --offline was NOT passed -- it is the one
         # switch that zeroes all egress, not just an alias for --offline.
         skip_network_recheck = offline or not witnessing_enabled_now
-        for w in last_cp.witnesses:
+        for w in last_state.effective_witnesses.values():
             info: dict[str, Any] = {"ts_url": w.ts_url, "is_stub": w.is_stub, "confirmed": None}
             if w.is_stub:
                 # Never re-checked over the network -- a stub stamp was never
@@ -111,7 +134,7 @@ def compute_status(path: str, *, offline: bool = False) -> dict:
         result["latest_checkpoint"] = {
             "mmr_size": last_cp.mmr_size,
             "leaf_count": covered_leaves,
-            "grade": last_cp.grade().value,
+            "grade": last_state.grade().value,
             "stub_witness": stub_witness_only,
             "timestamp": last_cp.timestamp,
             "key_id": last_cp.key_id,
@@ -169,5 +192,15 @@ def render_status(status: dict, *, out: Any = None) -> None:
                 detail = f" ({w['errors'][0]})" if w.get("errors") else ""
                 state = f"NOT confirmed{detail}"
             print(f"    {w['ts_url']:<40}{state}", file=out)
+
+    # Only printed when at least one configured witness genuinely has a
+    # backlog -- idle-silence precedent (checkpoint.md's age-cadence leg):
+    # a healthy log with nothing pending stays quiet rather than printing a
+    # reassuring "0" for every witness on every call.
+    backlog = {url: n for url, n in status["witness_backlog"].items() if n > 0}
+    if backlog:
+        print("\n  witness backlog (checkpoints awaiting THIS witness):", file=out)
+        for url, count in backlog.items():
+            print(f"    {url:<40}{count}", file=out)
 
     print(file=out)

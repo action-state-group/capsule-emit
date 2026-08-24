@@ -91,6 +91,37 @@ protected-header encoding once separate COSE-wire work lands the wire format its
 See `tests/test_stub_witness.py`, `tests/checkpoint/test_checkpoint_emit.py`, and
 `docs/checkpoint.md`'s "Test & dev — the stub witness" section.
 
+### Added — durable witness-outage retry, per-witness cursors, honest status lag (O5)
+
+**What changed.** Witnessing is default-on, so outage handling is launch behavior:
+a checkpoint that failed to register with a witness was already persisted
+(self-attested — no drop), but nothing ever retried it, and `status` had no way
+to know a later retry succeeded. New `capsule_emit.witness.retry_pending_witness_stamps`
+drains each configured witness's backlog independently (a per-witness cursor,
+oldest-pending-first, stopping at that witness's own first failure per call) —
+the backlog itself is derived fresh from the ledger on every call
+(`checkpoint_witness_backlog`/`checkpoint_witness_states`), not a separate
+in-memory or side-file queue, so it survives a process restart intact and never
+grows the process's own memory footprint. A late-arriving stamp can't rewrite an
+already-persisted checkpoint entry, so it lands as its own small
+`checkpoint_witness_backfill` ledger entry (new `ledger.WITNESS_BACKFILL_KIND`)
+citing the original checkpoint's `entry_digest`. `_build_and_register` drains the
+backlog automatically before handling each cycle's newly-due checkpoint, so
+recovery happens on the next real `emit()`/`seal()` after a witness returns, with
+no new background timer.
+
+`status`'s `checkpoints_awaiting_stamp` now reads each checkpoint's EFFECTIVE
+witness set (original registration + any backfill), not just its own
+never-updated `witnesses` list — previously a checkpoint that got backfilled
+after an outage would show "awaiting stamp" forever. New `witness_backlog` field
+(and `capsule-emit status --witness-url URL`, repeatable) reports, per
+currently-configured witness, how many checkpoints it specifically has not yet
+confirmed — so a multi-witness deployment can see that one witness being down
+never hid the others having already advanced.
+
+See `tests/test_witness_outage_queue.py` and `docs/checkpoint.md`'s new "Witness
+outage" section.
+
 ### Added — flock-based one-log-one-writer locking (O16 audit item 12, "Flock locking")
 
 **What changed.** No OS-level write coordination existed: `git grep` for
