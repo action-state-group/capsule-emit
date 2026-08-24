@@ -108,6 +108,41 @@ _ATEXIT_ANCHOR_TIMEOUT = float(
 ANCHOR_ENV_VAR = "CAPSULE_ANCHOR"
 _ANCHOR_LEGACY_ON_VALUE = "legacy-on"
 
+#: The pre-0.5.0 on-values. Kept solely to detect the O16-01-02 breaking
+#: change at runtime: a caller who wrote one of these before the flip now
+#: gets a silent no-op (single-egress) instead of the anchor channel they
+#: asked for, with nothing in the docs surfacing that unless they read them
+#: again. See ``_print_legacy_anchor_env_stale_notice_once`` below.
+_ANCHOR_STALE_ON_VALUES = {"true", "1", "yes"}
+
+_stale_anchor_notice_lock = threading.Lock()
+_stale_anchor_notice_printed = False
+
+
+def _print_legacy_anchor_env_stale_notice_once(value: str) -> None:
+    """One-time stderr notice for the O16-01-02 breaking change: a pre-0.5.0
+    affirmative ``CAPSULE_ANCHOR`` value (``true``/``1``/``yes``) used to
+    enable the per-seal anchor channel; as of 0.5.0 it is off by default and
+    that value is now silently ignored. Never raises; a broken stderr must
+    not break ``_emit_capsule()``."""
+    global _stale_anchor_notice_printed
+    with _stale_anchor_notice_lock:
+        if _stale_anchor_notice_printed:
+            return
+        _stale_anchor_notice_printed = True
+    try:
+        print(
+            f"capsule-emit: CAPSULE_ANCHOR={value!r} used to enable the per-seal "
+            "anchor channel, but as of 0.5.0 that channel is off by default and "
+            "this value is now a no-op -- your anchor config is silently NOT "
+            "taking effect (single-egress: checkpoint/witness only). Set "
+            "CAPSULE_ANCHOR=legacy-on to restore the old behavior. (This notice "
+            "prints once per process.)",
+            file=sys.stderr,
+        )
+    except Exception:  # noqa: BLE001 -- a notice must never break _emit_capsule()
+        pass
+
 
 def _anchor_enabled(explicit: bool | None) -> bool:
     """Resolve the on/off decision for the legacy per-seal anchor channel,
@@ -121,7 +156,10 @@ def _anchor_enabled(explicit: bool | None) -> bool:
     it."""
     if explicit is not None:
         return explicit
-    return os.environ.get(ANCHOR_ENV_VAR, "").strip().lower() == _ANCHOR_LEGACY_ON_VALUE
+    raw = os.environ.get(ANCHOR_ENV_VAR, "").strip().lower()
+    if raw in _ANCHOR_STALE_ON_VALUES:
+        _print_legacy_anchor_env_stale_notice_once(raw)
+    return raw == _ANCHOR_LEGACY_ON_VALUE
 
 
 _disclosure_lock = threading.Lock()

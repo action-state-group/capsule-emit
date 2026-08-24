@@ -44,6 +44,7 @@ def _clean_module_state(monkeypatch):
     core._dep_notice_printed = False
     core._anchor_deps_checked = False
     core._anchor_deps_available = True
+    core._stale_anchor_notice_printed = False
     witness._notice_printed = False
     witness._counts.clear()
     witness._armed_at.clear()
@@ -57,6 +58,7 @@ def _clean_module_state(monkeypatch):
     core._dep_notice_printed = False
     core._anchor_deps_checked = False
     core._anchor_deps_available = True
+    core._stale_anchor_notice_printed = False
     witness._notice_printed = False
     witness._counts.clear()
     witness._armed_at.clear()
@@ -204,6 +206,64 @@ def test_capsule_anchor_env_non_legacy_values_all_skip_anchor(tmp_path, monkeypa
         ledger=str(tmp_path / "ledger.jsonl"),
     )
     assert r.anchor_status == "skipped"
+
+
+# ---------------------------------------------------------------------------
+# [o16-fu-1-legacy-anchor-notice]: the stale pre-0.5.0 on-values are now a
+# SILENT no-op (see the parametrized test above) -- these tests cover the
+# one-time stderr notice that makes the downgrade audible.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", ["true", "True", "TRUE", "1", "yes", "Yes", "YES"])
+def test_stale_capsule_anchor_on_value_prints_notice_once(tmp_path, monkeypatch, value, capsys):
+    monkeypatch.setenv("CAPSULE_ANCHOR", value)
+    ledger = str(tmp_path / "ledger.jsonl")
+
+    seal({"x": 1}, action="a", operator="acme", witness=False, ledger=ledger)
+    seal({"x": 2}, action="b", operator="acme", witness=False, ledger=ledger)
+
+    err = capsys.readouterr().err
+    assert err.count("now a no-op") == 1, (
+        "the stale-value notice must print exactly once per process, not once per seal() call"
+    )
+    assert "legacy-on" in err, "the notice must say how to get the old behavior back"
+
+
+@pytest.mark.parametrize("value", ["off", "0", "false", "no", "legacy-on", ""])
+def test_non_stale_capsule_anchor_values_never_print_notice(tmp_path, monkeypatch, value, capsys):
+    monkeypatch.setenv("CAPSULE_ANCHOR", value)
+    monkeypatch.setattr(core, "async_anchor", lambda *a, **kw: _fake_future())
+    seal(
+        {"x": 1}, action="test", operator="acme", witness=False,
+        ledger=str(tmp_path / "ledger.jsonl"),
+    )
+    err = capsys.readouterr().err
+    assert "now a no-op" not in err
+
+
+def test_unset_capsule_anchor_never_prints_notice(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
+    seal(
+        {"x": 1}, action="test", operator="acme", witness=False,
+        ledger=str(tmp_path / "ledger.jsonl"),
+    )
+    err = capsys.readouterr().err
+    assert "now a no-op" not in err
+
+
+def test_explicit_anchor_kwarg_suppresses_stale_notice(tmp_path, monkeypatch, capsys):
+    """An explicit ``anchor=`` kwarg always wins over ``CAPSULE_ANCHOR`` (see
+    ``_anchor_enabled``), so the env var is never consulted for this call --
+    no notice, since nothing was silently overridden."""
+    monkeypatch.setenv("CAPSULE_ANCHOR", "true")
+    monkeypatch.setattr(core, "async_anchor", lambda *a, **kw: _fake_future())
+    seal(
+        {"x": 1}, action="test", operator="acme", anchor=True, witness=True,
+        ledger=str(tmp_path / "ledger.jsonl"),
+    )
+    err = capsys.readouterr().err
+    assert "now a no-op" not in err, "explicit anchor=True wins, so CAPSULE_ANCHOR is never consulted"
 
 
 def test_capsule_anchor_legacy_on_value_enables_anchor(tmp_path, monkeypatch):
