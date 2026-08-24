@@ -142,6 +142,14 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip the read-only witness re-check; report only what the ledger already holds",
     )
+    status_p.add_argument(
+        "--witness-url",
+        dest="witness_url",
+        action="append",
+        metavar="URL",
+        help="witness endpoint(s) to report backlog for (repeatable); defaults to "
+        "CAPSULE_WITNESS_URL, else the built-in default",
+    )
     status_p.add_argument("--json", dest="as_json", action="store_true", help="raw JSON output")
 
     # permalink
@@ -359,7 +367,7 @@ def _cmd_verify(args: argparse.Namespace) -> int:
 def _cmd_status(args: argparse.Namespace) -> int:
     from .status import compute_status, render_status
 
-    result = compute_status(args.path, offline=args.offline)
+    result = compute_status(args.path, offline=args.offline, ts_url=args.witness_url)
 
     if args.as_json:
         print(json.dumps(result, indent=2, default=str))

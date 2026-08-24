@@ -18,8 +18,16 @@ Two kinds of entry share the same file and the same append path:
   act (who disclosed what range to which audience, when), appended to the
   same ledger so the audit trail of showing evidence is itself evidence
   (frozen surface §7b: "disclosures are receipts too").
+- **witness-backfill records** (``kind == WITNESS_BACKFILL_KIND``, added
+  0.5.0 -- see ``capsule_emit.witness``'s durable retry queue) -- evidence
+  that a witness stamp a checkpoint-stamp record didn't yet hold arrived
+  later (the witness was unreachable when the checkpoint was first built,
+  came back, and a retry succeeded). A checkpoint-stamp entry is already an
+  MMR leaf once written, so a later stamp can never be folded back into it
+  in place -- this is a second, small entry citing the original
+  checkpoint's ``entry_digest`` instead of mutating it.
 
-``read_ledger`` filters both non-capsule kinds out by default so every
+``read_ledger`` filters all non-capsule kinds out by default so every
 existing capsule-only consumer (CLI, server, permalink, approval, holds,
 the view/show renderers below) keeps seeing exactly the capsule stream it
 always has; ``read_ledger_entries`` returns the raw, unfiltered file for
@@ -66,6 +74,7 @@ __all__ = [
     "read_ledger_entries",
     "CHECKPOINT_STAMP_KIND",
     "DISCLOSURE_RECORD_KIND",
+    "WITNESS_BACKFILL_KIND",
     "NON_CAPSULE_KINDS",
     "LedgerLockedError",
     "view",
@@ -83,13 +92,18 @@ CHECKPOINT_STAMP_KIND = "checkpoint_stamp"
 #: capsule -- see ``capsule_emit.disclose`` (O16 audit item 10).
 DISCLOSURE_RECORD_KIND = "disclosure_record"
 
+#: Marks a ledger line as a late-arriving witness stamp for an
+#: already-persisted checkpoint -- see ``capsule_emit.witness``'s durable
+#: retry queue (O5 audit item, "witness-outage is launch behavior").
+WITNESS_BACKFILL_KIND = "checkpoint_witness_backfill"
+
 #: Every ``kind`` a ledger line can carry that is NOT a capsule -- the
 #: log's own bookkeeping. Consumers that must resolve a *record* (a sealed
 #: capsule -- ``capsule_emit.bundle``, ``capsule_emit.disclose``) filter
 #: these out the same way ``read_ledger`` does, so bookkeeping entries are
 #: never mistaken for the capsule they happen to share a ``capsule_id``-shaped
 #: field with.
-NON_CAPSULE_KINDS = (CHECKPOINT_STAMP_KIND, DISCLOSURE_RECORD_KIND)
+NON_CAPSULE_KINDS = (CHECKPOINT_STAMP_KIND, DISCLOSURE_RECORD_KIND, WITNESS_BACKFILL_KIND)
 
 # Physical write safety: two threads calling append_to_ledger for
 # *different* files never contend, but two threads appending to the SAME

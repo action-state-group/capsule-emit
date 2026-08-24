@@ -259,11 +259,17 @@ capsule-emit status ./ledger.jsonl --json       # machine-readable
 
 `status` answers, from the ledger alone: how many capsules are sealed, how
 many checkpoints exist and each one's ladder rung (`self-attested` /
-`witnessed` — `CheckpointRecord.grade()`), and two honest lag numbers —
-**records awaiting the next checkpoint** (sealed capsules, and a
+`witnessed` — the checkpoint's EFFECTIVE grade, original registration plus
+any later backfill; see "Witness outage" below), and two honest lag
+numbers — **records awaiting the next checkpoint** (sealed capsules, and a
 checkpoint's own not-yet-covered stamp entry, past the latest checkpoint's
-covered leaf count) and **checkpoints awaiting a witness stamp** (persisted
-checkpoints still graded `self-attested`).
+covered leaf count) and **checkpoints awaiting a witness stamp** (checkpoints
+no configured witness has confirmed yet, originally or via backfill). A
+third field, **`witness_backlog`**, breaks the second number down per
+currently-configured witness (`--witness-url`, repeatable; defaults to
+`CAPSULE_WITNESS_URL`) — how many checkpoints *that specific witness* has
+not yet confirmed, so a multi-witness deployment can see that one witness
+being down never hid the others having already advanced.
 
 This is the CLI's read-verb family (`log`, `status`, `show`, `bundle`,
 `disclose`, `verify`): **reads never write.** Unless `--offline` is given,
@@ -279,6 +285,56 @@ records. So does `CAPSULE_WITNESS=off` (the kill switch, see
 [Kill switch scope](#kill-switch-scope-o16-03) above) — a witness-disabled
 process reports each witness as `unconfirmed (witness disabled)` and never
 attempts the GET, whether or not `--offline` was also given.
+
+## Witness outage: durable retry, not a drop (O5)
+
+Witnessing is default-on, so **outage handling is launch behavior, not an
+edge case.** When a configured witness is unreachable, the checkpoint it
+would have stamped is not lost, not silently dropped, and not stuck: it is
+already persisted as a self-attested log entry (see "Checkpoint/stamp
+persistence" above), and `capsule_emit.witness` retries it — per witness,
+independently — the moment that witness comes back.
+
+**There is no separate queue file.** The durable "queue" is the ledger
+itself: every checkpoint stamp on disk that a given witness has not yet
+confirmed IS that witness's pending backlog, computed fresh on demand
+(`witness.checkpoint_witness_backlog(ledger_path, urls)`). That means:
+
+- **Nothing is lost on restart.** A pending checkpoint's evidence lives in
+  the ledger, not in a process's memory — killing the process mid-outage
+  and starting a fresh one changes nothing about what still needs a stamp.
+- **No unbounded in-memory growth.** Nothing accumulates in a Python
+  list across calls; each retry pass is a read over the ledger that's
+  already there for other reasons (the same full-rescan precedent
+  `MmrLedger.sync()` already sets).
+- **A late stamp can't rewrite history**, so it is recorded as its own
+  small `checkpoint_witness_backfill` ledger entry citing the original
+  checkpoint's `entry_digest` — never a mutation of the original stamp.
+
+**Per-witness cursors.** With more than one witness configured,
+`witness.retry_pending_witness_stamps(ledger_path, ts_url=...)` drains each
+one's backlog independently: one witness still down stops (at its own
+first failure this call) without touching another witness's already-clear
+backlog or blocking its drain. The next call — whether the next real
+`seal()`/`emit()` crossing cadence, or another explicit call — re-derives
+the same backlog from the ledger and resumes at the same point; there is no
+cursor to lose or desync.
+
+**When it runs.** `_build_and_register` (the same fire-and-forget worker
+that builds and registers each newly-due checkpoint) calls
+`retry_pending_witness_stamps` first, before handling the checkpoint due
+this cycle — so the backlog drains automatically on the next real write
+after a witness returns, matching this module's existing "no background
+timer, only real writes drive network activity" design. An operator who
+wants to force a drain without waiting on the next `emit()` can call
+`retry_pending_witness_stamps` directly.
+
+```python
+from capsule_emit import witness
+
+backlog = witness.checkpoint_witness_backlog(ledger_path, ["https://witness.example"])
+witness.retry_pending_witness_stamps(ledger_path, ts_url="https://witness.example")
+```
 
 ## Bundle — the hand-to-anyone artifact (O16 audit item 14)
 

@@ -98,12 +98,57 @@ long time, or ever, in a short-lived process). States what will be sent (a
 (the resolved endpoint(s)), and how to turn it off. Printed exactly once per
 process regardless of how many ledgers or checkpoints follow (see
 ``_print_first_use_notice_once``).
+
+**Witness outage: durable, per-witness retry -- not a drop.** A checkpoint
+that fails to register with a witness is still persisted (as a
+self-attested ``CHECKPOINT_STAMP_KIND`` entry, above) -- so it already
+survives a restart, but nothing retried it. This module closes that gap
+with a durable backlog that is the ledger itself, not a separate in-memory
+or side-file queue:
+
+- Every checkpoint stamp already on disk that a given witness URL has not
+  yet confirmed (checked against that stamp's own ``witnesses`` list, plus
+  any later backfill -- see below) is, by definition, that witness's
+  pending backlog. :func:`checkpoint_witness_backlog` computes it fresh
+  from the ledger on every call -- same precedent as ``MmrLedger.sync()``'s
+  full rescan (O16-18: "no persisted cursor spanning an off period ...
+  this already holds structurally"). There is nothing to lose on restart
+  because there is nothing kept only in memory: the pending set is a pure
+  function of what is already durably on disk, so it cannot desync from a
+  mutable cursor file, and it cannot grow the process's own memory
+  footprint -- it grows (bounded, one entry per outage-era checkpoint) only
+  in the same durable ledger every stamp already lives in.
+- :func:`retry_pending_witness_stamps` drains each configured witness's
+  backlog independently -- **a per-witness cursor**, oldest pending
+  checkpoint first, stopping at that witness's first failure this call (it
+  is presumably still down; the next call resumes from the same point,
+  since nothing is marked done until a backfill entry is durably
+  persisted). One witness being down never blocks another's drain -- each
+  URL's loop is independent, mirroring the existing any-one-endpoint-down
+  fan-out isolation in :func:`_build_and_register`.
+- A late success cannot rewrite the original (already-leaved) checkpoint
+  stamp, so it is persisted as its own small ``WITNESS_BACKFILL_KIND``
+  entry citing the checkpoint's ``entry_digest`` -- see
+  :func:`_persist_witness_backfill`.
+- ``_build_and_register`` calls :func:`retry_pending_witness_stamps` before
+  handling the checkpoint newly due this cycle, so the backlog is what
+  drains on the very next real ``emit()``/``seal()`` after a witness
+  returns -- consistent with this module's existing "no background timer,
+  driven only by real writes" design (see the "due" section above). An
+  operator who wants to force a drain without waiting on the next emit can
+  call :func:`retry_pending_witness_stamps` directly.
+- ``capsule_emit.status.compute_status`` folds backfills into its grade and
+  lag numbers, so a checkpoint that was self-attested during an outage and
+  later backfilled is honestly reported as witnessed once the backfill
+  lands -- never stuck showing "awaiting stamp" forever, and never shown as
+  witnessed before a stamp genuinely arrives.
 """
 from __future__ import annotations
 
 import atexit
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import sys
@@ -130,6 +175,11 @@ __all__ = [
     "AGE_CADENCE_ENV_VAR",
     "DEFAULT_CADENCE_SECONDS",
     "CAPSULE_ENV_VAR",
+    "resolved_witness_urls",
+    "CheckpointWitnessState",
+    "checkpoint_witness_states",
+    "checkpoint_witness_backlog",
+    "retry_pending_witness_stamps",
 ]
 
 #: Explicit ``witness=`` always wins; this env var is consulted only when the
@@ -287,6 +337,27 @@ def _parse_witness_urls(raw: str | list[str] | None) -> list[str]:
             seen.add(url)
             urls.append(url)
     return urls
+
+
+def resolved_witness_urls(ts_url: str | list[str] | None = None) -> list[str]:
+    """The witness endpoint(s) actually in effect, resolved with the exact
+    same precedence :func:`maybe_checkpoint`'s caller (``core.emit()``/
+    ``seal()``) already applies: an explicit ``ts_url`` wins; otherwise
+    ``CAPSULE_WITNESS_URL``; otherwise the single free public-good default.
+
+    Unlike :func:`_parse_witness_urls` (a pure normalizer that leaves "no
+    override" as ``[]`` for its caller to fall back on), this always
+    returns at least one URL -- callers outside a live ``emit()`` call (a
+    retry pass, ``status``) that need to know "which witness(es) is this
+    ledger actually configured against right now" have no other caller to
+    fall back to.
+    """
+    from .checkpoint import DEFAULT_TS_URL
+
+    if ts_url is None:
+        ts_url = os.environ.get(WITNESS_URL_ENV_VAR)
+    urls = _parse_witness_urls(ts_url)
+    return urls or [DEFAULT_TS_URL]
 
 
 _notice_lock = threading.Lock()
@@ -537,6 +608,181 @@ def _persist_checkpoint_stamp(cp: Any, ledger_path: str) -> None:
         )
 
 
+# -- durable witness-outage retry queue --------------------------------------
+#
+# See the module docstring's "Witness outage" section. Everything below is a
+# pure function of what's already durably on the ledger -- no separate
+# in-memory or side-file queue, no persisted cursor to desync -- see that
+# section for why that is deliberate, not an omission.
+
+
+@dataclass(frozen=True)
+class CheckpointWitnessState:
+    """One persisted checkpoint stamp's EFFECTIVE witness set: its own
+    ``witnesses`` (from the original registration attempt) plus whatever a
+    later :class:`WITNESS_BACKFILL_KIND` entry added -- keyed by
+    ``ts_url``, so a URL that both originally succeeded and was later
+    (redundantly) backfilled still counts once. This is the merged view
+    every consumer of witness state should read from -- never
+    ``checkpoint.grade()``/``checkpoint.witnesses`` directly once backfills
+    exist, since those only ever see the original registration."""
+
+    entry_digest: str
+    checkpoint: Any  # capsule_emit.checkpoint.CheckpointRecord
+    effective_witnesses: dict  # ts_url -> capsule_emit.checkpoint.WitnessRecord
+
+    def grade(self, *, ts_pubkey_pem: bytes | str | None = None) -> Any:  # -> capsule_emit.checkpoint.Grade
+        """Same authenticity bar as ``CheckpointRecord.grade()`` -- a
+        non-stub stamp that cryptographically verifies as bound to this
+        checkpoint, not mere presence -- evaluated over the EFFECTIVE
+        (backfill-merged) witness set instead of ``checkpoint.witnesses``
+        alone, so a late backfilled stamp flips this to WITNESSED without
+        needing the checkpoint's own, never-updated ``.witnesses`` list to
+        change."""
+        from .checkpoint import Grade, verify_witness_stamp_offline
+
+        return (
+            Grade.WITNESSED
+            if any(
+                not w.is_stub
+                and verify_witness_stamp_offline(self.checkpoint, w, ts_pubkey_pem=ts_pubkey_pem)[0]
+                for w in self.effective_witnesses.values()
+            )
+            else Grade.SELF_ATTESTED
+        )
+
+
+def checkpoint_witness_states(ledger_path: str) -> list[CheckpointWitnessState]:
+    """Every checkpoint stamp in ``ledger_path``, in ledger order, each with
+    its EFFECTIVE witness set (original registration + any later backfill
+    merged) -- see :class:`CheckpointWitnessState`. One full scan of the
+    ledger; callers that need more than one view of this (e.g. ``status``,
+    which needs both the latest checkpoint's grade and every witness's
+    backlog) should call this once and derive both, rather than scanning
+    the ledger twice.
+    """
+    from .checkpoint import CheckpointRecord, WitnessRecord
+    from .ledger import CHECKPOINT_STAMP_KIND, WITNESS_BACKFILL_KIND, read_ledger_entries
+
+    checkpoints: dict[str, Any] = {}
+    order: list[str] = []
+    # entry_digest -> {ts_url: WitnessRecord}, accumulated in ledger order so
+    # a later backfill for a URL a checkpoint already held simply overwrites
+    # with an equal-or-newer record rather than duplicating.
+    backfills: dict[str, dict[str, Any]] = {}
+
+    for entry in read_ledger_entries(ledger_path):
+        kind = entry.get("kind")
+        if kind == CHECKPOINT_STAMP_KIND:
+            digest = entry["capsule_id"]
+            checkpoints[digest] = CheckpointRecord.from_dict(entry["checkpoint"])
+            order.append(digest)
+        elif kind == WITNESS_BACKFILL_KIND:
+            wr = WitnessRecord.from_dict(entry["witness"])
+            backfills.setdefault(entry["checkpoint_entry_digest"], {})[wr.ts_url] = wr
+
+    states = []
+    for digest in order:
+        cp = checkpoints[digest]
+        effective = {w.ts_url: w for w in cp.witnesses}
+        effective.update(backfills.get(digest, {}))
+        states.append(CheckpointWitnessState(digest, cp, effective))
+    return states
+
+
+def checkpoint_witness_backlog(ledger_path: str, ts_urls: list[str]) -> dict[str, list]:
+    """For each ``ts_urls`` entry, the checkpoints (as ``CheckpointRecord``
+    objects, oldest first) that witness has not yet confirmed -- neither
+    originally nor via a later backfill. This IS the durable queue: derived
+    fresh from the ledger every call, so it is exactly as durable as the
+    ledger itself and cannot grow unboundedly in process memory (nothing
+    here is retained between calls)."""
+    states = checkpoint_witness_states(ledger_path)
+    return {
+        url: [s.checkpoint for s in states if url not in s.effective_witnesses]
+        for url in ts_urls
+    }
+
+
+def _persist_witness_backfill(cp: Any, witness_record: Any, ledger_path: str) -> None:
+    """Record a witness stamp that arrived after ``cp`` was first persisted
+    -- see the module docstring's "Witness outage" section for why this is
+    a new entry rather than a mutation of ``cp``'s own stamp. Best-effort,
+    matching :func:`_persist_checkpoint_stamp`: a failure to persist a
+    backfill must not raise into a caller -- the stamp itself (and the COSE
+    receipt already obtained from the TS) is unaffected; only this ledger's
+    own record of having obtained it is at risk, and it will simply be
+    retried on the next drain.
+    """
+    from .ledger import WITNESS_BACKFILL_KIND, append_to_ledger
+
+    body = {
+        "checkpoint_entry_digest": cp.entry_digest(),
+        "witness": witness_record.to_dict(),
+    }
+    entry = {
+        "kind": WITNESS_BACKFILL_KIND,
+        "v": 1,
+        "capsule_id": hashlib.sha256(
+            json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        **body,
+    }
+    try:
+        append_to_ledger(entry, ledger_path)
+    except OSError as exc:  # noqa: BLE001 -- best-effort, never raises into a caller
+        warnings.warn(
+            f"capsule-emit: failed to persist witness backfill for checkpoint "
+            f"entry_digest={cp.entry_digest()!r} ts_url={witness_record.ts_url!r} "
+            f"to {ledger_path!r}: {exc}",
+            RuntimeWarning,
+            stacklevel=1,
+        )
+
+
+def retry_pending_witness_stamps(
+    ledger_path: str,
+    *,
+    ts_url: str | list[str] | None = None,
+    enabled: bool | None = None,
+) -> dict[str, int]:
+    """Drain each configured witness's durable backlog -- the per-witness
+    cursor described in the module docstring. For every witness in
+    :func:`resolved_witness_urls`, attempts to register its oldest pending
+    checkpoint first, then the next, stopping at that witness's first
+    failure this call (it is presumably still down; nothing here is lost --
+    the next call, whether from the next real ``emit()``/``seal()`` crossing
+    cadence or another explicit call, re-derives the same backlog from the
+    ledger and resumes at the same point). One witness's backlog draining
+    (or not) never affects another's -- each URL's loop is independent.
+
+    Gated by :func:`witness_enabled` exactly like :func:`maybe_checkpoint`
+    (O16-03: the kill switch is a single, absolute zero-egress guarantee --
+    a retry pass must honor it too, not just the original registration
+    attempt). Synchronous -- callers that want this off the calling thread
+    (``maybe_checkpoint``'s dispatched worker) call it from there.
+
+    Returns ``{ts_url: count_backfilled_this_call}``.
+    """
+    from .checkpoint import register_checkpoint
+
+    if not witness_enabled(enabled):
+        return {}
+
+    urls = resolved_witness_urls(ts_url)
+    backlog = checkpoint_witness_backlog(ledger_path, urls)
+    backfilled = {url: 0 for url in urls}
+    for url, pending in backlog.items():
+        for cp in pending:
+            try:
+                witness_record = register_checkpoint(cp, url)
+            except Exception:  # noqa: BLE001 -- still down; stop this witness's drain for now
+                break
+            _persist_witness_backfill(cp, witness_record, ledger_path)
+            backfilled[url] += 1
+    return backfilled
+
+
 def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool = False) -> None:
     from .checkpoint import (
         DEFAULT_TS_URL,
@@ -553,6 +799,14 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # is actually dialed, so the label must say so plainly (STUB_TS_URL),
     # not borrow a URL that would read as "this really reached that host."
     resolved_urls = [STUB_TS_URL] if stub else (ts_urls or [DEFAULT_TS_URL])
+
+    # Drain each configured witness's durable backlog BEFORE handling the
+    # checkpoint newly due this cycle -- oldest pending stamp first, per
+    # witness, so a witness that just came back resumes from its own
+    # cursor instead of only ever seeing the newest checkpoint. Reads/
+    # appends only already-settled checkpoint stamps on disk, never
+    # ``state.mmr``/``state.prev``, so it needs no lock here.
+    retry_pending_witness_stamps(state.log_id, ts_url=resolved_urls)
 
     with state.lock:
         state.mmr.sync()
