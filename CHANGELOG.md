@@ -98,6 +98,27 @@ are written directly via `append_to_ledger`, not through `core.emit()`.
 See `tests/test_witness_stamp_persistence.py` and `docs/checkpoint.md`'s new
 "Checkpoint/stamp persistence" section.
 
+### Changed — BREAKING (default-behavior): per-seal anchor killed as a default; single egress channel (O16-01-02)
+
+**What changed.** The per-seal SCITT anchor submission that `seal()`/`carry()`/`compose()`
+(and the deprecated `emit()`) dispatched on every call by default has been killed as a
+default. The checkpoint/witness stream (above) is now the **only** default network
+egress path. The anchor channel still exists, as an explicit, non-default opt-in —
+pass `anchor=True`, or set `CAPSULE_ANCHOR=legacy-on` (a value deliberately distinct
+from the pre-0.5.0 on-values, so an existing `CAPSULE_ANCHOR=true`/unset config does
+not silently keep double-egress alive across this upgrade) — kept for one release as a
+rollback path. `EmitResult.anchored` / `.anchor_status` are unchanged in shape but now
+report `"skipped"` / `False` for the overwhelming majority of calls (anything that
+doesn't explicitly opt in). See `docs/why-anchoring.md` and `docs/checkpoint.md`.
+
+**Why.** The dual-channel default (anchor AND witness both firing on every call) was
+an undercounted-migration gap against the frozen v4 developer surface (`seal(payload)`
+promises one egress story, not two independent default network paths with overlapping
+purposes). See the O16 migration audit, items 1-2.
+
+**Rollback.** `CAPSULE_ANCHOR=legacy-on` restores the pre-0.5.0 per-seal anchor
+dispatch for one release; not a code revert.
+
 ## [0.5.0] — 2026-08-23
 
 ### Added — BREAKING (capsule shape): every `seal()`/`carry()`/`compose()` result is now cryptographically signed (O16-13, "Signer protocol seam")

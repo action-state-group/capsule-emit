@@ -17,7 +17,11 @@ stream automatically:
   `witness.agentactioncapsule.org` (semantically a witness, not the anchor —
   **[currently served via `anchor.agentactioncapsule.org`; the `witness.`
   CNAME is pending]**, see `capsule_emit.checkpoint.emit. DEFAULT_TS_URL` /
-  `_PENDING_CNAME_TARGETS`).
+  `_PENDING_CNAME_TARGETS`). This is the **only default egress channel** as
+  of 0.5.0 — the older per-emit anchor channel is now an explicit,
+  non-default opt-in (see
+  [`docs/why-anchoring.md`](why-anchoring.md#in-practice)), not something
+  every default `emit()` call also dispatches.
 - **An idle log is silent, never a heartbeat.** The age leg is checked
   lazily, only inside `witness.maybe_checkpoint` — which itself only ever
   runs right after a real `emit()` call appends a new entry. There is no

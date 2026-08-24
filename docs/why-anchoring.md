@@ -58,8 +58,10 @@ it settled. The honest ladder:
 - **Self-attested (a record you keep):** tamper-evident, but trust-the-keeper.
 - **Registered / anchored (digest in a shared log):** + existed-at-T,
   omission-resistant, independently checkable — but you're still trusting that
-  *one* log operator not to equivocate. This is where `capsule-emit`'s default
-  per-capsule anchor sits today.
+  *one* log operator not to equivocate. This is where `capsule-emit`'s
+  per-capsule anchor channel sits — as of 0.5.0 it is an explicit, non-default
+  opt-in (`anchor=True` or `CAPSULE_ANCHOR=legacy-on`), not the default path;
+  see "In practice" below.
 - **Witnessed (single witness):** a Transparency Service has registered a
   signed *checkpoint* over your stream — vouching that the records under it
   **existed, in that order, and haven't been rewritten since** (existence +
@@ -104,10 +106,19 @@ property only holds when the log is one the *verifier* also trusts.
 
 ## In practice
 
-- **On by default**, async and non-blocking — `emit()` doesn't wait on the network.
+**As of 0.5.0, this per-capsule anchor channel is OFF by default** — the
+checkpoint/witness stream (see [`docs/checkpoint.md`](checkpoint.md)) is the
+only default egress path. Older guides showing `anchor=True` per seal
+describe the pre-0.5.0 surface. The channel still exists, as an explicit,
+non-default opt-in kept for one release as a rollback path:
+
+- **Opt-in only** — pass `seal(..., anchor=True)`, or set
+  `CAPSULE_ANCHOR=legacy-on` process-wide. Async and non-blocking either way
+  — the call doesn't wait on the network.
 - **Digest-only**, so it's safe for sensitive payloads.
-- **Off-able** — `emit(..., anchor=False)` for offline/local-only.
-- **Repointable** — `AAC_ANCHOR_URL=…` or `emit(..., anchor_url=…)`; the open-source
+- **Off by default / explicitly off** — leave `anchor` unset (the default),
+  or pass `anchor=False`.
+- **Repointable** — `AAC_ANCHOR_URL=…` or `seal(..., anchor_url=…)`; the open-source
   log service is [`capsule-anchor`](https://github.com/action-state-group/capsule-anchor).
 
 ---

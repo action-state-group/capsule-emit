@@ -533,12 +533,13 @@ def test_emit_error_does_not_propagate_async_tool(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_anchor_defaults_to_none_resolving_on_via_capsule_anchor_env(monkeypatch):
+def test_anchor_defaults_to_none_resolving_off_via_capsule_anchor_env(monkeypatch):
     """MCPCapsuleEmitter must default anchor=None -- left unresolved at
     construction so CAPSULE_ANCHOR can be consulted at emit time (same shape
-    as capsule_emit.core._emit_capsule's own anchor param). With the env var
-    unset this still resolves to on, preserving the "anchors by default"
-    contract this test previously asserted via a literal ``is True``."""
+    as capsule_emit.core._emit_capsule's own anchor param). As of 0.5.0
+    (O16-01-02: per-seal anchor killed as a default) an unset env var
+    resolves to OFF -- the legacy anchor channel needs an explicit
+    CAPSULE_ANCHOR=legacy-on or anchor=True to engage."""
     monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
     emitter = MCPCapsuleEmitter(
         operator="test-org",
@@ -547,6 +548,6 @@ def test_anchor_defaults_to_none_resolving_on_via_capsule_anchor_env(monkeypatch
     assert emitter._anchor is None, "anchor must default to None, not a resolved bool"
     from capsule_emit.core import _anchor_enabled
 
-    assert _anchor_enabled(emitter._anchor) is True, (
-        "an unset CAPSULE_ANCHOR must still resolve the constructor default to on"
+    assert _anchor_enabled(emitter._anchor) is False, (
+        "an unset CAPSULE_ANCHOR must resolve the constructor default to off (0.5.0 default)"
     )
