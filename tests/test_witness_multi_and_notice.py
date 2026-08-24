@@ -20,6 +20,7 @@ import time
 import pytest
 
 from capsule_emit import seal, witness
+from capsule_emit.checkpoint import Grade
 
 _ = base64, hashlib  # re-exported for parity with the stub TS handler below
 
@@ -204,6 +205,34 @@ def stub_ts_single():
     base_url, received, stop = _start_stub_ts()
     yield base_url, received
     stop()
+
+
+# ---------------------------------------------------------------------------
+# multi-witness any-of grading: one live stamp is enough (O16 item 11)
+# ---------------------------------------------------------------------------
+
+
+def test_one_valid_stamp_grades_witnessed_even_if_another_endpoint_fails(
+    tmp_path, stub_ts_single, monkeypatch
+):
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "2")
+    good_url, received = stub_ts_single
+    dead_url = "http://127.0.0.1:1"  # nothing listens here -- connection refused
+    ledger = tmp_path / "ledger.jsonl"
+
+    for i in range(2):
+        seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger,
+             witness_url=[dead_url, good_url])
+
+    assert _wait_for(lambda: len(received) >= 1)
+
+    key = witness._resolve_key(str(ledger))
+    state = witness._states[key]
+    assert len(state.prev.witnesses) == 1, "only the live endpoint should have stamped"
+    assert state.prev.grade() == Grade.WITNESSED, (
+        "any-of semantics: one valid stamp is enough to grade witnessed, "
+        "regardless of how many other endpoints failed"
+    )
 
 
 # ---------------------------------------------------------------------------
