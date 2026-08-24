@@ -411,7 +411,8 @@ def verify_disclosure(d: Disclosure) -> tuple[bool, list[str]]:
                 errors.append(f"{cid}: missing bundle")
                 continue
             ok, berrors = verify_bundle(b)
-            errors.extend(f"{cid}: {e}" for e in berrors)
+            if not ok:
+                errors.extend(f"{cid}: {e}" for e in berrors)
 
             envelope = d.envelopes.get(cid) or {}
             disclosures = envelope.get("disclosures") or {}

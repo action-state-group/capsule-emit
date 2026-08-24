@@ -280,9 +280,20 @@ def verify_bundle(b: Bundle) -> tuple[bool, list[str]]:
          needed);
       4. if a prior checkpoint is present: its signature too, that the
          covering checkpoint's ``prev_size``/``prev_root`` genuinely name
-         it, and the consistency proof bridging the two roots; if absent:
-         that ``checkpoint.prev_size == 0`` — this is honestly the log's
-         first checkpoint, not a silently dropped lower bound;
+         it, and the consistency proof (the ``bryce-cose-receipts-mmr-profile``
+         relation, verified via ``capsule_emit.checkpoint.core
+         .verify_consistency``) bridging the two roots; if absent: that
+         ``checkpoint.prev_size == 0`` — this is honestly the log's first
+         checkpoint, not a silently dropped lower bound. **Label honestly
+         (Decision 2):** a passing consistency check proves the history
+         *within this bundle* was not rewritten/reordered/truncated between
+         the two checkpoints (anti-REWRITE) — it does NOT prove no divergent
+         history exists elsewhere (anti-FORK/anti-equivocation), since a
+         forker can build two internally-consistent bundles and one offline
+         verifier never sees both sides. The success notice reads exactly
+         "history intact between checkpoints N and M" and never "no fork" /
+         "not equivocated" — that guarantee is the witness's and
+         multi-witness config's job, never this offline check's;
       5. witness stamp authenticity, if the covering checkpoint carries any
          (``capsule_emit.checkpoint.verify_witness_stamp_offline`` per
          ``WitnessRecord`` — [stamp-authenticity-on-read-not-presence]): a
@@ -296,9 +307,10 @@ def verify_bundle(b: Bundle) -> tuple[bool, list[str]]:
          witnessed via the valid one.
 
     Returns ``(ok, errors)`` — ``ok`` is false iff a FATAL problem was
-    found; ``errors`` also carries non-fatal stamp notices (see point 5),
-    so it is not empty precisely for a mixed valid/forged witness set even
-    though ``ok`` is true there.
+    found; ``errors`` also carries non-fatal notices: the point-4 honest
+    consistency/first-checkpoint label, and point-5's mixed valid/forged
+    stamp notices — so it is not empty on plenty of fully-passing bundles,
+    not just the mixed-witness case.
     """
     from agent_action_capsule.canonical import compute_capsule_id
 
@@ -357,11 +369,27 @@ def verify_bundle(b: Bundle) -> tuple[bool, list[str]]:
                     b.consistency_proof,
                 ):
                     errors.append("consistency proof does not bridge prior_checkpoint to checkpoint")
+                else:
+                    # Honest label (Decision 2): anti-REWRITE only, never
+                    # "no fork" / "not equivocated" -- see the docstring.
+                    notices.append(
+                        "history intact between checkpoints "
+                        f"{b.prior_checkpoint.mmr_size} and {b.checkpoint.mmr_size} "
+                        "(consistency proof verified) -- rules out rewrite/reorder/"
+                        "truncation between them; does not rule out a divergent fork, "
+                        "which only a witness attests to"
+                    )
         else:
             if b.checkpoint.prev_size != 0:
                 errors.append("prior_checkpoint is missing but checkpoint.prev_size != 0")
             if b.consistency_proof is not None:
                 errors.append("consistency_proof present without a prior_checkpoint")
+            if b.checkpoint.prev_size == 0 and b.consistency_proof is None:
+                notices.append(
+                    f"no prior checkpoint -- checkpoint at mmr_size={b.checkpoint.mmr_size} "
+                    "is this log's first; there is no earlier history to check continuity "
+                    "against"
+                )
 
         if b.checkpoint.witnesses:
             stamp_checks = [

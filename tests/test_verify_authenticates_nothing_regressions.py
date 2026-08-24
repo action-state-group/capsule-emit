@@ -29,12 +29,13 @@ import time
 from dataclasses import replace
 
 import pytest
-from _stub_receipt import build_stub_receipt_b64
+from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64
 from agent_action_capsule.canonical import compute_capsule_id
 
 from capsule_emit import cli, seal, status, witness
 from capsule_emit import ledger as ledger_mod
 from capsule_emit.bundle import bundle, verify_bundle
+from capsule_emit.checkpoint import emit as checkpoint_emit_mod
 from capsule_emit.checkpoint.emit import CheckpointRecord
 from capsule_emit.signing import verify_capsule_signature, verify_store_signed
 
@@ -87,8 +88,15 @@ def _start_stub_ts():
 
 
 @pytest.fixture
-def stub_ts():
+def stub_ts(monkeypatch):
+    # Simulate that this hermetic stub IS the pinned default witness
+    # ([verify-batch-fastfollow] item D) so fixtures built with it still
+    # signature-verify as WITNESSED via the DEFAULT (no-key) read path,
+    # instead of correctly-but-inconveniently demoting to "TS identity
+    # unverified" for being an unpinned TS. monkeypatch reverts per test.
     base_url, received, stop = _start_stub_ts()
+    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
 
@@ -361,3 +369,97 @@ def test_attack45_positive_control_genuine_stamp_still_grades_witnessed(two_chec
 
     result = status.compute_status(str(ledger_path), offline=True)
     assert result["latest_checkpoint"]["grade"] == "witnessed"
+
+
+# ---------------------------------------------------------------------------
+# [verify-batch-fastfollow] item D -- manager-review finding: the
+# sophisticated file-forger one level up from attack45. attack45's forger
+# writes garbage receipt_b64 ("forged") and is caught by the structural
+# probe. This forger instead runs the PUBLIC scitt_cose.build_receipt (no
+# producer/TS key needed), computes the correct entry_hash from the
+# checkpoint they are editing, and signs a real, structurally valid,
+# checkpoint-bound receipt with a key THEY generated. Before pinning the
+# known default witness's key, this passed the (key-independent) structural
+# probe and laundered self-attested -> witnessed -- proven by attack45's own
+# positive control, which graded WITNESSED over a stub-signed receipt with
+# no pinned key for the identical, key-independent reason. Pinning closes it:
+# an attacker's key is neither the pinned default nor caller-supplied, so it
+# can never satisfy the identity check, only the (now-insufficient) shape one.
+# ---------------------------------------------------------------------------
+
+
+def test_attack_sophisticated_forger_correct_entry_hash_attacker_key_stays_self_attested(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "2")
+    ledger_path = tmp_path / "ledger.jsonl"
+    for i in range(2):
+        seal(None, action=f"lonely-{i}", operator="acme", anchor=False,
+             ledger=ledger_path, witness_url="http://127.0.0.1:1")  # nothing listens -- self-attested
+    assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
+
+    entries = ledger_mod.read_ledger_entries(ledger_path)
+    stamp = next(e for e in entries if e.get("kind") == ledger_mod.CHECKPOINT_STAMP_KIND)
+    cp = CheckpointRecord.from_dict(stamp["checkpoint"])
+    assert cp.witnesses == []  # genuinely self-attested before the forgery
+
+    # The sophisticated forger: correct entry_hash (computable from the
+    # checkpoint they're editing -- no secret needed), a REAL COSE Receipt
+    # (not garbage bytes), signed with a key of the attacker's own choosing.
+    import base64
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+    from scitt_cose import build_receipt
+
+    attacker_key_pem = Ed25519PrivateKey.generate().private_bytes(
+        Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+    )
+    entry_hash = hashlib.sha256(bytes.fromhex(cp.digest())).hexdigest()
+    forged_receipt_b64 = base64.b64encode(
+        build_receipt(
+            leaf_entry_hex=entry_hash, leaf_index=0, tree_entries_hex=[entry_hash],
+            alg="EdDSA", log_private_key_pem=attacker_key_pem,
+        )
+    ).decode()
+
+    def _sophisticated_forge(entry):
+        entry = json.loads(json.dumps(entry))  # deep copy
+        entry["checkpoint"]["witnesses"] = [{
+            "ts_url": "https://attacker.example",  # never contacted -- attacker invents this
+            "entry_hash": entry_hash,
+            "receipt_b64": forged_receipt_b64,
+            "leaf_index": 0,
+            "tree_size": 1,
+        }]
+        return entry
+
+    _rewrite_ledger_line(
+        ledger_path,
+        predicate=lambda e: e.get("kind") == ledger_mod.CHECKPOINT_STAMP_KIND,
+        mutate=_sophisticated_forge,
+    )
+
+    # (a) grade(): a real, structurally valid, checkpoint-bound receipt --
+    # not garbage -- must still not launder to WITNESSED without the pinned
+    # default witness's key or an identity match.
+    entries_after = ledger_mod.read_ledger_entries(ledger_path)
+    stamp_after = next(e for e in entries_after if e.get("kind") == ledger_mod.CHECKPOINT_STAMP_KIND)
+    cp_after = CheckpointRecord.from_dict(stamp_after["checkpoint"])
+    assert len(cp_after.witnesses) == 1  # the forger's witness IS present, and IS a real receipt...
+    from capsule_emit.checkpoint import Grade
+
+    assert cp_after.grade() == Grade.SELF_ATTESTED  # ...but an attacker-chosen key never confers WITNESSED
+
+    # (b) status --offline: the headline grade must stay honest, no network.
+    result = status.compute_status(str(ledger_path), offline=True)
+    assert result["latest_checkpoint"]["grade"] == "self-attested"
+
+    # (c) bundle/verify_bundle: must grade the bundle INVALID, not VALID over
+    # an attacker-key stamp -- same fatal-if-none-valid path attack45 proved
+    # for the garbage-bytes forger.
+    record_id = ledger_mod.read_ledger(ledger_path)[0]["capsule_id"]
+    b = bundle(ledger_path, record_id)
+    ok, errors = verify_bundle(b)
+    assert ok is False
+    assert any("TS identity unverified" in e for e in errors)

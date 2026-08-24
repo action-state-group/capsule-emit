@@ -20,11 +20,12 @@ import threading
 import time
 
 import pytest
-from _stub_receipt import build_stub_receipt_b64
+from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64
 
 import capsule_emit.core as core
 from capsule_emit import seal, witness
 from capsule_emit.checkpoint import Grade
+from capsule_emit.checkpoint import emit as checkpoint_emit_mod
 
 
 class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
@@ -207,8 +208,14 @@ def test_one_failing_endpoint_does_not_block_the_others(tmp_path, stub_ts_single
 
 
 @pytest.fixture
-def stub_ts_single():
+def stub_ts_single(monkeypatch):
+    # Simulate that this hermetic stub IS the pinned default witness
+    # ([verify-batch-fastfollow] item D) so the "one valid stamp is enough"
+    # any-of test still gets a WITNESSED stamp via the DEFAULT (no-key)
+    # read path. monkeypatch reverts per test.
     base_url, received, stop = _start_stub_ts()
+    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
 

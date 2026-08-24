@@ -58,6 +58,8 @@ from .core import (
     verify_inclusion,
 )
 from .emit import (
+    DEFAULT_TS_PUBLIC_KEY_ID,
+    DEFAULT_TS_PUBLIC_KEY_PEM,
     DEFAULT_TS_URL,
     EXAMPLE_CONFIG_TOML,
     CheckpointConfig,
@@ -104,6 +106,8 @@ __all__ = [
     "verify_range",
     "MemoryNodeStore",
     "DEFAULT_TS_URL",
+    "DEFAULT_TS_PUBLIC_KEY_PEM",
+    "DEFAULT_TS_PUBLIC_KEY_ID",
     "EXAMPLE_CONFIG_TOML",
     "CheckpointConfig",
     "CheckpointError",

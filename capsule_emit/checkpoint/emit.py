@@ -100,10 +100,54 @@ __all__ = [
     "due_for_checkpoint",
     "lag_exceeded",
     "DEFAULT_TS_URL",
+    "DEFAULT_TS_PUBLIC_KEY_PEM",
+    "DEFAULT_TS_PUBLIC_KEY_ID",
     "EXAMPLE_CONFIG_TOML",
 ]
 
 DEFAULT_TS_URL = "https://witness.agentactioncapsule.org"
+
+#: The default free public-good witness's Ed25519 public key, PINNED so the
+#: DEFAULT read path (``verify_witness_stamp_offline``/``grade()`` called
+#: with no caller-supplied ``ts_pubkey_pem``) can tell "a stamp this exact
+#: witness actually signed" apart from "a receipt shape that merely
+#: reconstructs a root, from any key at all" -- closing the sophisticated
+#: file-forger the naive [stamp-authenticity-on-read-not-presence] fix left
+#: open (a forger with the *public* ``scitt_cose.build_receipt`` mints a
+#: well-formed single-leaf receipt over the correct ``entry_hash``, signed
+#: with a key of their own choosing; without a pin, structural root
+#: reconstruction alone is key-independent and cannot tell that apart from
+#: the real thing). Only ``WitnessRecord``s whose ``ts_url`` equals
+#: ``DEFAULT_TS_URL`` exactly are matched against this pin -- an attacker
+#: cannot make an unrelated stamp match it just by relabelling ``ts_url``,
+#: since the pinned key itself is fixed here, not derived from the record.
+#:
+#: Fetched 2026-08-24 from the live ``GET /anchor/authority-pubkey`` endpoint
+#: (``anchor.agentactioncapsule.org`` -- the host ``DEFAULT_TS_URL`` currently
+#: dispatches to per ``_PENDING_CNAME_TARGETS``) over HTTPS, and cross-checked
+#: against that same response's ``key_id`` (``sha256(pubkey)[:16]``, matching
+#: capsule-anchor's own ``StaticKeyProvider.active_key_id()`` derivation --
+#: see capsule-anchor's ``deploy/KEY-MANAGEMENT.md``) before being committed
+#: here -- self-consistency the response could not fake without also holding
+#: the private key.
+#:
+#: Rotates only on an operator-announced capsule-anchor key rotation
+#: (KEY-MANAGEMENT.md's rotation procedure). A stale pin fails CLOSED: a
+#: checkpoint witnessed under a rotated key demotes to "TS identity
+#: unverified" (self-attested) rather than silently accepting the wrong key
+#: -- update both constants below together when that happens.
+DEFAULT_TS_PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAObtlTJ3Ar+HA7e8N7/qmkJm4UYg2ybom4EkVNYQPlrU=
+-----END PUBLIC KEY-----
+"""
+
+#: ``sha256(<raw 32-byte pubkey>)[:16]`` for :data:`DEFAULT_TS_PUBLIC_KEY_PEM`
+#: -- matches the ``key_id`` capsule-anchor's own ``/anchor/authority-pubkey``
+#: and ``/health`` endpoints publish for the current signing key. Not used
+#: for verification itself (the PEM is); kept alongside it so a future
+#: rotation editing one constant without the other is easy to catch by eye
+#: or a test, rather than silently pinning a key whose recorded id lies.
+DEFAULT_TS_PUBLIC_KEY_ID = "19a9ab3e02fad55c"
 
 #: [currently anchor., CNAME pending] ``witness.agentactioncapsule.org`` is
 #: meant to CNAME onto ``anchor.agentactioncapsule.org`` -- same free
@@ -324,11 +368,22 @@ class CheckpointRecord:
         Any-of semantics are unchanged (§2a.3): the first VALID stamp flips
         the grade; additional stamps, valid or not, never gate it.
 
-        Without ``ts_pubkey_pem`` this confirms structural + checkpoint-
-        binding authenticity only -- see
-        :func:`verify_witness_stamp_offline` for exactly what that does and
-        does not prove. Pass a caller-pinned/cached TS public key for the
-        full identity-bound guarantee.
+        Without ``ts_pubkey_pem``, a stamp from the pinned default witness
+        (``DEFAULT_TS_URL``) is still signature-verified automatically; any
+        other unpinned ``ts_url`` confirms structural + checkpoint-binding
+        authenticity only, which is not enough to grade WITNESSED -- see
+        :func:`verify_witness_stamp_offline` for exactly what each tier does
+        and does not prove. Pass a caller-pinned/cached TS public key for the
+        full identity-bound guarantee against a non-default witness.
+
+        Two rungs here is correct, not a truncated ladder: the CLL ladder
+        has three (self-attested / witnessed / countersigned), but
+        ``countersigned`` is a receipt-level property produced by a
+        counterparty/operator's countersign path over an already-issued
+        receipt -- a fact about a receipt, not about a checkpoint -- so it
+        has no representation on a `CheckpointRecord`'s own grade. A caller
+        wanting the third rung reads it off the countersigned receipt
+        directly, not off this method.
         """
         return (
             Grade.WITNESSED
@@ -671,14 +726,30 @@ def verify_witness_stamp_offline(
     ``receipt_b64``, exactly what a file-level forger who never talked to a
     real Transparency Service would write) fails here.
 
-    With ``ts_pubkey_pem`` (a caller-pinned/cached TS public key): also
-    verifies the Receipt's COSE_Sign1 signature under that specific key --
-    the full identity-bound guarantee ("a specific trusted TS actually
-    witnessed this"). Without it, this function proves the stamp is a
-    genuine, checkpoint-bound Receipt shape and not a fabrication; it does
-    NOT prove which Transparency Service produced it -- the same caveat
-    ``verify_capsule_signature`` documents for the self-attested rung. Pass
-    ``ts_pubkey_pem`` for the stronger guarantee.
+    Structural validity alone is deliberately NOT enough to grade WITNESSED
+    -- root reconstruction is key-independent, so a *sophisticated* forger
+    with the public ``scitt_cose.build_receipt`` can mint a well-formed
+    receipt over the correct ``entry_hash`` signed with a key of their own
+    choosing (no producer or TS key needed), one level up from the garbage-
+    bytes forger above. Two tiers close that:
+
+    With ``ts_pubkey_pem`` (a caller-pinned/cached TS public key): verifies
+    the Receipt's COSE_Sign1 signature under that specific key -- the full
+    identity-bound guarantee ("a specific trusted TS actually witnessed
+    this").
+
+    Without it, but ``witness.ts_url == DEFAULT_TS_URL``: automatically
+    verified against :data:`DEFAULT_TS_PUBLIC_KEY_PEM`, the pinned key for
+    the default free public-good witness -- the common case gets the full
+    identity-bound guarantee with no caller setup.
+
+    Without it, and any other ``ts_url``: this function proves only that the
+    stamp is a genuine, checkpoint-bound Receipt SHAPE and not a
+    fabrication -- it does NOT prove which Transparency Service produced it,
+    so it returns ``ok=False`` with an explicit "shape valid; TS identity
+    unverified" message rather than conferring WITNESSED on shape alone.
+    Pass ``ts_pubkey_pem`` (or register with the pinned default witness) for
+    the stronger guarantee.
     """
     import base64
 
@@ -702,6 +773,9 @@ def verify_witness_stamp_offline(
     except ImportError:
         return False, ["scitt-cose is not installed; run: pip install 'capsule-emit[checkpoint]'"]
 
+    if ts_pubkey_pem is None and witness.ts_url == DEFAULT_TS_URL:
+        ts_pubkey_pem = DEFAULT_TS_PUBLIC_KEY_PEM
+
     if ts_pubkey_pem is not None:
         try:
             result = verify_receipt(
@@ -723,4 +797,8 @@ def verify_witness_stamp_offline(
         return False, [
             "receipt is not a structurally valid COSE Receipt bound to this checkpoint"
         ] + list(probe.errors)
-    return True, []
+    return False, [
+        "witness shape valid; TS identity unverified -- ts_url is not the "
+        "pinned default witness and no ts_pubkey_pem was supplied, so this "
+        "does not confer WITNESSED (grades as self-attested)"
+    ]
