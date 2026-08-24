@@ -1,24 +1,29 @@
 # SPDX-License-Identifier: Apache-2.0
-"""capsule-emit — the seal / carry / compose surface for Agent Action Capsules.
+"""capsule-emit — the seal / carry / received / compose surface for Agent Action Capsules.
 
 The developer surface, on one authorship axis — never
 ``import capsule_emit as capsule`` (it would shadow the noun the canonical
 line below assigns to):
 
-    from capsule_emit import seal, carry, compose
+    from capsule_emit import seal, received, compose
 
-    capsule = seal(payload)                        # MINT — mine
-    effect  = carry(receipt_bytes)                 # CARRY — theirs, already signed
-    action  = compose([auth, guard, act, effect])  # BIND — references members
+    capsule = seal(payload)                          # MINT — mine
+    effect  = received(their_bytes, type="...")      # CARRY — theirs, already
+                                                       #   signed, declared type
+    action  = compose([auth, guard, act, effect])    # BIND — references members
 
-All three return a :class:`Capsule` (never call it a ``receipt`` — that word
-is reserved for what a witness/transparency-service returns) and all three
-append to the log. See ``capsule_emit.surface`` for the full contract.
+All return a :class:`Capsule` (never call it a ``receipt`` — that word is
+reserved for what a witness/transparency-service returns) and all append to
+the log. ``carry()`` (the pre-``received()`` carry verb, generic-typed) still
+works, unchanged, alongside ``received()`` this release. See
+``capsule_emit.surface`` for the full contract, including the standalone vs
+nested-in-``seal()`` dispatch rule for foreign bytes.
 
 **Clean break (2026-08-22):** ``emit()`` was renamed. It remains importable
 for one release as a raising stub — ``from capsule_emit import emit`` still
 works, but calling it raises ``RuntimeError`` pointing at ``seal()``/
-``carry()``/``compose()`` — and will be removed entirely in a future release.
+``carry()``/``received()``/``compose()`` — and will be removed entirely in a
+future release.
 
 Anchor is on by default (async, digest-only); so is the CLL checkpoint/witness
 stream (async, digest-only, lazy per ledger — see ``capsule_emit.witness``
@@ -57,7 +62,7 @@ from .signing import (
     verify_capsule_signature,
     verify_store_signed,
 )
-from .surface import Capsule, carry, compose, seal
+from .surface import Capsule, carry, compose, received, seal
 from .verify import InputDigestResult, VerifyReason, verify_input_digest
 from .verify_canonicalization import (
     KNOWN_ALGORITHMS,
@@ -70,24 +75,27 @@ __version__ = "0.5.0"
 
 
 def emit(*_args: Any, **_kwargs: Any) -> NoReturn:
-    """Removed. ``emit()`` was renamed — use ``seal()``, ``carry()``, or ``compose()``.
+    """Removed. ``emit()`` was renamed — use ``seal()``, ``carry()``, ``received()``,
+    or ``compose()``.
 
     This raising stub exists for one release so callers get a clear error
     instead of an ``ImportError``; ``emit()`` itself will be removed after
     that. See ``capsule_emit.surface`` for the replacement verbs.
     """
     raise RuntimeError(
-        "emit() was renamed; use seal(), carry(), or compose() instead — "
-        "see capsule_emit.surface. emit() will be removed in a future release."
+        "emit() was renamed; use seal(), carry(), received(), or compose() "
+        "instead — see capsule_emit.surface. emit() will be removed in a "
+        "future release."
     )
 
 
 __all__ = [
     "__version__",
-    # seal / carry / compose — the developer surface (Layer 0)
+    # seal / carry / received / compose — the developer surface (Layer 0)
     "Capsule",
     "seal",
     "carry",
+    "received",
     "compose",
     # Core
     "emit",
