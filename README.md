@@ -4,7 +4,7 @@
 
 **Know what your AI agent did — and let anyone verify it.**
 
-One `emit()` call at each consequential action builds an **anchored, verifiable ledger** of what your agent did — each entry sealed (content-addressed by hash) and checkable by anyone, *without trusting you*.
+One `emit()` call at each consequential action builds a **witnessed, verifiable ledger** of what your agent did — each entry sealed (content-addressed by hash) and checkable by anyone, *without trusting you*.
 
 ```python
 from capsule_emit import emit
@@ -28,7 +28,7 @@ print(cap.capsule_id, cap.anchored)      # sealed, witnessed by default; anchor 
 pip install capsule-emit
 ```
 
-`capsule-emit` is the producer layer for the **Agent Action Capsule** — a [SCITT](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/) statement profile. You add one line at the moment your agent does something consequential; you get back a digest-committed, content-addressed capsule — anchored to a public log — that a third party who trusts neither you nor your agent can independently verify.
+`capsule-emit` is the producer layer for the **Agent Action Capsule** — a [SCITT](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/) statement profile. You add one line at the moment your agent does something consequential; you get back a digest-committed, content-addressed capsule — witnessed by a public log — that a third party who trusts neither you nor your agent can independently verify.
 
 ## Why you need this
 
@@ -55,7 +55,7 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 
 ## Where you start, and where it goes
 
-**Start here.** Call `emit()` at each consequential action. You get an **anchored, verifiable ledger** of what your agent did — each capsule appended locally to `ledger.jsonl`, its digest written to a public log. That's the whole starting point. Everything below is optional depth you grow into — no rewrite.
+**Start here.** Call `emit()` at each consequential action. You get a **witnessed, verifiable ledger** of what your agent did — each capsule appended locally to `ledger.jsonl`, its digest written to a public log. That's the whole starting point. Everything below is optional depth you grow into — no rewrite.
 
 **Then climb, one rung at a time:**
 
@@ -63,7 +63,7 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 - **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence. → `emit(..., confirms=parent_id)` · [within one stream, and across (under revision)](docs/chaining.md)
 - **Declare now, enforce later** — a `manifest.md` declares your rules; a compatible gateway enforces the *same file*, with no change to your `emit()` calls.
 
-The unit is the **capsule** (one action). What you keep and grow is the **ledger** (the anchored trail). Chaining links specific capsules within it. Start with the ledger; add the rest when you need it. → walk it end-to-end in the **[tutorials](docs/tutorials/)**.
+The unit is the **capsule** (one action). What you keep and grow is the **ledger** (the witnessed trail). Chaining links specific capsules within it. Start with the ledger; add the rest when you need it. → walk it end-to-end in the **[tutorials](docs/tutorials/)**.
 
 ## What you get back
 
@@ -83,8 +83,9 @@ log, so this exact capsule's existence is recorded at that time and checkable
 against the log by a party who trusts neither you nor your runtime.
 (`cap.anchored` reports the submission; surfacing the log's inclusion
 **receipt** back onto the result is on the near-term roadmap — today the
-digest is on the log and checkable there.) That's **registered**, not
-automatically **witnessed** — see [why anchoring makes it trustworthy](docs/why-anchoring.md)
+digest is on the log and checkable there.) That's **self-attested**, not yet
+**witnessed** — a single per-capsule inclusion receipt is a narrower claim
+than the witnessed stream below; see [why anchoring makes it trustworthy](docs/why-anchoring.md)
 for the honest ladder.
 
 - **What's logged:** a SHA-256 digest — nothing else. Your payloads never leave your machine.
@@ -93,7 +94,7 @@ for the honest ladder.
 - **Off by default; explicitly off:** leave `anchor` unset (the default), or pass `emit(..., anchor=False)`.
 - **First-run notice:** before this process's first anchor *or* witness network attempt, one line prints to stderr — naming the active endpoint(s) and how to turn each off — so an active network path is never silent on the very first call.
 
-*Why bother:* a self-hosted log you control isn't proof to an outsider; a shared, append-only transparency log is checkable by someone who trusts neither you nor the log's contents (though not, without a witness, someone unwilling to trust the log's operator at all — that step is registered vs. witnessed, not shared vs. unshared).
+*Why bother:* a self-hosted log you control isn't proof to an outsider; a shared, append-only transparency log is checkable by someone who trusts neither you nor the log's contents (though not, without a witness, someone unwilling to trust the log's operator at all — that step is self-attested vs. witnessed, not shared vs. unshared).
 
 ## Checkpoint — your log now proves itself
 
@@ -154,7 +155,7 @@ A `flows/<action>/manifest.md` *declares* autonomy + constraints; `capsule-emit`
 New here? Written to be read top-to-bottom, no standards background needed:
 
 - **[Tutorials](docs/tutorials/)** — five-minute, copy-paste sessions: your first capsule → confirming & chaining → reading your ledger → declaring rules.
-- **[Concepts in plain words](docs/concepts.md)** — the seven words (capsule, seal, may/did, chain, break, anchor, ledger), each tied to a field or command.
+- **[Concepts in plain words](docs/concepts.md)** — the seven words (capsule, seal, may/did, chain, break, witness, ledger), each tied to a field or command.
 - **[Anatomy of a capsule](docs/anatomy.md)** — exactly what gets sealed, the two-tier structure, how each layer is captured.
 - **[Chaining — within one agent, and across agents](docs/chaining.md)** — capsules link by content address into verifiable trails, including **cross-organizational** chains; why the ledger is a DAG, not one line.
 - **[Why anchoring makes it trustworthy](docs/why-anchoring.md)** — why a record *you* keep isn't proof to anyone else, and how a shared append-only log fixes it. The heart of it.

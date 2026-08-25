@@ -12,7 +12,7 @@ naturally come next, and they go in opposite directions.
    gateway    │  a compatible gateway reads your manifest and ENFORCES
   (a compatible gateway) — HITL, autonomy, effects.  Same files, no emit() change.
   ───────────┼───────────────────────────────────────────────────
-   YOU →   capsule-emit   produce: one call, sealed + anchored
+   YOU →   capsule-emit   produce: one call, sealed + witnessed
               │
    verify   agent-action-capsule   the spec + reference verifier (is this capsule valid?)
               │
@@ -43,7 +43,7 @@ own pipeline.
 
 ### 2. `scitt-cose` — the transparency substrate
 One layer down: the **generic SCITT + COSE Receipts** machinery. This is what makes
-"anchored" mean something — it verifies a `COSE_Sign1` **Signed Statement** and an
+"witnessed" mean something — it verifies a `COSE_Sign1` **Signed Statement** and an
 **RFC 9162** inclusion proof, i.e. *"this statement is provably in the log — without
 trusting the log operator."* It is **payload-agnostic** (it knows nothing about
 capsules) and **not** a hosted log service itself.
@@ -51,7 +51,7 @@ capsules) and **not** a hosted log service itself.
 - Repo: [`scitt-cose`](https://github.com/action-state-group/scitt-cose) — only
   dependencies are `cbor2` + `cryptography`; COSE is implemented from scratch.
 - Read this if you want to verify receipts yourself, run your own transparency log,
-  or understand the cryptography under the anchor.
+  or understand the cryptography under the witness.
 
 **How they compose:** `capsule-emit` produces a capsule → `agent-action-capsule`
 defines and verifies it → `scitt-cose` verifies the COSE signature and the

@@ -13,7 +13,7 @@ stream automatically:
   (900) seconds have elapsed since the first unwitnessed entry after the
   last checkpoint — a signed peaks checkpoint over that ledger's MMR is
   built and registered with a Transparency Service — the same free
-  public-good tier the per-emit anchor already uses by default,
+  public-good tier the legacy per-emit anchor channel also uses,
   `witness.agentactioncapsule.org` (semantically a witness, not the anchor —
   **[currently served via `anchor.agentactioncapsule.org`; the `witness.`
   CNAME is pending]**, see `capsule_emit.checkpoint.emit. DEFAULT_TS_URL` /

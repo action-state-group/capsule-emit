@@ -1,7 +1,7 @@
 # The public log, explained (and what it does and doesn't reveal)
 
-You don't need any of this to *use* `capsule-emit` — anchoring is on by default and it
-just works. But the moment a teammate, security reviewer, or counterparty asks *"wait,
+You don't need any of this to *use* `capsule-emit` — witnessing (the checkpoint
+stream) is on by default and it just works. But the moment a teammate, security reviewer, or counterparty asks *"wait,
 you're putting our stuff on a **public** log?"*, you'll want to be able to answer
 calmly. This page is that answer, in plain English. Skim the parts you need.
 
@@ -125,15 +125,21 @@ data itself — the deletable content lives with you, not on the log. So append-
 erasure aren't in conflict. *(Not legal advice — check with your counsel for your
 jurisdiction.)*
 
-**Do I have to be online? What if I don't want to anchor at all?**
-Anchoring is async and non-blocking, and fully optional: `emit(..., anchor=False)`
-seals locally and skips the network. You can anchor later, or never. Without an
-anchor you have a tamper-evident record — self-attested. With the default anchor
-you move up to registered — checkable against the log, but not yet witnessed
-([why that matters, and what the difference is](why-anchoring.md)).
+**Do I have to be online? What if I don't want to be witnessed at all?**
+Witnessing (the default checkpoint stream) is async and non-blocking, and fully
+optional: `emit(..., witness=False)` or `CAPSULE_WITNESS=off` seals locally and
+skips the network. Without it you have a tamper-evident record — self-attested.
+With the default checkpoint stream engaged, you move up to witnessed — checkable
+against the log by a party who trusts neither you nor your runtime
+([why that matters, and what the difference is](why-anchoring.md)). The older,
+legacy per-capsule anchor channel (`emit(..., anchor=True)`) is a separate,
+non-default opt-in that reaches only a narrower, per-capsule slice of the same
+tier.
 
 **Can I use my own log instead of the hosted one?**
-Yes — `AAC_ANCHOR_URL=…` or `emit(..., anchor_url=…)`; the log service
+Yes — for the default witness/checkpoint stream, `CAPSULE_WITNESS_URL=…` or
+`emit(..., witness_url=…)`; for the legacy per-capsule anchor channel,
+`AAC_ANCHOR_URL=…` or `emit(..., anchor_url=…)`. Either way the log service
 ([`capsule-anchor`](https://github.com/action-state-group/capsule-anchor)) is
 open-source. Just remember the trust property only holds when the log is one the
 *verifier* also trusts — a log only you control isn't proof to an outsider.

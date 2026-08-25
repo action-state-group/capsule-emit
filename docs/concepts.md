@@ -33,12 +33,15 @@ fingerprint stops matching, so `verify` returns **invalid**. The break is the pr
 It's why your capsule means something to someone who doesn't trust you — your own
 logs can't do that.
 
-### Anchor
-Writing the fingerprint (just the fingerprint — never your data) to a public, append-
-only list, so there's outside evidence the capsule existed at a certain time. On by
-default, free, no signup. Anyone can later check your capsule against the list.
-→ off with `emit(..., anchor=False)`. *Why this is what turns "my word" into proof
-anyone can check: [why anchoring makes it trustworthy](why-anchoring.md).*
+### Witness
+Writing a fingerprint (just the fingerprint — never your data) where an independent
+party can confirm it, so there's outside evidence the capsule existed at a certain
+time. Witnessing (the checkpoint stream) is on by default, free, no signup — anyone
+can later check your log against it. → off with `emit(..., witness=False)` /
+`CAPSULE_WITNESS=off`. The older per-capsule **anchor** channel (submitting one
+capsule's digest for its own inclusion receipt) still exists but is a legacy,
+non-default opt-in as of 0.5.0 (`emit(..., anchor=True)`). *Why this is what turns
+"my word" into proof anyone can check: [why anchoring makes it trustworthy](why-anchoring.md).*
 
 ### Ledger
 Your local running file of capsules — the trail of everything sealed so far. View it

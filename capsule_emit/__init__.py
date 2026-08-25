@@ -25,11 +25,13 @@ works, but calling it raises ``RuntimeError`` pointing at ``seal()``/
 ``carry()``/``received()``/``compose()`` — and will be removed entirely in a
 future release.
 
-Anchor is on by default (async, digest-only); so is the CLL checkpoint/witness
-stream (async, digest-only, lazy per ledger — see ``capsule_emit.witness``
-and ``docs/checkpoint.md``). Every capsule is also cryptographically signed,
-always, by a persisted producer key (see ``capsule_emit.signing``) — this one
-has no off switch, only a choice of *which* key signs (``signer=``/
+Witnessing is on by default (the CLL checkpoint/witness stream — async,
+digest-only, lazy per ledger — see ``capsule_emit.witness`` and
+``docs/checkpoint.md``). The older per-capsule anchor channel is a legacy,
+non-default opt-in (``anchor=True`` / ``CAPSULE_ANCHOR=legacy-on``) kept only
+as a rollback path. Every capsule is also cryptographically signed, always,
+by a persisted producer key (see ``capsule_emit.signing``) — this one has no
+off switch, only a choice of *which* key signs (``signer=``/
 ``signing_key_path=``). Ledger is written to ``ledger.jsonl`` by default. All
 of the above are configurable.
 """
