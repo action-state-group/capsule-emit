@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHTTPFactsToVerifiedCapsuleEndToEnd(t *testing.T) {
+func TestHTTPFactsToVerifiedV4CapsuleEndToEnd(t *testing.T) {
 	requestBody := []byte(`{"channel":"C123","text":"hello"}`)
 	request, err := http.NewRequest(http.MethodPost, "https://slack.com/api/chat.postMessage", nil)
 	require.NoError(t, err)
@@ -20,18 +20,11 @@ func TestHTTPFactsToVerifiedCapsuleEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	responseBody := []byte(`{"ok":true,"ts":"1722781258.001"}`)
-	response := &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-	}
+	response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}}
 	responseFact, err := httpfact.CaptureResponse(response, responseBody, "ok", true)
 	require.NoError(t, err)
-
 	digests, err := evidence.DigestExchanges([]evidence.Exchange{{
-		Provider:  "slack",
-		Operation: "chat.postMessage",
-		Request:   requestFact,
-		Response:  responseFact,
+		Provider: "slack", Operation: "chat.postMessage", Request: requestFact, Response: responseFact,
 	}})
 	require.NoError(t, err)
 	require.True(t, digests.ResponseKnown)
@@ -43,16 +36,15 @@ func TestHTTPFactsToVerifiedCapsuleEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	identity, err := NewEd25519SigningIdentity(privateKey)
 	require.NoError(t, err)
-	created, err := Create(input, identity)
+	created, err := Seal(input, identity)
 	require.NoError(t, err)
-	verifier, err := NewEd25519Verifier(publicKey)
+	class1, err := VerifyCapsule(created.Payload)
 	require.NoError(t, err)
-	verified, err := VerifyStatement(created.Statement, verifier, identity.KeyID)
+	assert.True(t, class1.OK)
+	envelope, err := VerifyEnvelope(created.CapsuleID, created.Envelope)
 	require.NoError(t, err)
-
-	effect := verified.Payload["effect"].(map[string]any)
-	assert.Equal(t, digests.RequestDigest, effect["request_digest"])
-	assert.Equal(t, digests.ResponseDigest, effect["response_digest"])
-	assert.NotContains(t, string(created.Statement), "hello")
-	assert.NotContains(t, string(created.Statement), "1722781258.001")
+	assert.Equal(t, []byte(publicKey), envelope.PublicKey)
+	assert.NotContains(t, string(created.Payload), "hello")
+	assert.NotContains(t, string(created.Payload), "1722781258.001")
+	assert.NotContains(t, string(created.Envelope), "hello")
 }

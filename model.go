@@ -18,6 +18,19 @@ type Input struct {
 	Disposition *Disposition
 	Effect      *Effect
 	Chain       *Chain
+	compute     *computeAttestation
+}
+
+type digestReference struct {
+	Type      string
+	DigestAlg string
+	Digest    string
+}
+
+type computeAttestation struct {
+	CarriedArtifact    *digestReference
+	CarriedInputDigest string
+	ComposedMembers    []digestReference
 }
 
 // Disposition records how a decision was disposed.
@@ -40,22 +53,22 @@ type Effect struct {
 	ExternalRef          string
 }
 
-// Chain links the signed payload to one parent Capsule.
+// Chain links a format-4 Capsule to one parent Capsule.
 type Chain struct {
 	ParentCapsuleID string
 	Relation        ChainRelation
 }
 
-// BuiltPayload is a validated AAC payload before COSE signing.
+// BuiltPayload is a validated signature-free format-4 Capsule.
 type BuiltPayload struct {
 	CapsuleID string
 	Value     map[string]any
 	JSON      []byte
 }
 
-// Result is a complete Capsule payload and its signed COSE_Sign1 statement.
+// Result contains a signature-free Capsule and one Producer Envelope.
 type Result struct {
 	CapsuleID string
 	Payload   []byte
-	Statement []byte
+	Envelope  []byte
 }

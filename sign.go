@@ -3,29 +3,24 @@ package producer
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/veraison/go-cose"
 )
 
-const (
-	cwtIssuer  int64 = 1
-	cwtSubject int64 = 2
-)
-
-// SigningIdentity supplies a COSE signer and the public key identifier placed
-// in the protected header. The signer may be backed by a local key, KMS, or HSM.
+// SigningIdentity is an immutable signer and matching raw Ed25519 public key.
+// Keeping the pair together prevents rotation between header construction and
+// signature creation.
 type SigningIdentity struct {
-	Signer cose.Signer
-	KeyID  []byte
+	signer    cose.Signer
+	publicKey ed25519.PublicKey
 }
 
-// NewEd25519SigningIdentity derives a SHA-256 key ID and COSE signer from an
-// Ed25519 private key.
+// NewEd25519SigningIdentity constructs a local Ed25519 signing identity.
 func NewEd25519SigningIdentity(privateKey ed25519.PrivateKey) (SigningIdentity, error) {
 	if len(privateKey) != ed25519.PrivateKeySize {
-		return SigningIdentity{}, fmt.Errorf("Ed25519 private key has the wrong size")
+		return SigningIdentity{}, fmt.Errorf("Ed25519 private key has wrong size")
 	}
 	signer, err := cose.NewSigner(cose.AlgorithmEdDSA, privateKey)
 	if err != nil {
@@ -35,53 +30,83 @@ func NewEd25519SigningIdentity(privateKey ed25519.PrivateKey) (SigningIdentity, 
 	if !ok {
 		return SigningIdentity{}, fmt.Errorf("derive Ed25519 public key")
 	}
-	return SigningIdentity{Signer: signer, KeyID: Ed25519KeyID(publicKey)}, nil
+	return NewSigningIdentity(signer, publicKey)
 }
 
-// Ed25519KeyID returns the SHA-256 key identifier used by the reference profile.
-func Ed25519KeyID(publicKey ed25519.PublicKey) []byte {
-	digest := sha256.Sum256(publicKey)
-	return append([]byte(nil), digest[:]...)
+// NewSigningIdentity binds an EdDSA signer from a KMS or HSM to its raw
+// Ed25519 public key for one immutable Producer Envelope identity.
+func NewSigningIdentity(signer cose.Signer, publicKey ed25519.PublicKey) (SigningIdentity, error) {
+	if signer == nil || signer.Algorithm() != cose.AlgorithmEdDSA {
+		return SigningIdentity{}, fmt.Errorf("Producer Envelope signer must use EdDSA")
+	}
+	if len(publicKey) != ed25519.PublicKeySize {
+		return SigningIdentity{}, fmt.Errorf("Ed25519 public key has wrong size")
+	}
+	return SigningIdentity{signer: signer, publicKey: append(ed25519.PublicKey(nil), publicKey...)}, nil
 }
 
-// Create builds an AAC payload and returns it in a signed COSE_Sign1 statement.
-func Create(input Input, identity SigningIdentity) (Result, error) {
-	if identity.Signer == nil {
-		return Result{}, fmt.Errorf("COSE signer is required")
+// Sign creates one Producer Envelope over an already-built Capsule ID.
+func Sign(built BuiltPayload, identity SigningIdentity) ([]byte, error) {
+	if identity.signer == nil || len(identity.publicKey) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("valid Ed25519 signing identity is required")
 	}
-	if len(identity.KeyID) == 0 {
-		return Result{}, fmt.Errorf("signing key id is required")
+	if !hexDigestPattern.MatchString(built.CapsuleID) {
+		return nil, fmt.Errorf("Capsule ID must be 64 lowercase hexadecimal characters")
 	}
+	verified, err := VerifyCapsule(built.JSON)
+	if err != nil || verified.CapsuleID == nil || *verified.CapsuleID != built.CapsuleID {
+		return nil, fmt.Errorf("built Capsule does not match Capsule ID")
+	}
+	payload, err := hex.DecodeString(built.CapsuleID)
+	if err != nil {
+		return nil, fmt.Errorf("decode Capsule ID: %w", err)
+	}
+	return signCapsuleID(payload, identity)
+}
+
+func signCapsuleID(payload []byte, identity SigningIdentity) ([]byte, error) {
+	protected := producerProtectedHeaders(identity.publicKey)
+	message := cose.NewSign1Message()
+	message.Headers.RawProtected = append([]byte{0x58, byte(len(protected))}, protected...)
+	message.Headers.Protected.SetAlgorithm(cose.AlgorithmEdDSA)
+	message.Payload = payload
+	if err := message.Sign(rand.Reader, nil, identity.signer); err != nil {
+		return nil, fmt.Errorf("sign Producer Envelope: %w", err)
+	}
+	verifier, err := cose.NewVerifier(cose.AlgorithmEdDSA, identity.publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("create Producer Envelope verifier: %w", err)
+	}
+	if err := message.Verify(nil, verifier); err != nil {
+		return nil, fmt.Errorf("Producer Envelope signer does not match public key")
+	}
+	envelope, err := message.MarshalCBOR()
+	if err != nil {
+		return nil, fmt.Errorf("encode Producer Envelope: %w", err)
+	}
+	return envelope, nil
+}
+
+// producerProtectedHeaders preserves the byte order frozen by the upstream
+// cross-runtime corpus: content type, raw-public-key kid, then EdDSA alg.
+func producerProtectedHeaders(publicKey ed25519.PublicKey) []byte {
+	protected := []byte{0xa3, 0x03, 0x78, byte(len(ContentType))}
+	protected = append(protected, ContentType...)
+	protected = append(protected, 0x04, 0x58, ed25519.PublicKeySize)
+	protected = append(protected, publicKey...)
+	protected = append(protected, 0x01, 0x27)
+	return protected
+}
+
+// Seal builds one signature-free Capsule and attaches one Producer Envelope.
+func Seal(input Input, identity SigningIdentity) (Result, error) {
 	built, err := Build(input)
 	if err != nil {
 		return Result{}, err
 	}
-
-	message := cose.NewSign1Message()
-	message.Payload = built.JSON
-	message.Headers.Protected.SetAlgorithm(identity.Signer.Algorithm())
-	message.Headers.Protected[cose.HeaderLabelKeyID] = append([]byte(nil), identity.KeyID...)
-	message.Headers.Protected[cose.HeaderLabelContentType] = ContentType
-	claims := cose.CWTClaims{
-		cwtIssuer:                input.Developer,
-		cwtSubject:               fmt.Sprintf("urn:agent-action-capsule:%s:%s", input.Operator, input.ActionID),
-		"capsule_statement_type": StatementTypeAgentAction,
-		"capsule_action_type":    string(input.ActionType),
-		"capsule_decision_id":    input.ActionID,
-	}
-	if _, err := message.Headers.Protected.SetCWTClaims(claims); err != nil {
-		return Result{}, fmt.Errorf("set protected CWT claims: %w", err)
-	}
-	if err := message.Sign(rand.Reader, nil, identity.Signer); err != nil {
-		return Result{}, fmt.Errorf("sign Capsule statement: %w", err)
-	}
-	statement, err := message.MarshalCBOR()
+	envelope, err := Sign(built, identity)
 	if err != nil {
-		return Result{}, fmt.Errorf("encode COSE_Sign1 statement: %w", err)
+		return Result{}, err
 	}
-	return Result{
-		CapsuleID: built.CapsuleID,
-		Payload:   append([]byte(nil), built.JSON...),
-		Statement: statement,
-	}, nil
+	return Result{CapsuleID: built.CapsuleID, Payload: append([]byte(nil), built.JSON...), Envelope: envelope}, nil
 }

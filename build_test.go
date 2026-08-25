@@ -43,7 +43,7 @@ func TestBuildConfirmedDecisionDerivesAssuranceAndCapsuleID(t *testing.T) {
 	assert.Equal(t, payload["capsule_id"], decoded["capsule_id"])
 }
 
-func TestBuildExcludesChainBlockFromCapsuleIDButDerivesChainedAssurance(t *testing.T) {
+func TestBuildCommitsChainBlockAndDerivesChainedAssurance(t *testing.T) {
 	first := validInput()
 	first.Chain = &Chain{ParentCapsuleID: parentDigest, Relation: ChainConfirms}
 	firstBuilt, err := Build(first)
@@ -58,7 +58,7 @@ func TestBuildExcludesChainBlockFromCapsuleIDButDerivesChainedAssurance(t *testi
 	secondBuilt, err := Build(second)
 	require.NoError(t, err)
 	secondPayload := secondBuilt.Value
-	assert.Equal(t, firstPayload["capsule_id"], secondPayload["capsule_id"])
+	assert.NotEqual(t, firstPayload["capsule_id"], secondPayload["capsule_id"])
 }
 
 func TestBuildPlannedEffectDerivesNotApplicable(t *testing.T) {
@@ -90,6 +90,14 @@ func TestBuildAllowsRegistryExtensions(t *testing.T) {
 	require.NoError(t, err)
 	payload := built.Value
 	assert.Equal(t, "com.example.amends", payload["chain"].(map[string]any)["relation"])
+}
+
+func TestBuildAllowsCounterpartyApprover(t *testing.T) {
+	input := validInput()
+	input.Disposition.Approver = ApproverCounterparty
+	built, err := Build(input)
+	require.NoError(t, err)
+	assert.Equal(t, "counterparty", built.Value["disposition"].(map[string]any)["approver"])
 }
 
 func TestBuildRejectsInvalidInput(t *testing.T) {

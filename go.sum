@@ -1,7 +1,7 @@
-github.com/action-state-group/agent-action-capsule/go v0.0.0-20260707044913-1b5261dc4785 h1:zCtfctt8FwGzQfET30ihfg0iXD5eBuj7zUX89t/+UB0=
-github.com/action-state-group/agent-action-capsule/go v0.0.0-20260707044913-1b5261dc4785/go.mod h1:eAwr2AERQJppWgbWtCVppgN/s4VLwwX5tubSNZnH72Q=
-github.com/fxamacker/cbor/v2 v2.5.0 h1:oHsG0V/Q6E/wqTS2O1Cozzsy69nqCiguo5Q1a1ADivE=
-github.com/fxamacker/cbor/v2 v2.5.0/go.mod h1:TA1xS00nchWmaBnEIxPSE5oHLuJBAVvqrtAnWBwBCVo=
+github.com/action-state-group/agent-action-capsule/go v0.0.0-20260825062006-8ccf34573136 h1:pyirsmQRvl9s9+d04kYJUaUp3iQkyKCfBGT6y7Q+eE8=
+github.com/action-state-group/agent-action-capsule/go v0.0.0-20260825062006-8ccf34573136/go.mod h1:zDZ7uE7cjiDa4XBC68hgcFhuVKqqPVS5ihQpxVkYfRI=
+github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sapM=
+github.com/fxamacker/cbor/v2 v2.9.0/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/veraison/go-cose v1.3.0 h1:2/H5w8kdSpQJyVtIhx8gmwPJ2uSz1PkyWFx0idbd7rk=

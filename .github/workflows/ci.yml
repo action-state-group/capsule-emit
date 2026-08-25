@@ -10,8 +10,15 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      AAC_REPO: ${{ github.workspace }}/agent-action-capsule
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: action-state-group/agent-action-capsule
+          ref: 8ccf345731360bbaa421141e0936e6b189053d0f
+          path: agent-action-capsule
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod

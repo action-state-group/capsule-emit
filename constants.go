@@ -2,13 +2,13 @@ package producer
 
 const (
 	// SpecVersion is the AAC profile version implemented by this package.
-	SpecVersion = "draft-mih-scitt-agent-action-capsule-02"
+	SpecVersion = "draft-mih-scitt-agent-action-capsule-04"
 	// FormatVersion is the AAC serialization-suite version.
-	FormatVersion = "2"
-	// ContentType is the COSE payload content type for an AAC statement.
-	ContentType = "application/agent-action-capsule+json"
-	// StatementTypeAgentAction identifies an action statement in protected CWT claims.
-	StatementTypeAgentAction = "agent_action"
+	FormatVersion = "4"
+	// CanonicalizationID is the only profile emitted for format-4 Capsules.
+	CanonicalizationID = "jcs"
+	// ContentType is the Producer Envelope payload media type.
+	ContentType = "application/agent-action-capsule-id"
 )
 
 // ActionType states whether the Capsule is informational or records a decision.
@@ -20,7 +20,7 @@ const (
 )
 
 // Decision records how an action was disposed. The registry is extensible;
-// these constants are the values seeded by AAC draft-02.
+// these constants are the values seeded by AAC format 4.
 type Decision string
 
 const (
@@ -35,8 +35,9 @@ const (
 type Approver string
 
 const (
-	ApproverHuman  Approver = "human"
-	ApproverPolicy Approver = "policy"
+	ApproverHuman        Approver = "human"
+	ApproverPolicy       Approver = "policy"
+	ApproverCounterparty Approver = "counterparty"
 )
 
 // VerdictClass classifies the terminal or open verdict. The registry is extensible.
@@ -91,8 +92,7 @@ const (
 type ChainRelation string
 
 const (
-	// ChainConfirms is a library convenience extension. It is not registered
-	// by AAC draft-02, so verification reports it as informational.
+	// ChainConfirms links a later Capsule confirming its parent.
 	ChainConfirms   ChainRelation = "confirms"
 	ChainSupersedes ChainRelation = "supersedes"
 	ChainEpochOpens ChainRelation = "epoch_opens"

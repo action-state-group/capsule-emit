@@ -1,6 +1,6 @@
-// Package producer builds and signs Agent Action Capsules from facts observed
-// by an application at an external-effect boundary.
+// Package producer builds format-4 Agent Action Capsules and independent
+// Producer Envelopes from facts observed at an external-effect boundary.
 //
 // The package does not execute actions, generate business operation IDs,
-// retry calls, persist statements, or maintain a ledger.
+// retry calls, persist Capsules, authorize signers, or maintain a ledger.
 package producer

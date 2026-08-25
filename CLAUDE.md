@@ -1,55 +1,78 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for coding agents working in this repository.
 
 ## Commands
 
 ```bash
-go fmt ./...            # CI fails if `gofmt -l .` is non-empty
+go fmt ./...
+go mod tidy
 go vet ./...
 go test ./...
-go test -race ./...     # CI runs this separately
-scripts/check-coverage.sh 90.0   # enforces a 90% statement-coverage floor
-go test ./evidence/ -run TestName   # run a single test by name (-run takes a regexp)
+go test -race ./...
+scripts/check-coverage.sh 90.0
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above on every push and PR. The coverage floor is real: new code paths need same-change tests or the build fails.
+CI runs these checks and the frozen upstream vector suites. New logic needs
+same-change tests, including error paths, to preserve the 90-percent coverage
+floor.
 
-## What this library is
+## Scope
 
-It builds and signs [Agent Action Capsules](https://github.com/action-state-group/agent-action-capsule) (AAC) from facts an application observed at an external-effect boundary (an HTTP call, SQL write, message send). It is a thin, deterministic layer over the upstream `github.com/action-state-group/agent-action-capsule/go` module, which owns all canonicalization, digesting, capsule-ID computation, and Class 1 verification. Do not reimplement those; call `canonical.*` and `verify.*`.
+This library builds Agent Action Capsule format 4 records from facts observed
+by an application at an external-effect boundary. It is a thin deterministic
+layer over `github.com/action-state-group/agent-action-capsule/go`; use upstream
+canonicalization, Capsule-ID, Class 1, and Producer Envelope verification rather
+than reimplementing them.
 
-It deliberately does **not** execute actions, generate action/business IDs, retry, persist statements, or maintain a ledger. When tempted to add any of those, it belongs in the caller, not here (see `doc.go` and README "Non-goals").
+The library does not execute actions, generate business IDs or timestamps,
+retry calls, persist Capsules, authorize signers, or maintain a ledger.
 
 ## Architecture
 
-Two packages, one pipeline:
-
+```text
+adapter facts → evidence.DigestExchanges → Build / Carry / Received / Compose
+                                                ↓
+                                  signature-free format-4 Capsule
+                                                ↓
+                                     Sign, or Seal = Build + Sign
+                                                ↓
+                                      independent Producer Envelope
 ```
-adapter captures facts  →  evidence.DigestExchanges  →  producer.Build / Create  →  signed COSE_Sign1
-(evidence/httpfact)         request_digest +             AAC payload + capsule_id     statement
-                            response_digest
-```
 
-- **`evidence/`** — turns observed request/response facts into ordered, minimized JSON and digests them. `RequestFact` / `ResponseFact` are the extension points; `httpfact` is the one built-in transport. Other transports implement the same interfaces without dragging HTTP concepts into the core.
-- **root `producer` package** — `build.go` (payload assembly + validation), `sign.go` (`Create`, COSE signing), `verify.go` (`VerifyStatement`), `model.go` (`Input`/`Effect`/`Disposition`/`Chain`), `constants.go` (typed protocol vocabularies).
+- `evidence/` minimizes and digests ordered request and response facts.
+- `build.go` assembles, validates, identifies, and Class-1-verifies Capsules.
+- `construction.go` owns typed foreign-artifact and composition bindings.
+- `sign.go` owns immutable signing identities, `Sign`, and `Seal`.
+- `verify.go` separates Capsule Class 1 from Producer Envelope verification.
+- `model.go` and `constants.go` own typed inputs and protocol vocabulary.
 
-`Create` = `Build` + COSE_Sign1 wrap. `Build` validates, derives assurance, computes `capsule_id`, and **round-trips through the upstream Class 1 verifier before returning**. A produced payload that would fail verification is an error, not output.
+## Invariants
 
-## Invariants that span files (read before changing behavior)
-
-- **Assurance is derived, never supplied.** `assuranceMap` in `build.go` derives `effect_mode` from `Effect.Status` and `ledger_mode` from whether a `Chain` is present. `attestation_mode` is not derived from either input; it is always `self_attested`, because this library only self-attests and never anchors to a transparency log. `Input` has no fields for any of the three, and callers must not be able to inject them. Keep this mapping and the README "Typed protocol values" table in sync.
-
-- **Effect status gates digests and attestation.** `validateEffect` enforces a matrix: `planned` must carry no digests and no attestation; `dispatched` must not carry a response digest; `confirmed` must carry a response digest; every non-`planned` status requires an attestation. A request digest is permitted but never *required* by any status. Changing effect handling means updating this matrix and its tests together.
-
-- **Response-observed vs response-evidence are distinct.** `DigestExchanges` only folds a response into `response_digest` when `ResponseObserved()` is true; if any exchange is unobserved, `ResponseKnown` is false and `ResponseDigest` is empty. `NoResponse` returns diagnostic evidence but reports `ResponseObserved() == false` so a failed call never masquerades as a confirmed one.
-
-- **Closed enums vs registry-backed values.** `ActionType`, `Approver`, `EffectStatus` are closed and validated strictly. Registry-backed values (`Decision`, `VerdictClass`, `IrreversibilityClass`, `EffectAttestation`, `ChainRelation`) seed the draft-02 constants in `constants.go` but permit registered extensions; `knownRegistries()` in `verify.go` lists the seeds. `ChainConfirms` is a library convenience extension, **not** draft-02 registered, so verification reports it as an informational finding rather than rejecting it.
-
-- **Determinism.** Payloads are RFC 8785 JCS via the upstream `canonical.JCS`. `capsule_id` is computed excluding top-level `capsule_id` and `chain`, so adding a chain to an already-chained payload does not change the ID, but adding the *first* chain flips `ledger_mode` (which is inside the ID). Do not introduce non-deterministic ordering or wall-clock defaults; `Input.Timestamp` and `ActionID` are always caller-supplied.
-
-- **Defensive decoding — two distinct validators.** `DecodePayload` (build.go) parses raw JSON *bytes* on the verify path and rejects duplicate object keys, trailing data, non-UTF-8, and nesting past `maxJSONDepth` (1000). The evidence validators (evidence.go) run over an already-materialized `map[string]any`, where duplicate keys and trailing bytes cannot exist; they instead enforce the value contract — only `bool`, `string`, `json.Number` (canonical integers), and non-empty `[]any` / `map[string]any` are allowed. Everything else is rejected with the offending path in the message: disallowed types (Go ints, floats, typed slices), non-UTF-8, empty or nil containers, and nesting past `maxEvidenceDepth` (1000). Preserve both when touching decode/validation paths.
+- **Format 4 only.** Emit draft-04, format 4, and
+  `canonicalization_id: "jcs"`. Do not restore format-2 construction or the
+  legacy signed-payload statement API.
+- **Signer-independent identity.** Capsule ID excludes only top-level
+  `capsule_id`, so `chain` is committed. Signing one or many envelopes never
+  changes Capsule bytes or ID.
+- **Exact Producer Envelope.** Attached payload is raw 32-byte Capsule ID;
+  protected headers are exactly EdDSA `alg`, the AAC Capsule-ID content type,
+  and raw 32-byte Ed25519 public-key `kid`; unprotected map is empty. Signer
+  authorization remains caller policy.
+- **Assurance is derived.** Callers cannot inject effect, attestation, or ledger
+  assurance. Preserve the effect-status matrix in `validateEffect`.
+- **Foreign bytes stay bytes.** `Carry` and `Received` digest exact transmitted
+  bytes and never parse or canonicalize them. `Received` requires a non-empty
+  caller-declared type.
+- **Composition is typed.** `Compose` binds existing Capsule IDs in caller
+  order and rejects empty or duplicate membership. Persistence is external.
+- **Determinism.** Do not add wall-clock defaults, random action IDs, implicit
+  sorting, or mutable global protocol state.
+- **Defensive decoding.** Preserve duplicate-key, trailing-data, invalid UTF-8,
+  unsafe-number, empty-container, and depth checks on their existing paths.
 
 ## Testing conventions
 
-Use `github.com/stretchr/testify` (`assert`/`require`), not raw `if` + `t.Errorf`. Tests live beside their source (`build_test.go`, `evidence/evidence_test.go`, etc.); `e2e_test.go` exercises the full capture→sign→verify path.
+Use `github.com/stretchr/testify/assert` and `require`. Tests live beside source.
+Set `AAC_REPO` to an `agent-action-capsule` checkout to run frozen Capsule and
+Producer Envelope corpus tests locally; CI pins and supplies the upstream ref.

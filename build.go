@@ -25,14 +25,15 @@ func Build(input Input) (BuiltPayload, error) {
 	}
 
 	payload := map[string]any{
-		"spec_version":   SpecVersion,
-		"format_version": FormatVersion,
-		"action_id":      input.ActionID,
-		"action_type":    string(input.ActionType),
-		"operator":       input.Operator,
-		"developer":      input.Developer,
-		"timestamp":      input.Timestamp.UTC().Format(time.RFC3339Nano),
-		"assurance":      assuranceMap(input.Effect, input.Chain),
+		"spec_version":        SpecVersion,
+		"format_version":      FormatVersion,
+		"canonicalization_id": CanonicalizationID,
+		"action_id":           input.ActionID,
+		"action_type":         string(input.ActionType),
+		"operator":            input.Operator,
+		"developer":           input.Developer,
+		"timestamp":           input.Timestamp.UTC().Format(time.RFC3339Nano),
+		"assurance":           assuranceMap(input.Effect, input.Chain),
 	}
 	if input.EpochID != "" {
 		payload["epoch_id"] = input.EpochID
@@ -55,6 +56,11 @@ func Build(input Input) (BuiltPayload, error) {
 			"relation":          string(input.Chain.Relation),
 		}
 	}
+	if input.compute != nil {
+		payload["model_attestation"] = map[string]any{
+			"compute_attestation": computeAttestationMap(*input.compute),
+		}
+	}
 	if err := validatePayloadText(payload, "$"); err != nil {
 		return BuiltPayload{}, err
 	}
@@ -73,6 +79,30 @@ func Build(input Input) (BuiltPayload, error) {
 		return BuiltPayload{}, fmt.Errorf("encode canonical capsule payload: %w", err)
 	}
 	return BuiltPayload{CapsuleID: capsuleID, Value: payload, JSON: encoded}, nil
+}
+
+func computeAttestationMap(attestation computeAttestation) map[string]any {
+	result := make(map[string]any)
+	if attestation.CarriedArtifact != nil {
+		result["carried_artifact"] = digestReferenceMap(*attestation.CarriedArtifact)
+		result["carried_input_digest"] = attestation.CarriedInputDigest
+	}
+	if len(attestation.ComposedMembers) > 0 {
+		members := make([]any, 0, len(attestation.ComposedMembers))
+		for _, member := range attestation.ComposedMembers {
+			members = append(members, digestReferenceMap(member))
+		}
+		result["composed_members"] = members
+	}
+	return result
+}
+
+func digestReferenceMap(reference digestReference) map[string]any {
+	return map[string]any{
+		"type":       reference.Type,
+		"digest_alg": reference.DigestAlg,
+		"digest":     reference.Digest,
+	}
 }
 
 func validateInput(input Input) error {
@@ -122,8 +152,8 @@ func validateDisposition(disposition Disposition) error {
 	if disposition.Decision == "" {
 		return fmt.Errorf("disposition decision is required")
 	}
-	if disposition.Approver != ApproverHuman && disposition.Approver != ApproverPolicy {
-		return fmt.Errorf("disposition approver must be %q or %q", ApproverHuman, ApproverPolicy)
+	if disposition.Approver != ApproverHuman && disposition.Approver != ApproverPolicy && disposition.Approver != ApproverCounterparty {
+		return fmt.Errorf("disposition approver must be %q, %q, or %q", ApproverHuman, ApproverPolicy, ApproverCounterparty)
 	}
 	if disposition.HumanDisposed && disposition.Approver != ApproverHuman {
 		return fmt.Errorf("human-disposed decision requires human approver")
