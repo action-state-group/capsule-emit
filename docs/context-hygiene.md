@@ -3,7 +3,7 @@
 Every adapter threads some runtime context into the capsules it seals — an
 agent name, a call id, sometimes a whole context object handed over by the
 framework. This page is the floor all adapters converge on. It exists because
-a capsule is content-addressed, tamper-evident, and possibly anchored:
+a capsule is content-addressed, tamper-evident, and possibly witnessed:
 **redaction is unfixable by design — the more durable the record, the higher
 the bar for admission.** The only reliable moment to protect a value is
 before it enters the record.

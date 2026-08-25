@@ -23,29 +23,29 @@ All three survive a tamper-evident log, because they're not about tampering — 
 about the fact that **the party who kept the record is not a disinterested witness.**
 This is the precise sense in which *"your logs are your own word."*
 
-## What an anchor adds
+## What witnessing adds
 
-Anchoring writes the capsule's **digest** to a **shared, append-only transparency
-log** — one that no single party owns. In return you get an
-[RFC 9162](https://www.rfc-editor.org/rfc/rfc9162) **inclusion-proof receipt**. That
-gets you **registered**: the record is now checkable by a party who trusts
-neither you nor your runtime.
+Anchoring — submitting the capsule's **digest** to a **shared, append-only
+transparency log**, one that no single party owns — is one way to start closing
+the gap. In return you get an [RFC 9162](https://www.rfc-editor.org/rfc/rfc9162)
+**inclusion-proof receipt** for that one capsule: the record is now checkable by
+a party who trusts neither you nor your runtime.
 
 - **Existed at time T.** The receipt proves this exact capsule was logged at that
   time — so it can't have been built after the fact (hole 3 closed).
-- **Omission becomes detectable.** Because the log is append-only and shared, you
-  can't quietly drop an entry without it showing (hole 2 made visible).
+- **Omission becomes detectable, for this capsule.** Because the log is
+  append-only and shared, you can't quietly drop this entry without it showing.
 - **Checkable without trusting you.** Anyone can verify a capsule against the log
   offline — they trust the *log*, not you.
 
 That's the leap from *tamper-evident* (you didn't edit it) to *independently
-verifiable* (someone who distrusts you can confirm it) — but it's a leap to
-**registered**, not automatically to **witnessed**. A single log, even a shared
-one, can still show two different views to two different readers; registration
-alone doesn't rule that out. Closing that gap is what a *witness* does (next
-section) — `capsule-emit`'s own checkpoint stream (on by default since 0.5.0,
-see [`docs/checkpoint.md`](checkpoint.md)) does exactly this, at
-*single-witness* strength, once it registers.
+verifiable* (someone who distrusts you can confirm it) — but a single inclusion
+receipt only speaks for the one capsule it covers, and a single log, even a
+shared one, can still show two different views to two different readers. Fully
+closing that gap is what a **witness** does: `capsule-emit`'s own checkpoint
+stream (on by default since 0.5.0, see [`docs/checkpoint.md`](checkpoint.md))
+vouches for the *whole stream* — not just one capsule — at *single-witness*
+strength, once it registers (next section).
 
 ## Be precise about what it proves (and doesn't)
 
@@ -53,38 +53,37 @@ Anchoring proves **existence, integrity, and time** — *that this exact record 
 sealed and logged when it says.* It does **not** make the recorded claim *true*, and
 by itself it does **not** rule out the log showing different histories to different
 parties. A capsule that says "the payment settled" is still your runtime's word that
-it settled. The honest ladder:
+it settled. The honest ladder has three rungs:
 
 - **Self-attested (a record you keep):** tamper-evident, but trust-the-keeper.
-- **Registered / anchored (digest in a shared log):** + existed-at-T,
-  omission-resistant, independently checkable — but you're still trusting that
-  *one* log operator not to equivocate. This is where `capsule-emit`'s
-  per-capsule anchor channel sits — as of 0.5.0 it is an explicit, non-default
-  opt-in (`anchor=True` or `CAPSULE_ANCHOR=legacy-on`), not the default path;
-  see "In practice" below.
-- **Witnessed (single witness):** a Transparency Service has registered a
-  signed *checkpoint* over your stream — vouching that the records under it
-  **existed, in that order, and haven't been rewritten since** (existence +
-  order + non-deletion). `capsule-emit`'s default checkpoint
-  ([`docs/checkpoint.md`](checkpoint.md), on since 0.5.0) reaches exactly this
-  tier once it registers. It's a real upgrade over self-attested — but it is
-  **not** the next tier: one witness can still show a different view to a
-  different party, and — like registered/anchored — a witness never vouches
-  that the record's *content* is true, only that it exists, is ordered, and
-  wasn't deleted.
-- **Multi-witness (equivocation-resistant):** the same checkpoint is
+  A bare per-capsule anchor receipt (digest in a shared log, existed-at-T,
+  omission-resistant *for that one capsule*) is a real step up in
+  checkability, but on its own it doesn't yet reach the next rung — see "In
+  practice" below for where `capsule-emit`'s legacy per-capsule anchor
+  channel sits (an explicit, non-default opt-in as of 0.5.0: `anchor=True` or
+  `CAPSULE_ANCHOR=legacy-on`).
+- **Witnessed:** a Transparency Service has registered a signed *checkpoint*
+  over your whole stream — vouching that the records under it **existed, in
+  that order, and haven't been rewritten since** (existence + order +
+  non-deletion). `capsule-emit`'s default checkpoint
+  ([`docs/checkpoint.md`](checkpoint.md), on since 0.5.0) reaches this tier
+  once it registers. It's a real upgrade over self-attested — but a witness
+  never vouches that the record's *content* is true, only that it exists, is
+  ordered, and wasn't deleted. A single witness can still show a different
+  view to a different party; **multi-witness** — the same checkpoint
   independently co-signed by, or registered to, more than one
-  independently-operated log — honestly described as "witnessed up to size S
-  at time T" by each — so equivocation now requires collusion. A witness
-  operated by *you*, or by a party closely related to you, buys less than one
-  with no relationship to you at all (self < peer < independent).
+  independently-operated log — closes that gap, so equivocation now requires
+  collusion. A witness operated by *you*, or by a party closely related to
+  you, buys less than one with no relationship to you at all
+  (self < peer < independent).
 - **Counter-signed / confirmed:** a separate axis from the witnessing ladder —
   when the other party signs the outcome (e.g. the bank signs settlement) or a
   confirmation capsule [chains](concepts.md) to the action.
 
-Anchoring today moves you from the first tier to the second; the default
-checkpoint stream moves your *stream* to the third. Don't claim the fourth or
-fifth for free.
+The default checkpoint stream moves your *stream* to the witnessed rung; the
+legacy per-capsule anchor channel, even opted back in, only ever reaches a
+narrower, per-capsule slice of that same rung. Don't claim the third rung for
+free.
 
 ## What actually leaves your machine
 
@@ -99,10 +98,12 @@ A transparency log **you** run isn't proof to an outsider — it has the same
 "trust-the-keeper" problem as your ledger. A **shared** log — one you don't
 control — lets a counterparty check your capsule without trusting *you*; it
 does not, by itself, mean nobody has to trust the log's *operator* (that's the
-registered-vs-witnessed distinction above). `capsule-emit` anchors by default to
-the free hosted log at `anchor.agentactioncapsule.org`, a single-operator log;
-you can self-host or repoint (`AAC_ANCHOR_URL`), but either way the trust
-property only holds when the log is one the *verifier* also trusts.
+per-capsule-receipt-vs-witnessed-stream distinction above). `capsule-emit`
+witnesses by default to the free hosted log at `anchor.agentactioncapsule.org`
+(the `witness.` CNAME is pending — same free hosted service either way), a
+single-operator log; you can self-host or repoint (`CAPSULE_WITNESS_URL`), but
+either way the trust property only holds when the log is one the *verifier*
+also trusts.
 
 ## In practice
 

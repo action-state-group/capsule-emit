@@ -24,18 +24,21 @@ cap.capsule  — a content-addressed, self-attested JSON statement
 richer wrapping — the capsule as a COSE_Sign1 **Signed Statement** carrying an RFC 9162
 transparency **receipt**. That is still a separate, heavier tier from the `signature`
 field above: `capsule-emit`'s default `seal()` produces the **self-attested statement**
-above (tamper-evident AND self-attested-signed, by construction) and **anchors its
-digest**; the **receipt comes back from the anchor** (you keep it next to the capsule —
-it is *not* a field inside `cap.capsule`); the COSE_Sign1 Signed-Statement wrapping (the
-verifier's `--transparent` path) is a further step up, re-expressing the same claim in
-the spec's wire format for a stranger who wants the SCITT-native encoding rather than
-this library's own `signature`/`key_id` fields. So, concretely:
+above (tamper-evident AND self-attested-signed, by construction) and, by default,
+folds it into the **witnessed** checkpoint stream; the legacy, non-default per-capsule
+**anchor** channel, when opted into, returns its own **receipt** instead (you keep it
+next to the capsule — it is *not* a field inside `cap.capsule`); the COSE_Sign1
+Signed-Statement wrapping (the verifier's `--transparent` path) is a further step up,
+re-expressing the same claim in the spec's wire format for a stranger who wants the
+SCITT-native encoding rather than this library's own `signature`/`key_id` fields. So,
+concretely:
 
 - **Tamper-evidence** is always there — `capsule_id` (recompute and compare).
 - **A producer signature** is always there too, since 0.5.0 — self-attested strength:
   "your key, your claim," verifiable straight from the capsule, before any witness or
   anchor ever sees it (see `capsule_emit.signing.verify_capsule_signature`).
-- **Existence proof** comes from anchoring — the **receipt**, held *beside* the capsule.
+- **Existence proof** comes from witnessing (or, if opted into, the legacy anchor
+  channel) — the **receipt**, held *beside* the capsule.
 - **Third-party identity binding** (whose key this really is) and the **COSE_Sign1
   Signed-Statement wire format** are layered above this — see the frozen dev-surface's
   §7a identity layers; not part of the default `cap.capsule` shape.
