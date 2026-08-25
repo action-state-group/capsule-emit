@@ -26,9 +26,9 @@ import warnings
 from types import SimpleNamespace
 
 import pytest
-from agent_action_capsule import verify
 
 from capsule_emit.adapters.crewai import CrewAIListenerCore
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Helpers

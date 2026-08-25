@@ -8,12 +8,12 @@ import threading
 import time
 
 import pytest
-from agent_action_capsule import verify
 
 from capsule_emit.holds import Action, HoldEngine, HoldStatus
 from capsule_emit.holds.aggregate import active_exposure_minor
 from capsule_emit.holds.scope import ScopeLocks
 from capsule_emit.ledger import read_ledger
+from capsule_emit.verification import verify_capsule as verify
 
 DEVELOPER = "procurement-agent@v1"
 OPERATOR = "acme-research"

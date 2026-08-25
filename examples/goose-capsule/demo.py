@@ -66,7 +66,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-from agent_action_capsule import verify
+from capsule_emit.verification import verify_capsule as verify
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from scitt_cose import verify_receipt

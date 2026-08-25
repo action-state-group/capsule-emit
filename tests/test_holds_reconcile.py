@@ -3,12 +3,11 @@
 event that never silently adjusts the aggregate."""
 from __future__ import annotations
 
-from agent_action_capsule import verify
-
 from capsule_emit.holds import Action, HoldEngine, HoldStatus
 from capsule_emit.holds.aggregate import active_exposure_minor
 from capsule_emit.holds.errors import OVER_TOLERANCE
 from capsule_emit.ledger import read_ledger
+from capsule_emit.verification import verify_capsule as verify
 
 DEVELOPER = "procurement-agent@v1"
 OPERATOR = "acme-research"

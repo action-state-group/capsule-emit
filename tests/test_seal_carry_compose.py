@@ -15,12 +15,12 @@ import uuid
 from unittest import mock
 
 import pytest
-from agent_action_capsule.verify import verify
 
 import capsule_emit
 import capsule_emit.surface as surface_module
 from capsule_emit import Capsule, carry, compose, emit, received, seal
 from capsule_emit.core import _emit_capsule
+from capsule_emit.verification import verify_capsule as verify
 
 # agent_action_capsule/__init__.py does `from .emit import ... emit`, which
 # rebinds the package's `emit` ATTRIBUTE to the re-exported function — so both

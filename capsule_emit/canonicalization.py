@@ -1,10 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 """Canonicalization-aware Capsule ID computation.
 
-The upstream ``agent_action_capsule`` helper implements the legacy ``jcs-n``
-construction only. Capsules emitted here carry a ``canonicalization_id``
-binding slot, so every producer and verifier path must dispatch through that
-declared algorithm instead of treating the field as a label.
+**draft-04 reversal ([capsule-cose-sign1], 2026-08-24):** ``capsule_id`` is a
+pure, signer-independent content address again. It excludes only
+``capsule_id`` itself plus capsule-emit's own ledger-line bookkeeping fields
+(``signature``, ``key_id`` — the COSE_Sign1 producer envelope and the raw
+public key that produced it; see ``capsule_emit.signing``), which are never
+members of the neutral Capsule object and are only ever added to the dict
+*after* ``capsule_id`` is computed. Everything else — including ``chain`` and
+``canonicalization_id`` — is committed into the preimage under the declared
+``"jcs"`` algorithm, closing the pre-reversal gap where a chain link
+(``parent_capsule_id``/``relation``) was unauthenticated. ``"jcs-n"`` (the
+vintage absent-field-normalized construction, which also excluded ``chain``)
+remains verification-only, for records minted before this reversal.
 """
 
 from __future__ import annotations
@@ -12,16 +20,19 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from agent_action_capsule.canonical import CHAIN_LINKAGE_FIELDS, jcs, normalize
+from agent_action_capsule.canonical import jcs, normalize
 
 VINTAGE_CANONICALIZATION_ID = "jcs-n"
+CANONICALIZATION_JCS = "jcs"
 
-#: Fields excluded from the ``jcs`` (format-4) Capsule-ID preimage: only
-#: ``capsule_id`` itself. Unlike the vintage ``jcs-n`` profile, ``chain`` IS
-#: committed under ``jcs`` — matches ``agent_action_capsule.canonical.compute_capsule_id``'s
-#: own algorithm-conditional exclusion (present ``canonicalization_id`` removes
-#: only ``capsule_id``; absent/vintage removes ``capsule_id`` and ``chain``).
-_JCS_EXCLUDED_FIELDS = ("capsule_id",)
+#: capsule-emit's own ledger-line bookkeeping — the COSE_Sign1 producer
+#: envelope and its signing key_id. Never members of the neutral Capsule
+#: object, so never part of any capsule_id preimage, under either algorithm.
+_LOCAL_ONLY_FIELDS = ("signature", "key_id")
+
+#: Excluded ONLY under the vintage ``jcs-n`` absent-field construction.
+#: Declared-``jcs`` capsules commit ``chain`` — see the module docstring.
+_VINTAGE_ONLY_EXCLUDED_FIELDS = ("chain",)
 
 
 class UnsupportedCanonicalizationError(ValueError):
@@ -52,12 +63,16 @@ def canonical_capsule_bytes(capsule: dict[str, Any]) -> bytes:
     original bytes.
     """
     algorithm = resolve_canonicalization_id(capsule)
+    canonical = {
+        key: value
+        for key, value in capsule.items()
+        if key != "capsule_id" and key not in _LOCAL_ONLY_FIELDS
+    }
 
     if algorithm == "jcs-n":
-        canonical = {key: value for key, value in capsule.items() if key not in CHAIN_LINKAGE_FIELDS}
+        canonical = {k: v for k, v in canonical.items() if k not in _VINTAGE_ONLY_EXCLUDED_FIELDS}
         return jcs(normalize(canonical))
     if algorithm == "jcs":
-        canonical = {key: value for key, value in capsule.items() if key not in _JCS_EXCLUDED_FIELDS}
         return jcs(canonical)
     raise UnsupportedCanonicalizationError(
         f"cannot compute capsule_id with canonicalization_id {algorithm!r}"

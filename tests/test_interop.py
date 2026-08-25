@@ -12,7 +12,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""W8 interop tests: capsule-emit JSONL ledger ↔ agent-action-capsule verify --store."""
+"""W8 interop tests: capsule-emit JSONL ledger ↔ capsule verify tooling.
+
+**draft-04 reversal ([capsule-cose-sign1], 2026-08-24):** ``capsule_id`` is
+signer-independent again — the producer's COSE_Sign1 envelope + ``key_id``
+are capsule-emit-local bookkeeping, not neutral Capsule members (see
+``capsule_emit.canonicalization``), so the raw, generic
+``agent-action-capsule verify --store`` (which knows nothing about that
+local envelope) no longer round-trips a capsule-emit ledger line as-is —
+same reason it was never spec'd to understand ``kind``-tagged bookkeeping
+entries either. capsule-emit ships its own ``capsule-emit verify --store``
+CLI (``capsule_emit.cli``, backed by ``capsule_emit.signing
+.verify_store_signed``) as the tool that IS aware of both: this file
+exercises that one instead.
+"""
 from __future__ import annotations
 
 import io
@@ -20,10 +33,11 @@ import json
 import subprocess
 
 import pytest
-from agent_action_capsule import verify, verify_store
 from agent_action_capsule.cli import _load_store
 
 from capsule_emit import ledger_view, read_ledger, seal
+from capsule_emit.signing import verify_store_signed as verify_store
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Fixture
@@ -188,7 +202,7 @@ def test_tampered_capsule_in_ledger_fails_verify(tmp_ledger):
 def test_cli_verify_store_jsonl_exits_0(tmp_ledger):
     _emit_n(2, tmp_ledger)
     proc = subprocess.run(
-        ["agent-action-capsule", "verify", "--store", str(tmp_ledger)],
+        ["capsule-emit", "verify", "--store", str(tmp_ledger)],
         capture_output=True,
     )
     assert proc.returncode == 0, proc.stderr.decode()
@@ -197,7 +211,7 @@ def test_cli_verify_store_jsonl_exits_0(tmp_ledger):
 def test_cli_verify_store_single_capsule_exits_0(tmp_ledger):
     _emit_n(1, tmp_ledger)
     proc = subprocess.run(
-        ["agent-action-capsule", "verify", "--store", str(tmp_ledger)],
+        ["capsule-emit", "verify", "--store", str(tmp_ledger)],
         capture_output=True,
     )
     assert proc.returncode == 0, proc.stderr.decode()
@@ -211,7 +225,7 @@ def test_cli_verify_store_tampered_exits_nonzero(tmp_path):
     cap["operator"] = "evil-tamper"
     ledger.write_text(json.dumps(cap) + "\n", encoding="utf-8")
     proc = subprocess.run(
-        ["agent-action-capsule", "verify", "--store", str(ledger)],
+        ["capsule-emit", "verify", "--store", str(ledger)],
         capture_output=True,
     )
     assert proc.returncode != 0
@@ -220,7 +234,7 @@ def test_cli_verify_store_tampered_exits_nonzero(tmp_path):
 def test_cli_verify_store_nonexistent_file_exits_nonzero(tmp_path):
     missing = tmp_path / "no_such_file.jsonl"
     proc = subprocess.run(
-        ["agent-action-capsule", "verify", "--store", str(missing)],
+        ["capsule-emit", "verify", "--store", str(missing)],
         capture_output=True,
     )
     assert proc.returncode != 0
@@ -230,7 +244,7 @@ def test_cli_verify_store_empty_file_exits_nonzero_or_zero(tmp_path):
     empty = tmp_path / "empty.jsonl"
     empty.write_text("", encoding="utf-8")
     proc = subprocess.run(
-        ["agent-action-capsule", "verify", "--store", str(empty)],
+        ["capsule-emit", "verify", "--store", str(empty)],
         capture_output=True,
     )
     assert proc.returncode in {0, 1, 2}
@@ -310,3 +324,24 @@ def test_ledger_view_shows_chain(tmp_ledger):
     buf = io.StringIO()
     ledger_view(tmp_ledger, out=buf)
     assert "confirms" in buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Group: neutral capsule_id recomputes cleanly WITHOUT the local envelope
+# ---------------------------------------------------------------------------
+
+
+def test_neutral_capsule_id_recomputes_after_stripping_local_fields(tmp_ledger):
+    """The signer-independent capsule_id boundary, made explicit: strip
+    capsule-emit's own local bookkeeping (``signature``/``key_id`` — the
+    COSE_Sign1 producer envelope and its key, never neutral Capsule members)
+    and the NEUTRAL ``agent_action_capsule.canonical.compute_capsule_id``
+    recomputes the exact same id capsule-emit stored — proving capsule_id
+    itself is genuinely signer-independent, even though the raw neutral
+    tooling can't recompute it from a capsule-emit ledger LINE as-is (that
+    line also carries the local envelope; see this module's docstring)."""
+    from agent_action_capsule.canonical import compute_capsule_id as neutral_compute_capsule_id
+
+    cap = _emit_n(1, tmp_ledger)[0].capsule
+    neutral_capsule = {k: v for k, v in cap.items() if k not in ("signature", "key_id")}
+    assert neutral_compute_capsule_id(neutral_capsule) == cap["capsule_id"]

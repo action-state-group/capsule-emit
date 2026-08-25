@@ -18,10 +18,10 @@ import json
 from pathlib import Path
 
 import pytest
-from agent_action_capsule import verify
 
 from capsule_emit import read_ledger, seal
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
+from capsule_emit.verification import verify_capsule as verify
 
 pytest.importorskip("mcp", reason="mcp package not installed")
 from capsule_emit import server as _server_module  # noqa: E402

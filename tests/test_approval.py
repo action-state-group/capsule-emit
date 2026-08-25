@@ -15,11 +15,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from agent_action_capsule import verify
 
 from capsule_emit.approval import list_pending, seal_approval
 from capsule_emit.core import _emit_capsule
 from capsule_emit.ledger import read_ledger
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Helpers

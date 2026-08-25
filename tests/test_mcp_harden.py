@@ -26,10 +26,10 @@ import warnings
 from unittest.mock import patch
 
 import pytest
-from agent_action_capsule import verify
 
 from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -16,7 +16,6 @@ Covers:
 from __future__ import annotations
 
 import pytest
-from agent_action_capsule import verify
 
 from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
@@ -28,6 +27,7 @@ from capsule_emit.gate import (
     gate_and_emit,
     run_gate,
 )
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Helpers

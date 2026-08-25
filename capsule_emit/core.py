@@ -418,10 +418,13 @@ class EmitResult:
       ``CAPSULE_ANCHOR=legacy-on`` opt-in (the default as of 0.5.0).
 
     ``signature`` / ``key_id`` mirror ``capsule["signature"]`` /
-    ``capsule["key_id"]`` — the self-attested Ed25519 signature over
-    ``capsule_id`` and the producer key that made it (see
-    ``capsule_emit.signing``). Always present; every ``EmitResult`` is
-    signed, not just anchored/witnessed ones.
+    ``capsule["key_id"]`` — the self-attested producer proof over
+    ``capsule_id`` and the producer key that made it. ``signature`` is a
+    hex-encoded COSE_Sign1 envelope (the frozen AAC producer-envelope
+    profile, [capsule-cose-sign1]), not a bare signature; ``key_id`` is the
+    raw Ed25519 public key, hex (see ``capsule_emit.signing``). Always
+    present; every ``EmitResult`` is signed, not just anchored/witnessed
+    ones.
 
     ``seq`` is this capsule's 1-indexed position in its ledger file (see
     ``capsule_emit.ledger.append_to_ledger``) — the log is where every
@@ -694,43 +697,36 @@ def _emit_capsule(
         tool_name=action,
     )
 
-    # Write canonicalization_id into the self-describing binding slot (top-level,
-    # inside the signed payload), then sign the content digest, THEN compute the
-    # public capsule_id -- in that order, deliberately:
+    # Write canonicalization_id into the self-describing binding slot
+    # (top-level, inside the signed payload), then compute the PURE,
+    # signer-independent capsule_id, THEN sign it -- draft-04 reversal
+    # ([capsule-cose-sign1]):
     #
-    # 1. content_digest = compute_capsule_id(capsule) over everything above
-    #    (canonicalization_id included; capsule_id/chain excluded as always) --
-    #    this is what gets signed.
-    # 2. signature + key_id are added to the dict.
-    # 3. capsule_id is (re)computed over the FULL dict, now including signature
-    #    and key_id -- CHAIN_LINKAGE_FIELDS = ("capsule_id", "chain") is the
-    #    ONLY exclusion agent_action_capsule.canonical knows about, so any
-    #    other top-level field a verifier finds (including these two) MUST
-    #    already have been present when capsule_id was computed, or a
-    #    downstream `verify()` recomputing capsule_id over the stored dict
-    #    would disagree with what was signed. Folding signature/key_id INTO
-    #    the public capsule_id's preimage (rather than leaving capsule_id as
-    #    it was pre-signature) is what keeps that recompute honest without
-    #    reaching into the neutral canonicalization library to teach it a
-    #    third exclusion.
+    # 1. capsule_id = compute_capsule_id(capsule) over everything above
+    #    (canonicalization_id AND chain committed under "jcs"; capsule_id
+    #    excluded as always -- see capsule_emit.canonicalization).
+    # 2. capsule["capsule_id"] is set.
+    # 3. The producer envelope (a COSE_Sign1 envelope over the raw
+    #    capsule_id digest -- the frozen AAC producer-envelope profile) is
+    #    built and its hex form + key_id are added as capsule["signature"] /
+    #    capsule["key_id"].
     #
-    # capsule_id therefore commits to "content + who signed it", which is
-    # exactly the self-attested claim (frozen dev-surface v4 §2: "your key,
-    # your claim"). capsule_emit.signing.verify_capsule_signature() reverses
-    # step 1 to recover content_digest and checks the signature against it.
+    # signature/key_id are added AFTER capsule_id is both computed and set,
+    # and are permanently excluded from any capsule_id preimage (never
+    # folded in) -- so capsule_id is the same for any signer over identical
+    # content ("content-unique, not record-unique"), and no strip-and-
+    # recompute dance is needed to verify: capsule_emit.signing
+    # .verify_capsule_signature() just recomputes capsule_id (which already
+    # excludes them) and checks the envelope against it directly.
     capsule["canonicalization_id"] = canonicalization_id
-    content_digest = compute_capsule_id(capsule)
+    capsule["capsule_id"] = compute_capsule_id(capsule)
 
     signer_obj = _signing.resolve_signer(
         os.fspath(ledger), signer=signer, key_path=signing_key_path
     )
-    # signature and key_id come from ONE sign() call (frozen §7d:
-    # sign(bytes) -> (signature, key_id)) -- never a separate signer_obj.key_id
-    # read afterward, which would let a rotate() landing in between pair this
-    # signature with a key_id that didn't produce it.
-    capsule["signature"], capsule["key_id"] = signer_obj.sign(content_digest.encode("ascii"))
-
-    capsule["capsule_id"] = compute_capsule_id(capsule)
+    capsule["signature"], capsule["key_id"] = _signing.sign_producer_envelope(
+        signer_obj, capsule["capsule_id"]
+    )
 
     seq = append_to_ledger(capsule, ledger)
 

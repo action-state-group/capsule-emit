@@ -17,7 +17,7 @@ import os
 import sys
 import tempfile
 
-from agent_action_capsule import verify
+from capsule_emit.verification import verify_capsule as verify
 
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 from capsule_emit.constraints.apache import AmountUnderCap, VendorKnown

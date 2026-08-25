@@ -13,9 +13,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from agent_action_capsule import verify
-
 from capsule_emit import ledger_view, load_manifest, seal
+from capsule_emit.verification import verify_capsule as verify
 
 LEDGER_PATH = Path(tempfile.mkdtemp()) / "ledger.jsonl"
 
@@ -66,8 +65,11 @@ def main() -> int:
     print("Step 3: capsule-emit ledger view")
     ledger_view(LEDGER_PATH)
 
-    # --- 4. VERIFY — Class-1 payload verification ----------------------------
-    print("Step 4: agent_action_capsule verify (Class-1)")
+    # --- 4. VERIFY — Class-1 payload verification (capsule-emit-aware:
+    # dispatches capsule_id recomputation by the declared canonicalization_id
+    # and excludes capsule-emit's own producer-envelope bookkeeping fields —
+    # see capsule_emit.verification / capsule_emit.canonicalization) --------
+    print("Step 4: capsule-emit verify (Class-1)")
     for i, rec in enumerate([cap.capsule, confirm.capsule]):
         result = verify(rec)
         label = ["write_po", "confirm_write_po"][i]
