@@ -49,11 +49,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-from capsule_emit.verification import verify_capsule as verify
-
 from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 from capsule_emit.evidence import build_evidence_markdown
+from capsule_emit.verification import verify_capsule as verify
 
 # Synthetic Ready issue — the shape is the point, not the target.
 ISSUE_URL = "https://github.com/action-state-group/capsule-emit/issues/0"

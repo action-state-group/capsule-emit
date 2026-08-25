@@ -66,13 +66,13 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-from capsule_emit.verification import verify_capsule as verify
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from scitt_cose import verify_receipt
 
 from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
+from capsule_emit.verification import verify_capsule as verify
 
 # The demo anchors live by default (CAPSULE_ANCHOR="true" here, unlike the
 # shipped extension's off-by-default in server.py) — --no-anchor still wins.
