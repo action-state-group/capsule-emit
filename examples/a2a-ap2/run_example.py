@@ -205,7 +205,7 @@ def scenario_b() -> str:
 
 def verify_ledger() -> None:
     _banner("Verification — agent-action-capsule verify (Class-1)")
-    from agent_action_capsule import verify_store
+    from capsule_emit.verification import verify_store
 
     with open(LEDGER_PATH) as f:
         capsules = [json.loads(line) for line in f if line.strip()]

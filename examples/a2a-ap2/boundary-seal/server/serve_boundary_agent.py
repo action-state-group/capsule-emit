@@ -143,9 +143,9 @@ class BoundarySealExecutor(AgentExecutor):
 
     async def execute(self, context, event_queue) -> None:  # noqa: ANN001
         from a2a.helpers.proto_helpers import new_task_from_user_message
-        from agent_action_capsule import verify
 
         from capsule_emit import seal, verify_input_digest
+        from capsule_emit.verification import verify_capsule as verify
 
         msg = context.message
         # The first event MUST be a Task; create it from the user message and

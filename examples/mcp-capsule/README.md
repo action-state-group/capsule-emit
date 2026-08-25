@@ -226,7 +226,7 @@ append-only log — independently of the producer.
 **In-process:**
 
 ```python
-from agent_action_capsule import verify
+from capsule_emit.verification import verify_capsule as verify
 
 result = verify(emitter.last.capsule)
 assert result.ok

@@ -21,8 +21,9 @@ import sys
 from pathlib import Path
 
 import pytest
-from agent_action_capsule import verify
 from agent_action_capsule.canonical import json_digest
+
+from capsule_emit.verification import verify_capsule as verify
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from demo import (

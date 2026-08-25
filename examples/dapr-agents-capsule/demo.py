@@ -43,7 +43,6 @@ import pathlib
 import tempfile
 import urllib.request
 
-from agent_action_capsule import verify
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
@@ -52,6 +51,7 @@ from cryptography.hazmat.primitives.serialization import (
 from scitt_cose import verify_receipt
 
 from capsule_emit.adapters.dapr_agents import DaprAgentsCapsuleEmitter
+from capsule_emit.verification import verify_capsule as verify
 
 ANCHOR = os.environ.get("AAC_ANCHOR_URL", "https://anchor.agentactioncapsule.org").rstrip("/")
 

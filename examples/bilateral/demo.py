@@ -170,9 +170,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── Verify ────────────────────────────────────────────────────────────────
     print("\n[6] Class-1 verify — both capsules")
-    from agent_action_capsule import verify
-
     from capsule_emit.ledger import read_ledger
+    from capsule_emit.verification import verify_capsule as verify
 
     all_ok = True
     for r in read_ledger(ledger):
