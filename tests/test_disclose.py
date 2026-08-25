@@ -719,3 +719,42 @@ def test_cli_disclose_error_exits_1(three_record_ledger, capsys):
     err = capsys.readouterr().err
     assert rc == 1
     assert "payloads='all'" in err
+
+
+def test_ADV_RUN2_verify_disclosure_rejects_forged_top_level_completeness(three_record_ledger):
+    """[adv-run-2-fix-batch] A1 regression: verify_disclosure() must authenticate
+    Disclosure.completeness/suppressed_fields against the SIGNED disclosure_record,
+    not just accept whatever top-level values the caller hands it. Without the fix,
+    an attacker who controls the Disclosure object in transit (not the signed ledger
+    entry) could flip completeness.records_mode from honest "producer-selected" to a
+    false "contiguous" and verify_disclosure() would still report ok=True."""
+    ledger_path, caps, payloads = three_record_ledger
+    selector = f"{caps[0]['capsule_id']},{caps[2]['capsule_id']}"
+    reveal = {
+        caps[0]["capsule_id"]: {"agent_input": payloads[0][0], "agent_output": payloads[0][1]},
+        caps[2]["capsule_id"]: {"agent_input": payloads[2][0], "agent_output": payloads[2][1]},
+    }
+    d = disclose(ledger_path, selector, audience="auditor", reveal=reveal)
+
+    # positive control: genuine disclosure is honest and verifies clean
+    assert d.completeness["records_mode"] == "producer-selected"
+    assert d.disclosure_record["completeness"]["records_mode"] == "producer-selected"
+    ok, errors = verify_disclosure(d)
+    assert ok, errors
+
+    # ATTACK: forge the top-level completeness only; the signed disclosure_record is untouched.
+    forged_completeness = dict(d.completeness)
+    forged_completeness["records_mode"] = "contiguous"  # lie: claim nothing was omitted
+    forged = replace(d, completeness=forged_completeness)
+    assert forged.disclosure_record["completeness"]["records_mode"] == "producer-selected"
+
+    ok2, errors2 = verify_disclosure(forged)
+    assert ok2 is False
+    assert any("completeness" in e for e in errors2)
+
+    # same attack against suppressed_fields
+    forged_suppressed = replace(d, suppressed_fields=("agent_input",))
+    assert forged_suppressed.disclosure_record["suppressed_fields"] != ["agent_input"]
+    ok3, errors3 = verify_disclosure(forged_suppressed)
+    assert ok3 is False
+    assert any("suppressed_fields" in e for e in errors3)

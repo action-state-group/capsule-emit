@@ -408,6 +408,12 @@ def verify_disclosure(
             errors.append("disclosure_record.audience does not match Disclosure.audience")
         if list(d.disclosure_record.get("disclosed_capsule_ids", ())) != list(d.record_ids):
             errors.append("disclosure_record.disclosed_capsule_ids does not match Disclosure.record_ids")
+        if d.completeness != d.disclosure_record.get("completeness"):
+            errors.append("Disclosure.completeness does not match the signed disclosure_record.completeness")
+        if list(d.suppressed_fields) != d.disclosure_record.get("suppressed_fields"):
+            errors.append(
+                "Disclosure.suppressed_fields does not match the signed disclosure_record.suppressed_fields"
+            )
 
         for cid in d.record_ids:
             b = d.bundles.get(cid)

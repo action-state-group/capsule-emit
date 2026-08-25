@@ -339,8 +339,11 @@ def test_seal_on_received_with_no_outer_options_still_passes_through_unchanged(t
 def test_received_rejects_null_empty_and_non_string_type(tmp_path, monkeypatch):
     # MED (surface.py:209): type=None/""/123 must never mint a signed capsule
     # with a null/absent/wrong committed type.
+    # [adv-run-2-fix-batch] A2: whitespace-only type ("   ") passed bool(type)
+    # despite the docstring's stated intent (non-empty string) — included here
+    # alongside the other invalid-type cases it belongs with.
     monkeypatch.chdir(tmp_path)
-    for bad_type in (None, "", 123):
+    for bad_type in (None, "", "   ", 123):
         with pytest.raises(TypeError, match="type"):
             received(b'{"iss": "acme-mandates"}', type=bad_type, anchor=False)
 

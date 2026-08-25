@@ -263,7 +263,7 @@ def received(
     ambiguity between "content I authored" and "bytes someone else signed"
     is never guessed.
     """
-    if not isinstance(type, str) or not type:
+    if not isinstance(type, str) or not type.strip():
         raise TypeError(
             f"received() requires type to be a non-empty string naming the "
             f"artifact's own registered CPB type (e.g. type=\"machine-mandate\") "
