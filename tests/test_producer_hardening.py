@@ -173,6 +173,22 @@ def test_chain_relation_escalates(tmp_ledger):
     assert verify(cap.capsule).ok
 
 
+def test_chain_relation_assesses(tmp_ledger):
+    parent = seal(None, action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
+    cap = seal(
+        None,
+        action="action_b",
+        operator="org",
+        developer="agent@v1",
+        confirms=parent.capsule_id,
+        relation="assesses",
+        anchor=False,
+        ledger=tmp_ledger,
+    )
+    assert cap.capsule["chain"]["relation"] == "assesses"
+    assert verify(cap.capsule).ok
+
+
 def test_no_chain_when_no_confirms(tmp_ledger):
     cap = seal(None, action="standalone", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
     assert "chain" not in cap.capsule
@@ -295,6 +311,55 @@ def test_verdict_blocked_never_dispatch(tmp_ledger):
         ledger=tmp_ledger,
     )
     assert verify(cap.capsule).ok
+
+
+def test_verdict_assessed_action_type_not_fyi(tmp_ledger):
+    """verdict="assessed" is a disposition verb — it must not auto-derive to
+    "fyi" (design doc §8 build item 1: without the vocabulary addition,
+    action_type silently fell back to "fyi", which is the bug this closes)."""
+    cap = seal(
+        None,
+        action="judge",
+        operator="org",
+        developer="agent@v1",
+        verdict="assessed",
+        anchor=False,
+        ledger=tmp_ledger,
+    )
+    assert cap.capsule["action_type"] == "decide"
+    assert cap.capsule["action_type"] != "fyi"
+    assert verify(cap.capsule).ok
+
+
+def test_judge_verdict_capsule_relation_assesses(tmp_ledger):
+    """The daily-judge satellite-capsule shape: a verdict capsule chains to
+    its subject with relation="assesses" and verdict="assessed", never
+    "executed"/"confirmed" — a detection disposition, not an enforcement one."""
+    subject = seal(
+        {"turn": "the customer was offered two options"},
+        action="handle_turn",
+        operator="org",
+        developer="agent@v1",
+        anchor=False,
+        ledger=tmp_ledger,
+    )
+    verdict_cap = seal(
+        {"subject": {"capsule_id": subject.capsule_id}, "verdict": "pass"},
+        action="judge",
+        operator="org",
+        developer="judge-agent@v1",
+        verdict="assessed",
+        confirms=subject.capsule_id,
+        relation="assesses",
+        model={"provider": "anthropic", "model_id": "claude-judge-1"},
+        anchor=False,
+        ledger=tmp_ledger,
+    )
+    assert verdict_cap.capsule["chain"]["relation"] == "assesses"
+    assert verdict_cap.capsule["chain"]["parent_capsule_id"] == subject.capsule_id
+    assert verdict_cap.capsule["disposition"]["verdict_class"] == "assessed"
+    assert verdict_cap.capsule["action_type"] == "decide"
+    assert verify(verdict_cap.capsule).ok
 
 
 # ---------------------------------------------------------------------------
