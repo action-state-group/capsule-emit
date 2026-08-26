@@ -184,6 +184,13 @@ class MmrLedger:
         are write-once, so a historical size's peaks are still readable."""
         return core.root_from_peaks(self.peak_hashes_at(size))
 
+    def commitment_at(self, size: int) -> bytes:
+        """Conformant commitment object (``core.commitment_object`` --
+        [cll-commitment-interop]) of the MMR as it stood at `size` nodes:
+        what an external MMRIVER/profile-conformant tool needs, as opposed
+        to `root_at`'s internal-only bagged hash."""
+        return core.commitment_object(self.peak_hashes_at(size))
+
     def peak_hashes_at(self, size: int) -> list[bytes]:
         """Peak hashes (left to right) of the MMR as it stood at `size`
         nodes. Public so callers (e.g. checkpoint emission) never need to
