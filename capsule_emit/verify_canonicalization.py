@@ -64,13 +64,16 @@ from .canonicalization import (
     compute_capsule_id,
     resolve_canonicalization_id,
 )
+from .numbers import CANONICALIZATION_ID
 
 #: CPB Payload Canonicalization Algorithm Registry (normative entries).
 #: Update here when the registry gains a new entry.
 KNOWN_ALGORITHMS: frozenset[str] = frozenset({"jcs-n", "jcs", "as-transmitted"})
 
-#: Vintage inference value — absent canonicalization_id on a pre-G1 record
-#: resolves to this.  Pre-G1 capsule records are unambiguously jcs-n.
+#: Vintage inference value — absent canonicalization_id on a format-2 record
+#: resolves to this.  Format-2 records are unambiguously jcs-n and MUST NOT
+#: declare canonicalization_id (§5.1) — this value is only reachable via the
+#: unconditional "absent declared" branch below, never via profile_algorithm.
 _VINTAGE_ALGORITHM = VINTAGE_CANONICALIZATION_ID
 
 
@@ -128,7 +131,7 @@ class CanonicalizationResult:
 def verify_canonicalization_id(
     capsule: dict[str, Any],
     *,
-    profile_algorithm: str = _VINTAGE_ALGORITHM,
+    profile_algorithm: str = CANONICALIZATION_ID,
 ) -> CanonicalizationResult:
     """Return a structured verdict for the ``canonicalization_id`` binding slot.
 
@@ -152,9 +155,16 @@ def verify_canonicalization_id(
     Args:
         capsule:           The capsule dict as produced by :func:`capsule_emit.emit`.
         profile_algorithm: The registered algorithm identifier that this
-                           capsule profile declares.  Default ``"jcs-n"``.
-                           Pass the profile constant when verifying against a
-                           non-default profile.
+                           capsule profile declares.  Default is
+                           :data:`capsule_emit.numbers.CANONICALIZATION_ID`
+                           (``"jcs"``) — any record that *declares*
+                           ``canonicalization_id`` at all is a format-4 record
+                           and REQUIRES ``"jcs"`` (§5.1); format-2 vintage
+                           records never declare the field, so this default
+                           never affects them (see the absent-id branch).
+                           Pass ``"jcs-n"`` explicitly only for deliberate
+                           negative/mutant testing of a declared-but-vintage
+                           record.
 
     Returns:
         :class:`CanonicalizationResult` with ``.ok``, ``.verdict``,

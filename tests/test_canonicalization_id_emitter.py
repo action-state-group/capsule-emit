@@ -25,7 +25,6 @@ import os
 import tempfile
 
 import pytest
-from agent_action_capsule.canonical import compute_capsule_id as compute_legacy_capsule_id
 
 import capsule_emit
 from capsule_emit import CANONICALIZATION_ID, cli, seal
@@ -78,7 +77,7 @@ class TestWireLevelTranscript:
 
     def test_field_value_is_profile_default(self):
         r = _emit_no_anchor()
-        assert r.capsule["canonicalization_id"] == "jcs-n"
+        assert r.capsule["canonicalization_id"] == "jcs"
 
     def test_field_not_in_compute_attestation(self):
         """The id must be in the binding slot, NOT nested in compute_attestation."""
@@ -94,11 +93,11 @@ class TestWireLevelTranscript:
         r = _emit_no_anchor()
         wire = json.dumps(r.capsule, separators=(",", ":")).encode("utf-8")
         assert b'"canonicalization_id"' in wire
-        assert b'"jcs-n"' in wire
+        assert b'"jcs"' in wire
 
     def test_constant_is_exported(self):
-        assert CANONICALIZATION_ID == "jcs-n"
-        assert capsule_emit.CANONICALIZATION_ID == "jcs-n"
+        assert CANONICALIZATION_ID == "jcs"
+        assert capsule_emit.CANONICALIZATION_ID == "jcs"
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +161,14 @@ class TestAlgorithmDispatch:
             extra_compute=self._MEMBERS,
         )
         assert r.capsule["capsule_id"] == compute_capsule_id(r.capsule)
-        assert r.capsule["capsule_id"] != compute_legacy_capsule_id(r.capsule)
+        # agent_action_capsule.canonical.compute_capsule_id (compute_legacy_capsule_id)
+        # now ALSO dispatches on declared canonicalization_id and agrees with
+        # capsule-emit's own jcs computation for a jcs-declared capsule --
+        # interop convergence, not a bug. The real algorithm-selects-the-bytes
+        # proof is against the vintage (absent-id, normalized) construction.
+        vintage_source = dict(r.capsule)
+        del vintage_source["canonicalization_id"]
+        assert r.capsule["capsule_id"] != compute_capsule_id(vintage_source)
         assert verify_capsule_signature(r.capsule)
 
     def test_jcs_emission_passes_public_verifiers(self, tmp_path, capsys):
@@ -180,9 +186,11 @@ class TestAlgorithmDispatch:
         assert verify_capsule(r.capsule).ok
         assert verify_store_signed([r.capsule])[0].ok
 
-        legacy_digest_mutant = dict(r.capsule)
-        legacy_digest_mutant["capsule_id"] = compute_legacy_capsule_id(legacy_digest_mutant)
-        result = verify_capsule(legacy_digest_mutant)
+        vintage_source = dict(r.capsule)
+        del vintage_source["canonicalization_id"]
+        vintage_digest_mutant = dict(r.capsule)
+        vintage_digest_mutant["capsule_id"] = compute_capsule_id(vintage_source)
+        result = verify_capsule(vintage_digest_mutant)
         assert not result.ok
         assert any(finding.code == "capsule_id_mismatch" for finding in result.findings)
 
@@ -195,8 +203,10 @@ class TestAlgorithmDispatch:
             canonicalization_id="jcs",
             extra_compute=self._MEMBERS,
         )
+        vintage_source = dict(r.capsule)
+        del vintage_source["canonicalization_id"]
         mutant = dict(r.capsule)
-        mutant["capsule_id"] = compute_legacy_capsule_id(mutant)
+        mutant["capsule_id"] = compute_capsule_id(vintage_source)
 
         result = verify_canonicalization_id(mutant, profile_algorithm="jcs")
         assert not result.ok
@@ -243,8 +253,8 @@ class TestMutantStripId:
         result = verify_canonicalization_id(r.capsule)
         assert result.ok
         assert result.verdict == CanonicalizationVerdict.VERIFIED
-        assert result.declared == "jcs-n"
-        assert result.resolved == "jcs-n"
+        assert result.declared == "jcs"
+        assert result.resolved == "jcs"
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +381,10 @@ class TestVintageRule:
             for key, value in r.capsule.items()
             if key not in {"canonicalization_id", "signature", "key_id", "capsule_id"}
         }
+        # Simulate the actual vintage shape: format_version '2', not the
+        # default format_version '4' -- format '4' REQUIRES a declared,
+        # string canonicalization_id (§5.1), which an explicit null is not.
+        vintage["format_version"] = "2"
         signer = LocalKeypairSigner(tmp_path / "vintage-signing-key.pem")
         content_digest = compute_capsule_id(vintage)
         vintage["signature"], vintage["key_id"] = signer.sign(content_digest.encode("ascii"))
@@ -379,12 +393,22 @@ class TestVintageRule:
         explicit_null = dict(vintage, canonicalization_id=None)
         assert compute_capsule_id(explicit_null) == vintage["capsule_id"]
         assert verify_capsule_signature(explicit_null)
-        assert verify_store_signed([explicit_null])[0].ok
 
+        # Canonicalization-layer equivalence still holds: a null-valued slot
+        # digests identically to an absent one (resolve_canonicalization_id
+        # treats them the same), and the vintage rule still resolves it.
         result = verify_canonicalization_id(explicit_null)
         assert result.ok
         assert result.declared is None
         assert result.resolved == "jcs-n"
+
+        # But full structural verification correctly REJECTS it: §5.1's
+        # "format_version '2' ... MUST NOT declare canonicalization_id" is a
+        # key-presence rule, not a value rule -- an explicit JSON null still
+        # declares the field, even though it digests the same as absent.
+        store_result = verify_store_signed([explicit_null])[0]
+        assert not store_result.ok
+        assert any(f.code == "canonicalization_profile_mismatch" for f in store_result.findings)
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +521,7 @@ class TestWireTranscript:
 
         # Verify the assertions
         assert "canonicalization_id" in capsule
-        assert capsule["canonicalization_id"] == "jcs-n"
+        assert capsule["canonicalization_id"] == "jcs"
         assert compute_capsule_id(capsule) == capsule["capsule_id"]
 
         wire = json.dumps(capsule, indent=2)

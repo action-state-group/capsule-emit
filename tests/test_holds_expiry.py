@@ -248,11 +248,18 @@ def test_hold_status_ambiguous_when_reserve_record_missing(tmp_path):
 
 
 def test_hold_status_honors_declared_jcs(tmp_path):
+    """The reserve builder emits format_version '2' (vintage, no declared
+    canonicalization_id). To exercise the jcs dispatch path honestly, this
+    mutant record also declares format_version '4' -- format-2 records MUST
+    NOT declare canonicalization_id at all (§5.1); pairing declared 'jcs'
+    with format-2 would itself be a non-conforming record and fail
+    verification for that reason, not the one this test targets."""
     ledger_path = tmp_path / "ledger.jsonl"
     engine = _engine(ledger_path)
     reserve = engine.evaluate_and_reserve(_action(amount_minor=1_000, target="acct-1"))
 
     record = dict(reserve.capsule)
+    record["format_version"] = "4"
     record["canonicalization_id"] = "jcs"
     record["canonicalization_probe"] = {"null_member": None, "empty_array": []}
     record["capsule_id"] = compute_capsule_id(record)
