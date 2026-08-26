@@ -9,9 +9,17 @@ happened — bundled and hashed so it can't be quietly changed. It's plain JSON
 (`cap.capsule`). **Everything else is about what you can do with capsules.**
 
 ### Seal
-What `emit()` does: it takes the action, hashes the contents, and stamps an id
+What `seal()` does: it takes content you authored, hashes it, and stamps an id
 (`capsule_id`) that's a fingerprint of the whole thing. Hand the capsule to anyone —
 they can re-hash it and check the fingerprint matches.
+
+Three other verbs mint the same kind of record for content you didn't author or
+content that references other capsules — `seal()` is just the common case:
+`received(bytes, type=...)` and `carry(bytes)` bring in something someone else
+already signed (as-transmitted, no re-canonicalization); `compose([a, b, c])`
+binds capsules already in your log by reference, asserting nothing new. All four
+return the same `Capsule` shape and append to the log the same way. → [the four
+verbs, in the README](../README.md#where-you-start-and-where-it-goes)
 
 ### may / did
 The honesty bit. *Approved* isn't *executed*, and *executed* isn't *confirmed*. A
@@ -25,7 +33,7 @@ points back at the one before it (`chain.parent_capsule_id`), by content address
 String them up and *attempted → approved → confirmed* becomes one trail you can
 follow and verify — within one stream today; cross-organizational chaining
 guidance is under revision.
-→ `emit(..., confirms=earlier_id)` · [within & across agents](chaining.md)
+→ `seal(..., confirms=earlier_id)` · [within & across agents](chaining.md)
 
 ### Break
 The reason any of this is worth trusting: change one byte of a sealed capsule and the
@@ -37,10 +45,10 @@ logs can't do that.
 Writing a fingerprint (just the fingerprint — never your data) where an independent
 party can confirm it, so there's outside evidence the capsule existed at a certain
 time. Witnessing (the checkpoint stream) is on by default, free, no signup — anyone
-can later check your log against it. → off with `emit(..., witness=False)` /
+can later check your log against it. → off with `seal(..., witness=False)` /
 `CAPSULE_WITNESS=off`. The older per-capsule **anchor** channel (submitting one
 capsule's digest for its own inclusion receipt) still exists but is a legacy,
-non-default opt-in as of 0.5.0 (`emit(..., anchor=True)`). *Why this is what turns
+non-default opt-in as of 0.5.0 (`seal(..., anchor=True)`). *Why this is what turns
 "my word" into proof anyone can check: [why anchoring makes it trustworthy](why-anchoring.md).*
 
 ### Ledger

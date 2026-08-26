@@ -23,14 +23,14 @@ below follows from that one fact.
 You build a trail by pointing each new capsule at its parent with `confirms=`:
 
 ```python
-from capsule_emit import emit
+from capsule_emit import seal
 
 # the agent attempts the action
-attempt = emit(action="write_po", operator="acme-co", developer="po-agent@v1",
+attempt = seal({"po_id": "PO-7781"}, action="write_po", operator="acme-co", developer="po-agent@v1",
                effect={"type": "write_po", "status": "dispatched"})
 
 # later, your system confirms it landed — chained to the attempt
-done = emit(action="write_po", operator="acme-co", developer="po-agent@v1",
+done = seal({"po_id": "PO-7781"}, action="write_po", operator="acme-co", developer="po-agent@v1",
             verdict="confirmed",
             effect={"type": "write_po", "status": "confirmed"},
             confirms=attempt.capsule_id)        # ← chain.parent_capsule_id
@@ -56,7 +56,7 @@ express that cross-stream link; this page will be updated when that lands.
 
 > Today `confirms=` writes `relation: "confirms"`. The spec also defines `supersede` /
 > `escalate`; richer relation values (and a `relation=` parameter) are
-> [registry-extensible](going-deeper.md), not yet surfaced on `emit()`.
+> [registry-extensible](going-deeper.md), not yet surfaced on `seal()`/`carry()`/`received()`/`compose()`.
 
 ## An agent has *many* chains — the ledger is a DAG, not a line
 

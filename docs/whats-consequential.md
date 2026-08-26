@@ -98,7 +98,7 @@ complexity for little gain.
 only. Decorator adapters (`@emitter.tool()`) seal what you explicitly wrap; use
 `action_type="fyi"` to mark reads you chose to wrap, and `seal_reads=False` on
 the emitter to skip them entirely. Signal 2 is implemented in the engine layer
-using direct `emit()` calls — capsule-emit provides the sealing primitive; the
+using direct `seal()` calls — capsule-emit provides the sealing primitive; the
 engine decides when a read is privileged.
 
 ---
@@ -109,7 +109,7 @@ engine decides when a read is privileged.
 |---|---|---|
 | **Gateway** (`agentgateway`) | Signal 1 only (allow-list at config) | Sees traffic, not data tags. Passes reads un-sealed. |
 | **Decorators** (`@emitter.tool()`) | Developer-explicit | Wrap commands. Optionally wrap sensitive reads with `action_type="fyi"` and control with `seal_reads=`. |
-| **Engine** | Signal 1 + Signal 2 | Knows resource classification; seals privileged reads directly via `emit()`. |
+| **Engine** | Signal 1 + Signal 2 | Knows resource classification; seals privileged reads directly via `seal()`. |
 
 See [adapter-patterns.md](adapter-patterns.md) for the full how-to-choose guide.
 

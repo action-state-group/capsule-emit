@@ -27,7 +27,7 @@ can prove an entry is in it, and prove the notary never tore a page out.
 
 ## What's actually on it? (the important part)
 
-**Only a fingerprint and a time.** When you `emit()`, the only thing sent to the log
+**Only a fingerprint and a time.** When you `seal()` (or `carry()`/`received()`/`compose()`), the only thing sent to the log
 is the capsule's **SHA-256 digest** (its `capsule_id`) — a fixed-length, one-way hash.
 
 The log learns: *"some record with fingerprint `9fddfcec…` existed at 18:01 UTC."* It
@@ -127,19 +127,19 @@ jurisdiction.)*
 
 **Do I have to be online? What if I don't want to be witnessed at all?**
 Witnessing (the default checkpoint stream) is async and non-blocking, and fully
-optional: `emit(..., witness=False)` or `CAPSULE_WITNESS=off` seals locally and
+optional: `seal(..., witness=False)` or `CAPSULE_WITNESS=off` seals locally and
 skips the network. Without it you have a tamper-evident record — self-attested.
 With the default checkpoint stream engaged, you move up to witnessed — checkable
 against the log by a party who trusts neither you nor your runtime
 ([why that matters, and what the difference is](why-anchoring.md)). The older,
-legacy per-capsule anchor channel (`emit(..., anchor=True)`) is a separate,
+legacy per-capsule anchor channel (`seal(..., anchor=True)` or `CAPSULE_ANCHOR=legacy-on`) is a separate,
 non-default opt-in that reaches only a narrower, per-capsule slice of the same
 tier.
 
 **Can I use my own log instead of the hosted one?**
 Yes — for the default witness/checkpoint stream, `CAPSULE_WITNESS_URL=…` or
-`emit(..., witness_url=…)`; for the legacy per-capsule anchor channel,
-`AAC_ANCHOR_URL=…` or `emit(..., anchor_url=…)`. Either way the log service
+`seal(..., witness_url=…)`; for the legacy per-capsule anchor channel,
+`AAC_ANCHOR_URL=…` or `seal(..., anchor_url=…)`. Either way the log service
 ([`capsule-anchor`](https://github.com/action-state-group/capsule-anchor)) is
 open-source. Just remember the trust property only holds when the log is one the
 *verifier* also trusts — a log only you control isn't proof to an outsider.

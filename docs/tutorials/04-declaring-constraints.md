@@ -10,7 +10,7 @@ You probably already know the rules your agent *should* follow ("the PO math has
 add up", "the vendor has to be approved"). Capsules let you **write those down in a
 manifest** today. `capsule-emit` just **records** them — it doesn't block anything.
 Later, a compatible gateway can read the **same file** and actually **enforce** them,
-and your `emit()` calls don't change at all.
+and your `seal()` calls don't change at all.
 
 Think of it as leaving the rules where the enforcement will plug in.
 
@@ -71,7 +71,7 @@ enforcement engine, no dependency to install.
 
 ## What "enforce later" buys you
 
-Because the rules live in a file and not in your `emit()` calls:
+Because the rules live in a file and not in your `seal()` calls:
 
 - **today:** the rules are documented, versioned, and travel with your code.
 - **later:** point a compatible enforcement gateway at the same `flows/` directory.

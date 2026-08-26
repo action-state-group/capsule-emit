@@ -4,7 +4,7 @@ Everything here is written to be read by a human dev **or** by a coding agent yo
 
 ## Start here
 
-You add one `emit()` call at each consequential action, and you get a **witnessed, verifiable ledger** of what your agent did. That's the floor. Begin with the tutorials:
+You add one `seal()` call at each consequential action, and you get a **witnessed, verifiable ledger** of what your agent did. That's the floor. Begin with the tutorials:
 
 → **[Tutorials](tutorials/)** — five-minute, copy-paste sessions, in order:
 1. **[Your first capsule](tutorials/01-your-first-capsule.md)** — seal an action, see it witnessed, see it land in your ledger, verify it. *(This is the full day-1 loop.)*
@@ -24,6 +24,7 @@ You add one `emit()` call at each consequential action, and you get a **witnesse
 ## Wire it into your stack
 
 - **[Adapters](adapters/)** — let MCP / LangChain / CrewAI / Hermes (or any custom loop) emit capsules for you. Each page has a **paste-ready prompt for your coding agent**.
+- **Quickstarts** — copy-paste, framework-specific: **[CrewAI](quickstart-crewai.md)** · **[LangGraph](quickstart-langgraph.md)**.
 
 ## Go further
 
@@ -34,7 +35,7 @@ You add one `emit()` call at each consequential action, and you get a **witnesse
 ## The shape, in one picture
 
 ```
-  emit()  →  capsule        the unit: one action, sealed (content-addressed)
+  seal()  →  capsule        the unit: one action, sealed (content-addressed)
      │  appends + witnesses
      ▼
   ledger.jsonl              what you keep: a witnessed, verifiable TRAIL  ← start here

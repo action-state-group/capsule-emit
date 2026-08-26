@@ -10,7 +10,7 @@ naturally come next, and they go in opposite directions.
 ```
               ▲  enforcement (act on the record)
    gateway    │  a compatible gateway reads your manifest and ENFORCES
-  (a compatible gateway) — HITL, autonomy, effects.  Same files, no emit() change.
+  (a compatible gateway) — HITL, autonomy, effects.  Same files, no seal()/carry()/received()/compose() change.
   ───────────┼───────────────────────────────────────────────────
    YOU →   capsule-emit   produce: one call, sealed + witnessed
               │
@@ -76,8 +76,8 @@ The clean part: the gateway reads the **same `manifest.md`** you already wrote a
 calls the **same `capsule-emit`** underneath. So:
 
 > **Adopt sealing now with `capsule-emit`. Turn on enforcement later by putting a
-> compatible gateway in front — with no change to your `emit()` calls or your
-> manifests.**
+> compatible gateway in front — with no change to your `seal()`/`carry()`/`received()`/`compose()`
+> calls or your manifests.**
 
 A compatible gateway — an open-source enforcement engine on the **same core**
 (`agent-action-capsule`) as `capsule-emit` —
