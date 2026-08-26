@@ -64,6 +64,7 @@ from .canonicalization import (
     compute_capsule_id,
     resolve_canonicalization_id,
 )
+from .numbers import CANONICALIZATION_ID
 
 #: CPB Payload Canonicalization Algorithm Registry (normative entries).
 #: Update here when the registry gains a new entry.
@@ -128,7 +129,7 @@ class CanonicalizationResult:
 def verify_canonicalization_id(
     capsule: dict[str, Any],
     *,
-    profile_algorithm: str = _VINTAGE_ALGORITHM,
+    profile_algorithm: str = CANONICALIZATION_ID,
 ) -> CanonicalizationResult:
     """Return a structured verdict for the ``canonicalization_id`` binding slot.
 
@@ -152,9 +153,10 @@ def verify_canonicalization_id(
     Args:
         capsule:           The capsule dict as produced by :func:`capsule_emit.emit`.
         profile_algorithm: The registered algorithm identifier that this
-                           capsule profile declares.  Default ``"jcs-n"``.
-                           Pass the profile constant when verifying against a
-                           non-default profile.
+                           capsule profile declares.  Default is
+                           :data:`capsule_emit.numbers.CANONICALIZATION_ID`
+                           (``"jcs"``).  Pass ``"jcs-n"`` explicitly when
+                           verifying against the vintage profile.
 
     Returns:
         :class:`CanonicalizationResult` with ``.ok``, ``.verdict``,

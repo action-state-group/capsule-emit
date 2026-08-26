@@ -78,7 +78,7 @@ class TestWireLevelTranscript:
 
     def test_field_value_is_profile_default(self):
         r = _emit_no_anchor()
-        assert r.capsule["canonicalization_id"] == "jcs-n"
+        assert r.capsule["canonicalization_id"] == "jcs"
 
     def test_field_not_in_compute_attestation(self):
         """The id must be in the binding slot, NOT nested in compute_attestation."""
@@ -94,11 +94,11 @@ class TestWireLevelTranscript:
         r = _emit_no_anchor()
         wire = json.dumps(r.capsule, separators=(",", ":")).encode("utf-8")
         assert b'"canonicalization_id"' in wire
-        assert b'"jcs-n"' in wire
+        assert b'"jcs"' in wire
 
     def test_constant_is_exported(self):
-        assert CANONICALIZATION_ID == "jcs-n"
-        assert capsule_emit.CANONICALIZATION_ID == "jcs-n"
+        assert CANONICALIZATION_ID == "jcs"
+        assert capsule_emit.CANONICALIZATION_ID == "jcs"
 
 
 # ---------------------------------------------------------------------------
@@ -243,8 +243,8 @@ class TestMutantStripId:
         result = verify_canonicalization_id(r.capsule)
         assert result.ok
         assert result.verdict == CanonicalizationVerdict.VERIFIED
-        assert result.declared == "jcs-n"
-        assert result.resolved == "jcs-n"
+        assert result.declared == "jcs"
+        assert result.resolved == "jcs"
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +497,7 @@ class TestWireTranscript:
 
         # Verify the assertions
         assert "canonicalization_id" in capsule
-        assert capsule["canonicalization_id"] == "jcs-n"
+        assert capsule["canonicalization_id"] == "jcs"
         assert compute_capsule_id(capsule) == capsule["capsule_id"]
 
         wire = json.dumps(capsule, indent=2)

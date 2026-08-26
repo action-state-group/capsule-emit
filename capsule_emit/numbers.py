@@ -5,15 +5,18 @@
 emitted capsule at the top-level ``canonicalization_id`` field (the
 self-describing binding slot — composition's additional-bindings mechanism,
 inside the signed payload). It names the digest algorithm used to compute
-``capsule_id``: RFC 8785 JCS over absent-field-normalised JSON; SHA-256;
-lowercase hex. Registered in the CPB Payload Canonicalization Algorithm
-Registry (draft-mih-sokolov-scitt-payload-binding).
+``capsule_id``: RFC 8785 plain JCS; SHA-256; lowercase hex. Registered in the
+CPB Payload Canonicalization Algorithm Registry
+(draft-mih-sokolov-scitt-payload-binding).
 
 This constant is the single declaration point for the capsule profile's
-algorithm. When the profile revs from ``jcs-n`` to ``jcs`` (plan G5/A8) the
-change is one edit here; sealing callers (seal()/carry()/compose()) need no
-update because the value is wired through as a parameter default, not
-hardcoded at each call site.
+algorithm. Revved from ``jcs-n`` to ``jcs`` (plan G5/A8, pairing with
+``format_version`` ``"4"`` per §5.1: format_version '4' REQUIRES
+canonicalization_id='jcs'); sealing callers (seal()/carry()/compose()) needed
+no update because the value is wired through as a parameter default, not
+hardcoded at each call site. ``jcs-n`` (JCS + absent-field normalization)
+remains implemented in ``canonicalization.py`` as the vintage algorithm for
+``format_version`` ``"2"`` records, which MUST NOT declare this field.
 
 Wire rule (normative in CPB — already enforced by agent_action_capsule.canonical):
   A JSON number token in a digest-bearing field MUST match ``0|-?[1-9][0-9]*``
@@ -40,11 +43,12 @@ from agent_action_capsule.canonical import FloatInDigestError
 
 #: Identifier recorded in the self-describing binding slot (``canonicalization_id``
 #: at the top level of every emitted capsule, inside the signed payload).
-#: Profile default: ``jcs-n`` (RFC 8785 JCS + absent-field normalization + SHA-256).
-#: When the capsule profile revs to ``jcs`` (plan G5/A8): change this constant only —
-#: the internal primitive accepts it as a parameter default, so all call sites
-#: (via seal()/carry()/compose()) update automatically.
-CANONICALIZATION_ID: str = "jcs-n"
+#: Profile default: ``jcs`` (RFC 8785 plain JCS + SHA-256) — required for
+#: ``format_version`` ``"4"`` (§5.1: format_version '4' REQUIRES
+#: canonicalization_id='jcs'). ``jcs-n`` (JCS + absent-field normalization)
+#: remains available in ``canonicalization.py`` for the vintage
+#: ``format_version`` ``"2"`` path, which MUST NOT declare this field at all.
+CANONICALIZATION_ID: str = "jcs"
 
 __all__ = ["CANONICALIZATION_ID", "float_to_str"]
 
