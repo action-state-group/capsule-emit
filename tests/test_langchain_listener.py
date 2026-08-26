@@ -28,9 +28,9 @@ import uuid
 import warnings
 
 import pytest
-from agent_action_capsule import verify
 
 from capsule_emit.adapters.langchain_listener import LangChainListenerCore
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Helpers

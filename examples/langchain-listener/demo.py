@@ -37,7 +37,7 @@ import sys
 import tempfile
 import threading
 
-from agent_action_capsule import verify
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # 1. Hermetic stub SCITT TS (mirrors tests/test_anchor_honesty.py)
