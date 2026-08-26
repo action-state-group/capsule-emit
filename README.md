@@ -108,7 +108,7 @@ Until 0.5.0, your capsule log was like a git repo you never pushed: internally c
 
 See **[`capsule_emit.checkpoint`](docs/checkpoint.md)** for the cadence, the multi-witness config, and precisely what trust tier a checkpoint does (and doesn't) reach — a single witness upgrades you from *self-attested*, but it isn't the *multi-witness, equivocation-resistant* tier, and a witness never vouches that your capsules' content is true, only that they exist, are ordered, and weren't deleted.
 
-\* currently served via `anchor.agentactioncapsule.org` while the `witness.` CNAME is pending — same free hosted service either way.
+\* `witness.agentactioncapsule.org` has no DNS record yet — a deploy spec exists (domain-mapping the same `capsule-anchor` Cloud Run service that already serves `anchor.agentactioncapsule.org` onto this second hostname; no code, key, or database change) but has not been run. Until it lands, checkpoint registration against the default URL is dispatched to `anchor.agentactioncapsule.org` directly — same free hosted service either way; only the hostname on the wire differs.
 
 ## Verify
 
