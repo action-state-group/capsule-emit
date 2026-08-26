@@ -41,7 +41,6 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from agent_action_capsule import verify
 from agent_action_capsule.anchor import anchor as _anchor
 from agent_action_capsule.canonical import json_digest
 from agent_action_capsule.contracts import Disposition, EffectRecord
@@ -51,6 +50,7 @@ from capsule_emit import read_ledger
 from capsule_emit.bilateral import seal_ghost
 from capsule_emit.gate import run_gate
 from capsule_emit.ledger import append_to_ledger
+from capsule_emit.verification import verify_capsule as verify
 
 _SEP = "=" * 64
 

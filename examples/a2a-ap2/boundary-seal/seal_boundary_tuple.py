@@ -141,7 +141,7 @@ def main() -> int:
 
     _banner("Step 3 — Verify in-process")
 
-    from agent_action_capsule import verify
+    from capsule_emit.verification import verify_capsule as verify
     vr = verify(result.capsule)
     if not vr.ok:
         print(f"  FAIL: {vr.findings}", file=sys.stderr)

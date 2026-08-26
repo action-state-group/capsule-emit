@@ -1,0 +1,23 @@
+{
+  "action_id": "test_action/00000000-0000-0000-0000-000000000000",
+  "action_type": "decide",
+  "canonicalization_id": "jcs",
+  "capsule_id": "8c0ee756765b62206b222884cde80ded483a4ad34e6b38c9a73c3a4d37d8d45e",
+  "chain": {
+    "parent_capsule_id": "2020202020202020202020202020202020202020202020202020202020202020",
+    "relation": "confirms"
+  },
+  "developer": "test-agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "key_id": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+  "operator": "test-org",
+  "signature": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d696404582003a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b80127a058208c0ee756765b62206b222884cde80ded483a4ad34e6b38c9a73c3a4d37d8d45e5840ce6ecf25bdce4e90f18e5550aa402146e0214fca75346fdf98bb320d17769f18024175afefd1b4207e1ed2bf538bdf989eaf33551a7201f43e965324c29c0a03",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-08-24T00:00:00Z"
+}

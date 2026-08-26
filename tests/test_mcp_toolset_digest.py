@@ -20,11 +20,11 @@ import copy
 import hashlib
 
 import pytest
-from agent_action_capsule import verify
 from agent_action_capsule.canonical import json_digest
 
 from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter, _project_toolset
+from capsule_emit.verification import verify_capsule as verify
 
 
 def _emitter(tmp_path, **kw) -> MCPCapsuleEmitter:

@@ -24,7 +24,7 @@ import json
 import sys
 from pathlib import Path
 
-from agent_action_capsule import verify as capsule_verify
+from capsule_emit.verification import verify_capsule as capsule_verify
 
 
 def _raw_ed25519_hex_to_pem(pubkey_hex: str) -> bytes:

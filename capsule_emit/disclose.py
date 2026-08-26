@@ -358,19 +358,22 @@ def _now_iso() -> str:
 
 def _seal_record(record: dict, ledger_path: str, *, signer: Any = None, signing_key_path: Any = None) -> dict:
     """Sign ``record`` with the producer's own :class:`~capsule_emit.signing.Signer`
-    (the same one ``seal()`` uses for this ledger) and fold ``capsule_id``
-    in over the FULL persisted dict — the identical sequencing
-    ``capsule_emit.core._emit_capsule`` uses for capsules, which is what
-    lets ``capsule_emit.signing.verify_capsule_signature`` verify a
-    disclosure record unmodified: it operates on any dict with
-    ``signature``/``key_id``/``capsule_id``, not just capsules."""
+    (the same one ``seal()`` uses for this ledger) — the identical sequencing
+    ``capsule_emit.core._emit_capsule`` uses for capsules, which is what lets
+    ``capsule_emit.signing.verify_capsule_signature`` verify a disclosure
+    record unmodified: it operates on any dict with
+    ``signature``/``key_id``/``capsule_id``, not just capsules. ``capsule_id``
+    is a pure content address (excludes only itself plus ``signature``/
+    ``key_id`` — see ``capsule_emit.canonicalization``), so it is computed
+    and set once, then signed; no fold-in, no recompute after signing."""
     from . import signing as _signing
     from .canonicalization import compute_capsule_id
 
-    content_digest = compute_capsule_id(record)
-    signer_obj = _signing.resolve_signer(ledger_path, signer=signer, key_path=signing_key_path)
-    record["signature"], record["key_id"] = signer_obj.sign(content_digest.encode("ascii"))
     record["capsule_id"] = compute_capsule_id(record)
+    signer_obj = _signing.resolve_signer(ledger_path, signer=signer, key_path=signing_key_path)
+    record["signature"], record["key_id"] = _signing.sign_producer_envelope(
+        signer_obj, record["capsule_id"]
+    )
     return record
 
 

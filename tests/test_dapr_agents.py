@@ -21,9 +21,9 @@ import asyncio
 import warnings
 
 import pytest
-from agent_action_capsule import verify
 
 from capsule_emit.adapters.dapr_agents import DaprAgentsCapsuleEmitter
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Helpers

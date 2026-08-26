@@ -1,0 +1,11 @@
+{
+  "format_version": "1",
+  "profile": "draft-mih-scitt-agent-action-capsule-04#producer-envelope",
+  "generator": "capsule_emit.signing.sign_producer_envelope (LocalKeypairSigner.sign_envelope, reuses scitt_cose.cose_sign1.sign_sign1)",
+  "cases": [
+    {
+      "name": "valid",
+      "description": "seal()'s real code path over a fixed capsule body + fixed test key"
+    }
+  ]
+}

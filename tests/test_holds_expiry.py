@@ -6,13 +6,13 @@ from __future__ import annotations
 import json
 
 import pytest
-from agent_action_capsule import verify
 
 from capsule_emit.approval import seal_approval
 from capsule_emit.canonicalization import compute_capsule_id
 from capsule_emit.holds import Action, HoldEngine, HoldStatus
 from capsule_emit.holds.errors import HOLD_ALREADY_TERMINAL, HOLD_STATUS_AMBIGUOUS
 from capsule_emit.ledger import read_ledger
+from capsule_emit.verification import verify_capsule as verify
 
 DEVELOPER = "procurement-agent@v1"
 OPERATOR = "acme-research"
@@ -259,6 +259,9 @@ def test_hold_status_honors_declared_jcs(tmp_path):
     reserve = engine.evaluate_and_reserve(_action(amount_minor=1_000, target="acct-1"))
 
     record = dict(reserve.capsule)
+    # format_version '4' REQUIRES canonicalization_id='jcs' upstream (§5.1) --
+    # hold records default to the vintage '2' (capsules.py's _FORMAT_VERSION),
+    # so bump it to pair with the declared 'jcs' this probe exercises.
     record["format_version"] = "4"
     record["canonicalization_id"] = "jcs"
     record["canonicalization_probe"] = {"null_member": None, "empty_array": []}

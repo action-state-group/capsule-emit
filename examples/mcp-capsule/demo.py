@@ -13,7 +13,7 @@ Shows the capsule-emit + MCP compose pattern end-to-end:
   4. Swap    — simulate a post-trust tool-description swap (the NSA CSI
                "MCP: Security Design Considerations" attack shape) and watch
                the digest change land as a visible boundary in the chain
-  5. Verify  — any party, offline: agent-action-capsule verify
+  5. Verify  — any party, offline: capsule-emit verify --store
 
 Run:
     pip install "capsule-emit[dev]"
@@ -41,7 +41,7 @@ server.  The capsule commits INPUT and OUTPUT by SHA-256 digest (canonical
 JSON); raw values stay local.
 
 Verify bytes offline:
-    agent-action-capsule verify --store ledger.jsonl
+    capsule-emit verify --store ledger.jsonl
 
 Verify inclusion on the public log (after anchoring):
     agent-action-capsule verify --transparent statement.cose ...
@@ -54,10 +54,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from agent_action_capsule import verify
-
 from capsule_emit import ledger_view, read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
+from capsule_emit.verification import verify_capsule as verify
 
 LEDGER_PATH = Path(tempfile.mkdtemp()) / "mcp_capsule_ledger.jsonl"
 
@@ -225,7 +224,7 @@ def run_demo(anchor: bool) -> int:
     # Step 5 — CLI verify (what an auditor runs offline from the bytes)
     # -----------------------------------------------------------------------
     print("CLI verify (offline — from the ledger bytes, no network needed):")
-    cmd = ["agent-action-capsule", "verify", "--store", str(LEDGER_PATH)]
+    cmd = ["capsule-emit", "verify", "--store", str(LEDGER_PATH)]
     print(f"  $ {' '.join(cmd)}")
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:

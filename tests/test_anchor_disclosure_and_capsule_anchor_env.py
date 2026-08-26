@@ -29,7 +29,6 @@ egress, including this legacy channel):
 from __future__ import annotations
 
 import builtins
-import warnings
 
 import pytest
 
@@ -316,8 +315,21 @@ def test_capsule_anchor_unset_defaults_to_off(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# missing optional anchor dependency: plain, one-time, not cryptic-per-call
+# missing scitt_cose: fails seal() itself now, loudly
 # ---------------------------------------------------------------------------
+#
+# **draft-04 reversal ([capsule-cose-sign1], 2026-08-24):** ``scitt_cose``
+# stopped being an anchor-channel-only optional extra the moment every
+# ``seal()``/``carry()``/``compose()`` call started building a mandatory
+# COSE_Sign1 producer envelope (``capsule_emit.signing.LocalKeypairSigner
+# .sign_envelope``, reusing ``scitt_cose.cose_sign1``) -- it is now a hard
+# runtime dependency of core sealing, pulled in transitively via
+# ``agent-action-capsule[anchor,envelope]`` (see ``pyproject.toml``). A
+# correctly installed capsule-emit therefore always has it; simulating its
+# absence now means a broken install, and the correct behavior is to fail
+# fast and clearly at the point of signing -- not to degrade gracefully
+# (there is nothing to gracefully degrade: "every capsule is signed, always"
+# has no off switch, per ``capsule_emit.core``'s module docstring).
 
 
 @pytest.fixture
@@ -332,42 +344,7 @@ def _missing_scitt_cose(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
 
-def test_missing_dependency_prints_plain_notice_once(tmp_path, _missing_scitt_cose, capsys):
+def test_missing_scitt_cose_fails_seal_fast_and_clearly(tmp_path, _missing_scitt_cose):
     ledger = str(tmp_path / "ledger.jsonl")
-    for i in range(3):
-        seal({"x": i}, action=f"a{i}", operator="acme", anchor=True, witness=True, ledger=ledger)
-
-    err = capsys.readouterr().err
-    assert err.count("the optional SCITT anchor dependency isn't installed") == 1, (
-        "the plain dependency notice must print exactly once, not once per capsule"
-    )
-    assert "pip install" in err
-
-
-def test_missing_dependency_does_not_warn_cryptically_at_exit(tmp_path, _missing_scitt_cose):
-    """Historical bug: a bare ModuleNotFoundError repr surfaced only as a
-    RuntimeWarning at interpreter shutdown, for whichever futures happened to
-    still be pending. Once the plain notice has fired, the atexit sweep must
-    not also emit the cryptic per-capsule warning for the same cause."""
-    ledger = str(tmp_path / "ledger.jsonl")
-    seal({"x": 1}, action="a", operator="acme", anchor=True, witness=True, ledger=ledger)
-    # Give the background worker a moment to fail (fast: import error, no I/O).
-    import time
-
-    time.sleep(0.2)
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        core._join_pending_anchors_at_exit()
-
-    cryptic = [w for w in caught if "ModuleNotFoundError" in str(w.message)]
-    assert cryptic == [], f"expected no cryptic per-capsule warning, got: {cryptic}"
-
-
-def test_missing_dependency_never_reports_anchored_true(tmp_path, _missing_scitt_cose):
-    r = seal(
-        {"x": 1}, action="a", operator="acme", anchor=True, witness=True, anchor_wait=2.0,
-        ledger=str(tmp_path / "ledger.jsonl"),
-    )
-    assert r.anchored is False
-    assert r.anchor_status == "failed"
+    with pytest.raises(ModuleNotFoundError, match="scitt_cose"):
+        seal({"x": 1}, action="a", operator="acme", anchor=False, witness=False, ledger=ledger)

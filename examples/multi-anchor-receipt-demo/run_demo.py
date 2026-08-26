@@ -39,10 +39,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from agent_action_capsule import verify as capsule_verify
 from scitt_cose import verify_receipt
 
 from capsule_emit import seal
+from capsule_emit.verification import verify_capsule as capsule_verify
 
 # ---------------------------------------------------------------------------
 # Helpers

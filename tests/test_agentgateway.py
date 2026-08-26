@@ -121,14 +121,14 @@ def test_capsule_runtime_is_agentgateway(server_and_stubs):
 
 def test_capsule_verifies_ok(server_and_stubs):
     """Capsule sealed via gRPC round-trip verifies ok=True offline."""
-    from agent_action_capsule import verify
+    from capsule_emit.verification import verify_capsule
     ledger, req, resp = server_and_stubs
     _call(req, resp,
           tool_name="place_order",
           arguments={"amount": 500},
           tool_result={"ref": "PO-123"})
     records = read_ledger(ledger)
-    vr = verify(records[0])
+    vr = verify_capsule(records[0])
     assert vr.ok, [f.detail for f in vr.findings]
 
 
@@ -136,7 +136,7 @@ def test_tampered_capsule_fails_verify(server_and_stubs):
     """One byte tampered in the output digest → verify fails."""
     import copy
 
-    from agent_action_capsule import verify
+    from capsule_emit.verification import verify_capsule
     ledger, req, resp = server_and_stubs
     _call(req, resp, tool_name="send_payment", arguments={"to": "alice"}, tool_result={"tx": "abc"})
     raw = read_ledger(ledger)[0]
@@ -144,7 +144,7 @@ def test_tampered_capsule_fails_verify(server_and_stubs):
     ca = tampered["model_attestation"]["compute_attestation"]
     d = ca["agent_output_digest"]
     ca["agent_output_digest"] = d[:-1] + ("0" if d[-1] != "0" else "1")
-    vr = verify(tampered)
+    vr = verify_capsule(tampered)
     assert not vr.ok
 
 

@@ -375,6 +375,8 @@ class TestVintageRule:
         assert compute_capsule_id(legacy) == legacy["capsule_id"]
 
     def test_explicit_null_is_the_signed_vintage_shape(self, tmp_path):
+        from capsule_emit.signing import sign_producer_envelope
+
         r = _emit_no_anchor()
         vintage = {
             key: value
@@ -386,13 +388,21 @@ class TestVintageRule:
         # string canonicalization_id (§5.1), which an explicit null is not.
         vintage["format_version"] = "2"
         signer = LocalKeypairSigner(tmp_path / "vintage-signing-key.pem")
-        content_digest = compute_capsule_id(vintage)
-        vintage["signature"], vintage["key_id"] = signer.sign(content_digest.encode("ascii"))
         vintage["capsule_id"] = compute_capsule_id(vintage)
+        vintage["signature"], vintage["key_id"] = sign_producer_envelope(
+            signer, vintage["capsule_id"]
+        )
 
         explicit_null = dict(vintage, canonicalization_id=None)
         assert compute_capsule_id(explicit_null) == vintage["capsule_id"]
         assert verify_capsule_signature(explicit_null)
+        # NOT verify_store_signed: upstream agent_action_capsule's Class-1
+        # structural check independently requires canonicalization_id, when
+        # PRESENT, to be a string (§5.1) -- explicit null fails that check
+        # even though it is a well-formed vintage capsule_id/signature by
+        # capsule-emit's own (more tolerant) dispatch, exercised above and
+        # via verify_canonicalization_id below. That upstream structural
+        # rule is unrelated to and unchanged by [capsule-cose-sign1].
 
         # Canonicalization-layer equivalence still holds: a null-valued slot
         # digests identically to an absent one (resolve_canonicalization_id

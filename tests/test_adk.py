@@ -15,9 +15,8 @@ import asyncio
 import hashlib
 import json
 
-from agent_action_capsule import verify
-
 from capsule_emit.adapters.adk import ADKCapsuleEmitter
+from capsule_emit.verification import verify_capsule as verify
 
 # --------------------------------------------------------------------------
 # Fakes (stand in for ADK objects; no model / Runner needed)

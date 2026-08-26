@@ -18,7 +18,7 @@ Run this script, then verify with:
 or equivalently:
 
     python3 -c "
-    from agent_action_capsule import verify_store
+    from capsule_emit.verification import verify_store
     results = verify_store('examples/amaury-receipt-pack/sample_ledger.jsonl')
     for r in results: print(r.capsule_id[:16], 'ok' if r.ok else 'FAIL', r.findings)
     "

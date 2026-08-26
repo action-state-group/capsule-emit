@@ -79,7 +79,7 @@ def test_seal_rejects_nonmoney_float_in_agent_output(tmp_ledger):
 
 def test_seal_accepts_nonmoney_values_as_strings(tmp_ledger):
     """Same shapes as the mutants above, with floats encoded as exact strings."""
-    from agent_action_capsule import verify
+    from capsule_emit.verification import verify_capsule as verify
 
     cap = seal(
         {

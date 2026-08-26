@@ -34,11 +34,11 @@ import tempfile
 from pathlib import Path
 
 import grpc
-from agent_action_capsule import verify
 
 from capsule_emit import read_ledger
 from capsule_emit.adapters import ext_mcp_pb2
 from capsule_emit.adapters.agentgateway import CapsuleEmitServicer, _make_server
+from capsule_emit.verification import verify_capsule as verify
 
 
 def _free_port() -> int:

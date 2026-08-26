@@ -7,8 +7,9 @@ core emission path (``seal()``/``carry()``/``compose()`` via
 ``agent_action_capsule.emit()``) at the top-level ``canonicalization_id``
 field (the self-describing binding slot, inside the signed payload). It
 names the digest algorithm used to compute ``capsule_id``: RFC 8785 plain
-JCS; SHA-256; lowercase hex. Registered in the CPB Payload Canonicalization
-Algorithm Registry (draft-mih-sokolov-scitt-payload-binding).
+JCS (no absent-field normalization); SHA-256; lowercase hex. Registered in
+the CPB Payload Canonicalization Algorithm Registry
+(draft-mih-sokolov-scitt-payload-binding).
 
 Canonicalization FOLLOWS ``format_version`` — it is not a single global
 default. ``agent_action_capsule.emit()`` builds only ``format_version``
@@ -21,6 +22,18 @@ the format-2 vintage path (``capsule_emit/holds/capsules.py``, which builds
 an ``agent_action_capsule.Capsule`` directly and MUST NOT declare
 ``canonicalization_id`` at all per §5.1). Do not repoint this constant to
 ``"jcs-n"``, and do not use it as a default for verifying format-2 records.
+
+**draft-04 reversal (2026-08-24, [capsule-cose-sign1]):** the profile default
+moved from ``jcs-n`` to ``jcs`` — plain JCS excluding only ``capsule_id``, so
+``chain`` (parent_capsule_id/relation) is now committed into the preimage
+too, closing the prior unauthenticated-chain gap. ``jcs-n`` (absent-field
+normalization, chain excluded) is verification-only from here on, for
+records minted before this reversal.
+
+This constant is the single declaration point for the core-path profile's
+algorithm. When the profile revs again, the change is one edit here;
+sealing callers (seal()/carry()/compose()) need no update because the value
+is wired through as a parameter default, not hardcoded at each call site.
 
 Wire rule (normative in CPB — already enforced by agent_action_capsule.canonical):
   A JSON number token in a digest-bearing field MUST match ``0|-?[1-9][0-9]*``
@@ -47,11 +60,15 @@ from agent_action_capsule.canonical import FloatInDigestError
 
 #: Identifier recorded in the self-describing binding slot (``canonicalization_id``
 #: at the top level of every core-path emitted capsule, inside the signed payload).
-#: Core-path default: ``jcs`` (RFC 8785 plain JCS + SHA-256) — REQUIRED by
-#: ``agent_action_capsule.emit()``'s ``format_version`` ``"4"`` (§5.1). The
-#: format-2 vintage profile (``jcs-n``) is a separate constant — see
-#: :data:`capsule_emit.canonicalization.VINTAGE_CANONICALIZATION_ID` — used only
-#: by the format-2 holds path, which never declares this field.
+#: Core-path default: ``jcs`` (plain RFC 8785 JCS, excluding only capsule_id —
+#: chain is committed; SHA-256) — REQUIRED by ``agent_action_capsule.emit()``'s
+#: ``format_version`` ``"4"`` (§5.1). The format-2 vintage profile (``jcs-n``,
+#: absent-field normalization, chain excluded) is a separate constant, used
+#: only for verifying pre-reversal records — see
+#: :data:`capsule_emit.canonicalization.VINTAGE_CANONICALIZATION_ID`.
+#: When the profile revs again: change this constant only — the internal
+#: primitive accepts it as a parameter default, so all call sites (via
+#: seal()/carry()/compose()) update automatically.
 CANONICALIZATION_ID: str = "jcs"
 
 __all__ = ["CANONICALIZATION_ID", "float_to_str"]

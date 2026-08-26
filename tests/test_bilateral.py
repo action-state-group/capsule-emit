@@ -305,7 +305,16 @@ def test_e2e_full_handshake_and_verify(tmp_path):
 
     assert rec_final.state is BilateralState.BILATERAL
 
-    # 4. Pair-verify
-    pvr = verify_pair(cap_a.capsule, cap_b.capsule)
+    # 4. Pair-verify — agent_action_capsule.bilateral.verify_pair recomputes
+    # capsule_id via the neutral, capsule-emit-unaware dispatch (excludes
+    # only capsule_id itself), so capsule-emit's own local bookkeeping
+    # (signature/key_id — the COSE_Sign1 producer envelope and its key;
+    # never neutral Capsule members, see capsule_emit.canonicalization) must
+    # be stripped first, same as any other neutral-verifier boundary
+    # ([capsule-cose-sign1] draft-04 reversal, 2026-08-24).
+    def _neutral(capsule):
+        return {k: v for k, v in capsule.items() if k not in ("signature", "key_id")}
+
+    pvr = verify_pair(_neutral(cap_a.capsule), _neutral(cap_b.capsule))
     assert pvr.ok, pvr.findings
     assert pvr.shared_digest == DIGEST

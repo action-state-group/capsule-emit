@@ -17,11 +17,10 @@ import os
 import sys
 import tempfile
 
-from agent_action_capsule import verify
-
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 from capsule_emit.constraints.apache import AmountUnderCap, VendorKnown
 from capsule_emit.gate import GateBlockedError, gate_and_emit
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Shared emitter (anchor=False — no network call in the demo)

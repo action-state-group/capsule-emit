@@ -15,12 +15,12 @@
 from __future__ import annotations
 
 import pytest
-from agent_action_capsule import verify
 
 from capsule_emit import read_ledger
 from capsule_emit.adapters.crewai import CrewAICapsuleEmitter
 from capsule_emit.adapters.hermes import HermesCapsuleEmitter
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers

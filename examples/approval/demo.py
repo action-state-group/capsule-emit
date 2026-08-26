@@ -21,13 +21,12 @@ import json
 import os
 import tempfile
 
-from agent_action_capsule import verify
-
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 from capsule_emit.approval import list_pending, seal_approval
 from capsule_emit.constraints.apache import AmountUnderCap, VendorKnown
 from capsule_emit.gate import gate_and_emit
 from capsule_emit.ledger import view_chains
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Setup — temp ledger, no network

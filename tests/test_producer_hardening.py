@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import pytest
-from agent_action_capsule import verify
 from agent_action_capsule.contracts import InvariantError
 
 from capsule_emit import seal
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # Fixture

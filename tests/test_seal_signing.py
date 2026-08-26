@@ -72,19 +72,64 @@ def test_tampering_with_signed_content_invalidates_signature(tmp_path, monkeypat
     assert not verify_capsule_signature(wrong_key)
 
 
-def test_capsule_id_commits_to_signature_and_key_id(tmp_path, monkeypatch):
-    """capsule_id is computed AFTER signature/key_id are added, so it commits
-    to them too -- stripping or swapping either changes capsule_id, which is
-    exactly what lets agent_action_capsule.verify()'s digest-integrity check
-    (a separate, unmodified layer) catch tampering with the signature itself."""
-    from agent_action_capsule.canonical import compute_capsule_id
+def test_capsule_id_is_signer_independent(tmp_path, monkeypatch):
+    """[capsule-cose-sign1] draft-04 reversal: capsule_id is a PURE content
+    address again -- computed over the signature-free payload, exactly as
+    pre-#94. signature/key_id are added to the dict AFTER capsule_id is
+    computed and set, and are permanently excluded from its preimage (see
+    capsule_emit.canonicalization), so stripping or swapping either one
+    does NOT change capsule_id -- the opposite of the pre-reversal
+    fold-in. Two signers over identical content now produce the SAME
+    capsule_id (see test_two_signers_over_identical_content_share_one_capsule_id)."""
+    from capsule_emit.canonicalization import compute_capsule_id
 
     monkeypatch.chdir(tmp_path)
     capsule = seal({"amount": 5}, anchor=False, witness=False).capsule
     assert capsule["capsule_id"] == compute_capsule_id(capsule)
 
     stripped = {k: v for k, v in capsule.items() if k not in ("signature", "key_id")}
-    assert compute_capsule_id(stripped) != capsule["capsule_id"]
+    assert compute_capsule_id(stripped) == capsule["capsule_id"]
+
+    swapped = dict(capsule, signature="00" * 32, key_id="11" * 32)
+    assert compute_capsule_id(swapped) == capsule["capsule_id"]
+
+
+def test_two_signers_over_identical_content_share_one_capsule_id(tmp_path, monkeypatch):
+    """[capsule-cose-sign1] MANAGER FLAG 4(b): two signers, same content ->
+    ONE shared capsule_id, TWO distinct COSE_Sign1 envelopes, order-
+    independent (the content-unique-not-record-unique semantic). Within a
+    single producer, behavior is identical to before the reversal (Ed25519
+    is deterministic, RFC 8032) -- this is the cross-signer case the
+    reversal exists for. Build ONE capsule (so content -- including its
+    per-event action_id/timestamp uniqueness fields, MANAGER FLAG 4(c) --
+    is held fixed) and sign its SAME capsule_id independently with two
+    different keys, rather than two separate seal() calls (which would
+    mint two distinct events with two distinct action_ids)."""
+    from capsule_emit.signing import sign_producer_envelope
+
+    monkeypatch.chdir(tmp_path)
+    base = seal({"amount": 5}, anchor=False, witness=False).capsule
+    capsule_id = base["capsule_id"]
+
+    alice = LocalKeypairSigner(tmp_path / "alice.pem")
+    bob = LocalKeypairSigner(tmp_path / "bob.pem")
+    alice_envelope, alice_key_id = sign_producer_envelope(alice, capsule_id)
+    bob_envelope, bob_key_id = sign_producer_envelope(bob, capsule_id)
+
+    assert alice_key_id != bob_key_id
+    assert alice_envelope != bob_envelope
+
+    from_alice = dict(base, signature=alice_envelope, key_id=alice_key_id)
+    from_bob = dict(base, signature=bob_envelope, key_id=bob_key_id)
+
+    # Same capsule_id, unaffected by which signer's envelope is attached.
+    assert from_alice["capsule_id"] == from_bob["capsule_id"] == capsule_id
+    assert verify_capsule_signature(from_alice)
+    assert verify_capsule_signature(from_bob)
+    # Order-independent: each envelope verifies on its own, regardless of
+    # which was attached/checked first.
+    assert verify_capsule_signature(from_bob)
+    assert verify_capsule_signature(from_alice)
 
 
 def test_verify_capsule_signature_never_raises_on_malformed_input():
@@ -195,42 +240,45 @@ def test_rotation_persists_the_new_key(tmp_path):
 
 def test_rotation_landing_between_sign_and_label_cannot_mismatch(tmp_path, monkeypatch):
     """[O16-13-signer-tuple-fix] Forces the exact race the PR #80 gate review
-    flagged: a `rotate()` landing between a capsule's signature being
-    computed and its `key_id` being read to label it. Under the old
-    `sign(payload) -> str` + separately-read mutable `.key_id` attribute
-    shape, `_emit_capsule` did `capsule["signature"] = signer.sign(...)` then
-    `capsule["key_id"] = signer.key_id` as two unsynchronized steps, so a
-    rotation racing in between would mint a capsule signed by the OLD key but
-    labeled with the NEW key_id -- an honestly-produced capsule that fails
-    verification. The frozen §7d atomic `sign(bytes) -> (signature, key_id)`
-    return closes the window: `_emit_capsule` now assigns both fields from
-    ONE `sign()` call, so it can only ever see a signature and key_id pulled
-    from the same key.
+    flagged: a `rotate()` landing between a capsule's producer envelope being
+    built and its `key_id` being read to label it. Under a hypothetical
+    `sign_envelope(payload) -> bytes` + separately-read mutable `.key_id`
+    attribute shape, `_emit_capsule` would set `capsule["signature"]` then
+    `capsule["key_id"]` as two unsynchronized steps, so a rotation racing in
+    between would mint a capsule enveloped by the OLD key but labeled with
+    the NEW key_id -- an honestly-produced capsule that fails verification.
+    The frozen §7d atomic `sign_envelope(bytes) -> (envelope, key_id)` return
+    (see `LocalKeypairSigner.sign_envelope`, [capsule-cose-sign1]) closes the
+    window the same way `sign()` always has: both the key and its `key_id`
+    are read from ONE lock-protected snapshot inside the same call, so
+    `_emit_capsule` can only ever see an envelope and key_id pulled from the
+    same key.
 
     This test forces the worst-case timing directly: the signer rotates
-    itself immediately after computing the (signature, key_id) pair `sign()`
-    is about to return, simulating another writer's `rotate()` landing in
-    that exact window. If `_emit_capsule` re-read `signer.key_id` afterward
-    (the old shape), it would observe the NEW key_id and the capsule would
-    fail to verify. It doesn't: the capsule is labeled with the key_id
-    `sign()` actually returned, paired with the signature that key produced.
+    itself immediately after computing the (envelope, key_id) pair
+    `sign_envelope()` is about to return, simulating another writer's
+    `rotate()` landing in that exact window. If `_emit_capsule` re-read
+    `signer.key_id` afterward (the flawed shape), it would observe the NEW
+    key_id and the capsule would fail to verify. It doesn't: the capsule is
+    labeled with the key_id `sign_envelope()` actually returned, paired with
+    the envelope that key produced.
     """
     monkeypatch.chdir(tmp_path)
     signer = LocalKeypairSigner(tmp_path / "ledger.jsonl.signing_key.pem")
-    real_sign = LocalKeypairSigner.sign
+    real_sign_envelope = LocalKeypairSigner.sign_envelope
 
-    def sign_then_rotate_underneath(self, payload):
-        signature_hex, key_id = real_sign(self, payload)
+    def sign_envelope_then_rotate_underneath(self, payload):
+        envelope_hex, key_id = real_sign_envelope(self, payload)
         self.rotate()  # a concurrent writer's rotation, landing right now
-        return signature_hex, key_id
+        return envelope_hex, key_id
 
-    monkeypatch.setattr(LocalKeypairSigner, "sign", sign_then_rotate_underneath)
+    monkeypatch.setattr(LocalKeypairSigner, "sign_envelope", sign_envelope_then_rotate_underneath)
 
     result = seal({"n": 1}, anchor=False, witness=False, signer=signer)
 
     # The signer has since moved on to a new key (the simulated concurrent
     # rotation actually happened) -- but the minted capsule must still carry
-    # the OLD key_id, atomically paired with the signature the OLD key made.
+    # the OLD key_id, atomically paired with the envelope the OLD key made.
     assert result.key_id != signer.key_id
     assert result.capsule["key_id"] == result.key_id
     assert verify_capsule_signature(result.capsule)
