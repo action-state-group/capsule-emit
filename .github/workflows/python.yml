@@ -31,7 +31,7 @@ jobs:
           "git+https://github.com/action-state-group/capsule-anchor.git"
 
       - name: install capsule-emit
-        run: pip install -e ".[dev,agentgateway]"
+        run: pip install -e ".[dev,agentgateway,langchain]"
 
       - name: ruff
         run: python -m ruff check .
