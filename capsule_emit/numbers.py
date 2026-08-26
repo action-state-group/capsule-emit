@@ -1,19 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 """Number-rule and canonicalization identifier for digest-bearing capsule fields.
 
-``CANONICALIZATION_ID`` — the profile default identifier recorded in every
-emitted capsule at the top-level ``canonicalization_id`` field (the
-self-describing binding slot — composition's additional-bindings mechanism,
-inside the signed payload). It names the digest algorithm used to compute
-``capsule_id``: RFC 8785 JCS over absent-field-normalised JSON; SHA-256;
-lowercase hex. Registered in the CPB Payload Canonicalization Algorithm
-Registry (draft-mih-sokolov-scitt-payload-binding).
+``CANONICALIZATION_ID`` — the profile default identifier recorded by the
+core emission path (``seal()``/``carry()``/``compose()`` via
+``capsule_emit.core._emit_capsule``, which delegates to
+``agent_action_capsule.emit()``) at the top-level ``canonicalization_id``
+field (the self-describing binding slot, inside the signed payload). It
+names the digest algorithm used to compute ``capsule_id``: RFC 8785 plain
+JCS; SHA-256; lowercase hex. Registered in the CPB Payload Canonicalization
+Algorithm Registry (draft-mih-sokolov-scitt-payload-binding).
 
-This constant is the single declaration point for the capsule profile's
-algorithm. When the profile revs from ``jcs-n`` to ``jcs`` (plan G5/A8) the
-change is one edit here; sealing callers (seal()/carry()/compose()) need no
-update because the value is wired through as a parameter default, not
-hardcoded at each call site.
+Canonicalization FOLLOWS ``format_version`` — it is not a single global
+default. ``agent_action_capsule.emit()`` builds only ``format_version``
+``"4"`` (draft-04) and REQUIRES ``canonicalization_id="jcs"`` (§5.1); since
+the core path always delegates to that ``emit()``, this constant is pinned
+to ``"jcs"``. The vintage ``format_version`` ``"2"`` profile
+(``"jcs-n"``, JCS + absent-field normalization) is a *separate* value —
+``capsule_emit.canonicalization.VINTAGE_CANONICALIZATION_ID`` — used only by
+the format-2 vintage path (``capsule_emit/holds/capsules.py``, which builds
+an ``agent_action_capsule.Capsule`` directly and MUST NOT declare
+``canonicalization_id`` at all per §5.1). Do not repoint this constant to
+``"jcs-n"``, and do not use it as a default for verifying format-2 records.
 
 Wire rule (normative in CPB — already enforced by agent_action_capsule.canonical):
   A JSON number token in a digest-bearing field MUST match ``0|-?[1-9][0-9]*``
@@ -39,12 +46,13 @@ import math
 from agent_action_capsule.canonical import FloatInDigestError
 
 #: Identifier recorded in the self-describing binding slot (``canonicalization_id``
-#: at the top level of every emitted capsule, inside the signed payload).
-#: Profile default: ``jcs-n`` (RFC 8785 JCS + absent-field normalization + SHA-256).
-#: When the capsule profile revs to ``jcs`` (plan G5/A8): change this constant only —
-#: the internal primitive accepts it as a parameter default, so all call sites
-#: (via seal()/carry()/compose()) update automatically.
-CANONICALIZATION_ID: str = "jcs-n"
+#: at the top level of every core-path emitted capsule, inside the signed payload).
+#: Core-path default: ``jcs`` (RFC 8785 plain JCS + SHA-256) — REQUIRED by
+#: ``agent_action_capsule.emit()``'s ``format_version`` ``"4"`` (§5.1). The
+#: format-2 vintage profile (``jcs-n``) is a separate constant — see
+#: :data:`capsule_emit.canonicalization.VINTAGE_CANONICALIZATION_ID` — used only
+#: by the format-2 holds path, which never declares this field.
+CANONICALIZATION_ID: str = "jcs"
 
 __all__ = ["CANONICALIZATION_ID", "float_to_str"]
 

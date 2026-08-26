@@ -578,10 +578,12 @@ def _emit_capsule(
             to compute ``capsule_id``.  Written into the top-level
             ``canonicalization_id`` field (the self-describing binding slot —
             inside the signed payload, committed to ``capsule_id``).  Default is
-            ``CANONICALIZATION_ID`` (``"jcs-n"``).  Pass a different registered
-            value (e.g. ``"jcs"``) when the profile under which this capsule is
-            sealed changes.  The value propagates through the constant —
-            call sites need no change when the profile revs.
+            ``CANONICALIZATION_ID`` (``"jcs"``) — this path always delegates to
+            ``agent_action_capsule.emit()``, which builds only ``format_version``
+            ``"4"`` and REQUIRES ``canonicalization_id="jcs"`` (§5.1). Pass a
+            different registered value only for deliberate negative/mutant
+            testing — a mismatched declaration makes the resulting capsule fail
+            verification's ``canonicalization_profile_mismatch`` check by design.
         signer: Bring your own :class:`~capsule_emit.signing.Signer` (KMS,
             HSM, TPM, or any object with ``.sign(bytes) -> (signature,
             key_id)``) to sign this capsule with instead of the default

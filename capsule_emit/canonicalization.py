@@ -16,6 +16,13 @@ from agent_action_capsule.canonical import CHAIN_LINKAGE_FIELDS, jcs, normalize
 
 VINTAGE_CANONICALIZATION_ID = "jcs-n"
 
+#: Fields excluded from the ``jcs`` (format-4) Capsule-ID preimage: only
+#: ``capsule_id`` itself. Unlike the vintage ``jcs-n`` profile, ``chain`` IS
+#: committed under ``jcs`` — matches ``agent_action_capsule.canonical.compute_capsule_id``'s
+#: own algorithm-conditional exclusion (present ``canonicalization_id`` removes
+#: only ``capsule_id``; absent/vintage removes ``capsule_id`` and ``chain``).
+_JCS_EXCLUDED_FIELDS = ("capsule_id",)
+
 
 class UnsupportedCanonicalizationError(ValueError):
     """The declared algorithm cannot be recomputed from a capsule object."""
@@ -37,15 +44,20 @@ def canonical_capsule_bytes(capsule: dict[str, Any]) -> bytes:
     """Return the canonical Capsule ID preimage selected by the capsule.
 
     Records without a ``canonicalization_id`` predate the binding slot and
-    retain the legacy ``jcs-n`` interpretation. ``as-transmitted`` is not
-    available here because parsing a wire record discards its original bytes.
+    retain the legacy ``jcs-n`` interpretation, which excludes both
+    ``capsule_id`` and ``chain`` (§5.1 vintage rule). The ``jcs`` (format-4)
+    profile excludes only ``capsule_id`` — ``chain`` IS committed, matching
+    ``agent_action_capsule.canonical.compute_capsule_id``. ``as-transmitted``
+    is not available here because parsing a wire record discards its
+    original bytes.
     """
-    canonical = {key: value for key, value in capsule.items() if key not in CHAIN_LINKAGE_FIELDS}
     algorithm = resolve_canonicalization_id(capsule)
 
     if algorithm == "jcs-n":
+        canonical = {key: value for key, value in capsule.items() if key not in CHAIN_LINKAGE_FIELDS}
         return jcs(normalize(canonical))
     if algorithm == "jcs":
+        canonical = {key: value for key, value in capsule.items() if key not in _JCS_EXCLUDED_FIELDS}
         return jcs(canonical)
     raise UnsupportedCanonicalizationError(
         f"cannot compute capsule_id with canonicalization_id {algorithm!r}"
