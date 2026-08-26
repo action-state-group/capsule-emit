@@ -399,6 +399,49 @@ stamps but has none that verify at all is fatal (`ok=False`).
 the point of "standalone": a bundle survives being written to a file and
 handed to someone else's process.
 
+### `checkpoint_cose` — the COSE_Sign1 wire form ([cll-checkpoint-cose-wire])
+
+`Bundle.checkpoint_cose` carries the covering checkpoint as a COSE_Sign1
+statement over a CBOR claims map, built once at production time (in
+`witness._build_and_register`, the only place the signing key is actually
+available) and carried through unchanged from there on — `bundle()` never
+re-signs anything. `None` for a bundle built from a ledger predating this
+field, or if the COSE serialization failed at production time (best-effort;
+never blocks the JSON checkpoint path).
+
+Where a JSON `CheckpointRecord` uses dev-ergonomic field names,
+`checkpoint_cose`'s CBOR claims use the CLL I-D's own §3 spec names —
+`log_size`/`commitment`/`prev_commitment`/`issued_at` instead of
+`mmr_size`/`root`/`prev_root`/`timestamp`, `log_id` moved onto the signed
+CWT `iss` header, `key_id` onto the COSE `kid` header. The full dev↔I-D
+field-mapping table lives in
+`capsule_emit/checkpoint/cose_wire.py`'s module docstring (this is the
+[cll-id-field-mapping-doc] resolution: ship the mapping table, don't rename
+`CheckpointRecord`'s own fields).
+
+If the checkpoint has a prior, the claims ALSO carry a real MMR consistency
+(extension) proof — not just the `prev_size`/`prev_commitment` fields —
+because those fields alone are exactly as trustable as any other
+self-reported string: `verify_checkpoint_cose_offline` independently
+recomputes whether the claimed `prev_commitment` peaks actually bag up to
+the claimed `commitment`, and rejects a checkpoint whose continuity is
+merely asserted, not proven (same anti-REWRITE-not-anti-FORK honesty as
+`verify_bundle`'s own consistency check above).
+
+```python
+from capsule_emit.checkpoint.cose_wire import verify_checkpoint_cose_offline
+
+b = bundle("ledger.jsonl", capsule_id)
+if b.checkpoint_cose is not None:
+    result = verify_checkpoint_cose_offline(b.checkpoint_cose)   # no capsule-emit trust needed
+    assert result.ok, result.errors
+```
+
+`verify_bundle()` performs this same check automatically when
+`checkpoint_cose` is present, cross-checking the decoded fields against
+`Bundle.checkpoint` and failing the bundle if they disagree; absence is
+never fatal.
+
 ## Disclose — bundle's conscious sibling (O16 audit item 10)
 
 `bundle` above is always safe — digests only, no producer decision needed.

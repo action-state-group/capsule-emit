@@ -444,6 +444,35 @@ class _PersistedCheckpointSigner:
         signature_hex, _key_id = self._signing_signer.sign(digest_hex.encode("ascii"))
         return signature_hex
 
+    def sign_cose_statement(
+        self,
+        payload: bytes,
+        *,
+        content_type: str,
+        issuer: str,
+        subject: str,
+        extra_cwt_claims: dict | None = None,
+    ) -> bytes:
+        """Pass through to the wrapped ``signing.Signer``'s own
+        ``sign_cose_statement`` ([cll-checkpoint-cose-wire]) -- so THIS
+        adapter (what ``_build_and_register`` already holds as
+        ``state.signer``) can also serve directly as the COSE-capable signer
+        ``capsule_emit.checkpoint.cose_wire.checkpoint_to_cose`` needs,
+        without a caller reaching past this adapter into the raw
+        ``signing.Signer`` identity it wraps."""
+        sign_cose_statement = getattr(self._signing_signer, "sign_cose_statement", None)
+        if not callable(sign_cose_statement):
+            raise TypeError(
+                f"{type(self._signing_signer).__name__} cannot sign a COSE checkpoint statement"
+            )
+        return sign_cose_statement(
+            payload,
+            content_type=content_type,
+            issuer=issuer,
+            subject=subject,
+            extra_cwt_claims=extra_cwt_claims,
+        )
+
 
 @dataclass(frozen=True)
 class _Rec:
@@ -570,7 +599,40 @@ def _get_state(ledger_path: str, signer: _signing.Signer | None = None) -> _Witn
         return state
 
 
-def _persist_checkpoint_stamp(cp: Any, ledger_path: str) -> None:
+def _build_checkpoint_cose_hex(
+    cp: Any, signer: Any, consistency_proof: Any | None
+) -> str | None:
+    """Best-effort COSE-wire serialization of ``cp``
+    ([cll-checkpoint-cose-wire]) -- built HERE, at production time, because
+    this is the one place the signing key is actually available; a later
+    ``bundle()`` call may run keyless, in a different process, handed only
+    the ledger file, so it can only ever READ this back, never mint it
+    itself (see ``checkpoint.cose_wire``'s module docstring). Persisted
+    alongside the JSON checkpoint in the stamp entry so ``bundle()`` can
+    carry it straight through.
+
+    Never raises into ``emit()``: a failure (e.g. the ``checkpoint`` extra's
+    ``scitt-cose`` dependency not installed) just means this checkpoint's
+    wire form isn't available yet -- the JSON checkpoint and its own
+    signature, verified independently, are unaffected.
+    """
+    try:
+        from .checkpoint.cose_wire import checkpoint_to_cose
+
+        return checkpoint_to_cose(cp, signer, consistency_proof=consistency_proof).hex()
+    except Exception as exc:  # noqa: BLE001 -- best-effort, never raises into emit()
+        warnings.warn(
+            f"capsule-emit: COSE-wire checkpoint serialization for log_id={cp.log_id!r} "
+            f"mmr_size={cp.mmr_size} failed (JSON checkpoint unaffected): {exc}",
+            RuntimeWarning,
+            stacklevel=1,
+        )
+        return None
+
+
+def _persist_checkpoint_stamp(
+    cp: Any, ledger_path: str, *, checkpoint_cose_hex: str | None = None
+) -> None:
     """Write ``cp`` (with whatever ``WitnessRecord`` s it collected) back into
     its own ledger as a checkpoint-stamp entry -- see ``ledger.py``'s module
     docstring for the shape and why. Never called before ``cp.witnesses`` is
@@ -578,6 +640,18 @@ def _persist_checkpoint_stamp(cp: Any, ledger_path: str) -> None:
     be folded into the MMR by the next ``state.mmr.sync()``, so writing it
     mid-registration could let a later witness append race an already-synced
     read of ``cp.witnesses`` elsewhere.
+
+    ``checkpoint_cose_hex``, when supplied (see
+    :func:`_build_checkpoint_cose_hex`), is carried as a SIBLING key
+    (``checkpoint_cose``), never folded into ``cp.to_dict()`` -- it is
+    outside what ``cp.entry_digest()`` commits to as this stamp's MMR leaf.
+    That is deliberate, not an oversight: the COSE_Sign1 statement is
+    already self-authenticating (its own Ed25519 signature, checked by
+    :func:`capsule_emit.checkpoint.cose_wire.verify_checkpoint_cose_offline`),
+    so it needs no additional MMR-leaf coverage, and leaving
+    ``entry_digest()``'s covered shape unchanged keeps this an additive,
+    backward-compatible field -- an older reader that has never heard of it
+    still hashes the same leaf for this entry.
 
     Best-effort: a failure to persist the stamp must not raise into
     ``emit()`` (this already runs on the fire-and-forget witness thread) --
@@ -597,6 +671,8 @@ def _persist_checkpoint_stamp(cp: Any, ledger_path: str) -> None:
         "capsule_id": cp.entry_digest(),
         "checkpoint": cp.to_dict(),
     }
+    if checkpoint_cose_hex is not None:
+        entry["checkpoint_cose"] = checkpoint_cose_hex
     try:
         append_to_ledger(entry, ledger_path)
     except OSError as exc:  # noqa: BLE001 -- fire-and-forget, never raises into emit()
@@ -810,6 +886,7 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
 
     with state.lock:
         state.mmr.sync()
+        prev_before = state.prev
         try:
             cp = emit_checkpoint(state.mmr, state.signer, log_id=state.log_id, prev=state.prev)
         except (CheckpointError, RollbackError) as exc:
@@ -821,6 +898,16 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
             )
             return
         state.prev = cp
+        # Built inside the lock, right after `cp`, while `state.mmr` is
+        # still guaranteed to hold every node `consistency_proof` needs --
+        # see `_build_checkpoint_cose_hex`'s docstring for why this is the
+        # only place the checkpoint's wire form can be minted at all.
+        consistency_proof = (
+            state.mmr.consistency_proof(prev_before.mmr_size, cp.mmr_size)
+            if prev_before is not None
+            else None
+        )
+        checkpoint_cose_hex = _build_checkpoint_cose_hex(cp, state.signer, consistency_proof)
 
     # Fan the same checkpoint out to every endpoint independently -- one
     # endpoint failing must never block registration with the others. In
@@ -850,7 +937,7 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # regardless of registration outcome: even a self-attested checkpoint is
     # history worth logging, and item 5's idle-silence/stamp-exclusion rule
     # (audit item 5) depends on stamp entries existing in the log at all.
-    _persist_checkpoint_stamp(cp, state.log_id)
+    _persist_checkpoint_stamp(cp, state.log_id, checkpoint_cose_hex=checkpoint_cose_hex)
 
 
 def maybe_checkpoint(

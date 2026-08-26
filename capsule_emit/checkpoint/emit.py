@@ -369,7 +369,7 @@ class CheckpointRecord:
     prev_root: str  # hex root at prev_size; empty string for the first checkpoint
     key_id: str  # signer's key id; doubles as peer id in a multi-peer deployment
     timestamp: str  # ISO 8601 UTC
-    signature: str  # hex HMAC-SHA256 (or whatever the signer produces) over signing_body
+    signature: str  # hex signature (Ed25519 by default, see checkpoint.emit.Signer) over signing_body
     witnesses: list[WitnessRecord] = field(default_factory=list)
 
     def signing_body(self) -> str:

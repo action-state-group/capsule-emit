@@ -53,11 +53,15 @@ mode 0600) so the SAME key signs every capsule across process restarts, not
 just within one process lifetime. ``key_id`` is the raw 32-byte public key,
 hex-encoded -- a verifier needs nothing but the capsule itself to check the
 signature (see :func:`verify_capsule_signature`); no key registry lookup.
-It implements BOTH ``sign()`` (a bare Ed25519 signature -- still used as-is
-by the unrelated checkpoint-signing path, see ``capsule_emit.witness``'s
-``_PersistedCheckpointSigner``, and by ``rotate()``'s key-binding receipt)
-AND ``sign_envelope()`` (a real COSE_Sign1 producer envelope, used for
-producer signing -- see :func:`sign_producer_envelope`).
+It implements ``sign()`` (a bare Ed25519 signature -- still used as-is by
+the unrelated checkpoint-signing path, see ``capsule_emit.witness``'s
+``_PersistedCheckpointSigner``, and by ``rotate()``'s key-binding receipt),
+``sign_envelope()`` (a real COSE_Sign1 producer envelope, used for producer
+signing -- see :func:`sign_producer_envelope`), AND
+``sign_cose_statement()`` (a generic SCITT Signed Statement with caller-
+supplied content type and CWT ``iss``/``sub`` claims -- used by
+``capsule_emit.checkpoint.cose_wire`` to put a CLL checkpoint on the wire,
+[cll-checkpoint-cose-wire]).
 
 **Persistence path.** One key per ledger by default -- ``<ledger>.signing_key.pem``
 next to the ledger file, mirroring the per-ledger-path scoping
@@ -225,6 +229,48 @@ class LocalKeypairSigner:
             unprotected={},
         )
         return envelope.hex(), key_id
+
+    def sign_cose_statement(
+        self,
+        payload: bytes,
+        *,
+        content_type: str,
+        issuer: str,
+        subject: str,
+        extra_cwt_claims: dict | None = None,
+    ) -> bytes:
+        """Build a generic SCITT Signed Statement (COSE_Sign1) over
+        ``payload``, with this signer's key as ``kid`` and CWT ``iss``/
+        ``sub`` identity claims in the protected header -- the profile
+        ``capsule_emit.checkpoint.cose_wire`` uses to put a CLL checkpoint on
+        the wire ([cll-checkpoint-cose-wire]), and any future caller wanting
+        the same signed-statement shape over a different payload/claims.
+
+        Reuses ``scitt_cose.statement.build_signed_statement`` for the
+        COSE/CBOR machinery (boundary rule: no hand-rolled COSE) --
+        unlike :meth:`sign_envelope` (the fixed AAC producer-envelope
+        profile: no CWT claims, a pinned content type), this is the
+        general-purpose sibling: caller-supplied content type and CWT
+        identity. Both share the same atomicity contract as :meth:`sign`/
+        :meth:`sign_envelope`: the key and ``key_id`` are read together
+        under one lock so a concurrent ``rotate()`` can never pair a
+        statement signed by one key with another key's ``kid``.
+        """
+        from scitt_cose.statement import build_signed_statement
+
+        with self._lock:
+            key = self._private_key
+            key_id = self.key_id
+        return build_signed_statement(
+            payload,
+            alg="EdDSA",
+            private_key_pem=_pem_private_bytes(key),
+            issuer=issuer,
+            subject=subject,
+            content_type=content_type,
+            extra_cwt_claims=extra_cwt_claims,
+            kid=bytes.fromhex(key_id),
+        )
 
     def rotate(self, key_path: str | os.PathLike | None = None) -> RotationRecord:
         """Generate a new keypair, persist it (replacing the key at

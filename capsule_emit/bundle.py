@@ -65,6 +65,16 @@ class Bundle:
     checkpoint: Any  # capsule_emit.checkpoint.CheckpointRecord — covering, carries its stamp(s)
     prior_checkpoint: Any | None  # capsule_emit.checkpoint.CheckpointRecord | None
     consistency_proof: Any | None  # capsule_emit.checkpoint.core.ConsistencyProof | None
+    checkpoint_cose: bytes | None = None
+    """The covering checkpoint's COSE_Sign1 wire form
+    ([cll-checkpoint-cose-wire], Decision 1's stranger-facing moment (b)) --
+    ``None`` for a bundle built from a ledger whose checkpoint stamp
+    predates this field, or whose COSE serialization failed at production
+    time (see ``witness._build_checkpoint_cose_hex``); never re-minted here,
+    only ever carried through from what the operator's own process signed.
+    A generic COSE/SCITT verifier can check this checkpoint's signature and
+    CWT identity offline from this field alone, with no capsule-emit code at
+    all (see ``checkpoint.cose_wire.verify_checkpoint_cose_offline``)."""
 
     def to_dict(self) -> dict:
         return {
@@ -80,6 +90,7 @@ class Bundle:
                 if self.consistency_proof is not None
                 else None
             ),
+            "checkpoint_cose": self.checkpoint_cose.hex() if self.checkpoint_cose is not None else None,
         }
 
     @classmethod
@@ -88,6 +99,7 @@ class Bundle:
 
         prior = d.get("prior_checkpoint")
         cproof = d.get("consistency_proof")
+        cose_hex = d.get("checkpoint_cose")
         return cls(
             v=int(d["v"]),
             capsule_id=d["capsule_id"],
@@ -97,6 +109,7 @@ class Bundle:
             checkpoint=CheckpointRecord.from_dict(d["checkpoint"]),
             prior_checkpoint=CheckpointRecord.from_dict(prior) if prior else None,
             consistency_proof=_consistency_proof_from_dict(cproof) if cproof is not None else None,
+            checkpoint_cose=bytes.fromhex(cose_hex) if cose_hex else None,
         )
 
 
@@ -208,11 +221,15 @@ def bundle(path: Any, capsule_id: str) -> Bundle:
     target_idx = _find_record(entries, capsule_id)
     seq = target_idx + 1  # 1-indexed leaf position, matching production's raw-line numbering
 
+    stamp_entries = [e for e in entries if e.get("kind") == CHECKPOINT_STAMP_KIND]
     checkpoints: list[CheckpointRecord] = [
-        CheckpointRecord.from_dict(e["checkpoint"])
-        for e in entries
-        if e.get("kind") == CHECKPOINT_STAMP_KIND
+        CheckpointRecord.from_dict(e["checkpoint"]) for e in stamp_entries
     ]
+    checkpoint_cose_by_size: dict[int, str] = {
+        cp.mmr_size: e["checkpoint_cose"]
+        for cp, e in zip(checkpoints, stamp_entries)
+        if e.get("checkpoint_cose")
+    }
 
     covering = next((cp for cp in checkpoints if mmr_core.leaf_count(cp.mmr_size) >= seq), None)
     if covering is None:
@@ -245,6 +262,7 @@ def bundle(path: Any, capsule_id: str) -> Bundle:
     consistency = (
         mmr_core.consistency_proof(store, prior.mmr_size, covering.mmr_size) if prior is not None else None
     )
+    cose_hex = checkpoint_cose_by_size.get(covering.mmr_size)
 
     return Bundle(
         v=1,
@@ -255,6 +273,7 @@ def bundle(path: Any, capsule_id: str) -> Bundle:
         checkpoint=covering,
         prior_checkpoint=prior,
         consistency_proof=consistency,
+        checkpoint_cose=bytes.fromhex(cose_hex) if cose_hex else None,
     )
 
 
@@ -327,13 +346,23 @@ def verify_bundle(
          only stamps are all UNVERIFIED (every TS unpinned) is NOT fatal;
          it is exactly the "self-attested, unverified" bundle #94's default
          (no ``trust_anchor``) path now honestly reports for a self-hosted
-         TS rather than false-accusing it of forgery.
+         TS rather than false-accusing it of forgery;
+      6. if present, ``checkpoint_cose`` — the covering checkpoint's
+         COSE_Sign1 wire form ([cll-checkpoint-cose-wire], Decision 1's
+         stranger-facing moment (b)) — independently re-verified via
+         ``capsule_emit.checkpoint.cose_wire.verify_checkpoint_cose_offline``
+         (signature under its own ``kid``, CWT identity, and — if it carries
+         one — a REAL MMR consistency proof, not field equality) and then
+         cross-checked field-for-field against ``b.checkpoint``. Fatal if
+         present but invalid or mismatched; simply absent (older bundles, or
+         a production-time COSE-serialization failure) is non-fatal — this
+         field is additive, never required.
 
     Returns ``(ok, errors)`` — ``ok`` is false iff a FATAL problem was
     found; ``errors`` also carries non-fatal notices: the point-4 honest
-    consistency/first-checkpoint label, and point-5's unverified/mixed
-    stamp notices — so it is not empty on plenty of fully-passing bundles,
-    not just the mixed-witness case.
+    consistency/first-checkpoint label, point-5's unverified/mixed stamp
+    notices, and point-6's COSE-wire confirmation — so it is not empty on
+    plenty of fully-passing bundles, not just the mixed-witness case.
     """
     from .canonicalization import compute_capsule_id
     from .checkpoint import core as mmr_core
@@ -416,6 +445,36 @@ def verify_bundle(
                     "is this log's first; there is no earlier history to check continuity "
                     "against"
                 )
+
+        if b.checkpoint_cose is not None:
+            from .checkpoint.cose_wire import verify_checkpoint_cose_offline
+
+            cose_result = verify_checkpoint_cose_offline(b.checkpoint_cose)
+            if not cose_result.ok:
+                errors.append(
+                    "checkpoint COSE-wire statement failed to verify: "
+                    + "; ".join(cose_result.errors)
+                )
+            else:
+                decoded = cose_result.decoded
+                if (
+                    decoded.log_id != b.checkpoint.log_id
+                    or decoded.mmr_size != b.checkpoint.mmr_size
+                    or decoded.root != b.checkpoint.root
+                    or decoded.prev_size != b.checkpoint.prev_size
+                    or decoded.prev_root != b.checkpoint.prev_root
+                    or decoded.key_id != b.checkpoint.key_id
+                ):
+                    errors.append(
+                        "checkpoint COSE-wire statement fields do not match the bundle's "
+                        "JSON checkpoint"
+                    )
+                else:
+                    notices.append(
+                        "checkpoint COSE-wire statement independently verified (signature + "
+                        "CWT identity + consistency proof, if any) -- checkable by a generic "
+                        "COSE/SCITT verifier with no capsule-emit code"
+                    )
 
         if b.checkpoint.witnesses:
             stamp_checks = [

@@ -411,6 +411,83 @@ def test_bundle_json_roundtrip_still_verifies(two_checkpoint_ledger):
 
 
 # ---------------------------------------------------------------------------
+# [cll-checkpoint-cose-wire] Decision 1's moment (b): the covering
+# checkpoint's COSE_Sign1 wire form, carried through from production
+# (witness._build_checkpoint_cose_hex) into the bundle, independently
+# checkable by a generic COSE/SCITT verifier.
+# ---------------------------------------------------------------------------
+
+
+def test_bundle_carries_checkpoint_cose_and_it_independently_verifies(two_checkpoint_ledger):
+    from capsule_emit.checkpoint.cose_wire import verify_checkpoint_cose_offline
+
+    ledger_path, caps = two_checkpoint_ledger
+
+    first = bundle(ledger_path, caps[0]["capsule_id"])
+    assert first.checkpoint_cose is not None
+    result = verify_checkpoint_cose_offline(first.checkpoint_cose)
+    assert result.ok, result.errors
+    assert result.decoded.consistency_proof is None  # first checkpoint, no prior
+
+    second = bundle(ledger_path, caps[2]["capsule_id"])
+    assert second.checkpoint_cose is not None
+    result = verify_checkpoint_cose_offline(second.checkpoint_cose)
+    assert result.ok, result.errors
+    assert result.decoded.consistency_proof is not None  # carries the real extension proof
+
+    ok, notices = verify_bundle(second)
+    assert ok, notices
+    assert any("COSE-wire statement independently verified" in n for n in notices)
+
+
+def test_bundle_checkpoint_cose_roundtrips_through_json(two_checkpoint_ledger):
+    ledger_path, caps = two_checkpoint_ledger
+    b = bundle(ledger_path, caps[2]["capsule_id"])
+    assert b.checkpoint_cose is not None
+
+    raw = json.dumps(b.to_dict())
+    restored = Bundle.from_dict(json.loads(raw))
+    assert restored.checkpoint_cose == b.checkpoint_cose
+
+    ok, errors = verify_bundle(restored)
+    assert ok, errors
+
+
+def test_verify_bundle_catches_tampered_checkpoint_cose(valid_bundle_with_prior):
+    b = valid_bundle_with_prior
+    assert b.checkpoint_cose is not None
+    tampered = bytearray(b.checkpoint_cose)
+    tampered[-1] ^= 0xFF
+    mutant = replace(b, checkpoint_cose=bytes(tampered))
+    ok, errors = verify_bundle(mutant)
+    assert not ok
+    assert any("COSE-wire statement failed to verify" in e for e in errors)
+
+
+def test_verify_bundle_catches_checkpoint_cose_from_a_different_checkpoint(two_checkpoint_ledger):
+    ledger_path, caps = two_checkpoint_ledger
+    first = bundle(ledger_path, caps[0]["capsule_id"])
+    second = bundle(ledger_path, caps[2]["capsule_id"])
+    # Swap in the FIRST checkpoint's genuinely-valid COSE statement onto the
+    # SECOND checkpoint's bundle -- a well-formed, correctly-signed
+    # statement, just for the wrong checkpoint.
+    mutant = replace(second, checkpoint_cose=first.checkpoint_cose)
+    ok, errors = verify_bundle(mutant)
+    assert not ok
+    assert any("do not match the bundle's" in e for e in errors)
+
+
+def test_verify_bundle_tolerates_missing_checkpoint_cose(valid_bundle_with_prior):
+    """Backward compatibility: a bundle from a ledger predating this field
+    (or whose COSE serialization failed at production time) must still
+    verify -- absence is not evidence of anything."""
+    b = valid_bundle_with_prior
+    mutant = replace(b, checkpoint_cose=None)
+    ok, errors = verify_bundle(mutant)
+    assert ok, errors
+
+
+# ---------------------------------------------------------------------------
 # Mutation tests — every negative check in verify_bundle must actually catch
 # its mutant, one field at a time.
 # ---------------------------------------------------------------------------

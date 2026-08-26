@@ -57,6 +57,15 @@ from .core import (
     verify_consistency,
     verify_inclusion,
 )
+from .cose_wire import (
+    CLL_CHECKPOINT_CONTENT_TYPE,
+    WIRE_KIND,
+    CoseCheckpointVerification,
+    DecodedCheckpointCose,
+    checkpoint_to_cose,
+    encode_checkpoint_claims,
+    verify_checkpoint_cose_offline,
+)
 from .emit import (
     DEFAULT_TS_PUBLIC_KEY_ID,
     DEFAULT_TS_PUBLIC_KEY_PEM,
@@ -88,6 +97,13 @@ from .index import LogSource, MmrLedger, RangeProof, verify_range
 from .store import MemoryNodeStore
 
 __all__ = [
+    "CLL_CHECKPOINT_CONTENT_TYPE",
+    "WIRE_KIND",
+    "CoseCheckpointVerification",
+    "DecodedCheckpointCose",
+    "checkpoint_to_cose",
+    "encode_checkpoint_claims",
+    "verify_checkpoint_cose_offline",
     "ConsistencyProof",
     "InclusionProof",
     "IntegrityError",
