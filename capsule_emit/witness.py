@@ -600,16 +600,22 @@ def _get_state(ledger_path: str, signer: _signing.Signer | None = None) -> _Witn
 
 
 def _build_checkpoint_cose_hex(
-    cp: Any, signer: Any, consistency_proof: Any | None
+    cp: Any,
+    signer: Any,
+    new_peak_hashes: Any,
+    prev_peak_hashes: Any,
+    consistency_proof: Any | None,
 ) -> str | None:
     """Best-effort COSE-wire serialization of ``cp``
     ([cll-checkpoint-cose-wire]) -- built HERE, at production time, because
-    this is the one place the signing key is actually available; a later
-    ``bundle()`` call may run keyless, in a different process, handed only
-    the ledger file, so it can only ever READ this back, never mint it
-    itself (see ``checkpoint.cose_wire``'s module docstring). Persisted
-    alongside the JSON checkpoint in the stamp entry so ``bundle()`` can
-    carry it straight through.
+    this is the one place the signing key AND the live MMR (for
+    ``new_peak_hashes``/``prev_peak_hashes``, [cll-commitment-interop]'s
+    conformant commitment) are both actually available; a later ``bundle()``
+    call may run keyless, in a different process, handed only the ledger
+    file, so it can only ever READ this back, never mint it itself (see
+    ``checkpoint.cose_wire``'s module docstring). Persisted alongside the
+    JSON checkpoint in the stamp entry so ``bundle()`` can carry it straight
+    through.
 
     Never raises into ``emit()``: a failure (e.g. the ``checkpoint`` extra's
     ``scitt-cose`` dependency not installed) just means this checkpoint's
@@ -619,7 +625,13 @@ def _build_checkpoint_cose_hex(
     try:
         from .checkpoint.cose_wire import checkpoint_to_cose
 
-        return checkpoint_to_cose(cp, signer, consistency_proof=consistency_proof).hex()
+        return checkpoint_to_cose(
+            cp,
+            signer,
+            new_peak_hashes,
+            prev_peak_hashes=prev_peak_hashes,
+            consistency_proof=consistency_proof,
+        ).hex()
     except Exception as exc:  # noqa: BLE001 -- best-effort, never raises into emit()
         warnings.warn(
             f"capsule-emit: COSE-wire checkpoint serialization for log_id={cp.log_id!r} "
@@ -899,15 +911,22 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
             return
         state.prev = cp
         # Built inside the lock, right after `cp`, while `state.mmr` is
-        # still guaranteed to hold every node `consistency_proof` needs --
-        # see `_build_checkpoint_cose_hex`'s docstring for why this is the
-        # only place the checkpoint's wire form can be minted at all.
+        # still guaranteed to hold every node `consistency_proof`/
+        # `peak_hashes_at` needs -- see `_build_checkpoint_cose_hex`'s
+        # docstring for why this is the only place the checkpoint's wire
+        # form can be minted at all.
         consistency_proof = (
             state.mmr.consistency_proof(prev_before.mmr_size, cp.mmr_size)
             if prev_before is not None
             else None
         )
-        checkpoint_cose_hex = _build_checkpoint_cose_hex(cp, state.signer, consistency_proof)
+        new_peak_hashes = state.mmr.peak_hashes_at(cp.mmr_size)
+        prev_peak_hashes = (
+            state.mmr.peak_hashes_at(prev_before.mmr_size) if prev_before is not None else None
+        )
+        checkpoint_cose_hex = _build_checkpoint_cose_hex(
+            cp, state.signer, new_peak_hashes, prev_peak_hashes, consistency_proof
+        )
 
     # Fan the same checkpoint out to every endpoint independently -- one
     # endpoint failing must never block registration with the others. In

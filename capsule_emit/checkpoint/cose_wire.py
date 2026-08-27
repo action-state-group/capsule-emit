@@ -27,10 +27,16 @@ dev / JSON (CheckpointRecord)  wire / CBOR (this module)
 ``kind`` (``"mmr_checkpoint"``)  ``kind`` -- fixed to ``"cll-checkpoint"`` at
                                 translation, never copied from the dev value
 ``mmr_size``                   ``log_size``
-``root`` (hex)                 ``commitment`` (raw 32 bytes)
+``root`` (hex, bagged fold --   ``commitment`` -- NOT the bagged root: the
+  internal fast-path only)       conformant peak-list accumulator
+                                (``core.commitment_object`` -- [cll-
+                                commitment-interop]), canonical CBOR
+                                ``[ *bstr ]`` of the peak hashes at
+                                ``log_size``, carried as a bstr claim value
 ``prev_size``                  ``prev_size``
-``prev_root`` (hex, ``""`` for  ``prev_commitment`` (raw 32 bytes, empty bstr
-  the first checkpoint)          for the first checkpoint)
+``prev_root`` (hex, ``""`` for  ``prev_commitment`` -- same peak-list
+  the first checkpoint)          encoding at ``prev_size``, empty bstr for
+                                the first checkpoint
 ``timestamp`` (ISO 8601 str)   ``issued_at`` (ISO 8601 str, unchanged --
                                 the I-D's exact CDDL type for this claim
                                 could not be confirmed against the draft
@@ -52,6 +58,30 @@ dev / JSON (CheckpointRecord)  wire / CBOR (this module)
                                 carried inside the CBOR claims
 ``CheckpointConfig.cadence_seconds``  ``cadence`` (optional, integer seconds)
 ============================  ================================================
+
+**Commitment shape reconciled with [cll-commitment-interop] (2026-08-27).**
+``cp.root``/``cp.prev_root`` are this module's OWN internal fold
+(``core.root_from_peaks``) -- convenient for a fast scalar comparison, but a
+bespoke convention no external MMRIVER-family tool can reproduce (see
+``core.commitment_object``'s docstring). The wire form's ``commitment``/
+``prev_commitment`` claims therefore carry the CONFORMANT commitment object
+instead -- the ordered peak-hash list itself, canonical-CBOR-encoded -- so a
+stranger holding only the COSE bytes gets the same accumulator an
+independent draft-bryce-cose-receipts-mmr-profile implementation signs.
+``root_from_peaks`` is never removed from this module's OWN offline
+verification: :func:`verify_checkpoint_cose_offline` recomputes it locally
+from the decoded peak list to run ``core.verify_consistency`` -- the peak
+list is the wire truth, the bagged root is a value derived FROM it, on both
+the encode and decode sides. This means :func:`encode_checkpoint_claims`
+now requires the caller to pass the checkpoint's own peak hashes at
+``log_size`` (``new_peak_hashes``) and, when ``prev_size > 0``, at
+``prev_size`` (``prev_peak_hashes``) -- there is no way to reconstruct
+either peak list from ``cp.root``/``cp.prev_root`` alone, only verify a
+candidate list against them. ``prev_peak_hashes`` is deliberately NOT
+derived from ``consistency_proof.old_peaks`` even though an honest proof's
+``old_peaks`` equal it exactly -- see :func:`encode_checkpoint_claims`'s
+docstring for why sourcing it from the (possibly forged) proof itself would
+make the decode-side consistency check tautological.
 
 **Beyond Decision 1's literal claim-key list: ``consistency_proof``.** This
 task's own directive requires the checkpoint's MMR consistency (extension)
@@ -93,7 +123,7 @@ from dataclasses import dataclass, field
 
 import cbor2
 
-from .core import ConsistencyProof, verify_consistency
+from .core import ConsistencyProof, commitment_object, root_from_peaks, verify_consistency
 from .emit import CheckpointRecord
 
 __all__ = [
@@ -155,7 +185,9 @@ def _consistency_proof_from_cbor(d: dict) -> ConsistencyProof:
 
 def encode_checkpoint_claims(
     cp: CheckpointRecord,
+    new_peak_hashes: list,
     *,
+    prev_peak_hashes: list | None = None,
     consistency_proof: ConsistencyProof | None = None,
     cadence_seconds: int | None = None,
 ) -> dict:
@@ -163,6 +195,29 @@ def encode_checkpoint_claims(
     payload that :func:`checkpoint_to_cose` wraps in a COSE_Sign1 envelope.
     Pure translation, no signing. See the module docstring's field-mapping
     table for the exact dev-name -> wire-name correspondence.
+
+    ``new_peak_hashes`` is the MMR's own peak-hash list at ``cp.mmr_size``
+    (e.g. ``MmrLedger.peak_hashes_at(cp.mmr_size)``) -- the ``commitment``
+    claim is ``core.commitment_object(new_peak_hashes)``, NOT ``cp.root``
+    (see the module docstring's "Commitment shape reconciled with
+    [cll-commitment-interop]" note). ``prev_peak_hashes`` is the same for
+    ``cp.prev_size`` (required exactly when ``cp.prev_size > 0``) and backs
+    the ``prev_commitment`` claim the SAME way.
+
+    Both raise ``ValueError`` if they do not bag (``core.root_from_peaks``)
+    to ``cp.root``/``cp.prev_root`` respectively -- passing any peak list
+    other than the one that actually produced that field would silently
+    mint a wire statement that lies about its own commitment.
+
+    **Deliberately NOT derived from ``consistency_proof.old_peaks``, even
+    though an honest proof's ``old_peaks`` equal ``prev_peak_hashes``
+    exactly.** ``prev_commitment`` must be independently sourced from the
+    checkpoint's OWN claimed prior state (anchored to ``cp.prev_root``) so
+    that :func:`verify_checkpoint_cose_offline`'s later
+    ``core.verify_consistency`` check is a REAL reconciliation between two
+    independent claims, not a tautology against a proof that could itself
+    be forged (see ``tests/checkpoint/test_cose_wire.py``'s RED-FIRST
+    adversarial cases for exactly the attack this closes).
 
     Raises ``ValueError`` if ``consistency_proof`` is supplied but does not
     span exactly ``(cp.prev_size, cp.mmr_size)`` -- a proof for the wrong
@@ -177,12 +232,35 @@ def encode_checkpoint_claims(
             f"but checkpoint is (prev_size={cp.prev_size}, mmr_size={cp.mmr_size})"
         )
 
+    if root_from_peaks(new_peak_hashes) != bytes.fromhex(cp.root):
+        raise ValueError(
+            "new_peak_hashes do not bag (core.root_from_peaks) to cp.root "
+            f"({cp.root!r}) -- pass the SAME peak set this checkpoint's own root was "
+            "computed from, e.g. MmrLedger.peak_hashes_at(cp.mmr_size)"
+        )
+
+    if cp.prev_size > 0:
+        if prev_peak_hashes is None:
+            raise ValueError(
+                f"checkpoint has prev_size={cp.prev_size} > 0 but no prev_peak_hashes was "
+                "supplied -- pass MmrLedger.peak_hashes_at(cp.prev_size) from the SAME MMR"
+            )
+        if root_from_peaks(prev_peak_hashes) != bytes.fromhex(cp.prev_root):
+            raise ValueError(
+                "prev_peak_hashes do not bag (core.root_from_peaks) to cp.prev_root "
+                f"({cp.prev_root!r}) -- pass the SAME peak set the prior checkpoint's own "
+                "root was computed from, e.g. MmrLedger.peak_hashes_at(cp.prev_size)"
+            )
+        prev_commitment = commitment_object(prev_peak_hashes)
+    else:
+        prev_commitment = b""
+
     claims: dict = {
         "kind": WIRE_KIND,
         "log_size": cp.mmr_size,
-        "commitment": bytes.fromhex(cp.root),
+        "commitment": commitment_object(new_peak_hashes),
         "prev_size": cp.prev_size,
-        "prev_commitment": bytes.fromhex(cp.prev_root) if cp.prev_root else b"",
+        "prev_commitment": prev_commitment,
         "issued_at": cp.timestamp,
     }
     if cadence_seconds is not None:
@@ -195,13 +273,18 @@ def encode_checkpoint_claims(
 def checkpoint_to_cose(
     cp: CheckpointRecord,
     signer,
+    new_peak_hashes: list,
     *,
+    prev_peak_hashes: list | None = None,
     consistency_proof: ConsistencyProof | None = None,
     cadence_seconds: int | None = None,
 ) -> bytes:
     """Serialize ``cp`` as a COSE_Sign1 statement over the CBOR claims map
     (:func:`encode_checkpoint_claims`), signed by ``signer`` -- the wire
     form for the two stranger-facing moments (Decision 1).
+
+    ``new_peak_hashes``/``prev_peak_hashes`` are threaded straight through
+    to :func:`encode_checkpoint_claims` -- see its docstring.
 
     ``signer`` must be a ``capsule_emit.signing.Signer``-shaped object
     implementing ``sign_cose_statement`` (:class:`~capsule_emit.signing
@@ -233,7 +316,11 @@ def checkpoint_to_cose(
         )
 
     claims = encode_checkpoint_claims(
-        cp, consistency_proof=consistency_proof, cadence_seconds=cadence_seconds
+        cp,
+        new_peak_hashes,
+        prev_peak_hashes=prev_peak_hashes,
+        consistency_proof=consistency_proof,
+        cadence_seconds=cadence_seconds,
     )
     payload = cbor2.dumps(claims, canonical=True)
 
@@ -261,13 +348,24 @@ class DecodedCheckpointCose:
     the module docstring's field-mapping table), minus ``signature``
     (superseded by the COSE_Sign1 envelope's own signature, never carried
     inside the claims) and ``witnesses`` (a JSON-side, post-registration
-    concept out of scope for this translation)."""
+    concept out of scope for this translation).
+
+    ``root``/``prev_root`` are DERIVED here (``core.root_from_peaks`` over
+    ``new_peak_hashes``/``prev_peak_hashes``), not carried directly -- the
+    wire's own commitment is the peak list; the bagged root is this
+    module's internal-only convenience value computed FROM it, same
+    direction as the encode side. ``new_peak_hashes``/``prev_peak_hashes``
+    are the actual [cll-commitment-interop] conformant commitment an
+    external MMRIVER-profile verifier needs (``prev_peak_hashes`` is empty
+    for the first checkpoint)."""
 
     log_id: str
     mmr_size: int
     root: str
+    new_peak_hashes: tuple
     prev_size: int
     prev_root: str
+    prev_peak_hashes: tuple
     timestamp: str
     key_id: str
     cadence_seconds: int | None
@@ -338,6 +436,23 @@ def _ed25519_pubkey_pem(raw: bytes) -> bytes:
     return key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
 
 
+def _decode_commitment(raw: bytes, *, what: str) -> tuple:
+    """Decode a ``core.commitment_object``-encoded bstr claim back into its
+    peak-hash list. ``commitment_object`` is exactly ``cbor2.dumps(peaks,
+    canonical=True)`` (see its docstring/tests), so decoding is the inverse:
+    ``cbor2.loads``, then the same shape checks ``commitment_object`` itself
+    enforces on encode (a list of 32-byte strings)."""
+    try:
+        peaks = cbor2.loads(bytes(raw))
+    except Exception as exc:  # noqa: BLE001 -- total verifier, never raises
+        raise ValueError(f"{what} is not valid CBOR: {exc}") from exc
+    if not isinstance(peaks, list) or not all(
+        isinstance(p, (bytes, bytearray)) and len(p) == 32 for p in peaks
+    ):
+        raise ValueError(f"{what} is not a CBOR array of 32-byte peak hashes")
+    return tuple(bytes(p) for p in peaks)
+
+
 def _decode_claims(claims, *, issuer: str | None, subject: str | None, key_id: str) -> DecodedCheckpointCose:
     if not hasattr(claims, "get"):
         raise ValueError("claims payload is not a map")
@@ -356,12 +471,18 @@ def _decode_claims(claims, *, issuer: str | None, subject: str | None, key_id: s
         raise ValueError("log_size must be a non-negative integer")
     if not isinstance(prev_size, int) or isinstance(prev_size, bool) or prev_size < 0:
         raise ValueError("prev_size must be a non-negative integer")
-    if not isinstance(commitment, (bytes, bytearray)) or len(commitment) != 32:
-        raise ValueError("commitment must be a 32-byte digest")
-    if prev_commitment and (
-        not isinstance(prev_commitment, (bytes, bytearray)) or len(prev_commitment) != 32
-    ):
-        raise ValueError("prev_commitment must be a 32-byte digest or empty")
+    if not isinstance(commitment, (bytes, bytearray)):
+        raise ValueError("commitment must be a CBOR byte string")
+    new_peak_hashes = _decode_commitment(commitment, what="commitment")
+    root = root_from_peaks(list(new_peak_hashes)).hex()
+    if prev_commitment and not isinstance(prev_commitment, (bytes, bytearray)):
+        raise ValueError("prev_commitment must be a CBOR byte string or empty")
+    if prev_commitment:
+        prev_peak_hashes = _decode_commitment(prev_commitment, what="prev_commitment")
+        prev_root = root_from_peaks(list(prev_peak_hashes)).hex()
+    else:
+        prev_peak_hashes = ()
+        prev_root = ""
     if not isinstance(issued_at, str):
         raise ValueError("issued_at must be a string (ISO 8601)")
 
@@ -385,9 +506,11 @@ def _decode_claims(claims, *, issuer: str | None, subject: str | None, key_id: s
     return DecodedCheckpointCose(
         log_id=issuer,
         mmr_size=mmr_size,
-        root=bytes(commitment).hex(),
+        root=root,
+        new_peak_hashes=new_peak_hashes,
         prev_size=prev_size,
-        prev_root=bytes(prev_commitment).hex() if prev_commitment else "",
+        prev_root=prev_root,
+        prev_peak_hashes=prev_peak_hashes,
         timestamp=issued_at,
         key_id=key_id,
         cadence_seconds=cadence,

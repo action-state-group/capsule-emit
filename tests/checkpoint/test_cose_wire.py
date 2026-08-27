@@ -57,10 +57,12 @@ def _grow(store: mmr_core.MemoryNodeStore, n: int, *, seed: int = 0) -> None:
         mmr_core.add_leaf(store, mmr_core.leaf_hash(body))
 
 
+def _peak_hashes(store: mmr_core.MemoryNodeStore, size: int) -> list:
+    return [store.node(p) for p in mmr_core.peaks(size)]
+
+
 def _root_hex(store: mmr_core.MemoryNodeStore, size: int) -> str:
-    return mmr_core.root_from_peaks(
-        [store.node(p) for p in mmr_core.peaks(size)]
-    ).hex()
+    return mmr_core.root_from_peaks(_peak_hashes(store, size)).hex()
 
 
 def _checkpoint(
@@ -100,11 +102,12 @@ def signer(tmp_path) -> LocalKeypairSigner:
 def test_round_trip_first_checkpoint(signer: LocalKeypairSigner) -> None:
     store = MemoryNodeStore()
     _grow(store, 3, seed=1)
+    peak_hashes = _peak_hashes(store, store.size())
     cp = _checkpoint(
         log_id="log-a", mmr_size=store.size(), root_hex=_root_hex(store, store.size()), key_id=signer.key_id
     )
 
-    cose_bytes = checkpoint_to_cose(cp, signer)
+    cose_bytes = checkpoint_to_cose(cp, signer, peak_hashes)
     result = verify_checkpoint_cose_offline(cose_bytes)
 
     assert result.ok, result.errors
@@ -112,8 +115,10 @@ def test_round_trip_first_checkpoint(signer: LocalKeypairSigner) -> None:
     assert decoded.log_id == cp.log_id
     assert decoded.mmr_size == cp.mmr_size
     assert decoded.root == cp.root
+    assert decoded.new_peak_hashes == tuple(peak_hashes)
     assert decoded.prev_size == cp.prev_size == 0
     assert decoded.prev_root == cp.prev_root == ""
+    assert decoded.prev_peak_hashes == ()
     assert decoded.timestamp == cp.timestamp
     assert decoded.key_id == cp.key_id
     assert decoded.consistency_proof is None
@@ -139,6 +144,7 @@ def test_round_trip_with_real_consistency_proof(signer: LocalKeypairSigner) -> N
     root_b = _root_hex(store, size_b)
 
     proof = mmr_core.consistency_proof(store, size_a, size_b)
+    peak_hashes_b = _peak_hashes(store, size_b)
     cp = _checkpoint(
         log_id="log-a",
         mmr_size=size_b,
@@ -148,11 +154,15 @@ def test_round_trip_with_real_consistency_proof(signer: LocalKeypairSigner) -> N
         key_id=signer.key_id,
     )
 
-    cose_bytes = checkpoint_to_cose(cp, signer, consistency_proof=proof)
+    cose_bytes = checkpoint_to_cose(
+        cp, signer, peak_hashes_b, prev_peak_hashes=_peak_hashes(store, size_a), consistency_proof=proof
+    )
     result = verify_checkpoint_cose_offline(cose_bytes)
 
     assert result.ok, result.errors
     decoded = result.decoded
+    assert decoded.new_peak_hashes == tuple(peak_hashes_b)
+    assert decoded.prev_peak_hashes == tuple(bytes.fromhex(h) for h in proof.old_peaks)
     assert decoded.consistency_proof is not None
     assert decoded.consistency_proof.size_a == size_a
     assert decoded.consistency_proof.size_b == size_b
@@ -178,7 +188,7 @@ def test_checkpoint_to_cose_refuses_prior_without_consistency_proof(signer: Loca
         key_id=signer.key_id,
     )
     with pytest.raises(ValueError, match="consistency_proof"):
-        checkpoint_to_cose(cp, signer)
+        checkpoint_to_cose(cp, signer, [])
 
 
 def test_checkpoint_to_cose_refuses_consistency_proof_on_first_checkpoint(
@@ -191,7 +201,9 @@ def test_checkpoint_to_cose_refuses_consistency_proof_on_first_checkpoint(
     )
     bogus_proof = mmr_core.ConsistencyProof(1, "consistency", 0, store.size(), (), (), ())
     with pytest.raises(ValueError, match="prev_size == 0"):
-        checkpoint_to_cose(cp, signer, consistency_proof=bogus_proof)
+        checkpoint_to_cose(
+            cp, signer, _peak_hashes(store, store.size()), consistency_proof=bogus_proof
+        )
 
 
 def test_checkpoint_to_cose_requires_a_cose_capable_signer() -> None:
@@ -209,7 +221,82 @@ def test_checkpoint_to_cose_requires_a_cose_capable_signer() -> None:
         log_id="log-a", mmr_size=store.size(), root_hex=_root_hex(store, store.size()), key_id="aa" * 32
     )
     with pytest.raises(TypeError, match="sign_cose_statement"):
-        checkpoint_to_cose(cp, _NarrowSigner())
+        checkpoint_to_cose(cp, _NarrowSigner(), _peak_hashes(store, store.size()))
+
+
+def test_checkpoint_to_cose_refuses_peak_hashes_that_do_not_bag_to_root(
+    signer: LocalKeypairSigner,
+) -> None:
+    """[cll-commitment-interop] reconciliation: the wire form's commitment
+    is minted from ``new_peak_hashes``, not read from ``cp.root`` -- so a
+    caller passing the WRONG peak set (any set that doesn't bag to the
+    checkpoint's own root) must be refused, not silently signed into a
+    self-contradicting statement."""
+    store = MemoryNodeStore()
+    _grow(store, 3, seed=1)
+    cp = _checkpoint(
+        log_id="log-a", mmr_size=store.size(), root_hex=_root_hex(store, store.size()), key_id=signer.key_id
+    )
+    wrong_store = MemoryNodeStore()
+    _grow(wrong_store, 3, seed="unrelated")
+    with pytest.raises(ValueError, match="do not bag"):
+        checkpoint_to_cose(cp, signer, _peak_hashes(wrong_store, wrong_store.size()))
+
+
+def test_checkpoint_to_cose_requires_prev_peak_hashes_when_prev_size_positive(
+    signer: LocalKeypairSigner,
+) -> None:
+    store = MemoryNodeStore()
+    _grow(store, 3, seed=1)
+    size_a = store.size()
+    root_a = _root_hex(store, size_a)
+    _grow(store, 4, seed=1)
+    size_b = store.size()
+    cp = _checkpoint(
+        log_id="log-a",
+        mmr_size=size_b,
+        root_hex=_root_hex(store, size_b),
+        prev_size=size_a,
+        prev_root_hex=root_a,
+        key_id=signer.key_id,
+    )
+    proof = mmr_core.consistency_proof(store, size_a, size_b)
+    with pytest.raises(ValueError, match="prev_peak_hashes"):
+        checkpoint_to_cose(cp, signer, _peak_hashes(store, size_b), consistency_proof=proof)
+
+
+def test_checkpoint_to_cose_refuses_prev_peak_hashes_that_do_not_bag_to_prev_root(
+    signer: LocalKeypairSigner,
+) -> None:
+    """[cll-commitment-interop] reconciliation, ``prev_commitment`` side:
+    same guard as ``new_peak_hashes``, on the prior-state peak list --
+    catches a caller passing the wrong prior peak set BEFORE it is ever
+    signed, independent of whatever ``consistency_proof`` happens to say."""
+    store = MemoryNodeStore()
+    _grow(store, 3, seed=1)
+    size_a = store.size()
+    root_a = _root_hex(store, size_a)
+    _grow(store, 4, seed=1)
+    size_b = store.size()
+    cp = _checkpoint(
+        log_id="log-a",
+        mmr_size=size_b,
+        root_hex=_root_hex(store, size_b),
+        prev_size=size_a,
+        prev_root_hex=root_a,
+        key_id=signer.key_id,
+    )
+    proof = mmr_core.consistency_proof(store, size_a, size_b)
+    wrong_store = MemoryNodeStore()
+    _grow(wrong_store, size_a, seed="unrelated")
+    with pytest.raises(ValueError, match="prev_peak_hashes do not bag"):
+        checkpoint_to_cose(
+            cp,
+            signer,
+            _peak_hashes(store, size_b),
+            prev_peak_hashes=_peak_hashes(wrong_store, size_a),
+            consistency_proof=proof,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +310,7 @@ def test_tampered_signature_bytes_are_rejected(signer: LocalKeypairSigner) -> No
     cp = _checkpoint(
         log_id="log-a", mmr_size=store.size(), root_hex=_root_hex(store, store.size()), key_id=signer.key_id
     )
-    cose_bytes = bytearray(checkpoint_to_cose(cp, signer))
+    cose_bytes = bytearray(checkpoint_to_cose(cp, signer, _peak_hashes(store, store.size())))
     cose_bytes[-1] ^= 0xFF  # last byte of the CBOR array is inside the signature bstr
 
     result = verify_checkpoint_cose_offline(bytes(cose_bytes))
@@ -278,7 +365,17 @@ def test_forged_continuity_with_true_prev_root_is_rejected(signer: LocalKeypairS
     )
     assert cp.prev_root == root_a  # field-equality check would pass
 
-    cose_bytes = checkpoint_to_cose(cp, signer, consistency_proof=forged_proof)
+    # prev_commitment sourced from the TRUE prior state (honest, size_a) --
+    # independent of forged_proof's own (attacker-controlled) old_peaks, so
+    # the reconciliation below is real, not tautological (see
+    # encode_checkpoint_claims's docstring).
+    cose_bytes = checkpoint_to_cose(
+        cp,
+        signer,
+        _peak_hashes(forged, size_b),
+        prev_peak_hashes=_peak_hashes(honest, size_a),
+        consistency_proof=forged_proof,
+    )
     result = verify_checkpoint_cose_offline(cose_bytes)
 
     assert not result.ok
@@ -312,7 +409,13 @@ def test_truncated_consistency_proof_is_rejected(signer: LocalKeypairSigner) -> 
         prev_root_hex=root_a,
         key_id=signer.key_id,
     )
-    cose_bytes = checkpoint_to_cose(cp, signer, consistency_proof=truncated_proof)
+    cose_bytes = checkpoint_to_cose(
+        cp,
+        signer,
+        _peak_hashes(store, size_b),
+        prev_peak_hashes=_peak_hashes(store, size_a),
+        consistency_proof=truncated_proof,
+    )
     result = verify_checkpoint_cose_offline(cose_bytes)
 
     assert not result.ok
@@ -372,7 +475,13 @@ def test_proof_from_one_fork_does_not_verify_another_forks_checkpoint(
         prev_root_hex=root_a,
         key_id=signer.key_id,
     )
-    cose_bytes = checkpoint_to_cose(cp_b_with_proof_a, signer, consistency_proof=proof_a)
+    cose_bytes = checkpoint_to_cose(
+        cp_b_with_proof_a,
+        signer,
+        _peak_hashes(branch_b, size_b),
+        prev_peak_hashes=_peak_hashes(common, size_a),
+        consistency_proof=proof_a,
+    )
     result = verify_checkpoint_cose_offline(cose_bytes)
 
     assert not result.ok
@@ -387,13 +496,17 @@ def test_proof_from_one_fork_does_not_verify_another_forks_checkpoint(
 def test_encode_checkpoint_claims_uses_id_spec_field_names(signer: LocalKeypairSigner) -> None:
     store = MemoryNodeStore()
     _grow(store, 2, seed=1)
+    peak_hashes = _peak_hashes(store, store.size())
     cp = _checkpoint(
         log_id="log-a", mmr_size=store.size(), root_hex=_root_hex(store, store.size()), key_id=signer.key_id
     )
-    claims = encode_checkpoint_claims(cp)
+    claims = encode_checkpoint_claims(cp, peak_hashes)
     assert claims["kind"] == WIRE_KIND == "cll-checkpoint"
     assert claims["log_size"] == cp.mmr_size
-    assert claims["commitment"] == bytes.fromhex(cp.root)
+    # [cll-commitment-interop] conformant commitment -- NOT cp.root: the
+    # ordered peak-hash list, canonical-CBOR-encoded, not the bagged fold.
+    assert claims["commitment"] == mmr_core.commitment_object(peak_hashes)
+    assert mmr_core.root_from_peaks(peak_hashes).hex() == cp.root  # still recoverable from it
     assert claims["prev_size"] == cp.prev_size
     assert claims["prev_commitment"] == b""
     assert claims["issued_at"] == cp.timestamp
@@ -408,7 +521,7 @@ def test_content_type_is_cbor_shaped(signer: LocalKeypairSigner) -> None:
     cp = _checkpoint(
         log_id="log-a", mmr_size=store.size(), root_hex=_root_hex(store, store.size()), key_id=signer.key_id
     )
-    cose_bytes = checkpoint_to_cose(cp, signer)
+    cose_bytes = checkpoint_to_cose(cp, signer, _peak_hashes(store, store.size()))
     assert CLL_CHECKPOINT_CONTENT_TYPE == "application/cll-checkpoint+cbor"
     # payload really is CBOR encoding the claims map, not JSON or anything else
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
