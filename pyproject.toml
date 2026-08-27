@@ -29,6 +29,7 @@ mcp = ["mcp>=1.0"]
 agentgateway = ["grpcio>=1.60", "protobuf>=5.0"]
 hermes = []
 adk = ["google-adk>=2.0"]
+agno = ["agno>=3.0"]
 dapr-agents = ["dapr-agents>=1.0"]
 checkpoint = ["scitt-cose>=0.2.0"]
 
