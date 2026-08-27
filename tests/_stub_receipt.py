@@ -29,6 +29,8 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from scitt_cose import build_receipt
 
+from capsule_emit.checkpoint.cose_wire import verify_checkpoint_cose_offline
+
 #: The CLL CheckpointRecord fields a signature covers -- MUST match
 #: ``capsule_emit.checkpoint.emit.CheckpointRecord.signing_body()`` /
 #: capsule-anchor's ``_CHECKPOINT_RECORD_FIELDS`` field-for-field.
@@ -57,6 +59,22 @@ def checkpoint_entry_hash(cp: dict) -> str:
     signing_body = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
     digest = hashlib.sha256(signing_body).hexdigest()
     return hashlib.sha256(bytes.fromhex(digest)).hexdigest()
+
+
+def checkpoint_dict_from_cose(cose_bytes: bytes) -> dict:
+    """Decode+verify a COSE-wire checkpoint (real signature check, same as
+    what capsule-anchor's witness route will independently do) and
+    reconstruct the JSON ``CheckpointRecord``-shaped dict a stub-TS
+    ``do_POST`` handler's own ``checkpoint_entry_hash``/receipt logic
+    expects -- the wire body ``capsule_emit.checkpoint.emit
+    .register_checkpoint`` now POSTs to ``/checkpoints`` is real COSE_Sign1/
+    CBOR bytes, not a plain JSON dict ([cll-checkpoint-cose-wire]). Raises
+    ``ValueError`` if the COSE statement does not verify."""
+    result = verify_checkpoint_cose_offline(cose_bytes)
+    if not result.ok:
+        raise ValueError(f"stub TS could not verify COSE checkpoint: {result.errors}")
+    return result.decoded.to_checkpoint_record().to_dict()
+
 
 _TEST_TS_PRIVATE_KEY = Ed25519PrivateKey.generate()
 

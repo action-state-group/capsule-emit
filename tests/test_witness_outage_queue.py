@@ -26,7 +26,12 @@ import threading
 import time
 
 import pytest
-from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64, checkpoint_entry_hash
+from _stub_receipt import (
+    TEST_TS_PUBLIC_KEY_PEM,
+    build_stub_receipt_b64,
+    checkpoint_dict_from_cose,
+    checkpoint_entry_hash,
+)
 
 from capsule_emit import ledger, seal, status, witness
 from capsule_emit.checkpoint import emit as checkpoint_emit_mod
@@ -47,7 +52,13 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/checkpoints":
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length)
-            body = json.loads(raw)
+            try:
+                body = checkpoint_dict_from_cose(raw)
+            except ValueError as exc:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(str(exc).encode())
+                return
             self.received.append(body)
             entry_hash = checkpoint_entry_hash(body)
             resp = {
@@ -386,8 +397,13 @@ def test_retry_stops_at_first_failure_per_witness_still_down(tmp_path, monkeypat
 
     calls = []
 
-    def _counting_register_checkpoint(cp, url, **kwargs):
-        calls.append(cp.mmr_size)
+    def _counting_register_checkpoint(checkpoint_cose, url, **kwargs):
+        # retry_pending_witness_stamps() registers via each pending
+        # checkpoint's persisted COSE-wire form (raw bytes), not a
+        # CheckpointRecord -- decode it back to learn which checkpoint
+        # (by mmr_size) this attempt was for.
+        result = checkpoint_dict_from_cose(checkpoint_cose)
+        calls.append(result["mmr_size"])
         raise ConnectionError("still down")
 
     import capsule_emit.checkpoint as checkpoint_pkg

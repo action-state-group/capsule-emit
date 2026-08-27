@@ -33,7 +33,12 @@ import threading
 import time
 
 import pytest
-from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64, checkpoint_entry_hash
+from _stub_receipt import (
+    TEST_TS_PUBLIC_KEY_PEM,
+    build_stub_receipt_b64,
+    checkpoint_dict_from_cose,
+    checkpoint_entry_hash,
+)
 
 from capsule_emit import cli, ledger, seal, status, witness
 from capsule_emit.checkpoint import emit as checkpoint_emit_mod
@@ -55,7 +60,13 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/checkpoints":
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length)
-            body = json.loads(raw)
+            try:
+                body = checkpoint_dict_from_cose(raw)
+            except ValueError as exc:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(str(exc).encode())
+                return
             self.received.append(body)
             entry_hash = checkpoint_entry_hash(body)
             resp = {
