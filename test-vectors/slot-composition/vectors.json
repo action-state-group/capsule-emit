@@ -1,0 +1,15 @@
+{
+  "format_version": "1",
+  "profile": "dev-surface-v4-2026-08-24#slot-composition (O8)",
+  "generator": "capsule_emit.surface.seal/received/who/can/did over a fixed test key + pinned uuid4/timestamp",
+  "cases": [
+    {
+      "name": "carry_form",
+      "description": "received(mandate_jws, type='machine-mandate') standalone"
+    },
+    {
+      "name": "slot_form_composition",
+      "description": "seal(who(...), can(<the carry_form Capsule>), did(...)) -- the can-slot member ref must digest-match carry_form's capsule_id exactly"
+    }
+  ]
+}

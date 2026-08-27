@@ -8,7 +8,7 @@ constraint names.
 ``capsule-emit`` reads manifests to *declare* — no enforcement, no engine, no gate.
 A compatible gateway layer reads the same manifest file and *enforces* the declared
 constraints. This is the same-file upgrade path: no changes to manifests or
-seal()/carry()/compose() calls are required to add an enforcement layer on top.
+seal()/received() calls are required to add an enforcement layer on top.
 
 Safe-autonomy default: if ``autonomy`` is not declared, it defaults to ``"narrate"``
 (the safest; the agent describes what it would do but does not execute).

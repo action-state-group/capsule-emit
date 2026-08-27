@@ -163,6 +163,7 @@ from . import signing as _signing
 
 __all__ = [
     "maybe_checkpoint",
+    "push",
     "witness_enabled",
     "witness_mode",
     "witness_is_stub",
@@ -277,9 +278,9 @@ def refuse_stub_in_production(explicit: bool | None) -> None:
 
     Called from two places, deliberately: ``core._emit_capsule()`` (before
     anything is written -- the primary, fail-fast path every ``seal()``/
-    ``carry()``/``compose()`` call goes through) and :func:`maybe_checkpoint`
-    itself (a safety net for a caller driving the checkpoint layer directly,
-    per this module's docstring, without going through ``_emit_capsule``)."""
+    ``received()`` call goes through) and :func:`maybe_checkpoint` itself (a
+    safety net for a caller driving the checkpoint layer directly, per this
+    module's docstring, without going through ``_emit_capsule``)."""
     if witness_mode(explicit) != "stub":
         return
     env = os.environ.get(CAPSULE_ENV_VAR, "").strip().lower()
@@ -958,6 +959,79 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # history worth logging, and item 5's idle-silence/stamp-exclusion rule
     # (audit item 5) depends on stamp entries existing in the log at all.
     _persist_checkpoint_stamp(cp, state.log_id, checkpoint_cose_hex=checkpoint_cose_hex)
+
+
+def push(
+    ledger_path: str,
+    *,
+    ts_url: str | list[str] | None = None,
+    witness: bool | None = None,
+    signer: _signing.Signer | None = None,
+) -> Any:
+    """Force an immediate checkpoint now — frozen surface §1's "one verb for
+    urgency" (``capsule_emit.push()`` is the public re-export of this).
+
+    Unlike :func:`maybe_checkpoint` (dispatched from every ``seal()``/
+    ``received()`` call, gated on cadence, and always async — it never blocks
+    the caller), this is synchronous and cadence-independent: it builds and
+    signs a checkpoint over *ledger_path*'s current MMR state right now,
+    registers it with every configured witness, and returns only once that
+    has happened. This is what makes ``push()`` the transaction-grade option
+    (§4): ``push()`` *before* acting fixes the append-time lower bound,
+    ``push()`` *after* the seal fixes the upper.
+
+    Shares the exact per-ledger dispatch lock :func:`maybe_checkpoint`'s
+    background worker claims (:func:`_dispatch_lock_for`) -- a concurrent
+    cadence-triggered checkpoint and an explicit ``push()`` for the same
+    ledger never race each other; whichever gets there first, the other
+    waits its turn and then finds nothing new to do.
+
+    Honors the same witness kill switch as every other network path:
+    ``witness=False`` / ``CAPSULE_WITNESS=off`` makes this a no-op (frozen
+    surface §1a.3 -- "one switch kills all of it"). ``CAPSULE_WITNESS=stub``
+    forces the same local, zero-network stub checkpoint every other verb
+    gets in that mode; refuses to run under ``CAPSULE_ENV=production`` same
+    as :func:`maybe_checkpoint` (see :func:`refuse_stub_in_production`).
+
+    A no-op, not an error, when there is nothing new to checkpoint since the
+    last one for this ledger -- same idle-is-silent discipline as the
+    cadence timer (§1): an explicit push on a log with no unwitnessed
+    entries has nothing to force.
+
+    Returns the built ``CheckpointRecord`` (see ``capsule_emit.checkpoint``),
+    or ``None`` when witnessing is off or there was nothing to checkpoint.
+    """
+    mode = witness_mode(witness)
+    if mode == "off":
+        return None
+    refuse_stub_in_production(witness)
+    is_stub = mode == "stub"
+
+    urls = _parse_witness_urls(ts_url)
+    _print_first_use_notice_once(urls, stub=is_stub)
+
+    key = _resolve_key(ledger_path)
+    dispatch_lock = _dispatch_lock_for(key)
+    with dispatch_lock:
+        state = _get_state(ledger_path, signer)
+        with state.lock:
+            state.mmr.sync()
+            nothing_new = state.mmr.size() == 0 or (
+                state.prev is not None and state.mmr.size() <= state.prev.mmr_size
+            )
+        if nothing_new:
+            return None
+
+        # Reset the cadence counters too -- this forced checkpoint covers
+        # everything they were counting, so the next unwitnessed entry
+        # should open a fresh window rather than the age clock reporting
+        # stale elapsed time from before the push.
+        with _count_lock:
+            _counts[key] = 0
+            _armed_at[key] = time.monotonic()
+
+        _build_and_register(state, urls, stub=is_stub)
+        return state.prev
 
 
 def maybe_checkpoint(

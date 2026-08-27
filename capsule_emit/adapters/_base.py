@@ -4,7 +4,7 @@
 All framework adapters (MCP, LangChain, CrewAI, Hermes, Goose, ADK) extend this
 base. It holds operator/developer/ledger config and exposes a single
 ``emit_capsule()`` helper that calls the internal ``capsule_emit.core._emit_capsule``
-primitive (the same one ``seal()``/``carry()``/``compose()`` wrap).
+primitive (the same one ``seal()``/``received()`` wrap).
 """
 from __future__ import annotations
 

@@ -12,12 +12,13 @@ Run:
   pip install "capsule-emit" fastapi uvicorn
   python seal_server.py          # listens on :8042
 
-Override the anchor:
-  AAC_ANCHOR_URL=https://your-anchor.example.com python seal_server.py
-
-The server defaults to anchoring every capsule to the public Agent Action
-Capsule transparency log (anchor.agentactioncapsule.org) via the AAC_ANCHOR_URL
-env var.  Set AAC_ANCHOR_URL=off to disable anchoring for offline use.
+Every sealed capsule is witnessed by default (an async, digest-only CLL
+checkpoint stream -- see docs/checkpoint.md) -- no code or config required.
+Point at your own witness with CAPSULE_WITNESS_URL, or opt out entirely
+(witness=False / CAPSULE_WITNESS=off) for a genuinely offline deployment.
+The older, non-default per-capsule anchor channel this server used to
+re-enable unconditionally is legacy and stays off unless you explicitly set
+CAPSULE_ANCHOR=legacy-on -- see capsule_emit.core's "Single egress" note.
 """
 from __future__ import annotations
 
@@ -40,7 +41,6 @@ except ImportError as exc:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_LEDGER = os.environ.get("CAPSULE_LEDGER", "capsule_ledger.jsonl")
-_ANCHOR_OFF = os.environ.get("AAC_ANCHOR_URL", "").lower() == "off"
 
 # ---------------------------------------------------------------------------
 # App
@@ -100,14 +100,15 @@ def seal(req: SealRequest) -> JSONResponse:
     """Seal one capsule.  Call at the MAY boundary and again at DID.
 
     Returns:
-        capsule_id   — 64-char hex SHA-256 seal (the tamper-evident receipt)
-        anchored     — True ONLY when a receipt actually confirmed the digest
-                       reached the transparency log. The anchor submission is
-                       non-blocking by default, so this is almost always False
-                       here — use anchor_status for the weaker "was it
-                       submitted" fact, or pass anchor_wait= to capsule_emit.seal()
-                       directly if you need a synchronous confirmed/failed answer.
+        capsule_id   — 64-char hex SHA-256 seal (the tamper-evident record)
+        anchored     — legacy, non-default channel; always False unless a
+                       prior deployment explicitly opted in via
+                       CAPSULE_ANCHOR=legacy-on (see the module docstring).
+                       Witnessing (the CLL checkpoint stream) is the real,
+                       default egress path and is not reported per-call —
+                       see capsule_emit's `status` verb / docs/checkpoint.md.
         anchor_status — "confirmed" | "submitted" | "failed" | "skipped"
+                       ("skipped" is the expected value by default, 0.5.0+)
         reveal       — present only when reveal=True; contains raw input/output
     """
     try:
@@ -116,6 +117,11 @@ def seal(req: SealRequest) -> JSONResponse:
         # verdict classes (§5.4.2).  Apply this remap as a safety net regardless
         # of what the caller sends.
         eff_status = "planned" if req.verdict == "blocked" else req.effect_status
+        # anchor= is deliberately NOT passed here -- it defaults to off
+        # (capsule_emit.core's O16 "single egress" default; see the module
+        # docstring). This server used to force anchor=True by default
+        # (`anchor=(not _ANCHOR_OFF)`), re-enabling the exact per-record
+        # egress O16 killed -- the regression this fix removes.
         result = capsule_emit.seal(
             req.input,
             action=req.action,
@@ -125,7 +131,6 @@ def seal(req: SealRequest) -> JSONResponse:
             verdict=req.verdict,
             effect={"type": req.action, "status": eff_status},
             confirms=req.confirms,
-            anchor=(not _ANCHOR_OFF),
             ledger=req.ledger,
         )
     except Exception as exc:

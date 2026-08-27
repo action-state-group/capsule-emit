@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Acceptance test for [O16-01-02]: per-seal `anchor=True` is killed as a
-default, so a default-config `seal()`/`carry()`/`compose()` call has exactly
+default, so a default-config `seal()`/`received()` call has exactly
 ONE egress channel -- the checkpoint/witness stream -- not two.
 
 Named-test-coverage entry (O16 migration audit, items 1-2): "a no-network

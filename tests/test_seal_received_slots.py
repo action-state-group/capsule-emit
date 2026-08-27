@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the seal() / carry() / received() / compose() Layer-0 developer surface.
+"""Tests for the seal() / received() / who() / can() / did() / audit() Layer-0
+developer surface.
 
-Surface of record: ``_work/api-verb-naming-design-2026-08-21.md`` §7;
-``received()`` dispatch: ``_work/dev-surface-v4-2026-08-24.md`` §1
-(O16 migration audit item 7).
+Surface of record: ``_work/dev-surface-v4-2026-08-24.md`` §1/§3 (frozen);
+clean break removing the v3 ``compose()``/``carry()`` verbs from the public
+surface: ``_work/v4-complete-050-and-single-witness-task-2026-08-27.md`` (A/B).
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ import pytest
 
 import capsule_emit
 import capsule_emit.surface as surface_module
-from capsule_emit import Capsule, carry, compose, emit, received, seal
+from capsule_emit import Capsule, audit, can, did, emit, received, seal, who
 from capsule_emit.core import _emit_capsule
 from capsule_emit.verification import verify_capsule as verify
 
@@ -51,44 +52,35 @@ def test_seal_mint_result_is_a_capsule_not_a_receipt(tmp_path, monkeypatch):
     assert "receipt = seal(" not in (seal.__doc__ or "")
 
 
-def test_carry_then_compose_round_trips_a_foreign_receipt(tmp_path, monkeypatch):
+def test_received_standalone_dispatch_is_a_carry(tmp_path, monkeypatch):
+    # received(bytes, type=...) called directly performs the carry now and
+    # returns a Capsule — the foreign artifact is recorded under its own
+    # declared registered type.
     monkeypatch.chdir(tmp_path)
-    auth = seal({"scope": "write_order"}, action="authorize", anchor=False)
-    guard = seal({"checks": ["budget", "vendor_allowlist"]}, action="guard", anchor=False)
-    act = seal({"vendor": "Frobozz Supply"}, action="write_order", anchor=False)
-
-    # A foreign, already-signed artifact — as-transmitted bytes, not ours to re-canonicalize.
-    foreign_receipt = b'{"provider_ack": "PO-9182", "status": "accepted"}'
-    effect = carry(foreign_receipt, anchor=False)
+    mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
+    effect = received(mandate_jws, type="machine-mandate", anchor=False)
     assert isinstance(effect, Capsule)
+
     carried_ref = effect.capsule["model_attestation"]["compute_attestation"]["carried_artifact"]
-    assert carried_ref["digest"] == hashlib.sha256(foreign_receipt).hexdigest()
+    assert carried_ref["type"] == "machine-mandate"
+    assert carried_ref["digest"] == hashlib.sha256(mandate_jws).hexdigest()
     assert carried_ref["digest_alg"] == "SHA-256"
 
-    action = compose([auth, guard, act, effect], anchor=False)
-    assert isinstance(action, Capsule)
-
-    members = action.capsule["model_attestation"]["compute_attestation"]["composed_members"]
-    member_digests = {m["digest"] for m in members}
-    assert member_digests == {auth.capsule_id, guard.capsule_id, act.capsule_id, effect.capsule_id}
-    # Layer 0: members referenced by CPB typed digest ref alone — no log coordinates.
-    assert all(set(m) == {"type", "digest_alg", "digest"} for m in members)
-
-    result = verify(action.capsule)
+    result = verify(effect.capsule)
     assert result.ok, result.findings
 
 
-def test_carry_has_two_distinct_addresses(tmp_path, monkeypatch):
+def test_received_has_two_distinct_addresses(tmp_path, monkeypatch):
     # dev-surface v4 §1: "A carry receipt has its own capsule_id (over the
     # carried bytes as payload) while preserving the foreign record's own
     # digest inside — two addresses, two facts: theirs identifies their
     # record, yours identifies your act of holding it."
     monkeypatch.chdir(tmp_path)
-    foreign_receipt = b'{"provider_ack": "PO-9182", "status": "accepted"}'
-    effect = carry(foreign_receipt, anchor=False)
+    mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
+    effect = received(mandate_jws, type="machine-mandate", anchor=False)
 
     compute_att = effect.capsule["model_attestation"]["compute_attestation"]
-    carried_digest = hashlib.sha256(foreign_receipt).hexdigest()
+    carried_digest = hashlib.sha256(mandate_jws).hexdigest()
 
     # "theirs" — the foreign record's own address, untouched.
     assert compute_att["carried_artifact"]["digest"] == carried_digest
@@ -106,72 +98,124 @@ def test_carry_has_two_distinct_addresses(tmp_path, monkeypatch):
 
     # capsule_id is sensitive to the carried bytes as payload: carrying
     # different foreign bytes under an otherwise-identical call changes it.
-    other = carry(b'{"provider_ack": "PO-9183", "status": "accepted"}', anchor=False)
+    other = received(b'{"iss": "acme-mandates-2"}', type="machine-mandate", anchor=False)
     assert other.capsule_id != effect.capsule_id
 
     result = verify(effect.capsule)
     assert result.ok, result.findings
 
 
-def test_received_standalone_dispatch_is_a_carry(tmp_path, monkeypatch):
-    # O16 audit item 7, standalone-carry case: received(bytes, type=...)
-    # called directly performs the carry now and returns a Capsule — same
-    # mechanism as carry(), but the foreign artifact is recorded under its
-    # own declared registered type rather than the generic marker.
+def test_slot_form_composes_the_frozen_surface_canonical_example(tmp_path, monkeypatch):
+    # dev-surface v4 §3's own example, verbatim shape:
+    #   seal(who(delegation_record), can(received(mandate_jws, type=...)), did(payment_action))
     monkeypatch.chdir(tmp_path)
+    delegation_record = {"delegate": "po-agent@v1", "scope": "write_order"}
     mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
-    effect = received(mandate_jws, type="machine-mandate", anchor=False)
-    assert isinstance(effect, Capsule)
+    payment_action = {"vendor": "Frobozz Supply", "total": "1240.19"}
 
-    carried_ref = effect.capsule["model_attestation"]["compute_attestation"]["carried_artifact"]
-    assert carried_ref["type"] == "machine-mandate"
-    assert carried_ref["digest"] == hashlib.sha256(mandate_jws).hexdigest()
-    assert carried_ref["digest_alg"] == "SHA-256"
+    mandate = received(mandate_jws, type="machine-mandate", anchor=False)
+    action = seal(who(delegation_record), can(mandate), did(payment_action), anchor=False)
 
-    result = verify(effect.capsule)
-    assert result.ok, result.findings
-
-
-def test_received_has_two_distinct_addresses(tmp_path, monkeypatch):
-    # Same two-address mechanism as carry() (dev-surface v4 §1) — verified
-    # independently for received() since it is a distinct public verb.
-    monkeypatch.chdir(tmp_path)
-    mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
-    effect = received(mandate_jws, type="machine-mandate", anchor=False)
-
-    compute_att = effect.capsule["model_attestation"]["compute_attestation"]
-    carried_digest = hashlib.sha256(mandate_jws).hexdigest()
-
-    assert compute_att["carried_artifact"]["digest"] == carried_digest
-    assert compute_att["carried_input_digest"] == carried_digest
-    assert "agent_input_digest" not in compute_att
-    assert effect.capsule_id != carried_digest
-
-
-def test_carry_still_uses_the_generic_carried_type(tmp_path, monkeypatch):
-    # carry() is kept, unchanged, alongside received() this release — it
-    # still records the generic "foreign-artifact" marker rather than a
-    # caller-declared type.
-    monkeypatch.chdir(tmp_path)
-    foreign_receipt = b'{"provider_ack": "PO-9182", "status": "accepted"}'
-    effect = carry(foreign_receipt, anchor=False)
-    carried_ref = effect.capsule["model_attestation"]["compute_attestation"]["carried_artifact"]
-    assert carried_ref["type"] == "foreign-artifact"
-
-
-def test_received_then_compose_round_trips(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    auth = seal({"scope": "write_order"}, action="authorize", anchor=False)
-    act = seal({"vendor": "Frobozz Supply"}, action="write_order", anchor=False)
-    effect = received(b'{"provider_ack": "PO-9182"}', type="provider-ack", anchor=False)
-
-    action = compose([auth, act, effect], anchor=False)
+    assert isinstance(action, Capsule)
     members = action.capsule["model_attestation"]["compute_attestation"]["composed_members"]
-    member_digests = {m["digest"] for m in members}
-    assert member_digests == {auth.capsule_id, act.capsule_id, effect.capsule_id}
+    by_slot = {m["slot"]: m for m in members}
+    assert set(by_slot) == {"who", "can", "did"}
+    # Layer 0: members referenced by CPB typed digest ref, slot-annotated — no log coordinates.
+    assert all(set(m) == {"type", "digest_alg", "digest", "slot"} for m in members)
+    # can() references the mandate capsule already produced by received() —
+    # not a re-mint (O8: slot-form and carry-form are byte-identical).
+    assert by_slot["can"]["digest"] == mandate.capsule_id
 
     result = verify(action.capsule)
     assert result.ok, result.findings
+
+
+def test_slot_form_mints_a_fresh_capsule_for_a_raw_payload(tmp_path, monkeypatch):
+    # who()/can()/did()/audit() wrapping a raw payload (not a Capsule) mints
+    # it as its own member capsule, under the slot name as the action — this
+    # is what makes seal(who(dict), did(dict)) work without pre-sealing
+    # every member by hand.
+    monkeypatch.chdir(tmp_path)
+    action = seal(who({"delegate": "po-agent@v1"}), did({"vendor": "Frobozz"}), anchor=False)
+    members = action.capsule["model_attestation"]["compute_attestation"]["composed_members"]
+    assert len(members) == 2
+
+    ledger_records = capsule_emit.read_ledger("ledger.jsonl")
+    # Three ledger entries: the two freshly-minted members, plus the composition.
+    assert len(ledger_records) == 3
+    who_member_id = next(m["digest"] for m in members if m["slot"] == "who")
+    who_record = next(r for r in ledger_records if r["capsule_id"] == who_member_id)
+    assert who_record["action_id"].startswith("who/")
+
+
+def test_slot_form_can_wrapping_a_received_capsule_is_byte_identical_to_standalone(tmp_path, monkeypatch):
+    # O8 acceptance: slot-form and carry-form produce byte-identical records.
+    # can(received(...)) must reference the EXACT same capsule bytes a
+    # standalone received() call for the identical Capsule object would —
+    # never a re-mint (which would also double-append to the ledger).
+    monkeypatch.chdir(tmp_path)
+    mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
+    mandate = received(mandate_jws, type="machine-mandate", anchor=False)
+
+    ledger_path = tmp_path / "ledger.jsonl"
+    lines_after_receive = ledger_path.read_text().splitlines()
+
+    action = seal(can(mandate), did({"vendor": "Frobozz"}), anchor=False)
+
+    lines_after_compose = ledger_path.read_text().splitlines()
+    # Exactly one new entry (the composition) — can(mandate) did not re-append it.
+    assert len(lines_after_compose) == len(lines_after_receive) + 2  # did() member + composition
+
+    members = action.capsule["model_attestation"]["compute_attestation"]["composed_members"]
+    can_ref = next(m for m in members if m["slot"] == "can")
+    assert can_ref["digest"] == mandate.capsule_id
+    assert can_ref["type"] == "capsule"
+
+
+def test_slot_composition_order_is_canonicalized_regardless_of_caller_arg_order(tmp_path, monkeypatch):
+    # dev-surface v4 §3's frozen composition order is who -> can -> did ->
+    # audit. Two seal() calls citing the EXACT same three already-sealed
+    # members, differing only in the order the caller wrote the positional
+    # slot wrappers, must produce byte-identical composition capsules —
+    # composed_members is never allowed to depend on call-argument order.
+    # (Pre-fix: composed_members preserved call order verbatim, so this
+    # diverged on capsule_id.)
+    monkeypatch.chdir(tmp_path)
+    delegation_record = {"delegate": "po-agent@v1", "scope": "write_order"}
+    mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
+    payment_action = {"vendor": "Frobozz Supply", "total": "1240.19"}
+
+    who_cap = seal(delegation_record, action="who", anchor=False)
+    can_cap = received(mandate_jws, type="machine-mandate", anchor=False)
+    did_cap = seal(payment_action, action="did", anchor=False)
+
+    fixed_uuid = uuid.UUID(int=99)
+    fixed_ts = "2026-08-27T00:00:00Z"
+
+    with (
+        mock.patch.object(_base_emit_module.uuid, "uuid4", return_value=fixed_uuid),
+        mock.patch.object(_base_emit_module, "_utc_now", return_value=fixed_ts),
+    ):
+        canonical = seal(who(who_cap), can(can_cap), did(did_cap), anchor=False, ledger=tmp_path / "canonical.jsonl")
+
+    with (
+        mock.patch.object(_base_emit_module.uuid, "uuid4", return_value=fixed_uuid),
+        mock.patch.object(_base_emit_module, "_utc_now", return_value=fixed_ts),
+    ):
+        non_canonical = seal(
+            did(did_cap), can(can_cap), who(who_cap), anchor=False, ledger=tmp_path / "non_canonical.jsonl"
+        )
+
+    # capsule_id is signer-independent by construction (core.py: computed
+    # before signing, draft-04 reversal) — the two calls use distinct default
+    # signers (separate ledgers), so capsule_id equality, not full capsule
+    # dict equality, is the right byte-identical check here.
+    assert canonical.capsule_id == non_canonical.capsule_id
+
+    canonical_members = canonical.capsule["model_attestation"]["compute_attestation"]["composed_members"]
+    non_canonical_members = non_canonical.capsule["model_attestation"]["compute_attestation"]["composed_members"]
+    assert [m["slot"] for m in canonical_members] == ["who", "can", "did"]
+    assert [m["slot"] for m in non_canonical_members] == ["who", "can", "did"]
 
 
 def test_seal_refuses_bare_bytes_naming_received(tmp_path, monkeypatch):
@@ -182,6 +226,16 @@ def test_seal_refuses_bare_bytes_naming_received(tmp_path, monkeypatch):
         seal(b'{"provider_ack": "PO-9182"}', anchor=False)
     with pytest.raises(TypeError, match=r"received\("):
         seal(bytearray(b'{"provider_ack": "PO-9182"}'), anchor=False)
+
+
+@pytest.mark.parametrize("wrapper", [who, can, did, audit])
+def test_slot_wrappers_refuse_bare_bytes_naming_received(tmp_path, monkeypatch, wrapper):
+    # Same dispatch-ambiguity refusal as seal() itself, for every slot
+    # wrapper: bare foreign bytes are always refused, never guessed —
+    # frozen surface §1's dispatch rule applies identically nested in a slot.
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(TypeError, match=r"received\("):
+        seal(wrapper(b'{"provider_ack": "PO-9182"}'), did({"x": 1}), anchor=False)
 
 
 def test_seal_nested_received_is_byte_identical_and_does_not_double_append(tmp_path, monkeypatch):
@@ -207,19 +261,68 @@ def test_seal_nested_received_is_byte_identical_and_does_not_double_append(tmp_p
 
 def test_seal_still_refuses_bare_string_payload_that_is_a_capsule_look_alike(tmp_path, monkeypatch):
     # seal()'s pass-through is scoped to actual carried Capsules only — an
-    # EmitResult without a carried_artifact (e.g. a plain seal()/compose()
+    # EmitResult without a carried_artifact (e.g. a plain seal()/composition
     # result) is not a recognized carry and is not silently special-cased.
     monkeypatch.chdir(tmp_path)
     plain = seal({"a": 1}, anchor=False)
     assert surface_module._carried_artifact_ref(plain) is None
 
 
-def test_compose_rejects_members_that_are_not_already_appended_capsules(tmp_path, monkeypatch):
+def test_seal_with_no_arguments_raises(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(TypeError):
-        compose([{"not": "a capsule"}], anchor=False)
+    with pytest.raises(TypeError, match="requires a payload"):
+        seal(anchor=False)
+
+
+def test_seal_refuses_mixing_a_plain_payload_with_slot_wrappers(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(TypeError, match="cannot mix"):
+        seal({"a": 1}, did({"b": 2}), anchor=False)
+
+
+def test_seal_refuses_more_than_one_plain_payload(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(TypeError, match="exactly one payload"):
+        seal({"a": 1}, {"b": 2}, anchor=False)
+
+
+def test_seal_slot_form_refuses_an_outer_action(tmp_path, monkeypatch):
+    # action= is ambiguous for a multi-member call (which member's action?)
+    # — refused, never guessed at.
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(TypeError, match="action"):
+        seal(did({"a": 1}), audit({"b": 2}), action="mint", anchor=False)
+
+
+def test_private_compose_helper_requires_at_least_one_member(tmp_path, monkeypatch):
+    # The v3 compose() verb's flat-bind body survives as the private helper
+    # the slot-form calls (frozen surface §1/§9 clean break) — its own
+    # invariants (at least one member; every member already a Capsule) still
+    # hold, exercised directly since there is no longer a public zero-slot
+    # entry point to reach them through.
+    monkeypatch.chdir(tmp_path)
     with pytest.raises(ValueError):
-        compose([], anchor=False)
+        surface_module._compose([], anchor=False)
+    with pytest.raises(TypeError):
+        surface_module._compose([{"not": "a capsule"}], anchor=False)
+
+
+def test_slot_membership_is_never_inferred(tmp_path, monkeypatch):
+    # "The verb never infers membership" (frozen surface §3a) — a capsule
+    # sealed earlier in the same process/ledger must never silently show up
+    # as a composition member just because it exists; only what is
+    # explicitly wrapped in a slot is ever a member. This is the guessing
+    # mutant this test is built to catch: any implementation that scans the
+    # ledger/log for "recent" or "related" capsules instead of taking only
+    # the explicitly-passed slot wrappers would fail it.
+    monkeypatch.chdir(tmp_path)
+    bystander = seal({"unrelated": "capsule"}, anchor=False)
+    action = seal(did({"vendor": "Frobozz"}), anchor=False)
+
+    members = action.capsule["model_attestation"]["compute_attestation"]["composed_members"]
+    member_digests = {m["digest"] for m in members}
+    assert bystander.capsule_id not in member_digests
+    assert len(members) == 1
 
 
 def test_import_discipline_noun_not_shadowed():
@@ -230,6 +333,19 @@ def test_import_discipline_noun_not_shadowed():
     assert not hasattr(capsule_emit, "capsule")
     assert "capsule" not in capsule_emit.__all__
     assert "import capsule_emit as capsule" in (capsule_emit.__doc__ or "")
+
+
+def test_compose_and_carry_are_not_public(tmp_path, monkeypatch):
+    # Clean break, no deprecation period (frozen surface §1/§9, task B): the
+    # v3 flat-bind verbs are gone from __all__ and from the module namespace
+    # entirely — compose()'s body survives only as the private _compose()
+    # helper the slot-form calls; carry()'s body was already received()'s.
+    assert "compose" not in capsule_emit.__all__
+    assert "carry" not in capsule_emit.__all__
+    assert not hasattr(capsule_emit, "compose")
+    assert not hasattr(capsule_emit, "carry")
+    assert not hasattr(surface_module, "compose")
+    assert not hasattr(surface_module, "carry")
 
 
 def test_layer_0_imports_no_checkpoint_module():
@@ -296,7 +412,7 @@ def test_emit_is_a_removed_raising_stub():
 def test_seal_on_received_rejects_outer_ledger_and_signer_instead_of_dropping_them(tmp_path, monkeypatch):
     # HIGH (surface.py:137): seal(received(...), ledger=other, signing_key_path=key)
     # must not silently use the wrong ledger/signer -- it must raise and name
-    # the fix (pass the option to received()/carry() instead).
+    # the fix (pass the option to received() instead).
     monkeypatch.chdir(tmp_path)
     effect = received(b'{"iss": "acme-mandates"}', type="machine-mandate", anchor=False)
     with pytest.raises(TypeError, match="ledger"):
