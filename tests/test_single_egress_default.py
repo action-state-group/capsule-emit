@@ -26,6 +26,18 @@ import pytest
 import capsule_emit.core as core
 import capsule_emit.witness as witness
 from capsule_emit import seal
+from capsule_emit.checkpoint.cose_wire import verify_checkpoint_cose_offline
+
+
+def _checkpoint_dict_from_cose(cose_bytes: bytes) -> dict:
+    """Decode+verify a COSE-wire checkpoint (real signature check, same as
+    what capsule-anchor's witness route will independently do) and
+    reconstruct the JSON CheckpointRecord-shaped dict this stub's own
+    entry_hash logic already expects."""
+    result = verify_checkpoint_cose_offline(cose_bytes)
+    if not result.ok:
+        raise ValueError(f"stub TS could not verify COSE checkpoint: {result.errors}")
+    return result.decoded.to_checkpoint_record().to_dict()
 
 
 class _StubTSHandler(http.server.BaseHTTPRequestHandler):
@@ -37,7 +49,13 @@ class _StubTSHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length)
-        body = json.loads(raw)
+        try:
+            body = _checkpoint_dict_from_cose(raw)
+        except ValueError as exc:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(str(exc).encode())
+            return
         self.received.append({"path": self.path, "body": body})
         digest = body.get("capsule_id", "")
         entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest() if digest else ""
