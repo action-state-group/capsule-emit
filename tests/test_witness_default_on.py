@@ -3,15 +3,16 @@
 layer flips from opt-in to default-ON in ``capsule_emit.core.emit()``.
 
 Covers the acceptance check verbatim:
-- default `emit()` path checkpoints+witnesses a stream (digest-only) with
+- default `emit()` path checkpoints+witnesses a stream (checkpoint-only) with
   zero opt-in, once the ledger crosses the cadence threshold
 - the disable path works (``witness=False`` and ``CAPSULE_WITNESS=off``)
 - non-streaming (single, below-cadence) emit cost is unchanged -- run in a
   subprocess so no other test importing ``capsule_emit.checkpoint`` can leave
   it warm in ``sys.modules`` and mask a regression here, same discipline as
   ``tests/test_checkpoint_layer0_cost.py``
-- only the checkpoint's own digest crosses the wire (digest-only, no ledger
-  content, no capsule content)
+- only the checkpoint's own fields cross the wire, to ``/checkpoints`` --
+  never ledger content, never capsule content, never ``/register`` (single-
+  host witness ruling, 2026-08-27)
 """
 from __future__ import annotations
 
@@ -33,9 +34,24 @@ _WORKTREE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 # ---------------------------------------------------------------------------
-# Hermetic stub Transparency Service -- POST /v1/digest is the only endpoint
+# Hermetic stub Transparency Service -- POST /checkpoints is the only endpoint
 # capsule_emit.checkpoint.emit.register_checkpoint() ever calls.
 # ---------------------------------------------------------------------------
+
+#: The CLL CheckpointRecord fields a signature covers -- MUST match
+#: ``capsule_emit.checkpoint.emit.CheckpointRecord.signing_body()``.
+_CHECKPOINT_SIGNING_FIELDS = (
+    "v", "kind", "log_id", "mmr_size", "root", "prev_size", "prev_root", "key_id", "timestamp",
+)
+
+
+def _entry_hash_for(cp: dict) -> str:
+    """Reproduce capsule-anchor's ``/checkpoints`` entry_hash derivation --
+    inlined to keep this file's zero-cross-file-dependency property."""
+    body = {k: cp[k] for k in _CHECKPOINT_SIGNING_FIELDS}
+    signing_body = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    digest = hashlib.sha256(signing_body).hexdigest()
+    return hashlib.sha256(bytes.fromhex(digest)).hexdigest()
 
 
 class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
@@ -45,13 +61,12 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_POST(self):
-        if self.path == "/v1/digest":
+        if self.path == "/checkpoints":
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length)
             body = json.loads(raw)
             self.received.append(body)
-            digest = body["capsule_id"]
-            entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
+            entry_hash = _entry_hash_for(body)
             resp = {
                 "entry_hash": entry_hash,
                 "receipt_b64": base64.b64encode(b"stub-receipt-not-a-real-cose-receipt").decode(),
@@ -219,11 +234,12 @@ def test_explicit_witness_true_overrides_env_off(tmp_path, stub_ts, monkeypatch)
 
 
 # ---------------------------------------------------------------------------
-# (c) digest-only -- only the checkpoint's own digest crosses the wire
+# (c) checkpoint-only -- only the checkpoint's own fields cross the wire,
+#     never capsule content, never ledger content
 # ---------------------------------------------------------------------------
 
 
-def test_only_the_checkpoint_digest_is_posted(tmp_path, stub_ts, monkeypatch):
+def test_only_the_checkpoint_fields_are_posted_never_capsule_content(tmp_path, stub_ts, monkeypatch):
     monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "2")
     ts_url, received = stub_ts
     ledger = tmp_path / "ledger.jsonl"
@@ -243,10 +259,18 @@ def test_only_the_checkpoint_digest_is_posted(tmp_path, stub_ts, monkeypatch):
     assert _wait_for(lambda: len(received) >= 1)
     body = received[0]
 
-    assert set(body.keys()) == {"capsule_id"}, f"unexpected fields posted to the TS: {body}"
-    digest = body["capsule_id"]
-    assert isinstance(digest, str) and len(digest) == 64
-    int(digest, 16)  # must be hex
+    # Since the single-host witness ruling (2026-08-27), /checkpoints requires
+    # the full CheckpointRecord to verify its signature before counter-signing
+    # -- so the checkpoint's OWN fields (its size, root hash, timestamp,
+    # signer key_id) are expected here. What must NEVER appear is capsule
+    # content or ledger-internal identifiers.
+    assert set(body.keys()) == {
+        "v", "kind", "log_id", "mmr_size", "root", "prev_size", "prev_root",
+        "key_id", "timestamp", "signature",
+    }, f"unexpected fields posted to the TS: {body}"
+    assert body["kind"] == "mmr_checkpoint"
+    assert isinstance(body["root"], str) and len(body["root"]) == 64
+    int(body["root"], 16)  # must be hex
 
     raw = json.dumps(body)
     for leaked in ("secret-account-number-12345", "1000.00", "transfer_funds",

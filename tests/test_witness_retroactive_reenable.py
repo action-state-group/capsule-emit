@@ -26,6 +26,21 @@ import pytest
 
 from capsule_emit import seal, witness
 
+#: The CLL CheckpointRecord fields a signature covers -- MUST match
+#: ``capsule_emit.checkpoint.emit.CheckpointRecord.signing_body()``.
+_CHECKPOINT_SIGNING_FIELDS = (
+    "v", "kind", "log_id", "mmr_size", "root", "prev_size", "prev_root", "key_id", "timestamp",
+)
+
+
+def _entry_hash_for(cp: dict) -> str:
+    """Reproduce capsule-anchor's ``/checkpoints`` entry_hash derivation --
+    inlined to keep this file's zero-cross-file-dependency property."""
+    body = {k: cp[k] for k in _CHECKPOINT_SIGNING_FIELDS}
+    signing_body = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    digest = hashlib.sha256(signing_body).hexdigest()
+    return hashlib.sha256(bytes.fromhex(digest)).hexdigest()
+
 
 class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
     received: list[dict] = []
@@ -34,13 +49,12 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_POST(self):
-        if self.path == "/v1/digest":
+        if self.path == "/checkpoints":
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length)
             body = json.loads(raw)
             self.received.append(body)
-            digest = body["capsule_id"]
-            entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
+            entry_hash = _entry_hash_for(body)
             resp = {
                 "entry_hash": entry_hash,
                 "receipt_b64": base64.b64encode(b"stub-receipt-not-a-real-cose-receipt").decode(),

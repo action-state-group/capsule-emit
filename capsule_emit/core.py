@@ -7,9 +7,10 @@ It wraps ``agent_action_capsule.emit()`` with:
 - Digest-only commitment of agent_input / agent_output (content stays local)
 - Optional per-emit digest salting (``salt_digests=True``), for a privacy-sensitive
   deployment that wants cross-capsule input correlation resistance
-- Async checkpoint/witness on by default, lazy per ledger (digest-only; see
-  ``capsule_emit.witness`` and ``docs/checkpoint.md``) — the only default
-  egress channel as of 0.5.0 (see "Single egress" below)
+- Async checkpoint/witness on by default, lazy per ledger (checkpoint-only,
+  never capsule content; see ``capsule_emit.witness`` and
+  ``docs/checkpoint.md``) — the only default egress channel as of 0.5.0
+  (see "Single egress" below)
 - Every capsule cryptographically signed over its ``capsule_id`` by a
   persisted producer key -- self-attested strength, by default, on every
   call (see ``capsule_emit.signing``)
@@ -206,11 +207,15 @@ def _print_first_run_disclosure_once(
     if witness_active:
         display = witness_endpoint or "the default witness endpoint (CAPSULE_WITNESS_URL unset)"
         lines.append(
-            f"  - WITNESS: a signed checkpoint digest (sha256 of the checkpoint — no "
-            f"capsule content) is sent to {display} once enough ledger entries "
-            "accumulate. Disable with witness=False or CAPSULE_WITNESS=off."
+            f"  - WITNESS: a signed checkpoint of the log (its size, a root hash, a "
+            f"timestamp — no capsule content) is POSTed to {display} at its "
+            "/checkpoints route once enough ledger entries accumulate. Disable "
+            "with witness=False or CAPSULE_WITNESS=off."
         )
-    lines.append("Both are digest-only / content-free. (This notice prints once per process.)")
+    lines.append(
+        "Both are content-free — no capsule content ever leaves the process. "
+        "(This notice prints once per process.)"
+    )
     try:
         print("\n".join(lines), file=sys.stderr)
     except Exception:  # noqa: BLE001 -- a notice must never break _emit_capsule()
@@ -532,8 +537,9 @@ def _emit_capsule(
             ``capsule_emit.witness.DEFAULT_CADENCE_SECONDS`` — 15 minutes,
             whichever comes first; never fires on age alone with no
             unwitnessed work), a signed peaks checkpoint over this ledger's
-            MMR is built and registered with a Transparency Service — async,
-            digest-only, lazy (nothing is imported or computed until a
+            MMR is built and registered with a Transparency Service, at its
+            ``/checkpoints`` route — async, checkpoint-only (never capsule
+            content), lazy (nothing is imported or computed until a
             checkpoint is actually due; see ``capsule_emit.witness`` and
             ``docs/checkpoint.md``). Pass
             ``False`` to opt this ledger out, or set ``CAPSULE_WITNESS=off``

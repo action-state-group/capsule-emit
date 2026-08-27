@@ -29,7 +29,7 @@ import time
 from dataclasses import replace
 
 import pytest
-from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64
+from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64, checkpoint_entry_hash
 from agent_action_capsule.canonical import compute_capsule_id
 
 from capsule_emit import cli, seal, status, witness
@@ -51,13 +51,12 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_POST(self):
-        if self.path == "/v1/digest":
+        if self.path == "/checkpoints":
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length)
             body = json.loads(raw)
             self.received.append(body)
-            digest = body["capsule_id"]
-            entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
+            entry_hash = checkpoint_entry_hash(body)
             resp = {
                 "entry_hash": entry_hash,
                 "receipt_b64": build_stub_receipt_b64(entry_hash),

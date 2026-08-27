@@ -5,9 +5,10 @@
 ``capsule_emit.witness``, and ``docs/checkpoint.md`` for the full story):
 once a ledger accumulates enough entries to be checkpoint-worthy, a signed
 peaks checkpoint over that ledger's MMR is built and registered with a
-Transparency Service automatically -- async, digest-only, lazy, no caller
-code change required. Disable per-call with ``emit(..., witness=False)`` or
-everywhere with the ``CAPSULE_WITNESS=off`` env var.
+Transparency Service automatically, at its ``/checkpoints`` route -- async,
+checkpoint-only (never capsule content), lazy, no caller code change
+required. Disable per-call with ``emit(..., witness=False)`` or everywhere
+with the ``CAPSULE_WITNESS=off`` env var.
 
 This subpackage itself remains **structurally opt-in at import time**: that
 default wiring is a thin layer above it (``capsule_emit.witness``) that

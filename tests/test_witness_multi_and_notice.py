@@ -13,14 +13,13 @@
 """
 from __future__ import annotations
 
-import hashlib
 import http.server
 import json
 import threading
 import time
 
 import pytest
-from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64
+from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64, checkpoint_entry_hash
 
 import capsule_emit.core as core
 from capsule_emit import seal, witness
@@ -35,13 +34,12 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_POST(self):
-        if self.path == "/v1/digest":
+        if self.path == "/checkpoints":
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length)
             body = json.loads(raw)
             self.received.append(body)
-            digest = body["capsule_id"]
-            entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
+            entry_hash = checkpoint_entry_hash(body)
             resp = {
                 "entry_hash": entry_hash,
                 "receipt_b64": build_stub_receipt_b64(entry_hash),
@@ -265,7 +263,7 @@ def test_first_use_notice_prints_once_with_disable_instructions(tmp_path, stub_t
 
     err = capsys.readouterr().err
     assert err.count("capsule-emit: witnessing is on for this process") == 1
-    assert "32-byte digest" in err
+    assert "/checkpoints" in err
     assert ts_url in err
     assert "witness=False" in err
     assert "CAPSULE_WITNESS=off" in err
@@ -315,8 +313,9 @@ def test_first_use_notice_exact_text_snapshot(tmp_path, stub_ts_single, capsys):
     err = capsys.readouterr().err.strip()
     assert err == (
         "capsule-emit: witnessing is on for this process -- once a checkpoint "
-        "is due, a signed ~32-byte digest (sha256 of the checkpoint, structurally "
-        f"incapable of carrying your capsule content) will be sent to {ts_url}. "
-        "Disable with emit(..., witness=False) or CAPSULE_WITNESS=off. "
+        "is due, a signed checkpoint of your log (its size, a root hash, and a "
+        f"timestamp -- never your capsule content) will be POSTed to {ts_url} "
+        "at its /checkpoints route for independent countersigning. Disable with "
+        "emit(..., witness=False) or CAPSULE_WITNESS=off. "
         "(This notice prints once per process, before any checkpoint goes out.)"
     )

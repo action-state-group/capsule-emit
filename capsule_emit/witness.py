@@ -46,10 +46,18 @@ are written directly through ``ledger.append_to_ledger``, never through
 counter *or* resets the age clock -- exactly like it never advances the
 entry-count cadence today.
 
-**Digest-only.** The only bytes that ever cross the wire are the checkpoint's
-own SHA-256 digest (``CheckpointRecord.digest()``, itself a hash of hashes --
-see ``capsule_emit.checkpoint.emit``). No capsule content, no capsule_id list,
-no ledger path, ever leaves the process -- same posture as the anchor.
+**Checkpoint-only, never capsule content.** What crosses the wire (since the
+single-host witness ruling, 2026-08-27) is the checkpoint itself -- a signed
+snapshot of your log's SHAPE: its size, a root hash, a timestamp, and the
+signing key's id (``CheckpointRecord.to_dict()``, POSTed to the witness's
+``/checkpoints`` route -- see ``capsule_emit.checkpoint.emit.register_checkpoint``)
+-- so the witness can verify the checkpoint's own signature before ever
+counter-signing it, rather than blindly stamping an opaque value. No capsule
+content, no capsule_id list, no ledger path, and no per-record digest, ever
+leaves the process this way; the checkpoint's own fields are the only thing
+sent, and ``/register`` (the separate, explicit opt-in per-record digest
+route) is never touched by this default path -- pinned by a no-egress CI
+test (``tests/test_witness_no_egress_to_register.py``).
 
 **Signing (checkpoint layer only -- this is NOT capsule content signing).**
 No extra key management is required to get the default path working: since
@@ -94,7 +102,7 @@ equivocation-resistant* tier -- see ``docs/checkpoint.md``.
 byte ever leaves the process, independent of whether a checkpoint is
 actually due yet (the cadence counter may not cross its threshold for a
 long time, or ever, in a short-lived process). States what will be sent (a
-32-byte digest -- structurally incapable of carrying capsule content), where
+signed checkpoint of your log -- never capsule content), where
 (the resolved endpoint(s)), and how to turn it off. Printed exactly once per
 process regardless of how many ledgers or checkpoints follow (see
 ``_print_first_use_notice_once``).
@@ -402,9 +410,10 @@ def _print_first_use_notice_once(urls: list[str], *, stub: bool = False) -> None
         endpoints = ", ".join(urls) if urls else "the default witness endpoint"
         print(
             "capsule-emit: witnessing is on for this process -- once a checkpoint "
-            "is due, a signed ~32-byte digest (sha256 of the checkpoint, structurally "
-            f"incapable of carrying your capsule content) will be sent to {endpoints}. "
-            "Disable with emit(..., witness=False) or CAPSULE_WITNESS=off. "
+            "is due, a signed checkpoint of your log (its size, a root hash, and a "
+            f"timestamp -- never your capsule content) will be POSTed to {endpoints} "
+            "at its /checkpoints route for independent countersigning. Disable with "
+            "emit(..., witness=False) or CAPSULE_WITNESS=off. "
             "(This notice prints once per process, before any checkpoint goes out.)",
             file=sys.stderr,
         )
@@ -523,6 +532,12 @@ class _WitnessState:
     mmr: Any
     signer: Any
     log_id: str
+    #: The real ledger file path -- kept SEPARATE from ``log_id`` (which is
+    #: now an opaque hash of it, since ``log_id`` is a checkpoint field that
+    #: crosses the wire to the witness). Local-only: used to re-read the
+    #: ledger for the retry backlog and to persist the checkpoint stamp --
+    #: never passed to ``emit_checkpoint``/``register_checkpoint``.
+    ledger_path: str
     prev: Any = None
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -572,6 +587,24 @@ def _resolve_key(ledger_path: str) -> str:
     return str(Path(ledger_path).resolve())
 
 
+def _public_log_id(key: str) -> str:
+    """Derive the checkpoint's wire-visible ``log_id`` from the internal,
+    path-based state key -- a stable SHA-256 hash, not the raw path.
+
+    ``log_id`` is a ``CheckpointRecord`` field: since the single-host witness
+    ruling (2026-08-27), the full checkpoint (this field included) is POSTed
+    to the witness's ``/checkpoints`` route so it can verify the checkpoint's
+    own signature. The raw resolved ledger path must never be that field's
+    value -- it would leak local filesystem structure (and potentially a
+    username, via the home directory) to the witness by default, which is
+    exactly what the "no ledger path ever leaves the process" guarantee
+    exists to prevent. Hashing keeps the property stage 2 needs (the SAME
+    ledger produces the SAME ``log_id`` across restarts, so per-``log_id``
+    continuity is checkable) while making the value opaque.
+    """
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
 def _get_state(ledger_path: str, signer: _signing.Signer | None = None) -> _WitnessState:
     """Only ever called once a checkpoint is actually due -- this is the one
     place that imports ``capsule_emit.checkpoint``.
@@ -594,7 +627,8 @@ def _get_state(ledger_path: str, signer: _signing.Signer | None = None) -> _Witn
             state = _WitnessState(
                 mmr=MmrLedger(_JsonlLogSource(ledger_path)),
                 signer=_PersistedCheckpointSigner(resolved_signer),
-                log_id=key,
+                log_id=_public_log_id(key),
+                ledger_path=ledger_path,
             )
             _states[key] = state
         return state
@@ -900,7 +934,7 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # cursor instead of only ever seeing the newest checkpoint. Reads/
     # appends only already-settled checkpoint stamps on disk, never
     # ``state.mmr``/``state.prev``, so it needs no lock here.
-    retry_pending_witness_stamps(state.log_id, ts_url=resolved_urls)
+    retry_pending_witness_stamps(state.ledger_path, ts_url=resolved_urls)
 
     with state.lock:
         state.mmr.sync()
@@ -958,7 +992,7 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # regardless of registration outcome: even a self-attested checkpoint is
     # history worth logging, and item 5's idle-silence/stamp-exclusion rule
     # (audit item 5) depends on stamp entries existing in the log at all.
-    _persist_checkpoint_stamp(cp, state.log_id, checkpoint_cose_hex=checkpoint_cose_hex)
+    _persist_checkpoint_stamp(cp, state.ledger_path, checkpoint_cose_hex=checkpoint_cose_hex)
 
 
 def push(
