@@ -86,6 +86,7 @@ __all__ = [
     "leaf_hash",
     "interior_hash",
     "root_from_peaks",
+    "commitment_object",
     "height_at",
     "node_count",
     "leaf_count",
@@ -167,6 +168,69 @@ def root_from_peaks(peak_hashes: list[bytes]) -> bytes:
         left = hashes.pop()
         hashes.append(hashlib.sha256(right + left).digest())
     return hashes[0]
+
+
+# -- conformant commitment object --------------------------------------------
+#
+# `root_from_peaks` above is this module's own internal fold: convenient for
+# a fast scalar comparison, but a bespoke convention -- no external
+# MMRIVER-family tool has any way to know its bagging order or that it omits
+# a domain-separator byte. `[cll-commitment-interop]` requires the checkpoint
+# to commit to the REAL commitment object instead: the one
+# draft-bryce-cose-receipts-mmr-profile (Bryce, Datatrails -- the MMRIVER
+# draft's own author; https://www.ietf.org/archive/id/draft-bryce-cose-
+# receipts-mmr-profile-00.txt) actually signs. That draft (SS6/7) never
+# folds the peaks into one hash: "the complete accumulator" IS the ordered
+# list of peak hashes itself -- e.g. `right-peaks: [ *bstr ]` -- detached and
+# signed as-is, so a verifier must recompute it from the SAME list, not from
+# a collapsed digest a folding scheme would have thrown information away
+# from.
+
+
+def _cbor_uint_header(major_type: int, n: int) -> bytes:
+    """RFC 8949 SS3 definite-length head, shortest-form length encoding
+    (the only form a canonical/deterministic CBOR encoder ever produces)."""
+    prefix = major_type << 5
+    if n < 24:
+        return bytes([prefix | n])
+    if n < 2**8:
+        return bytes([prefix | 24, n])
+    if n < 2**16:
+        return bytes([prefix | 25]) + n.to_bytes(2, "big")
+    if n < 2**32:
+        return bytes([prefix | 26]) + n.to_bytes(4, "big")
+    return bytes([prefix | 27]) + n.to_bytes(8, "big")
+
+
+def commitment_object(peak_hashes: list[bytes]) -> bytes:
+    """The MMRIVER / draft-bryce-cose-receipts-mmr-profile conformant
+    commitment object for an MMR accumulator: the ordered peak hashes
+    (tallest-to-smallest -- this module's own ``peaks()`` order, matching
+    the profile's own "descending height ordered list", SS7.1.1), encoded as
+    a canonical/deterministic CBOR array of 32-byte strings: ``[ *bstr ]``.
+
+    This shape (fixed-length byte-string elements, one array, no floats, no
+    maps) has exactly one valid RFC 8949 SS4.2 deterministic encoding, so
+    every conformant CBOR encoder in any language produces these identical
+    bytes -- this is why it is hand-rolled here rather than built on a CBOR
+    library dependency: reproducing it needs nothing but this function's
+    docstring, in any language (see ``commitment-conformance-vectors/`` for
+    pinned cross-language vectors, including MUST-FAIL mutations).
+
+    NOT ``root_from_peaks`` -- that single bagged hash is this module's own
+    internal-only fold, undocumented by and unreproducible from the profile.
+    Never used to change ``verify_inclusion``/``verify_consistency`` (those
+    stay on ``root_from_peaks`` for this module's own fast proof checks);
+    this is purely the external, independently-conformant encoding of the
+    SAME peak-hash list.
+    """
+    for p in peak_hashes:
+        _assert_digest(p, "peak")
+    body = bytearray(_cbor_uint_header(4, len(peak_hashes)))
+    for p in peak_hashes:
+        body += _cbor_uint_header(2, len(p))
+        body += p
+    return bytes(body)
 
 
 # -- massifdb cross-check (internal only, NOT production) --------------------

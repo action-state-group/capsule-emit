@@ -44,6 +44,7 @@ from .core import (
     IntegrityError,
     InvalidArgumentError,
     add_leaf,
+    commitment_object,
     consistency_proof,
     height_at,
     interior_hash,
@@ -56,6 +57,15 @@ from .core import (
     root_from_peaks,
     verify_consistency,
     verify_inclusion,
+)
+from .cose_wire import (
+    CLL_CHECKPOINT_CONTENT_TYPE,
+    WIRE_KIND,
+    CoseCheckpointVerification,
+    DecodedCheckpointCose,
+    checkpoint_to_cose,
+    encode_checkpoint_claims,
+    verify_checkpoint_cose_offline,
 )
 from .emit import (
     DEFAULT_TS_PUBLIC_KEY_ID,
@@ -88,11 +98,19 @@ from .index import LogSource, MmrLedger, RangeProof, verify_range
 from .store import MemoryNodeStore
 
 __all__ = [
+    "CLL_CHECKPOINT_CONTENT_TYPE",
+    "WIRE_KIND",
+    "CoseCheckpointVerification",
+    "DecodedCheckpointCose",
+    "checkpoint_to_cose",
+    "encode_checkpoint_claims",
+    "verify_checkpoint_cose_offline",
     "ConsistencyProof",
     "InclusionProof",
     "IntegrityError",
     "InvalidArgumentError",
     "add_leaf",
+    "commitment_object",
     "consistency_proof",
     "height_at",
     "interior_hash",
