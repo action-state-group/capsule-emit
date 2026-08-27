@@ -602,29 +602,34 @@ def _get_state(ledger_path: str, signer: _signing.Signer | None = None) -> _Witn
 def _build_checkpoint_cose_hex(
     cp: Any,
     signer: Any,
-    new_peak_hashes: Any,
-    prev_peak_hashes: Any,
+    mmr: Any,
+    prev_before: Any,
     consistency_proof: Any | None,
 ) -> str | None:
     """Best-effort COSE-wire serialization of ``cp``
     ([cll-checkpoint-cose-wire]) -- built HERE, at production time, because
-    this is the one place the signing key AND the live MMR (for
-    ``new_peak_hashes``/``prev_peak_hashes``, [cll-commitment-interop]'s
-    conformant commitment) are both actually available; a later ``bundle()``
-    call may run keyless, in a different process, handed only the ledger
-    file, so it can only ever READ this back, never mint it itself (see
-    ``checkpoint.cose_wire``'s module docstring). Persisted alongside the
-    JSON checkpoint in the stamp entry so ``bundle()`` can carry it straight
-    through.
+    this is the one place the signing key AND the live MMR (``mmr``, for
+    [cll-commitment-interop]'s conformant peak-list commitment) are both
+    actually available; a later ``bundle()`` call may run keyless, in a
+    different process, handed only the ledger file, so it can only ever
+    READ this back, never mint it itself (see ``checkpoint.cose_wire``'s
+    module docstring). Persisted alongside the JSON checkpoint in the stamp
+    entry so ``bundle()`` can carry it straight through.
 
     Never raises into ``emit()``: a failure (e.g. the ``checkpoint`` extra's
-    ``scitt-cose`` dependency not installed) just means this checkpoint's
-    wire form isn't available yet -- the JSON checkpoint and its own
-    signature, verified independently, are unaffected.
+    ``scitt-cose`` dependency not installed, or an ``mmr.peak_hashes_at``
+    call failing) just means this checkpoint's wire form isn't available
+    yet -- the JSON checkpoint and its own signature, verified
+    independently, are unaffected. This is why ``mmr.peak_hashes_at`` is
+    called IN HERE rather than by the caller: every step that touches
+    [cll-commitment-interop]'s peak lists must stay inside this same
+    try/except, not run unguarded before it.
     """
     try:
         from .checkpoint.cose_wire import checkpoint_to_cose
 
+        new_peak_hashes = mmr.peak_hashes_at(cp.mmr_size)
+        prev_peak_hashes = mmr.peak_hashes_at(prev_before.mmr_size) if prev_before is not None else None
         return checkpoint_to_cose(
             cp,
             signer,
@@ -920,12 +925,8 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
             if prev_before is not None
             else None
         )
-        new_peak_hashes = state.mmr.peak_hashes_at(cp.mmr_size)
-        prev_peak_hashes = (
-            state.mmr.peak_hashes_at(prev_before.mmr_size) if prev_before is not None else None
-        )
         checkpoint_cose_hex = _build_checkpoint_cose_hex(
-            cp, state.signer, new_peak_hashes, prev_peak_hashes, consistency_proof
+            cp, state.signer, state.mmr, prev_before, consistency_proof
         )
 
     # Fan the same checkpoint out to every endpoint independently -- one
