@@ -84,10 +84,14 @@ Paste this into Claude Code (or any coding agent) in your repo:
   model={...})` (Option B) if you want it sealed.
 - The decorator auto-adds `effect={"type": action, "status": "dispatched"}`. **There is no
   auto-confirmed capsule** — recording that an effect *actually happened* requires a second
-  explicit `emit(..., confirms=..., effect={..., "status": "confirmed"})`. The
+  explicit `seal(..., confirms=..., effect={..., "status": "confirmed"})`. The
   *dispatched → confirmed* chain is the boundary/gate layer, not the adapter layer.
 - For a refusal or a custom verdict, use Option B and pass `verdict=`/`effect=` explicitly.
 - `emitter.capture_toolset(tools)` seals a digest of the tool manifest **as presented to the
   model** into every subsequent capsule (`ext.mcp.toolset_digest`) — so a server that swaps a
   tool's description after gaining trust shows up as a visible digest change in the chain,
   not silence. See [`ext.mcp` — tool-manifest digest](../extensions/mcp-toolset-digest.md).
+
+**Since 0.5.0:** the top-level producer verb is `seal()` (the former `emit()` was
+renamed). `MCPCapsuleEmitter`, `@emitter.tool(...)`, and `emit_capsule(...)` are
+unchanged — only the standalone confirm-chain call is now `seal()`.
