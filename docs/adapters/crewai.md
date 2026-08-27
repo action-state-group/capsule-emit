@@ -99,11 +99,15 @@ unwrapped if you don't need them on the record.
 
 ## Notes
 
-- **No effect block by default.** Wrapped tools emit capsules with no `effect` key;
-  the *dispatched → confirmed* chain requires an explicit `emit()` call. This adapter
+- **No effect block by default.** Wrapped tools seal capsules with no `effect` key;
+  the *dispatched → confirmed* chain requires an explicit `seal()` call. This adapter
   records the action; effect-chain coverage is the boundary/gate layer above it.
 - Input/output are digest-committed automatically.
 - `model=` isn't auto-captured (the wrapper sees the tool, not the LLM) — pass it
   explicitly if you need it sealed.
 - Idempotency: wrapping the same `BaseTool` twice would seal twice per call — wrap
   once.
+
+**Since 0.5.0:** the top-level producer verb is `seal()` (the former `emit()` was
+renamed). The adapter class and `wrap()` are unchanged; only the standalone call you
+drop to for an explicit effect-chain link is now `seal()`.
