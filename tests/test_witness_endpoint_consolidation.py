@@ -123,7 +123,7 @@ def test_default_witness_endpoint_resolves_to_witness_host_end_to_end(tmp_path, 
     # documented, dormant-but-configured indirection -- pin it too, so its
     # removal (once the CNAME goes live) is a deliberate test update, not a
     # silent behavior change.
-    assert captured[0]["full_url"] == f"{_TODAY_DISPATCH_HOST}/v1/digest", (
+    assert captured[0]["full_url"] == f"{_TODAY_DISPATCH_HOST}/checkpoints", (
         "expected today's CNAME-pending indirection to the anchor host; if "
         "this now fails because the request went straight to "
         "witness.agentactioncapsule.org, the CNAME has propagated -- update "
@@ -166,7 +166,7 @@ def test_rollback_to_anchor_host_still_works_via_explicit_config(tmp_path, monke
         seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger)
 
     assert _wait_for(lambda: len(captured) >= 1), "no checkpoint was ever dispatched"
-    assert captured[0]["full_url"] == f"{_TODAY_DISPATCH_HOST}/v1/digest"
+    assert captured[0]["full_url"] == f"{_TODAY_DISPATCH_HOST}/checkpoints"
 
     key = witness._resolve_key(str(ledger))
     assert _wait_for(

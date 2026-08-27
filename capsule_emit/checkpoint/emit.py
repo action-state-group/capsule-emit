@@ -64,10 +64,13 @@ Service. A generated config file should show it commented out (see
 ``EXAMPLE_CONFIG_TOML``), so opting in is an explicit uncomment, not a silent
 default.
 
-The checkpoint ``signature`` covers all fields except itself and
-``witnesses`` (deterministic JSON, ``sort_keys=True``); the digest registered
-with the TS is ``sha256(signing_body_utf8).hexdigest()`` -- exactly 64 hex
-chars, matching the capsule-anchor ``/v1/digest`` endpoint.
+``register_checkpoint`` POSTs the checkpoint to the TS's ``/checkpoints``
+route (single-host ruling, 2026-08-27) -- never ``/register``, the opt-in
+per-record digest route; see :data:`_CHECKPOINT_ROUTE` below and
+``capsule_emit.witness``'s no-egress guarantee. The checkpoint ``signature``
+covers all fields except itself and ``witnesses`` (deterministic JSON,
+``sort_keys=True``); the digest the TS's own receipt commits to is
+``sha256(signing_body_utf8).hexdigest()`` -- exactly 64 hex chars.
 """
 from __future__ import annotations
 
@@ -154,13 +157,16 @@ MCowBQYDK2VwAyEAObtlTJ3Ar+HA7e8N7/qmkJm4UYg2ybom4EkVNYQPlrU=
 #: or a test, rather than silently pinning a key whose recorded id lies.
 DEFAULT_TS_PUBLIC_KEY_ID = "19a9ab3e02fad55c"
 
-#: [currently anchor., CNAME pending] ``witness.agentactioncapsule.org`` is
-#: meant to CNAME onto ``anchor.agentactioncapsule.org`` -- same free
-#: public-good service, semantically correct name for this tier -- but that
-#: DNS record has not propagated yet. Until it does, a request to the
-#: *default* URL is dispatched to the anchor host directly so registration
-#: keeps working today; an explicit non-default ``ts_url`` is never
-#: rewritten. Remove this indirection once the CNAME is live.
+#: [currently anchor., domain mapping pending] ``witness.agentactioncapsule.org``
+#: is the checkpoint-primary name for the SAME capsule-anchor service
+#: ``anchor.agentactioncapsule.org`` already runs (single-host ruling,
+#: 2026-08-27: one deployment, two routes -- ``/checkpoints`` default,
+#: ``/register`` opt-in) -- but the ``witness.aac`` hostname itself has no DNS
+#: record yet. Until Steven maps the domain, a request to the *default* URL is
+#: dispatched to the anchor host directly (which already answers
+#: ``/checkpoints`` -- same code, same deployment) so registration keeps
+#: working today; an explicit non-default ``ts_url`` is never rewritten.
+#: Remove this indirection once the ``witness.aac`` domain mapping is live.
 _PENDING_CNAME_TARGETS = {DEFAULT_TS_URL: "https://anchor.agentactioncapsule.org"}
 
 #: A generated-config snippet: the witness URL is prefilled with the free
@@ -642,32 +648,58 @@ def verify_checkpoint_consistency(
 # -- TS registration -----------------------------------------------------
 
 
+#: The witness-host's canonical checkpoint route (single-host ruling,
+#: 2026-08-27): a TS that speaks the CLL checkpoint wire shape directly and
+#: verifies the checkpoint's OWN signature server-side before counter-signing
+#: -- strictly more verification than the plain-digest ``/register``
+#: (``/v1/digest`` legacy alias) route, which treats the checkpoint's digest
+#: as an opaque capsule_id. This is the ONLY route :func:`register_checkpoint`
+#: ever calls -- see the module's default-emit no-egress guarantee
+#: (``tests/test_witness_no_egress_to_register.py``): the default checkpoint
+#: path must never touch ``/register``, mirroring the existing "default emit
+#: never imports the checkpoint subpackage" layer-0 discipline.
+_CHECKPOINT_ROUTE = "/checkpoints"
+
+
 def register_checkpoint(
-    cp: CheckpointRecord,
+    checkpoint_cose: bytes,
     ts_url: str = DEFAULT_TS_URL,
     *,
     timeout: float = 30.0,
 ) -> WitnessRecord:
-    """POST the checkpoint digest to ``ts_url/v1/digest`` and return a WitnessRecord.
+    """POST a COSE-wire checkpoint statement to ``ts_url/checkpoints`` and
+    return a WitnessRecord.
 
-    The TS returns a COSE Receipt over the checkpoint's digest. The receipt
-    proves that this checkpoint was seen by the TS at some point in its log.
-    Never called implicitly -- registration is always the caller's decision.
+    ``checkpoint_cose`` is the COSE_Sign1 (CBOR tag 18) bytes produced by
+    ``capsule_emit.checkpoint.cose_wire.checkpoint_to_cose`` -- the ONLY
+    shape this route accepts (single-host witness ruling, 2026-08-27,
+    aligned to the [cll-checkpoint-cose-wire] wire form, superseding the
+    earlier plain-JSON ``CheckpointRecord`` body). The witness-host route
+    independently decodes and verifies this envelope (via scitt-cose) before
+    ever counter-signing it -- never ``/register`` (the opt-in, plain-digest
+    route; see ``_CHECKPOINT_ROUTE``). The TS returns a COSE Receipt over the
+    checkpoint's digest, proving that this checkpoint was seen by the TS at
+    some point in its log. This is called automatically once a checkpoint
+    comes due on the default ``emit()`` path (see ``capsule_emit.witness``,
+    which builds ``checkpoint_cose`` via ``checkpoint_to_cose`` while the
+    live MMR and signer are both still in scope); a caller driving the
+    checkpoint layer directly may also call it explicitly with its own
+    ``checkpoint_to_cose()`` output.
 
     ``ts_url`` is what's recorded on the returned ``WitnessRecord`` (the
     semantic identity of the witness); the actual HTTP request may be
     dispatched elsewhere for the *default* URL only -- see
     ``_PENDING_CNAME_TARGETS``.
     """
-    digest = cp.digest()
+    from .cose_wire import CLL_CHECKPOINT_CONTENT_TYPE
+
     dispatch_url = _PENDING_CNAME_TARGETS.get(ts_url, ts_url)
-    url = dispatch_url.rstrip("/") + "/v1/digest"
-    payload = json.dumps({"capsule_id": digest}).encode()
+    url = dispatch_url.rstrip("/") + _CHECKPOINT_ROUTE
     req = urllib.request.Request(
         url,
-        data=payload,
+        data=checkpoint_cose,
         method="POST",
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={"Content-Type": CLL_CHECKPOINT_CONTENT_TYPE, "Accept": "application/json"},
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:

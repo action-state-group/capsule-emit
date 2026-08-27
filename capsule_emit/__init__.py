@@ -37,8 +37,9 @@ supersedes them; no deprecation period, there were no users yet).
 slot-form calls; ``carry()``'s body was already ``received()``'s.
 
 Witnessing is on by default (the CLL checkpoint/witness stream — async,
-digest-only, lazy per ledger — see ``capsule_emit.witness`` and
-``docs/checkpoint.md``). The older per-capsule anchor channel is a legacy,
+checkpoint-only (never capsule content), lazy per ledger — see
+``capsule_emit.witness`` and ``docs/checkpoint.md``). The older per-capsule
+anchor channel is a legacy,
 non-default opt-in (``anchor=True`` / ``CAPSULE_ANCHOR=legacy-on``) kept only
 as a rollback path. Every capsule is also cryptographically signed, always,
 by a persisted producer key (see ``capsule_emit.signing``) — this one has no

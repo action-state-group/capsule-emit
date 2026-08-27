@@ -12,16 +12,24 @@ stream automatically:
   last checkpoint — **or** `capsule_emit.witness.DEFAULT_CADENCE_SECONDS`
   (900) seconds have elapsed since the first unwitnessed entry after the
   last checkpoint — a signed peaks checkpoint over that ledger's MMR is
-  built and registered with a Transparency Service — the same free
+  built and registered with a Transparency Service, at its `/checkpoints`
+  route (single-host witness ruling, 2026-08-27) — the same free
   public-good tier the legacy per-emit anchor channel also uses,
-  `witness.agentactioncapsule.org` (semantically a witness, not the anchor —
-  **[currently served via `anchor.agentactioncapsule.org`; the `witness.`
-  CNAME is pending]**, see `capsule_emit.checkpoint.emit. DEFAULT_TS_URL` /
-  `_PENDING_CNAME_TARGETS`). This is the **only default egress channel** as
-  of 0.5.0 — the older per-emit anchor channel is now an explicit,
-  non-default opt-in (see
+  `witness.agentactioncapsule.org` (checkpoint-primary; semantically a
+  witness, not the anchor — **[currently served via
+  `anchor.agentactioncapsule.org`, the same underlying service; the
+  `witness.` domain mapping is pending]**, see
+  `capsule_emit.checkpoint.emit.DEFAULT_TS_URL` / `_PENDING_CNAME_TARGETS`).
+  This is the **only default egress channel** as of 0.5.0 — the older
+  per-emit anchor channel is now an explicit, non-default opt-in (see
   [`docs/why-anchoring.md`](why-anchoring.md#in-practice)), not something
-  every default `emit()` call also dispatches.
+  every default `emit()` call also dispatches. A bundle (capsule + inclusion
+  proof + stamped checkpoint) is already per-record proof — the witness
+  host's separate `/register` route (opt-in, SCITT-interop) exists for
+  verifiers that need a per-record SCITT Receipt specifically, not as an
+  upgrade path from a checkpoint stamp; the default `emit()` path never
+  calls it (see "Checkpoint-only" below and
+  `tests/test_witness_no_egress_to_register.py`).
 - **An idle log is silent, never a heartbeat.** The age leg is checked
   lazily, only inside `witness.maybe_checkpoint` — which itself only ever
   runs right after a real `emit()` call appends a new entry. There is no
@@ -36,10 +44,13 @@ stream automatically:
   same checkpoint is registered with *every* endpoint named, independently;
   one endpoint failing never blocks the others. A single default endpoint is
   used unless you opt into more.
-- **Digest-only** — the only bytes that ever cross the wire are the
-  checkpoint's own SHA-256 digest (a hash of hashes; see `emit.py`'s
-  `CheckpointRecord.digest()`). No capsule content, no ledger path, no
-  action names, ever leave the process. Same posture as the anchor.
+- **Checkpoint-only** — what crosses the wire is the checkpoint itself (its
+  size, a root hash, a timestamp, and the signing key's id —
+  `CheckpointRecord.to_dict()`, POSTed to `/checkpoints`) so the witness can
+  verify the checkpoint's own signature before ever counter-signing it. No
+  capsule content, no per-record digest, and no filesystem path, ever leave
+  the process this way — `log_id` is a stable hash of the ledger's resolved
+  path, never the path itself (see `witness._public_log_id`).
 - **Async, fire-and-forget** — the checkpoint build (local, no network) and
   its TS registration (the only network call) run on a daemon thread; a
   cadence-crossing `emit()` call never blocks on it.
@@ -55,9 +66,9 @@ process, at the first `emit()`/`seal()` call where witnessing is enabled —
 before the first byte ever leaves the process, not gated on a checkpoint
 actually being due (the default cadence is 100 entries, so a short-lived
 process might otherwise never trigger one and never see the notice). It
-states what will be sent (a 32-byte digest, structurally incapable of
-carrying capsule content), where (the resolved endpoint(s)), and how to turn
-it off. It never prints a second time in the same process.
+states what will be sent (a signed checkpoint of the log — never capsule
+content), where (the resolved endpoint(s), at their `/checkpoints` route),
+and how to turn it off. It never prints a second time in the same process.
 
 **Turning it off:**
 

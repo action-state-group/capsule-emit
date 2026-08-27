@@ -11,7 +11,6 @@ mutant is caught).
 """
 from __future__ import annotations
 
-import hashlib
 import http.server
 import json
 import threading
@@ -19,7 +18,12 @@ import time
 from dataclasses import replace
 
 import pytest
-from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM, build_stub_receipt_b64
+from _stub_receipt import (
+    TEST_TS_PUBLIC_KEY_PEM,
+    build_stub_receipt_b64,
+    checkpoint_dict_from_cose,
+    checkpoint_entry_hash,
+)
 
 from capsule_emit import ledger as ledger_mod
 from capsule_emit import seal, witness
@@ -39,13 +43,18 @@ class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_POST(self):
-        if self.path == "/v1/digest":
+        if self.path == "/checkpoints":
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length)
-            body = json.loads(raw)
+            try:
+                body = checkpoint_dict_from_cose(raw)
+            except ValueError as exc:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(str(exc).encode())
+                return
             self.received.append(body)
-            digest = body["capsule_id"]
-            entry_hash = hashlib.sha256(bytes.fromhex(digest)).hexdigest()
+            entry_hash = checkpoint_entry_hash(body)
             resp = {
                 "entry_hash": entry_hash,
                 "receipt_b64": build_stub_receipt_b64(entry_hash),
