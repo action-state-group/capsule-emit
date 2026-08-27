@@ -632,6 +632,14 @@ def test_default_ts_url_is_the_witness_host():
     assert DEFAULT_TS_URL == "https://witness.agentactioncapsule.org"
 
 
+#: register_checkpoint no longer knows anything about ``CheckpointRecord``
+#: shape ([cll-checkpoint-cose-wire] alignment) -- it POSTs whatever COSE
+#: bytes it is handed and parses the JSON stamp response. A fixed dummy
+#: payload is enough for these dispatch/routing tests; the wire body's own
+#: content (a real COSE_Sign1) is covered by ``tests/checkpoint/test_cose_wire.py``.
+_FAKE_COSE_BYTES = b"\xd2\x84\xa0\xa0\xf6\xa0"  # not a valid COSE_Sign1 -- opaque bytes are enough here
+
+
 def test_register_checkpoint_default_url_dispatches_to_anchor_host_today(monkeypatch):
     from capsule_emit.checkpoint import emit as emit_mod
 
@@ -639,7 +647,8 @@ def test_register_checkpoint_default_url_dispatches_to_anchor_host_today(monkeyp
 
     def fake_urlopen(req, timeout=None):
         captured["full_url"] = req.full_url
-        captured["body"] = json.loads(req.data)
+        captured["body"] = req.data
+        captured["content_type"] = req.headers.get("Content-type")
         body = json.dumps(
             {
                 "entry_hash": "a" * 64,
@@ -652,22 +661,20 @@ def test_register_checkpoint_default_url_dispatches_to_anchor_host_today(monkeyp
 
     monkeypatch.setattr(emit_mod.urllib.request, "urlopen", fake_urlopen)
 
-    signer = HmacSigner("node-a")
-    mmr = MmrLedger(FakeLogSource())
-    mmr.append(synthetic_capsule(0))
-    cp = emit_checkpoint(mmr, signer, log_id="log-a")
-
-    witness_record = emit_mod.register_checkpoint(cp)  # default ts_url
+    witness_record = emit_mod.register_checkpoint(_FAKE_COSE_BYTES)  # default ts_url
 
     assert captured["full_url"] == "https://anchor.agentactioncapsule.org/checkpoints", (
         "the default (domain-mapping-pending) witness URL must still dispatch "
         "to the anchor host's /checkpoints route today (same deployment, "
         "single-host ruling), or registration would silently start failing"
     )
-    assert captured["body"] == cp.to_dict(), (
-        "the full CheckpointRecord (signature included) must be sent to "
-        "/checkpoints, never just the bare digest to /register"
+    assert captured["body"] == _FAKE_COSE_BYTES, (
+        "the COSE-wire checkpoint bytes must be sent verbatim as the request "
+        "body to /checkpoints, never re-encoded as JSON"
     )
+    from capsule_emit.checkpoint.cose_wire import CLL_CHECKPOINT_CONTENT_TYPE
+
+    assert captured["content_type"] == CLL_CHECKPOINT_CONTENT_TYPE
     assert witness_record.ts_url == DEFAULT_TS_URL == "https://witness.agentactioncapsule.org", (
         "the WitnessRecord must record the semantic witness URL, not the "
         "host the request was actually dispatched to"
@@ -693,13 +700,8 @@ def test_register_checkpoint_explicit_non_default_url_is_never_rewritten(monkeyp
 
     monkeypatch.setattr(emit_mod.urllib.request, "urlopen", fake_urlopen)
 
-    signer = HmacSigner("node-a")
-    mmr = MmrLedger(FakeLogSource())
-    mmr.append(synthetic_capsule(0))
-    cp = emit_checkpoint(mmr, signer, log_id="log-a")
-
     custom_url = "https://my-own-ts.example.org"
-    witness_record = emit_mod.register_checkpoint(cp, custom_url)
+    witness_record = emit_mod.register_checkpoint(_FAKE_COSE_BYTES, custom_url)
 
     assert captured["full_url"] == "https://my-own-ts.example.org/checkpoints"
     assert witness_record.ts_url == custom_url
@@ -727,11 +729,7 @@ def test_register_checkpoint_never_dispatches_to_register_route(monkeypatch):
 
     monkeypatch.setattr(emit_mod.urllib.request, "urlopen", fake_urlopen)
 
-    signer = HmacSigner("node-a")
-    mmr = MmrLedger(FakeLogSource())
-    mmr.append(synthetic_capsule(0))
-    cp = emit_checkpoint(mmr, signer, log_id="log-a")
-    emit_mod.register_checkpoint(cp)
+    emit_mod.register_checkpoint(_FAKE_COSE_BYTES)
 
     assert captured_urls, "the fake transport was never called"
     assert all(url.endswith("/checkpoints") for url in captured_urls)
