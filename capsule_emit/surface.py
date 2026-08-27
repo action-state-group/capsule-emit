@@ -295,6 +295,12 @@ def _seal_slots(members: list[_SlotMember], **kwargs: Any) -> Capsule:
         capsule = _resolve_slot_member(member, **kwargs)
         resolved.append(capsule)
         slots[capsule.capsule_id] = member.slot
+    # Canonicalize composition order to _SLOTS (who/can/did/audit) so the
+    # composed_members bytes — and therefore capsule_id — depend only on
+    # which slots are filled, never on the order the caller wrote the
+    # positional args (O8, cross-language conformance with Go's fixed
+    # struct order).
+    resolved.sort(key=lambda c: _SLOTS.index(slots[c.capsule_id]))
     return _compose(resolved, slots=slots, **kwargs)
 
 

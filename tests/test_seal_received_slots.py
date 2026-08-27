@@ -172,6 +172,52 @@ def test_slot_form_can_wrapping_a_received_capsule_is_byte_identical_to_standalo
     assert can_ref["type"] == "capsule"
 
 
+def test_slot_composition_order_is_canonicalized_regardless_of_caller_arg_order(tmp_path, monkeypatch):
+    # dev-surface v4 §3's frozen composition order is who -> can -> did ->
+    # audit. Two seal() calls citing the EXACT same three already-sealed
+    # members, differing only in the order the caller wrote the positional
+    # slot wrappers, must produce byte-identical composition capsules —
+    # composed_members is never allowed to depend on call-argument order.
+    # (Pre-fix: composed_members preserved call order verbatim, so this
+    # diverged on capsule_id.)
+    monkeypatch.chdir(tmp_path)
+    delegation_record = {"delegate": "po-agent@v1", "scope": "write_order"}
+    mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
+    payment_action = {"vendor": "Frobozz Supply", "total": "1240.19"}
+
+    who_cap = seal(delegation_record, action="who", anchor=False)
+    can_cap = received(mandate_jws, type="machine-mandate", anchor=False)
+    did_cap = seal(payment_action, action="did", anchor=False)
+
+    fixed_uuid = uuid.UUID(int=99)
+    fixed_ts = "2026-08-27T00:00:00Z"
+
+    with (
+        mock.patch.object(_base_emit_module.uuid, "uuid4", return_value=fixed_uuid),
+        mock.patch.object(_base_emit_module, "_utc_now", return_value=fixed_ts),
+    ):
+        canonical = seal(who(who_cap), can(can_cap), did(did_cap), anchor=False, ledger=tmp_path / "canonical.jsonl")
+
+    with (
+        mock.patch.object(_base_emit_module.uuid, "uuid4", return_value=fixed_uuid),
+        mock.patch.object(_base_emit_module, "_utc_now", return_value=fixed_ts),
+    ):
+        non_canonical = seal(
+            did(did_cap), can(can_cap), who(who_cap), anchor=False, ledger=tmp_path / "non_canonical.jsonl"
+        )
+
+    # capsule_id is signer-independent by construction (core.py: computed
+    # before signing, draft-04 reversal) — the two calls use distinct default
+    # signers (separate ledgers), so capsule_id equality, not full capsule
+    # dict equality, is the right byte-identical check here.
+    assert canonical.capsule_id == non_canonical.capsule_id
+
+    canonical_members = canonical.capsule["model_attestation"]["compute_attestation"]["composed_members"]
+    non_canonical_members = non_canonical.capsule["model_attestation"]["compute_attestation"]["composed_members"]
+    assert [m["slot"] for m in canonical_members] == ["who", "can", "did"]
+    assert [m["slot"] for m in non_canonical_members] == ["who", "can", "did"]
+
+
 def test_seal_refuses_bare_bytes_naming_received(tmp_path, monkeypatch):
     # Dispatch-ambiguity refusal: raw bytes/bytearray handed straight to
     # seal() are never guessed at — the error names received() as the fix.
