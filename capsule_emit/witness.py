@@ -758,6 +758,14 @@ class CheckpointWitnessState:
     entry_digest: str
     checkpoint: Any  # capsule_emit.checkpoint.CheckpointRecord
     effective_witnesses: dict  # ts_url -> capsule_emit.checkpoint.WitnessRecord
+    #: Hex COSE_Sign1 bytes ([cll-checkpoint-cose-wire]) this stamp was
+    #: persisted with (see ``_build_checkpoint_cose_hex``), or ``None`` for a
+    #: stamp that predates the COSE wire form / whose COSE build failed at
+    #: the time. This is the exact wire body a retry re-POSTs to
+    #: ``/checkpoints`` -- the witness route is COSE-only, so a ``None`` here
+    #: means this checkpoint cannot be (re)registered until a fresh one comes
+    #: due and carries its own COSE form.
+    checkpoint_cose_hex: str | None = None
 
     def grade(self, *, ts_pubkey_pem: bytes | str | None = None) -> Any:  # -> capsule_emit.checkpoint.Grade
         """Same authenticity bar as ``CheckpointRecord.grade()`` -- a
@@ -793,6 +801,7 @@ def checkpoint_witness_states(ledger_path: str) -> list[CheckpointWitnessState]:
     from .ledger import CHECKPOINT_STAMP_KIND, WITNESS_BACKFILL_KIND, read_ledger_entries
 
     checkpoints: dict[str, Any] = {}
+    cose_hexes: dict[str, str | None] = {}
     order: list[str] = []
     # entry_digest -> {ts_url: WitnessRecord}, accumulated in ledger order so
     # a later backfill for a URL a checkpoint already held simply overwrites
@@ -804,6 +813,7 @@ def checkpoint_witness_states(ledger_path: str) -> list[CheckpointWitnessState]:
         if kind == CHECKPOINT_STAMP_KIND:
             digest = entry["capsule_id"]
             checkpoints[digest] = CheckpointRecord.from_dict(entry["checkpoint"])
+            cose_hexes[digest] = entry.get("checkpoint_cose")
             order.append(digest)
         elif kind == WITNESS_BACKFILL_KIND:
             wr = WitnessRecord.from_dict(entry["witness"])
@@ -814,7 +824,7 @@ def checkpoint_witness_states(ledger_path: str) -> list[CheckpointWitnessState]:
         cp = checkpoints[digest]
         effective = {w.ts_url: w for w in cp.witnesses}
         effective.update(backfills.get(digest, {}))
-        states.append(CheckpointWitnessState(digest, cp, effective))
+        states.append(CheckpointWitnessState(digest, cp, effective, cose_hexes[digest]))
     return states
 
 
@@ -891,6 +901,16 @@ def retry_pending_witness_stamps(
     (``maybe_checkpoint``'s dispatched worker) call it from there.
 
     Returns ``{ts_url: count_backfilled_this_call}``.
+
+    Registers via each pending checkpoint's OWN persisted COSE-wire form
+    (``CheckpointWitnessState.checkpoint_cose_hex`` -- see
+    :func:`_build_checkpoint_cose_hex`), never rebuilt here: the witness
+    route is COSE-only (single-host witness ruling, 2026-08-27,
+    [cll-checkpoint-cose-wire] wire alignment), and rebuilding would need the
+    live MMR this process may no longer hold for an old checkpoint. A stamp
+    with no persisted COSE form (pre-migration, or a COSE build that failed
+    at the time) has nothing to (re)send and is skipped -- not counted as a
+    failure, so it never blocks the rest of this witness's drain.
     """
     from .checkpoint import register_checkpoint
 
@@ -898,15 +918,19 @@ def retry_pending_witness_stamps(
         return {}
 
     urls = resolved_witness_urls(ts_url)
-    backlog = checkpoint_witness_backlog(ledger_path, urls)
+    states = checkpoint_witness_states(ledger_path)
     backfilled = {url: 0 for url in urls}
-    for url, pending in backlog.items():
-        for cp in pending:
+    for url in urls:
+        for state in states:
+            if url in state.effective_witnesses:
+                continue
+            if state.checkpoint_cose_hex is None:
+                continue
             try:
-                witness_record = register_checkpoint(cp, url)
+                witness_record = register_checkpoint(bytes.fromhex(state.checkpoint_cose_hex), url)
             except Exception:  # noqa: BLE001 -- still down; stop this witness's drain for now
                 break
-            _persist_witness_backfill(cp, witness_record, ledger_path)
+            _persist_witness_backfill(state.checkpoint, witness_record, ledger_path)
             backfilled[url] += 1
     return backfilled
 
@@ -971,19 +995,50 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # if none were given) so the fan-out shape matches the real path exactly
     # -- the point of the stub is to exercise the real code, not a shortcut
     # around it.
-    for url in resolved_urls:
-        try:
-            witness_record = (
-                register_checkpoint_stub(cp, url) if stub else register_checkpoint(cp, url)
-            )
-            cp.witnesses.append(witness_record)
-        except Exception as exc:  # noqa: BLE001 -- fire-and-forget, never raises into emit()
-            warnings.warn(
-                f"capsule-emit: witness registration for checkpoint log_id={state.log_id!r} "
-                f"mmr_size={cp.mmr_size} to {url} did not complete: {exc}",
-                RuntimeWarning,
-                stacklevel=1,
-            )
+    #
+    # The real (non-stub) path registers the checkpoint's COSE-wire form
+    # ([cll-checkpoint-cose-wire]) -- the witness route independently decodes
+    # and verifies that envelope before ever counter-signing, never a plain
+    # JSON CheckpointRecord dict. A checkpoint whose COSE form failed to
+    # build (see ``_build_checkpoint_cose_hex``) has nothing to register with
+    # any endpoint this round -- there is no JSON fallback to send instead,
+    # since the witness route no longer accepts one -- so it is skipped here
+    # and persisted self-attested below.
+    if stub:
+        for url in resolved_urls:
+            try:
+                witness_record = register_checkpoint_stub(cp, url)
+                cp.witnesses.append(witness_record)
+            except Exception as exc:  # noqa: BLE001 -- fire-and-forget, never raises into emit()
+                warnings.warn(
+                    f"capsule-emit: witness registration for checkpoint log_id={state.log_id!r} "
+                    f"mmr_size={cp.mmr_size} to {url} did not complete: {exc}",
+                    RuntimeWarning,
+                    stacklevel=1,
+                )
+    elif checkpoint_cose_hex is None:
+        warnings.warn(
+            f"capsule-emit: checkpoint log_id={state.log_id!r} mmr_size={cp.mmr_size} has no "
+            "COSE-wire form (see the earlier serialization warning) -- the witness route is "
+            "COSE-only, so this checkpoint cannot be registered with any endpoint this round "
+            "and will stay self-attested (no live MMR remains later to rebuild its COSE form "
+            "for a retry)",
+            RuntimeWarning,
+            stacklevel=1,
+        )
+    else:
+        checkpoint_cose = bytes.fromhex(checkpoint_cose_hex)
+        for url in resolved_urls:
+            try:
+                witness_record = register_checkpoint(checkpoint_cose, url)
+                cp.witnesses.append(witness_record)
+            except Exception as exc:  # noqa: BLE001 -- fire-and-forget, never raises into emit()
+                warnings.warn(
+                    f"capsule-emit: witness registration for checkpoint log_id={state.log_id!r} "
+                    f"mmr_size={cp.mmr_size} to {url} did not complete: {exc}",
+                    RuntimeWarning,
+                    stacklevel=1,
+                )
 
     # Persist the finished checkpoint (witnessed or, if every endpoint
     # failed above, still self-attested) as its own log entry -- it becomes

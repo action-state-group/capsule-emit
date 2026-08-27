@@ -662,36 +662,44 @@ _CHECKPOINT_ROUTE = "/checkpoints"
 
 
 def register_checkpoint(
-    cp: CheckpointRecord,
+    checkpoint_cose: bytes,
     ts_url: str = DEFAULT_TS_URL,
     *,
     timeout: float = 30.0,
 ) -> WitnessRecord:
-    """POST the checkpoint to ``ts_url/checkpoints`` and return a WitnessRecord.
+    """POST a COSE-wire checkpoint statement to ``ts_url/checkpoints`` and
+    return a WitnessRecord.
 
-    Sends the full ``CheckpointRecord`` (``to_dict()``, signature included) to
-    the witness-host's checkpoint-only route, which verifies the checkpoint's
-    own Ed25519 signature server-side before ever counter-signing -- never
-    ``/register`` (the opt-in, plain-digest route; see ``_CHECKPOINT_ROUTE``).
-    The TS returns a COSE Receipt over the checkpoint's digest, proving that
-    this checkpoint was seen by the TS at some point in its log. This is
-    called automatically once a checkpoint comes due on the default ``emit()``
-    path (see ``capsule_emit.witness``); a caller driving the checkpoint layer
-    directly may also call it explicitly.
+    ``checkpoint_cose`` is the COSE_Sign1 (CBOR tag 18) bytes produced by
+    ``capsule_emit.checkpoint.cose_wire.checkpoint_to_cose`` -- the ONLY
+    shape this route accepts (single-host witness ruling, 2026-08-27,
+    aligned to the [cll-checkpoint-cose-wire] wire form, superseding the
+    earlier plain-JSON ``CheckpointRecord`` body). The witness-host route
+    independently decodes and verifies this envelope (via scitt-cose) before
+    ever counter-signing it -- never ``/register`` (the opt-in, plain-digest
+    route; see ``_CHECKPOINT_ROUTE``). The TS returns a COSE Receipt over the
+    checkpoint's digest, proving that this checkpoint was seen by the TS at
+    some point in its log. This is called automatically once a checkpoint
+    comes due on the default ``emit()`` path (see ``capsule_emit.witness``,
+    which builds ``checkpoint_cose`` via ``checkpoint_to_cose`` while the
+    live MMR and signer are both still in scope); a caller driving the
+    checkpoint layer directly may also call it explicitly with its own
+    ``checkpoint_to_cose()`` output.
 
     ``ts_url`` is what's recorded on the returned ``WitnessRecord`` (the
     semantic identity of the witness); the actual HTTP request may be
     dispatched elsewhere for the *default* URL only -- see
     ``_PENDING_CNAME_TARGETS``.
     """
+    from .cose_wire import CLL_CHECKPOINT_CONTENT_TYPE
+
     dispatch_url = _PENDING_CNAME_TARGETS.get(ts_url, ts_url)
     url = dispatch_url.rstrip("/") + _CHECKPOINT_ROUTE
-    payload = json.dumps(cp.to_dict()).encode()
     req = urllib.request.Request(
         url,
-        data=payload,
+        data=checkpoint_cose,
         method="POST",
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={"Content-Type": CLL_CHECKPOINT_CONTENT_TYPE, "Accept": "application/json"},
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
