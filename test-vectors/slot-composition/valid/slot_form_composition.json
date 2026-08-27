@@ -1,0 +1,48 @@
+{
+  "action_id": "compose/00000000-0000-0000-0000-000000000004",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "canonicalization_id": "jcs",
+  "capsule_id": "027d99036fe4f8c98a2c4903c0ccb809211cb517fe3cb5a6b7292d0e825f4158",
+  "developer": "test-agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "key_id": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+  "model_attestation": {
+    "compute_attestation": {
+      "composed_members": [
+        {
+          "digest": "f6133e3026a7f42363b19e34c215b94967d7bd84b41e7a1fa42fc8514c92cb5a",
+          "digest_alg": "SHA-256",
+          "slot": "who",
+          "type": "capsule"
+        },
+        {
+          "digest": "646f0bd87fa9e7dd1d7441f282255ce65ca8732d41652d6d75077b647cdf8785",
+          "digest_alg": "SHA-256",
+          "slot": "can",
+          "type": "capsule"
+        },
+        {
+          "digest": "6c75a97f75b67d8854519ea6f54272b1862d368f27c3d98a3463f3a6d35f7d6f",
+          "digest_alg": "SHA-256",
+          "slot": "did",
+          "type": "capsule"
+        }
+      ]
+    }
+  },
+  "operator": "test-org",
+  "signature": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d696404582003a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b80127a05820027d99036fe4f8c98a2c4903c0ccb809211cb517fe3cb5a6b7292d0e825f415858404ac21d0a06ce26749f0c0b25f0dc2bf72c046f064966d9160dd597a0f6461b424b523b3edacdb186e5b082624cfa7d285314c683e35170558ed7e7a6f5fe7e0a",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-08-27T00:00:00Z"
+}
