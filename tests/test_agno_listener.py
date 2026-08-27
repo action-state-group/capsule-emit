@@ -36,6 +36,20 @@ import pytest
 from capsule_emit.adapters.agno_listener import AgnoCapsuleListener, AgnoListenerCore
 from capsule_emit.verification import verify_capsule as verify
 
+
+@pytest.fixture(autouse=True)
+def _fresh_event_loop():
+    """asyncio.run() (used by the async-core tests) leaves the main thread's
+    loop slot cleared; on Python 3.9 agno's sync execution path still calls
+    asyncio.get_event_loop(), which then raises. Install a fresh loop per
+    test; harmless on 3.10+."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield
+    asyncio.set_event_loop(None)
+    loop.close()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
