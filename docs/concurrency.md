@@ -10,9 +10,10 @@ happen at all.
 ## The rule
 
 **One log, one writer, enforced.** `append_to_ledger()` (and therefore every
-`seal()` / `carry()` / `compose()` call, plus the checkpoint stream's stamp
-writes) takes an OS-level `flock` for the duration of each append. It is
-mandatory — there is no configuration flag to turn it off.
+`seal()` / `received()` call — standalone or composed via a slot wrapper —
+plus the checkpoint stream's stamp writes) takes an OS-level `flock` for the
+duration of each append. It is mandatory — there is no configuration flag to
+turn it off.
 
 - **In-process** (two threads): serialized on an internal lock, as before.
   Threads never see this behavior at all.

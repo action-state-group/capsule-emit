@@ -4,24 +4,24 @@
 
 **Know what your AI agent did — and let anyone verify it.**
 
-One `emit()` call at each consequential action builds a **witnessed, verifiable ledger** of what your agent did — each entry sealed (content-addressed by hash) and checkable by anyone, *without trusting you*.
+One `seal()` call at each consequential action builds a **witnessed, verifiable ledger** of what your agent did — each entry sealed (content-addressed by hash) and checkable by anyone, *without trusting you*.
 
 ```python
-from capsule_emit import emit
+from capsule_emit import seal
 
 result = {"po_id": "PO-7781"}            # whatever your action returned
 
-cap = emit(
+capsule = seal(
+    {"vendor": "Frobozz Supply", "total": "1240.19"},   # payload: any JSON-serializable value
     action="write_order",
     operator="acme-co",                  # the accountable tenant
     developer="po-agent@v1",             # the agent identity + version
-    agent_input={"vendor": "Frobozz Supply", "total": 1240.19},
     agent_output=result,
     model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
     verdict="executed",                  # executed | confirmed | denied | blocked
     effect={"type": "write_order", "status": "dispatched"},
 )
-print(cap.capsule_id, cap.anchored)      # sealed, witnessed by default; anchor is a legacy opt-in (emit(..., anchor=True))
+print(capsule.capsule_id, capsule.signature)   # sealed, signed, witnessed by default
 ```
 
 ```bash
@@ -55,13 +55,13 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 
 ## Where you start, and where it goes
 
-**Start here.** Call `emit()` at each consequential action. You get a **witnessed, verifiable ledger** of what your agent did — each capsule appended locally to `ledger.jsonl`, its digest written to a public log. That's the whole starting point. Everything below is optional depth you grow into — no rewrite.
+**Start here.** Call `seal()` at each consequential action. You get a **witnessed, verifiable ledger** of what your agent did — each capsule appended locally to `ledger.jsonl`, its digest written to a public log. That's the whole starting point. Everything below is optional depth you grow into — no rewrite.
 
 **Then climb, one rung at a time:**
 
 - **Capture more, write less** — a decorator [adapter](docs/adapters/) (MCP / LangChain / CrewAI / Hermes / Goose / ADK) seals each wrapped tool call automatically; the [agentgateway](docs/adapters/agentgateway.md) adapter seals all consequential traffic at the gateway chokepoint — no per-tool changes needed.
-- **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence. → `emit(..., confirms=parent_id)` · [within one stream, and across (under revision)](docs/chaining.md)
-- **Declare now, enforce later** — a `manifest.md` declares your rules; a compatible gateway enforces the *same file*, with no change to your `emit()` calls.
+- **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence. → `seal(payload, confirms=parent_id)` · [within one stream, and across (under revision)](docs/chaining.md)
+- **Declare now, enforce later** — a `manifest.md` declares your rules; a compatible gateway enforces the *same file*, with no change to your `seal()` calls.
 
 The unit is the **capsule** (one action). What you keep and grow is the **ledger** (the witnessed trail). Chaining links specific capsules within it. Start with the ledger; add the rest when you need it. → walk it end-to-end in the **[tutorials](docs/tutorials/)**.
 
@@ -75,7 +75,7 @@ The unit is the **capsule** (one action). What you keep and grow is the **ledger
 
 **Anchor is a legacy, non-default channel as of 0.5.0.** The checkpoint/witness
 stream below is the only default egress path; this per-capsule anchor exists
-only as an explicit opt-in (`emit(..., anchor=True)` or
+only as an explicit opt-in (`anchor=True` or
 `CAPSULE_ANCHOR=legacy-on`), kept for one release as a rollback path. When
 engaged, the capsule's **digest only** is submitted — async, non-blocking —
 to an [RFC 9162](https://www.rfc-editor.org/rfc/rfc9162) SCITT transparency
@@ -90,8 +90,8 @@ for the honest ladder.
 
 - **What's logged:** a SHA-256 digest — nothing else. Your payloads never leave your machine.
 - **Where:** the free hosted log at `https://anchor.agentactioncapsule.org/v1/digest` (no signup, no key) — a single-operator log.
-- **Self-host or repoint:** the log service ([`capsule-anchor`](https://github.com/action-state-group/capsule-anchor)) is open-source — `AAC_ANCHOR_URL=…` or `emit(..., anchor_url=…)`.
-- **Off by default; explicitly off:** leave `anchor` unset (the default), or pass `emit(..., anchor=False)`.
+- **Self-host or repoint:** the log service ([`capsule-anchor`](https://github.com/action-state-group/capsule-anchor)) is open-source — `AAC_ANCHOR_URL=…` or `seal(payload, anchor_url=…)`.
+- **Off by default; explicitly off:** leave `anchor` unset (the default), or pass `seal(payload, anchor=False)`.
 - **First-run notice:** before this process's first anchor *or* witness network attempt, one line prints to stderr — naming the active endpoint(s) and how to turn each off — so an active network path is never silent on the very first call.
 
 *Why bother:* a self-hosted log you control isn't proof to an outsider; a shared, append-only transparency log is checkable by someone who trusts neither you nor the log's contents (though not, without a witness, someone unwilling to trust the log's operator at all — that step is self-attested vs. witnessed, not shared vs. unshared).
@@ -100,11 +100,11 @@ for the honest ladder.
 
 Until 0.5.0, your capsule log was like a git repo you never pushed: internally consistent — every capsule content-addressed, every entry chained to the one before it — but nothing *outside* your machine vouches for it. An unpushed commit can be quietly rewritten; a pushed one can't.
 
-**0.5.0 pushes.** Anchoring (above) is per-**capsule**; checkpointing is per-**stream**. `emit()` also, **by default**, folds every capsule into a per-ledger [Merkle Mountain Range](docs/checkpoint.md) and — every ~100 records (`capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`) — builds and registers a signed **checkpoint**: a 32-byte summary of the whole stream so far, sent to an independent witness. Same digest-only/async posture as the anchor; your payloads never leave.
+**0.5.0 pushes.** Anchoring (above) is per-**capsule**; checkpointing is per-**stream**. `seal()` also, **by default**, folds every capsule into a per-ledger [Merkle Mountain Range](docs/checkpoint.md) and — every ~100 records (`capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`) — builds and registers a signed **checkpoint**: a 32-byte summary of the whole stream so far, sent to an independent witness. Same digest-only/async posture as the anchor; your payloads never leave.
 
-- **Off is one flag, honored everywhere:** `emit(..., witness=False)` for one call, `CAPSULE_WITNESS=off` for every call — no code change, no opt-in required in the first place.
+- **Off is one flag, honored everywhere:** `seal(payload, witness=False)` for one call, `CAPSULE_WITNESS=off` for every call — no code change, no opt-in required in the first place.
 - **Your log is still your file.** The witness only ever sees a digest; walking away from it loses no history — `ledger.jsonl` is complete on its own, the witness just lets someone else confirm you didn't rewrite it after the fact.
-- **Any witness works, and more than one is stronger.** The default is a free hosted tier at `witness.agentactioncapsule.org`\* — but any conforming Transparency Service is substitutable (`CAPSULE_WITNESS_URL` / `emit(..., witness_url=...)`), and you can register with several at once (a list, or comma-separated) for a stronger, equivocation-resistant tier. The first checkpoint of a process prints one line to stderr — once — naming exactly what's sent, where, and how to turn it off.
+- **Any witness works, and more than one is stronger.** The default is a free hosted tier at `witness.agentactioncapsule.org`\* — but any conforming Transparency Service is substitutable (`CAPSULE_WITNESS_URL` / `seal(payload, witness_url=...)`), and you can register with several at once (a list, or comma-separated) for a stronger, equivocation-resistant tier. The first checkpoint of a process prints one line to stderr — once — naming exactly what's sent, where, and how to turn it off.
 
 See **[`capsule_emit.checkpoint`](docs/checkpoint.md)** for the cadence, the multi-witness config, and precisely what trust tier a checkpoint does (and doesn't) reach — a single witness upgrades you from *self-attested*, but it isn't the *multi-witness, equivocation-resistant* tier, and a witness never vouches that your capsules' content is true, only that they exist, are ordered, and weren't deleted.
 
@@ -119,11 +119,11 @@ pip install agent-action-capsule
 agent-action-capsule verify --store ./ledger.jsonl
 ```
 
-Tamper with one byte and verification fails. The verifier is independent of `capsule-emit` on purpose — *any* tool can produce a capsule; *any* party can verify one. (Every `emit()` also appends to a local JSONL ledger — view it with `capsule-emit ledger view ./ledger.jsonl`.)
+Tamper with one byte and verification fails. The verifier is independent of `capsule-emit` on purpose — *any* tool can produce a capsule; *any* party can verify one. (Every `seal()` also appends to a local JSONL ledger — view it with `capsule-emit ledger view ./ledger.jsonl`.)
 
 ## Framework adapters
 
-One `emit()` per tool call, regardless of framework — thin adapters over one shared base:
+One `seal()` per tool call, regardless of framework — thin adapters over one shared base:
 
 ```python
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
@@ -148,7 +148,7 @@ def write_order(vendor: str, total: float) -> dict: ...
 tools: **[docs/adapters/](docs/adapters/)**.
 ## Declare now, enforce later — same file
 
-A `flows/<action>/manifest.md` *declares* autonomy + constraints; `capsule-emit` reads it to **declare** (no enforcement). A compatible gateway reads the **same file** and **enforces** — with **no change** to your `emit()` calls. → [docs/going-deeper.md](docs/going-deeper.md).
+A `flows/<action>/manifest.md` *declares* autonomy + constraints; `capsule-emit` reads it to **declare** (no enforcement). A compatible gateway reads the **same file** and **enforces** — with **no change** to your `seal()` calls. → [docs/going-deeper.md](docs/going-deeper.md).
 
 ## Documentation
 

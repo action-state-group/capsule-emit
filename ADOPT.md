@@ -1,6 +1,6 @@
 # ADOPT.md — 30-minute self-serve adopter path
 
-> **tl;dr:** `pip install capsule-emit` → one `emit()` call → verify from the bytes.
+> **tl;dr:** `pip install capsule-emit` → one `seal()` call → verify from the bytes.
 > No account. No key management. No server to run.
 
 ---
@@ -40,45 +40,49 @@ pip install capsule-emit   # version 0.3.2 (current)
 
 ---
 
-## Step 1 — Emit your first capsule (2 minutes)
+## Step 1 — Seal your first capsule (2 minutes)
 
 ```python
-from capsule_emit import emit
+from capsule_emit import seal
 
-cap = emit(
+capsule = seal(
+    {"task": "greet"},                     # payload: any JSON-serializable value
     action="hello-world",
     operator="your-org",                    # the accountable tenant
     developer="my-agent@v1",               # agent identity + version
-    agent_input={"task": "greet"},
     agent_output={"message": "hello"},
     model={"provider": "your-provider", "model_id": "your-model"},
     verdict="executed",
     effect={"type": "write_order", "status": "confirmed"},
 )
-print("Capsule ID:", cap.capsule_id)
-print("Anchored: ", cap.anchored)
+print("Capsule ID:", capsule.capsule_id)
+print("Signature: ", capsule.signature[:16] + "...")
 ```
 
 What this does:
 
-1. **Content-addresses the action.** `agent_input` and `agent_output` are digested
+1. **Content-addresses the action.** The payload and `agent_output` are digested
    (SHA-256 over the RFC 8785 canonical form) and committed into the capsule.
    The raw values never leave your process — only their fingerprints do.
-2. **Seals it.** The capsule is assembled as a deterministic JSON structure and
-   content-addressed: the `capsule_id` is the SHA-256 of the canonical form.
-   Any field tampered after sealing produces a different `capsule_id`.
-3. **Anchors it, async.** The `capsule_id` (the digest, nothing else) is submitted
-   in a background thread to the public SCITT transparency log at
-   `anchor.agentactioncapsule.org`. Anchoring is non-blocking and does not delay
-   the return. `cap.anchored = True` means the submission was dispatched; use the
-   anchor receipt verification in Step 3 to confirm inclusion.
-4. **Appends to a local ledger.** Every `emit()` appends the capsule to
+2. **Seals and signs it.** The capsule is assembled as a deterministic JSON
+   structure and content-addressed (the `capsule_id` is the SHA-256 of the
+   canonical form; any field tampered after sealing produces a different
+   `capsule_id`), then signed by a persisted producer key — self-attested
+   strength, immediately, no network required.
+3. **Witnesses it, async, by default.** Once enough entries accumulate (or
+   `push()` forces it now), a signed checkpoint over your whole ledger — not
+   a per-capsule submission — is registered with an independent Transparency
+   Service; digest-only, never your payload content. See
+   [`docs/checkpoint.md`](docs/checkpoint.md). (The older, non-default
+   per-capsule anchor channel below is a separate, explicit opt-in — most
+   deployments don't need it.)
+4. **Appends to a local ledger.** Every `seal()` appends the capsule to
    `ledger.jsonl` in the current directory. View it:
    ```bash
    capsule-emit ledger view ./ledger.jsonl
    ```
 
-`cap.capsule_id` is a 64-character lowercase hex string — the SHA-256 content
+`capsule.capsule_id` is a 64-character lowercase hex string — the SHA-256 content
 address of this capsule. Keep it: it's how you refer to this record everywhere.
 
 > **Float note.** Raw Python floats in `agent_input` / `agent_output` raise a
@@ -129,8 +133,11 @@ What verification proves:
 
 ## Step 3 — Confirm anchor registration and verify the receipt (3 minutes)
 
-After `emit()` dispatches the background anchor POST, confirm your capsule is in
-the public log and verify the cryptographic inclusion proof offline:
+This step covers the legacy, non-default anchor channel (`anchor=True`) — most
+deployments verify via the witness/checkpoint stream instead (Step 1). After
+`seal(..., anchor=True)` dispatches the background anchor POST, confirm your
+capsule is in the public log and verify the cryptographic inclusion proof
+offline:
 
 ```bash
 CAPSULE_ID=<your-capsule_id>   # the 64-char hex from cap.capsule_id
@@ -225,7 +232,7 @@ rejection path.
 ## Adapter integrations
 
 `capsule-emit` ships thin adapters for common agent frameworks. All adapters wrap
-the same `emit()` base — only the hook point changes.
+the same internal sealing primitive — only the hook point changes.
 
 ### MCP (Model Context Protocol)
 
@@ -364,7 +371,7 @@ known limitations (L1–L7), and a side-by-side comparison with the Go adapter.
 > ```bash
 > export AAC_ANCHOR_URL=https://your-anchor.example.com/v1/digest
 > ```
-> or pass `anchor_url=...` to `emit()`.
+> or pass `anchor_url=...` to `seal()`.
 >
 > To turn anchoring off everywhere without a code change:
 > ```bash
@@ -380,12 +387,12 @@ known limitations (L1–L7), and a side-by-side comparison with the Go adapter.
 ## What's next
 
 - **Chain records.** Link a confirmation to its parent action:
-  `emit(..., confirms=parent_capsule_id)` — the *approved → executed → confirmed*
+  `seal(payload, confirms=parent_capsule_id)` — the *approved → executed → confirmed*
   sequence, or a cross-agent chain by id alone. See
   [`docs/chaining.md`](docs/chaining.md).
 - **Declare constraints.** A `flows/<action>/manifest.md` declares the rules your
   action runs under. `capsule-emit` reads it (declaration); a compatible gateway
-  enforces the same file (enforcement) with no change to your `emit()` calls.
+  enforces the same file (enforcement) with no change to your `seal()` calls.
   See [`docs/going-deeper.md`](docs/going-deeper.md).
 - **Self-host the anchor.** Run
   [`capsule-anchor`](https://github.com/action-state-group/capsule-anchor) in your

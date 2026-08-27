@@ -6,6 +6,34 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## [Unreleased]
 
+### Added / Changed — slot-form composition; `compose()`/`carry()` removed ([v4-surface-complete-050])
+
+**What changed.** The frozen v4 developer surface (`_work/dev-surface-v4-2026-08-24.md` §1/§3/§9)
+ships complete: `who()`/`can()`/`did()`/`audit()` slot wrappers, passed into `seal()`, replace the
+v3 `compose([...])` flat-bind verb; `push()` forces an immediate, synchronous checkpoint instead of
+waiting on cadence.
+
+- **Slot wrappers.** `seal(who(a), can(b), did(c), audit(d))` mints (or references) each member and
+  produces ONE composition capsule citing them by CPB typed digest ref, annotated with a `slot` key
+  — composition semantics, not a new protected claim; `#107`'s `capsule_id` construction is
+  untouched. Single-payload `seal(payload)` is byte-for-byte unchanged. A slot wrapper's value is
+  either a payload (minted fresh, under the slot name as its action) or an already-produced
+  `Capsule` (referenced as-is — `can(received(...))` is byte-identical to calling `received(...)`
+  standalone, the O8 acceptance case). Bare foreign bytes nested in a slot wrapper are refused,
+  same as `seal()`'s own dispatch rule — never guessed.
+- **`push()`.** New public verb: forces a checkpoint now, synchronously, sharing the per-ledger
+  dispatch lock the cadence-triggered async path uses so the two never race. A no-op when
+  witnessing is off or there is nothing new to checkpoint.
+- **Clean break, no deprecation:** `compose()` and `carry()` are removed from `__all__` and the
+  module namespace (there were no users yet). `compose()`'s flat-bind body survives as the private
+  `_compose()` helper the slot-form calls; `carry()`'s body was already `received()`'s. Fixed the
+  one adapter calling the public `seal()` verb in the old flat-kwargs shape
+  (`adapters/agentgateway.py`) to call the internal primitive directly, like every other adapter.
+- **Docs:** AGENTS.md/README.md/ADOPT.md canonical snippets now teach `seal()`, not the
+  already-removed `emit()`; `AGENTS.md` shows the slot-form composition once. The OpenClaw skill's
+  `seal_server.py` no longer re-enables the legacy per-record anchor channel by default
+  (`anchor=(not _ANCHOR_OFF)` was a regression against O16's off-by-default anchor).
+
 ### Fixed — the verify surface authenticates cryptography, not just structure ([verify-authenticates-nothing])
 
 **What changed.** An adversarial run against `origin/main` (`_work/adv-migration-run-2026-08-24.md`)

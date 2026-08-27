@@ -320,7 +320,7 @@ def test_capsule_anchor_unset_defaults_to_off(tmp_path, monkeypatch):
 #
 # **draft-04 reversal ([capsule-cose-sign1], 2026-08-24):** ``scitt_cose``
 # stopped being an anchor-channel-only optional extra the moment every
-# ``seal()``/``carry()``/``compose()`` call started building a mandatory
+# ``seal()``/``received()`` call started building a mandatory
 # COSE_Sign1 producer envelope (``capsule_emit.signing.LocalKeypairSigner
 # .sign_envelope``, reusing ``scitt_cose.cose_sign1``) -- it is now a hard
 # runtime dependency of core sealing, pulled in transitively via

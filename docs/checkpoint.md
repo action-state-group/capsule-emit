@@ -143,7 +143,7 @@ export CAPSULE_WITNESS=stub       # this process's checkpoints run through the s
 
 | `CAPSULE_ENV`           | `CAPSULE_WITNESS=stub`                          | anything else |
 |--------------------------|--------------------------------------------------|----------------|
-| `production`              | **refuses to run** — `StubWitnessInProductionError`, raised synchronously at the first `seal()`/`carry()`/`compose()`, before anything is written | normal (real witness, or off) |
+| `production`              | **refuses to run** — `StubWitnessInProductionError`, raised synchronously at the first `seal()`/`received()`, before anything is written | normal (real witness, or off) |
 | unset / anything else     | stub mode runs; a scream prints once to stderr at the first stub-armed `seal()`, and `status`/`--json` mark the checkpoint `"stub_witness": true` | normal |
 
 Three hard rules, enforced in code, not just documented:
