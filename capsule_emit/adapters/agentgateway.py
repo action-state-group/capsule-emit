@@ -52,7 +52,7 @@ from concurrent import futures
 
 import grpc
 
-from capsule_emit import seal
+from capsule_emit.core import _emit_capsule
 
 from . import ext_mcp_pb2
 
@@ -141,9 +141,16 @@ class CapsuleEmitServicer:
             tool_result = {}
 
         try:
-            seal(
-                arguments,
+            # Calls the internal _emit_capsule primitive directly, like every
+            # other capsule-emit adapter (via adapters/_base.py) -- the
+            # public seal() verb's canonical shape is seal(payload); an
+            # adapter that needs the full flat kwarg set (operator=,
+            # developer=, agent_output=, verdict=, effect=, ...) reaches for
+            # the primitive those verbs themselves wrap, not the public verb
+            # in v3's old shape (frozen surface §1/§9 clean break).
+            _emit_capsule(
                 action=tool_name,
+                agent_input=arguments,
                 operator=self._operator,
                 developer=self._developer,
                 agent_output=tool_result,

@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """The producer :class:`Signer` seam — ``seal()``'s real signing surface.
 
-Since 0.5.0 every capsule minted by ``seal()``/``carry()``/``compose()``
-(``capsule_emit.core._emit_capsule``) carries a cryptographic proof over its
-``capsule_id`` plus the ``key_id`` that produced it -- this is the
+Since 0.5.0 every capsule minted by ``seal()``/``received()`` (standalone or
+composed via a slot wrapper -- ``capsule_emit.core._emit_capsule``) carries a
+cryptographic proof over its ``capsule_id`` plus the ``key_id`` that
+produced it -- this is the
 *self-attested* rung of the ladder (frozen dev-surface v4 §2/§4): "your key,
 your claim". It is what a lone producer has *before* any witness or anchor
 ever sees the record, and it is what upgrades in place as checkpoints get

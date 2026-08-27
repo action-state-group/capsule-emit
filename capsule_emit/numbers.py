@@ -2,7 +2,7 @@
 """Number-rule and canonicalization identifier for digest-bearing capsule fields.
 
 ``CANONICALIZATION_ID`` — the profile default identifier recorded by the
-core emission path (``seal()``/``carry()``/``compose()`` via
+core emission path (``seal()``/``received()`` via
 ``capsule_emit.core._emit_capsule``, which delegates to
 ``agent_action_capsule.emit()``) at the top-level ``canonicalization_id``
 field (the self-describing binding slot, inside the signed payload). It
@@ -32,7 +32,7 @@ records minted before this reversal.
 
 This constant is the single declaration point for the core-path profile's
 algorithm. When the profile revs again, the change is one edit here;
-sealing callers (seal()/carry()/compose()) need no update because the value
+sealing callers (seal()/received()) need no update because the value
 is wired through as a parameter default, not hardcoded at each call site.
 
 Wire rule (normative in CPB — already enforced by agent_action_capsule.canonical):
@@ -68,7 +68,7 @@ from agent_action_capsule.canonical import FloatInDigestError
 #: :data:`capsule_emit.canonicalization.VINTAGE_CANONICALIZATION_ID`.
 #: When the profile revs again: change this constant only — the internal
 #: primitive accepts it as a parameter default, so all call sites (via
-#: seal()/carry()/compose()) update automatically.
+#: seal()/received()) update automatically.
 CANONICALIZATION_ID: str = "jcs"
 
 __all__ = ["CANONICALIZATION_ID", "float_to_str"]

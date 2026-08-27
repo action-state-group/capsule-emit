@@ -19,8 +19,8 @@ It wraps ``agent_action_capsule.emit()`` with:
   anchor channel — see below)
 
 **Single egress (2026-08, O16 items 1-2):** the per-seal SCITT anchor
-submission that used to dispatch on every ``seal()``/``carry()``/``compose()``
-call by default has been killed as a default. The checkpoint/witness stream
+submission that used to dispatch on every ``seal()``/``received()`` call by
+default has been killed as a default. The checkpoint/witness stream
 is now the only default network path. The old anchor channel still exists as
 an explicit, non-default opt-in — pass ``anchor=True``, or set
 ``CAPSULE_ANCHOR=legacy-on`` (a deliberately distinct value from the old
@@ -46,11 +46,15 @@ for a real confirmed/failed outcome. See ``transparent.py`` / ``verify.py`` /
 
 **Clean break (2026-08-22):** the public developer verb ``emit()`` (importable
 from the top-level ``capsule_emit`` package) is now a raising stub — use
-``seal()``/``carry()``/``compose()`` (see ``capsule_emit.surface``) instead.
-This module's ``_emit_capsule()`` is the fully-parameterized primitive those
-three verbs (and the framework adapters) wrap; it is internal, not the
-deprecated public verb, and callers needing every keyword in one call should
-import it explicitly rather than reach for the removed ``emit()``.
+``seal()``/``received()`` (see ``capsule_emit.surface``) instead. **Clean
+break (2026-08-27):** ``compose()``/``carry()``, the v3 flat-bind verbs, are
+gone from the public surface too — the slot-form (``seal(who(...),
+can(...), ...)``) supersedes ``compose()``, and ``carry()``'s body was
+already ``received()``'s. This module's ``_emit_capsule()`` is the
+fully-parameterized primitive those verbs (and the framework adapters)
+wrap; it is internal, not a deprecated public verb, and callers needing
+every keyword in one call should import it explicitly rather than reach for
+the removed ``emit()``.
 """
 from __future__ import annotations
 
@@ -195,7 +199,7 @@ def _print_first_run_disclosure_once(
         lines.append(
             f"  - ANCHOR: (legacy, non-default channel — explicitly opted into for this "
             f"process) the capsule_id (a 64-char hex SHA-256 digest — no business "
-            f"content) is submitted to {display} on every seal()/carry()/compose() "
+            f"content) is submitted to {display} on every seal()/received() "
             "call. Disable with anchor=False, or unset CAPSULE_ANCHOR / remove "
             "CAPSULE_ANCHOR=legacy-on."
         )
@@ -247,8 +251,8 @@ def _print_missing_anchor_dependency_notice_once() -> None:
     used to report only cryptically (a raw ``repr(ModuleNotFoundError(...))``)
     and only for whichever anchor futures happened to still be pending at
     interpreter shutdown — most were silently swept away well before then.
-    Printed once per process regardless of how many ``seal()``/``carry()``/
-    ``compose()`` calls hit the same missing dependency."""
+    Printed once per process regardless of how many ``seal()``/``received()``
+    calls hit the same missing dependency."""
     global _dep_notice_printed
     with _dep_notice_lock:
         if _dep_notice_printed:

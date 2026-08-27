@@ -9,8 +9,9 @@ asymmetric keypair. This file is the "planned" test named in the audit's
 coverage table: "every sealed capsule verifiably signed by a persisted key."
 
 Covers:
-- every ``seal()``/``carry()``/``compose()`` result carries a ``signature`` +
-  ``key_id`` on both the ``EmitResult`` and ``capsule`` dict
+- every ``seal()``/``received()`` result (standalone or composed via a slot
+  wrapper) carries a ``signature`` + ``key_id`` on both the ``EmitResult``
+  and ``capsule`` dict
 - the signature verifies against the capsule and rejects tampering
 - the default key is a persisted Ed25519 keypair (survives a process
   restart -- same key_id on a second, independent signer over the same path)
@@ -26,7 +27,7 @@ import sys
 
 import pytest
 
-from capsule_emit import LocalKeypairSigner, carry, compose, seal, verify_capsule_signature
+from capsule_emit import LocalKeypairSigner, can, did, received, seal, verify_capsule_signature
 from capsule_emit.signing import RotationRecord, resolve_signer
 
 
@@ -41,11 +42,11 @@ def test_seal_result_is_signed(tmp_path, monkeypatch):
     assert verify_capsule_signature(capsule.capsule)
 
 
-def test_carry_and_compose_results_are_signed(tmp_path, monkeypatch):
+def test_received_and_slot_form_results_are_signed(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     sealed = seal({"a": 1}, anchor=False, witness=False)
-    carried = carry(b'{"foreign": true}', anchor=False, witness=False)
-    composed = compose([sealed, carried], anchor=False, witness=False)
+    carried = received(b'{"foreign": true}', type="foreign-artifact", anchor=False, witness=False)
+    composed = seal(did(sealed), can(carried), anchor=False, witness=False)
 
     for capsule in (sealed, carried, composed):
         assert verify_capsule_signature(capsule.capsule)
