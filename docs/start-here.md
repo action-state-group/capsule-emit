@@ -74,7 +74,12 @@ You never rewrite anything to add these — they're the same `seal()` surface, r
   from capsule_emit import seal, who, can, did, audit
   capsule = seal(who(agent_id), can(mandate), did(action), audit(check))
   ```
-  Composition *is* nesting the slot verbs `who`/`can`/`did`/`audit` inside `seal()` — there is no separate `compose()` call.
+  Composition *is* nesting the slot verbs `who`/`can`/`did`/`audit` inside `seal()` — there is no separate `compose()` call. Each member can be a fresh payload **or a receipt you already sealed along the way** — an existing receipt is *referenced* (its digest is cited in its slot), never re-sealed:
+  ```python
+  mandate = seal(payload_a)                     # sealed earlier in the run
+  action  = seal(payload_b)                     # sealed earlier in the run
+  account = seal(can(mandate), did(action))     # composes them BY REFERENCE (digests, in slots)
+  ```
 - **Ingest a foreign signed artifact** — bring in something someone else already signed, as-transmitted, under its own declared type:
   ```python
   from capsule_emit import received
