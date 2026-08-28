@@ -19,11 +19,6 @@ jobs:
         with:
           python-version: "${{ matrix.python-version }}"
 
-      - name: install agent-action-capsule (from source until 0.0.2 on PyPI)
-        run: >
-          pip install
-          "git+https://github.com/action-state-group/agent-action-capsule.git#subdirectory=python"
-
       - name: install capsule-anchor (from source; needed for multi-anchor demo tests; requires Python >=3.11)
         if: matrix.python-version == '3.12'
         run: >

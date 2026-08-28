@@ -4,6 +4,14 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## 0.5.1
+
+Launch-blocker fixes for fresh installs (capsule-emit#123 + a producer/verifier interop mismatch):
+
+- **Pin `agent-action-capsule>=0.2.0`.** 0.5.0 allowed aac 0.1.0, which lacks `agent_action_capsule.media_types` — a fresh `pip install capsule-emit==0.5.0` crashed on the first `seal()` with `ModuleNotFoundError`. Source/editable installs masked it.
+- **capsule_id interop.** With aac 0.2.0, capsules now `verify --store` cleanly. aac 0.2.0 fixes a `capsule_id` recompute that omitted the `signature`/`key_id` local-only envelope exclusion (Python + Go), which had made every capsule-emit 0.5.x capsule fail verification.
+- **CI: clean-room install guard.** A new `clean-room-install` job builds the wheel and, in a fresh PyPI-only venv, runs `seal()` **and** `verify --store` end-to-end — the from-nothing path that was never actually tested. The main test matrix now installs aac from PyPI (via the pin), not from git source.
+
 ## [Unreleased]
 
 ### Added / Changed — slot-form composition; `compose()`/`carry()` removed ([v4-surface-complete-050])

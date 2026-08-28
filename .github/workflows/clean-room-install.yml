@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+# Guards against the capsule-emit#123 class: a fresh `pip install` from PyPI-only
+# deps must actually run seal() AND verify --store — NOT tested against source/editable
+# installs, which previously masked a missing transitive module + an interop mismatch.
+name: clean-room-install
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  from-nothing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: build the wheel
+        run: pip install build && python -m build
+
+      - name: install the wheel into a FRESH venv — PyPI deps only (no source, no editable)
+        run: |
+          python -m venv /tmp/cleanroom
+          /tmp/cleanroom/bin/pip install --upgrade pip
+          /tmp/cleanroom/bin/pip install dist/*.whl
+
+      - name: from-nothing smoke — first seal() must not crash (guards #123's ModuleNotFoundError)
+        env:
+          CAPSULE_WITNESS: "off"
+        run: |
+          /tmp/cleanroom/bin/python - <<'PY'
+          import os, tempfile
+          from capsule_emit import seal          # imports agent_action_capsule.media_types at seal-time
+          led = os.environ["LEDGER"] = tempfile.mktemp(suffix=".jsonl")
+          seal({"vendor": "Frobozz", "total": "1240.19"}, action="write_order", operator="acme", developer="a@1", ledger=led)
+          seal({"status": "ok"}, action="confirm", operator="acme", developer="a@1", ledger=led)
+          print("seal() OK ->", led)
+          open("/tmp/led_path", "w").write(led)
+          PY
+
+      - name: from-nothing smoke — verify --store must PASS (guards the capsule_id interop mismatch)
+        run: |
+          LED=$(cat /tmp/led_path)
+          OUT=$(/tmp/cleanroom/bin/agent-action-capsule verify --store "$LED" 2>&1); echo "$OUT"
+          echo "$OUT" | grep -q "capsule_id_mismatch" && { echo "::error::capsule_id_mismatch on a fresh install"; exit 1; }
+          echo "$OUT" | grep -qE "ok: False"          && { echo "::error::a capsule failed verification on a fresh install"; exit 1; }
+          echo "clean-room OK: fresh PyPI install can seal() and verify --store"
