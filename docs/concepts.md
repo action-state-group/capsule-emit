@@ -13,13 +13,14 @@ What `seal()` does: it takes content you authored, hashes it, and stamps an id
 (`capsule_id`) that's a fingerprint of the whole thing. Hand the capsule to anyone —
 they can re-hash it and check the fingerprint matches.
 
-Three other verbs mint the same kind of record for content you didn't author or
-content that references other capsules — `seal()` is just the common case:
-`received(bytes, type=...)` and `carry(bytes)` bring in something someone else
-already signed (as-transmitted, no re-canonicalization); `compose([a, b, c])`
-binds capsules already in your log by reference, asserting nothing new. All four
-return the same `Capsule` shape and append to the log the same way. → [the four
-verbs, in the README](../README.md#where-you-start-and-where-it-goes)
+The surface has one more verb and a set of slot wrappers for content you didn't
+author or content that references other capsules — `seal()` is just the common
+case: `received(bytes, type=...)` brings in something someone else already signed
+(as-transmitted, no re-canonicalization); nesting the slot verbs
+`who()`/`can()`/`did()`/`audit()` inside `seal(...)` composes several members into
+one capsule that references them by slot and asserts nothing new. They all return
+the same `Capsule` shape and append to the log the same way. → [the verb surface,
+in the README](../README.md#where-you-start-and-where-it-goes)
 
 ### may / did
 The honesty bit. *Approved* isn't *executed*, and *executed* isn't *confirmed*. A

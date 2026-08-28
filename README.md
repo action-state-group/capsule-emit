@@ -194,7 +194,7 @@ Alpha — API stable, not yet 1.0. The underlying specification is an **individu
 
 **Conformance & spec tracking.** Every capsule stamps its `spec_version` + `format_version`, and `capsule-emit` produces capsules conforming to the current draft (`draft-mih-scitt-agent-action-capsule`) — proven by the *independent* [`agent-action-capsule`](https://github.com/action-state-group/agent-action-capsule) verifier and its frozen conformance vectors, not by self-assertion. Two format versions exist and both keep verifying:
 
-- **`seal()` / `carry()` / `received()` / `compose()`** — the developer surface above — produce **format `4`**, canonicalized per RFC 8785 JCS (`canonicalization_id="jcs"`).
+- **`seal()` / `received()`** (and the `who()`/`can()`/`did()`/`audit()` slot verbs nested in `seal()`) — the developer surface above — produce **format `4`**, canonicalized per RFC 8785 JCS (`canonicalization_id="jcs"`).
 - **`holds/` (reserve/release/expire/reconcile lifecycle capsules)** — a separate, vintage code path — still produces **format `2`** (`canonicalization_id="jcs-n"`, the absent-field-normalized profile). It is a deliberate exception, not drift: hold-lifecycle capsules were minted under the older profile and stay there rather than silently reformatting existing records.
 
 When the spec revises, the version bumps and older capsules keep verifying; that's how this implementation stays tracked to the standard.

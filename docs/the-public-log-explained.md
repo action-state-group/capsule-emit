@@ -27,7 +27,7 @@ can prove an entry is in it, and prove the notary never tore a page out.
 
 ## What's actually on it? (the important part)
 
-**Only a fingerprint and a time.** When you `seal()` (or `carry()`/`received()`/`compose()`), the only thing sent to the log
+**Only a fingerprint and a time.** When you `seal()` (or `received()`), the only thing sent to the log
 is the capsule's **SHA-256 digest** (its `capsule_id`) — a fixed-length, one-way hash.
 
 The log learns: *"some record with fingerprint `9fddfcec…` existed at 18:01 UTC."* It

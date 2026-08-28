@@ -2,7 +2,7 @@
 
 **Goal:** see everything your agent did, in one table.
 
-Every `seal()` (and `carry()`/`received()`/`compose()`) appends one line to a local
+Every `seal()` (and `received()`) appends one line to a local
 file (`ledger.jsonl` by default) — your running, append-only trail. You don't have
 to manage it; it just accumulates.
 

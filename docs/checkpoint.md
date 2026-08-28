@@ -62,7 +62,7 @@ checkpoint/witness stream automatically:
   call) exactly as cheap as before this default flipped on.
 
 **First-use notice.** `capsule-emit` prints one line to stderr, once per
-process, at the first `seal()`/`carry()`/`received()`/`compose()` call where witnessing is enabled —
+process, at the first `seal()` / `received()` call where witnessing is enabled —
 before the first byte ever leaves the process, not gated on a checkpoint
 actually being due (the default cadence is 100 entries, so a short-lived
 process might otherwise never trigger one and never see the notice). It
@@ -327,7 +327,7 @@ confirmed IS that witness's pending backlog, computed fresh on demand
 one's backlog independently: one witness still down stops (at its own
 first failure this call) without touching another witness's already-clear
 backlog or blocking its drain. The next call — whether the next real
-`seal()`/`carry()`/`received()`/`compose()` crossing cadence, or another explicit call — re-derives
+`seal()` / `received()` crossing cadence, or another explicit call — re-derives
 the same backlog from the ledger and resumes at the same point; there is no
 cursor to lose or desync.
 
@@ -525,9 +525,8 @@ registered anywhere until you set one. (This is the manual API described in
 this section; `capsule_emit.core._emit_capsule()`'s own default path above does not
 use `CheckpointConfig` — it resolves its endpoint the same way the anchor
 does, via `witness_url=` / `CAPSULE_WITNESS_URL`.) The free public-good
-witness tier at `witness.agentactioncapsule.org` (`DEFAULT_TS_URL` —
-currently served via `anchor.agentactioncapsule.org`, CNAME pending) is
-documented and
+witness tier at `witness.agentactioncapsule.org` (`DEFAULT_TS_URL` — a
+separate, live witness service serving `POST /checkpoints`) is documented and
 available, but a generated config shows it **commented out**
 (`emit.EXAMPLE_CONFIG_TOML`), so opting in is an explicit uncomment. Any
 conforming SCITT Transparency Service can be substituted — nothing here is

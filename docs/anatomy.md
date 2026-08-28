@@ -57,7 +57,7 @@ seeing your prompts, vendors, or amounts.
 | `capsule_id` | SHA-256 of the canonical capsule (including `signature`/`key_id`) — the seal / content address |
 | `signature` | Ed25519 signature (hex) over the capsule's content digest — self-attested, always present since 0.5.0 |
 | `key_id` | the signing key's raw Ed25519 public key, hex-encoded — verify `signature` straight from the capsule, no lookup |
-| `spec_version` / `format_version` | which profile + capsule format this is — `seal()`/`carry()`/`received()`/`compose()` produce format `4` (`canonicalization_id="jcs"`); the separate `holds/` lifecycle path still produces format `2` (`canonicalization_id="jcs-n"`) — see [README → Status](../README.md#status) |
+| `spec_version` / `format_version` | which profile + capsule format this is — `seal()` / `received()` (and the `who()`/`can()`/`did()`/`audit()` slots nested in `seal()`) produce format `4` (`canonicalization_id="jcs"`); the separate `holds/` lifecycle path still produces format `2` (`canonicalization_id="jcs-n"`) — see [README → Status](../README.md#status) |
 | `action_id` | the action name + a unique id (e.g. `write_order/39530d9c…`) — chain linkage |
 | `action_type` | the capsule class (`decide` — a decision that produced an effect) |
 | `operator` / `developer` | accountable tenant + agent identity@version |

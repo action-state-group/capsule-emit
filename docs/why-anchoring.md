@@ -99,8 +99,8 @@ A transparency log **you** run isn't proof to an outsider — it has the same
 control — lets a counterparty check your capsule without trusting *you*; it
 does not, by itself, mean nobody has to trust the log's *operator* (that's the
 per-capsule-receipt-vs-witnessed-stream distinction above). `capsule-emit`
-witnesses by default to the free hosted log at `anchor.agentactioncapsule.org`
-(the `witness.` CNAME is pending — same free hosted service either way), a
+witnesses by default to the free hosted log at `witness.agentactioncapsule.org`
+(a separate, live witness service, `POST /checkpoints`), a
 single-operator log; you can self-host or repoint (`CAPSULE_WITNESS_URL`), but
 either way the trust property only holds when the log is one the *verifier*
 also trusts.

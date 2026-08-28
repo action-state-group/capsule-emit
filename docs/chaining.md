@@ -56,7 +56,7 @@ express that cross-stream link; this page will be updated when that lands.
 
 > Today `confirms=` writes `relation: "confirms"`. The spec also defines `supersede` /
 > `escalate`; richer relation values (and a `relation=` parameter) are
-> [registry-extensible](going-deeper.md), not yet surfaced on `seal()`/`carry()`/`received()`/`compose()`.
+> [registry-extensible](going-deeper.md), not yet surfaced on `seal()` / `received()`.
 
 ## An agent has *many* chains — the ledger is a DAG, not a line
 
