@@ -7,6 +7,7 @@ Everything here is written to be read by a human dev **or** by a coding agent yo
 You add one `seal()` call at each consequential action, and you get a **witnessed, verifiable ledger** of what your agent did. That's the floor. Begin with the tutorials:
 
 → **[Tutorials](tutorials/)** — five-minute, copy-paste sessions, in order:
+- **[A1 · See a ledger — know what your agent did](tutorials/A1-see-a-ledger.md)** — start from the consumer question: *how do you know what your agent did?* Read two real, verifiable sample ledgers before you produce one.
 1. **[Your first capsule](tutorials/01-your-first-capsule.md)** — seal an action, see it witnessed, see it land in your ledger, verify it. *(This is the full day-1 loop.)*
 2. **[Confirming & chaining](tutorials/02-confirming-and-chaining.md)** — link "attempted" to "confirmed."
 3. **[Reading your ledger](tutorials/03-reading-your-ledger.md)** — the whole trail in one view.
