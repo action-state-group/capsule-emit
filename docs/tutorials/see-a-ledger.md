@@ -1,4 +1,4 @@
-# A1 · See a ledger — know what your agent did
+# See a ledger — know what your agent did
 
 **How do you know what your agent did?**
 
@@ -350,10 +350,10 @@ arguments produced each capsule above.
 
 **Next:**
 
-- **A2 · Verify a ledger someone handed you** — you did this above; A2 goes deep
+- **Verify a ledger someone handed you** — you did a first pass above; the next tutorial goes deep
   on what each check means, and on verifying without trusting the operator, the
   clock, or the network.
-- **A3 · Report an incident via a capsule ledger** — hand a counterparty a chain
+- **Report via a capsule ledger** — hand a counterparty a chain
   of capsules as proof of what your agent did (and didn't), revealing raw values
   only where you choose.
 
