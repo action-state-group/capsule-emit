@@ -6,3 +6,7 @@ build/
 .pytest_cache/
 .ruff_cache/
 *.jsonl
+# but the committed tutorial sample ledgers are deliverables, not runtime output
+!docs/tutorials/fixtures/**/ledger.jsonl
+# ledger lock files carry a PID/hostname and are never deliverables
+*.jsonl.lock
