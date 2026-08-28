@@ -72,10 +72,12 @@ def _write_fixed_key() -> None:
 def _pin_determinism() -> None:
     """Seed action_id and timestamp so the spec layer's per-action UUID4 and
     wall-clock reads become reproducible. The seal path is otherwise real."""
-    import agent_action_capsule.emit  # ensure submodule is imported
-    import sys
+    import importlib
 
-    _emit_mod = sys.modules["agent_action_capsule.emit"]
+    # Import the submodule for its side effect (registering it) and bind the
+    # module object directly — importlib.import_module keeps this lint-clean
+    # (no "imported but unused") while still patching the real code path.
+    _emit_mod = importlib.import_module("agent_action_capsule.emit")
 
     counter = itertools.count(1)
 
