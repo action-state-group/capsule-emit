@@ -89,7 +89,7 @@ to skip sealing entirely.
 **What it cannot do:**
 - Cover tools on other MCP servers automatically.
 - Evaluate Signal 2 autonomously — the decorator does not know the resource
-  classification. For privileged reads, the engine calls `emit()` directly.
+  classification. For privileged reads, the engine calls `seal()` directly.
 
 ---
 
@@ -153,5 +153,5 @@ Is the agent code yours to modify?
           Per-tool   → Pattern B (decorators)
 
 Do you need to seal privileged reads (Signal 2)?
-  → Engine-side direct emit() call; see whats-consequential.md §Signal 2
+  → Engine-side direct seal() call; see whats-consequential.md §Signal 2
 ```

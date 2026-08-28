@@ -1,7 +1,7 @@
 # Adapters — sealing capsules per framework
 
 An adapter does one thing: **seal one capsule per tool call**, so you don't
-write `seal(...)` by hand at every call site.  Same capsule, same checkpoint,
+write `seal(...)` by hand at every call site.  Same capsule, same witness,
 same verify — adapters differ only in *where they hook in*, because each
 framework gives you a different seam.
 
@@ -19,10 +19,13 @@ methods are unchanged.
 | Google ADK | [adk.md](adk.md) | `ADKCapsuleEmitter` | tool callback / event tap |
 | Dapr Agents | [dapr_agents.md](dapr_agents.md) | `DaprAgentsCapsuleEmitter` | tool decorator + HITL gate |
 
+**Quickstarts** (copy-paste, framework-specific, five minutes): **[CrewAI](../quickstart-crewai.md)** · **[LangGraph](../quickstart-langgraph.md)**.
+
 **Don't see your framework?**  All adapters extend one ~30-line base
 (`CapsuleEmitterBase`) — the [Hermes page](hermes.md) shows the "any loop"
-pattern: one `after_tool(...)` call wherever your code runs a tool.  Or call
-the top-level `seal()` directly (see the [README quickstart](../../README.md)).
+pattern: one `after_tool(...)` call wherever your code runs a tool, and it's
+the adapter to copy wholesale if nothing else fits. Or call the top-level
+`seal()` directly at your own call site (see the [README quickstart](../../README.md)).
 
 Every page covers three things: **where to put the call** (and why there may
 be more than one place), **add it yourself** (the literal lines), and **tell
@@ -34,10 +37,13 @@ All adapters share the same constructor:
 Emitter(
     operator="acme-co",        # accountable tenant
     developer="my-agent@v1",   # agent identity + version
+    anchor=False,              # legacy per-capsule anchor — off by default since 0.5.0
     ledger="ledger.jsonl",     # local append-only trail
 )
 ```
 
-Checkpoint/witness (to `witness.agentactioncapsule.org`, `/checkpoints`) is the
-default push. The legacy `anchor` channel is off by default as of 0.5.0 — leave it
-unset unless you have a reason to opt in.
+Sealing is witnessed by default (no config needed): the checkpoint/witness push
+goes to `witness.agentactioncapsule.org` (`POST /checkpoints`) — see
+[`docs/checkpoint.md`](../checkpoint.md). The legacy `anchor` channel is off by
+default as of 0.5.0 — `anchor=True` (or `CAPSULE_ANCHOR=legacy-on`) opts back into
+the older, non-default per-capsule anchor channel.

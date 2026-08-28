@@ -2,9 +2,11 @@
 
 ## Default wiring (since 0.5.0)
 
-`capsule_emit.core.emit()` wires this in **by default** — no opt-in code
-required. Every ledger you `emit()` into participates in a checkpoint/witness
-stream automatically:
+`capsule_emit.core._emit_capsule()` — the internal primitive `seal()` /
+`received()` (and the `who()`/`can()`/`did()`/`audit()` slot verbs nested in
+`seal()`) all wrap — wires this in **by default**
+— no opt-in code required. Every ledger you seal into participates in a
+checkpoint/witness stream automatically:
 
 - **Cadence: 100 entries or 15 minutes, whichever comes first, both
   configurable.** Once a ledger accumulates
@@ -12,32 +14,30 @@ stream automatically:
   last checkpoint — **or** `capsule_emit.witness.DEFAULT_CADENCE_SECONDS`
   (900) seconds have elapsed since the first unwitnessed entry after the
   last checkpoint — a signed peaks checkpoint over that ledger's MMR is
-  built and registered with a Transparency Service, at its `/checkpoints`
-  route (single-host witness ruling, 2026-08-27) — the same free
-  public-good tier the legacy per-emit anchor channel also uses,
-  `witness.agentactioncapsule.org` (checkpoint-primary; semantically a
-  witness, not the anchor — **[currently served via
-  `anchor.agentactioncapsule.org`, the same underlying service; the
-  `witness.` domain mapping is pending]**, see
-  `capsule_emit.checkpoint.emit.DEFAULT_TS_URL` / `_PENDING_CNAME_TARGETS`).
-  This is the **only default egress channel** as of 0.5.0 — the older
-  per-emit anchor channel is now an explicit, non-default opt-in (see
-  [`docs/why-anchoring.md`](why-anchoring.md#in-practice)), not something
-  every default `emit()` call also dispatches. A bundle (capsule + inclusion
-  proof + stamped checkpoint) is already per-record proof — the witness
-  host's separate `/register` route (opt-in, SCITT-interop) exists for
-  verifiers that need a per-record SCITT Receipt specifically, not as an
-  upgrade path from a checkpoint stamp; the default `emit()` path never
-  calls it (see "Checkpoint-only" below and
+  built and registered with the witness Transparency Service at its
+  `/checkpoints` route (single-host witness ruling, 2026-08-27). The witness is
+  a separate, live service — `witness.agentactioncapsule.org`
+  (`capsule_emit.checkpoint.emit.DEFAULT_TS_URL`), checkpoint-primary and
+  semantically a witness, not the anchor. This is the **only default egress
+  channel** as of 0.5.0 — the older per-capsule anchor channel is now an
+  explicit, non-default opt-in (see
+  [`docs/why-anchoring.md`](why-anchoring.md#in-practice)), not something every
+  default sealing call also dispatches. A bundle (capsule + inclusion proof +
+  stamped checkpoint) is already per-record proof — the witness host's separate
+  `/register` route (opt-in, SCITT-interop) exists for verifiers that need a
+  per-record SCITT Receipt specifically, not as an upgrade path from a
+  checkpoint stamp; the default sealing path never calls it (see
+  "Checkpoint-only" below and
   `tests/test_witness_no_egress_to_register.py`).
 - **An idle log is silent, never a heartbeat.** The age leg is checked
   lazily, only inside `witness.maybe_checkpoint` — which itself only ever
-  runs right after a real `emit()` call appends a new entry. There is no
+  runs right after a real `seal()` / `received()` call
+  appends a new entry. There is no
   background timer or polling thread, so a ledger with no new activity is
   never checkpointed on age alone: it is structurally impossible, not a
   runtime guard. Checkpoint-stamp entries (see below) reinforce this —
   they're written directly through `ledger.append_to_ledger`, never through
-  `core.emit()`, so persisting a stamp never advances the entry counter
+  `core._emit_capsule()`, so persisting a stamp never advances the entry counter
   *or* resets the age clock.
 - **Multiple witnesses.** `witness_url=` (and `CAPSULE_WITNESS_URL`) accept a
   single endpoint or several — a list, or a comma-separated string — and the
@@ -53,16 +53,16 @@ stream automatically:
   path, never the path itself (see `witness._public_log_id`).
 - **Async, fire-and-forget** — the checkpoint build (local, no network) and
   its TS registration (the only network call) run on a daemon thread; a
-  cadence-crossing `emit()` call never blocks on it.
+  cadence-crossing sealing call never blocks on it.
 - **Lazy** — nothing above is imported or computed until a checkpoint is
-  actually due. A caller who calls `emit()` once and exits, or whose ledger
+  actually due. A caller who seals once and exits, or whose ledger
   never crosses the cadence threshold, pays zero cost: no MMR built, no
   `capsule_emit.checkpoint` import, no network dependency touched. This is
-  what keeps `import capsule_emit` (and a single below-cadence `emit()`
+  what keeps `import capsule_emit` (and a single below-cadence sealing
   call) exactly as cheap as before this default flipped on.
 
 **First-use notice.** `capsule-emit` prints one line to stderr, once per
-process, at the first `emit()`/`seal()` call where witnessing is enabled —
+process, at the first `seal()` / `received()` call where witnessing is enabled —
 before the first byte ever leaves the process, not gated on a checkpoint
 actually being due (the default cadence is 100 entries, so a short-lived
 process might otherwise never trigger one and never see the notice). It
@@ -73,7 +73,7 @@ and how to turn it off. It never prints a second time in the same process.
 **Turning it off:**
 
 ```python
-emit(..., witness=False)          # this call's ledger opts out
+seal(..., witness=False)          # this call's ledger opts out
 ```
 
 ```bash
@@ -81,7 +81,7 @@ export CAPSULE_WITNESS=off        # opt out everywhere, no code change
 ```
 
 An explicit `witness=` kwarg always overrides the env var. Repoint the
-endpoint (or add more) with `emit(..., witness_url=...)` or
+endpoint (or add more) with `seal(..., witness_url=...)` or
 `CAPSULE_WITNESS_URL=…`; override the entry-count cadence with
 `CAPSULE_WITNESS_CADENCE_ENTRIES=…` and the age-based cadence with
 `CAPSULE_WITNESS_CADENCE_SECONDS=…`.
@@ -119,7 +119,7 @@ equivocation-resistant* tier described in
 — that tier specifically requires witnesses a verifier can cross-check: the
 same checkpoint independently co-signed by, or registered to, more than one
 independently-operated log. Register the default checkpoint with more than
-one Transparency Service (`emit(..., witness_url=[url1, url2])` or a
+one Transparency Service (`seal(..., witness_url=[url1, url2])` or a
 comma-separated `CAPSULE_WITNESS_URL`) to climb from single-witness to
 multi-witness; the zero-config default does not do this for you.
 
@@ -220,7 +220,7 @@ Transparency Service (TS) for independent, third-party freshness evidence.
 
 ## Checkpoint/stamp persistence — the stamp is a log entry, not just an in-memory field
 
-Since 0.5.0, `capsule_emit.core.emit()`'s default wiring (`capsule_emit.witness`)
+Since 0.5.0, `capsule_emit.core._emit_capsule()`'s default wiring (`capsule_emit.witness`)
 writes every checkpoint it builds — signature, `mmr_size`, and whatever
 `witnesses` it collected — back into the *same ledger it covers*, as its own
 JSONL line:
@@ -245,8 +245,8 @@ flipping or deleting a byte of a persisted stamp's `witnesses` changes its
 leaf and breaks the covering checkpoint's root, rather than that evidence
 living only in the `CheckpointRecord.witnesses` list of a process-local
 object a restart discards. Stamp entries never wake the cadence/idle
-timer — they aren't written through `core.emit()`, so they never touch
-`witness.maybe_checkpoint`'s per-`emit()`-call counter *or* its age clock;
+timer — they aren't written through `core._emit_capsule()`, so they never touch
+`witness.maybe_checkpoint`'s per-sealing-call counter *or* its age clock;
 persisting a stamp neither advances the entry count nor resets (nor starts)
 the 15-minute window (`tests/test_witness_stamp_persistence.py`,
 `tests/test_witness_idle_silence_and_age_cadence.py`).
@@ -327,7 +327,7 @@ confirmed IS that witness's pending backlog, computed fresh on demand
 one's backlog independently: one witness still down stops (at its own
 first failure this call) without touching another witness's already-clear
 backlog or blocking its drain. The next call — whether the next real
-`seal()`/`emit()` crossing cadence, or another explicit call — re-derives
+`seal()` / `received()` crossing cadence, or another explicit call — re-derives
 the same backlog from the ledger and resumes at the same point; there is no
 cursor to lose or desync.
 
@@ -337,7 +337,7 @@ that builds and registers each newly-due checkpoint) calls
 this cycle — so the backlog drains automatically on the next real write
 after a witness returns, matching this module's existing "no background
 timer, only real writes drive network activity" design. An operator who
-wants to force a drain without waiting on the next `emit()` can call
+wants to force a drain without waiting on the next sealing call can call
 `retry_pending_witness_stamps` directly.
 
 ```python
@@ -349,7 +349,7 @@ witness.retry_pending_witness_stamps(ledger_path, ts_url="https://witness.exampl
 
 ## Bundle — the hand-to-anyone artifact (O16 audit item 14)
 
-The verification chain above (`emit.py`'s module docstring) is four
+The verification chain above (`checkpoint/emit.py`'s module docstring) is four
 separate, caller-composed primitives — inclusion, checkpoint signature, TS
 receipt, rollback/consistency. `capsule_emit.bundle.bundle()` assembles all
 of them, plus the record's own receipt and the *prior* checkpoint's
@@ -522,12 +522,11 @@ payload names itself the same way a tampered bundle does.
 
 `CheckpointConfig.ts_urls` defaults to an **empty list** — nothing is
 registered anywhere until you set one. (This is the manual API described in
-this section; `capsule_emit.core.emit()`'s own default path above does not
+this section; `capsule_emit.core._emit_capsule()`'s own default path above does not
 use `CheckpointConfig` — it resolves its endpoint the same way the anchor
 does, via `witness_url=` / `CAPSULE_WITNESS_URL`.) The free public-good
-witness tier at `witness.agentactioncapsule.org` (`DEFAULT_TS_URL` —
-currently served via `anchor.agentactioncapsule.org`, CNAME pending) is
-documented and
+witness tier at `witness.agentactioncapsule.org` (`DEFAULT_TS_URL` — a
+separate, live witness service serving `POST /checkpoints`) is documented and
 available, but a generated config shows it **commented out**
 (`emit.EXAMPLE_CONFIG_TOML`), so opting in is an explicit uncomment. Any
 conforming SCITT Transparency Service can be substituted — nothing here is
@@ -550,7 +549,7 @@ cron of its own (no timing-jitter, no scheduling as a service).
 ("100 entries or 15 minutes, whichever first") — pass the time since the
 *first* unwitnessed entry, not since your last poll. Omitting it (or passing
 `entries_since_last=0`) falls back to the entry-count leg alone: the age leg
-never fires when there's no unwitnessed work, matching the default `emit()`
+never fires when there's no unwitnessed work, matching the default sealing
 wiring's idle-silence guarantee above.
 
 ## Minimal example

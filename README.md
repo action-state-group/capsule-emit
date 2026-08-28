@@ -2,7 +2,11 @@
 
 [![CI](https://github.com/action-state-group/capsule-emit/actions/workflows/python.yml/badge.svg)](https://github.com/action-state-group/capsule-emit/actions/workflows/python.yml)
 
+> **New here? → [docs/start-here.md](docs/start-here.md)** — the one-page front door.
+
 **Know what your AI agent did — and let anyone verify it.**
+
+**capsule-emit records your agent's actions as verifiable capsules; `seal()` is the one call you make.**
 
 One `seal()` call at each consequential action builds a **witnessed, verifiable ledger** of what your agent did — each entry sealed (content-addressed by hash) and checkable by anyone, *without trusting you*.
 
@@ -12,7 +16,7 @@ from capsule_emit import seal
 result = {"po_id": "PO-7781"}            # whatever your action returned
 
 capsule = seal(
-    {"vendor": "Frobozz Supply", "total": "1240.19"},   # payload: any JSON-serializable value
+    {"vendor": "Frobozz Supply", "total": "1240.19"},   # payload: any JSON-serializable value (quantities are strings, not floats)
     action="write_order",
     operator="acme-co",                  # the accountable tenant
     developer="po-agent@v1",             # the agent identity + version
@@ -21,7 +25,7 @@ capsule = seal(
     verdict="executed",                  # executed | confirmed | denied | blocked
     effect={"type": "write_order", "status": "dispatched"},
 )
-print(capsule.capsule_id, capsule.signature)   # sealed, signed, witnessed by default
+print(capsule.capsule_id, capsule.signature)   # sealed, signed, witnessed by default; anchor is a legacy opt-in (seal(payload, anchor=True))
 ```
 
 ```bash
@@ -56,6 +60,17 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 ## Where you start, and where it goes
 
 **Start here.** Call `seal()` at each consequential action. You get a **witnessed, verifiable ledger** of what your agent did — each capsule appended locally to `ledger.jsonl`, its digest written to a public log. That's the whole starting point. Everything below is optional depth you grow into — no rewrite.
+
+**The verb surface.** One authorship axis, one thing they all return (a `Capsule`, appended to the log) — which one you call just says who authored the content:
+
+| Verb | Use it when | |
+|---|---|---|
+| **`seal(payload)`** | You authored this content — the common case | *mint* |
+| **`received(bytes, type=...)`** | Someone else already signed it; you're bringing it into your log as-transmitted, under its own declared type | *carry* |
+| **`seal(who(...), can(...), did(...), audit(...))`** | Bind several members into one capsule — the composition asserts nothing new, it references each slot member | *compose* |
+| **`push()`** | Force a checkpoint now, instead of waiting for the cadence | *checkpoint* |
+
+`seal(received(bytes, type="machine-mandate"))` and `received(bytes, type="machine-mandate")` produce the identical capsule — nest a carry inside `seal()`, or call it standalone; `seal()` never re-signs an already-carried capsule, and never accepts raw bytes directly (that ambiguity — yours or theirs? — is always refused, not guessed). Composition is nesting the slot verbs `who`/`can`/`did`/`audit` inside `seal()`; there is no separate `compose()`/`carry()` call.
 
 **Then climb, one rung at a time:**
 
@@ -104,11 +119,10 @@ Until 0.5.0, your capsule log was like a git repo you never pushed: internally c
 
 - **Off is one flag, honored everywhere:** `seal(payload, witness=False)` for one call, `CAPSULE_WITNESS=off` for every call — no code change, no opt-in required in the first place.
 - **Your log is still your file.** The witness only ever sees the checkpoint (never your capsule content, never a per-record digest); walking away from it loses no history — `ledger.jsonl` is complete on its own, the witness just lets someone else confirm you didn't rewrite it after the fact.
-- **Any witness works, and more than one is stronger.** The default is a free hosted tier at `witness.agentactioncapsule.org`\* — but any conforming Transparency Service is substitutable (`CAPSULE_WITNESS_URL` / `seal(payload, witness_url=...)`), and you can register with several at once (a list, or comma-separated) for a stronger, equivocation-resistant tier. The first checkpoint of a process prints one line to stderr — once — naming exactly what's sent, where, and how to turn it off.
+- **Force a checkpoint on demand.** `push()` builds and registers a checkpoint right now, without waiting for the cadence — useful before a process exits or at a natural audit boundary.
+- **Any witness works, and more than one is stronger.** The default is a free hosted tier at `witness.agentactioncapsule.org` (a separate, live witness service, `POST /checkpoints`) — but any conforming Transparency Service is substitutable (`CAPSULE_WITNESS_URL` / `seal(payload, witness_url=...)`), and you can register with several at once (a list, or comma-separated) for a stronger, equivocation-resistant tier. The first checkpoint of a process prints one line to stderr — once — naming exactly what's sent, where, and how to turn it off.
 
 See **[`capsule_emit.checkpoint`](docs/checkpoint.md)** for the cadence, the multi-witness config, and precisely what trust tier a checkpoint does (and doesn't) reach — a single witness upgrades you from *self-attested*, but it isn't the *multi-witness, equivocation-resistant* tier, and a witness never vouches that your capsules' content is true, only that they exist, are ordered, and weren't deleted.
-
-\* currently served via `anchor.agentactioncapsule.org` while the `witness.` CNAME is pending — same free hosted service either way.
 
 ## Verify
 
@@ -178,7 +192,12 @@ capsule-emit  →  agent-action-capsule (spec + reference verifier)
 
 Alpha — API stable, not yet 1.0. The underlying specification is an **individual IETF Internet-Draft**, not an RFC; no RFC number is claimed.
 
-**Conformance & spec tracking.** Every capsule stamps its `spec_version` + `format_version`, and `capsule-emit` produces capsules conforming to the current draft (`draft-mih-scitt-agent-action-capsule`, format `2`) — proven by the *independent* [`agent-action-capsule`](https://github.com/action-state-group/agent-action-capsule) verifier and its frozen conformance vectors, not by self-assertion. When the spec revises, the version bumps and older capsules keep verifying; that's how this implementation stays tracked to the standard.
+**Conformance & spec tracking.** Every capsule stamps its `spec_version` + `format_version`, and `capsule-emit` produces capsules conforming to the current draft (`draft-mih-scitt-agent-action-capsule`) — proven by the *independent* [`agent-action-capsule`](https://github.com/action-state-group/agent-action-capsule) verifier and its frozen conformance vectors, not by self-assertion. Two format versions exist and both keep verifying:
+
+- **`seal()` / `received()`** (and the `who()`/`can()`/`did()`/`audit()` slot verbs nested in `seal()`) — the developer surface above — produce **format `4`**, canonicalized per RFC 8785 JCS (`canonicalization_id="jcs"`).
+- **`holds/` (reserve/release/expire/reconcile lifecycle capsules)** — a separate, vintage code path — still produces **format `2`** (`canonicalization_id="jcs-n"`, the absent-field-normalized profile). It is a deliberate exception, not drift: hold-lifecycle capsules were minted under the older profile and stay there rather than silently reformatting existing records.
+
+When the spec revises, the version bumps and older capsules keep verifying; that's how this implementation stays tracked to the standard.
 
 ## Provenance, neutrality & governance
 

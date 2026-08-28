@@ -18,17 +18,17 @@ A *confirmed* capsule **points back** at the *dispatched* one — that link is a
 ## Do it
 
 ```python
-from capsule_emit import emit
+from capsule_emit import seal
 
-# 1) the agent attempts the action
-attempt = emit(
-    action="write_order", operator="acme-co", developer="po-agent@v1",
+# 1) the agent attempts the action — no payload to seal here, so pass None
+attempt = seal(
+    None, action="write_order", operator="acme-co", developer="po-agent@v1",
     effect={"type": "write_order", "status": "dispatched"},   # attempted
 )
 
 # 2) later, your system confirms it really landed
-done = emit(
-    action="write_order", operator="acme-co", developer="po-agent@v1",
+done = seal(
+    None, action="write_order", operator="acme-co", developer="po-agent@v1",
     verdict="confirmed",
     effect={"type": "write_order", "status": "confirmed"},    # observed
     confirms=attempt.capsule_id,                           # ← the chain link
@@ -40,7 +40,7 @@ print("confirm:", done.capsule_id[:12], "→ confirms", attempt.capsule_id[:12])
 
 ```console
 $ python confirm.py
-attempt: 1008e6fcf94a → ...
+attempt: 1008e6fcf94a
 confirm: 7430c9d886eb → confirms 1008e6fcf94a
 ```
 

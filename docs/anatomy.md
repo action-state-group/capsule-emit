@@ -57,7 +57,7 @@ seeing your prompts, vendors, or amounts.
 | `capsule_id` | SHA-256 of the canonical capsule (including `signature`/`key_id`) — the seal / content address |
 | `signature` | Ed25519 signature (hex) over the capsule's content digest — self-attested, always present since 0.5.0 |
 | `key_id` | the signing key's raw Ed25519 public key, hex-encoded — verify `signature` straight from the capsule, no lookup |
-| `spec_version` / `format_version` | which profile + capsule format this is |
+| `spec_version` / `format_version` | which profile + capsule format this is — `seal()` / `received()` (and the `who()`/`can()`/`did()`/`audit()` slots nested in `seal()`) produce format `4` (`canonicalization_id="jcs"`); the separate `holds/` lifecycle path still produces format `2` (`canonicalization_id="jcs-n"`) — see [README → Status](../README.md#status) |
 | `action_id` | the action name + a unique id (e.g. `write_order/39530d9c…`) — chain linkage |
 | `action_type` | the capsule class (`decide` — a decision that produced an effect) |
 | `operator` / `developer` | accountable tenant + agent identity@version |
@@ -75,7 +75,7 @@ the digest is committed — the raw value is *not* stored in the capsule.** You 
 inputs/outputs yourself; the capsule proves *what* they were (reveal a value later and
 anyone can re-hash it and check it against the digest) without ever containing them.
 
-| Layer | `emit()` argument | What it captures | Committed as |
+| Layer | `seal()` argument | What it captures | Committed as |
 |---|---|---|---|
 | **Prompt / input** | `agent_input=` | what went *into* the agent for this action | `model_attestation.compute_attestation.agent_input_digest` |
 | **Inference / output** | `agent_output=` | what the agent *produced* | `model_attestation.compute_attestation.agent_output_digest` |
@@ -87,20 +87,20 @@ the model and the evidence it produced.)
 
 ---
 
-## What gets sealed — a fully-loaded `emit()`
+## What gets sealed — a fully-loaded `seal()`
 
 ```python
-from capsule_emit import emit
+from capsule_emit import seal
 
-cap = emit(
+cap = seal(
+    # ── layers: the evidence ──────────────────────────────
+    {"vendor": "Frobozz Supply",                # the prompt/input  → agent_input_digest
+     "total": "1240.19",                        #   (quantities are strings, not floats)
+     "po_lines": [...]},
     action="write_order",
     operator="acme-co",                       # accountable tenant
     developer="po-agent@v1",                   # agent identity + version
 
-    # ── layers: the evidence ──────────────────────────────
-    agent_input={"vendor": "Frobozz Supply",   # the prompt/input  → agent_input_digest
-                 "total": 1240.19,
-                 "po_lines": [...]},
     agent_output=result,                        # the inference     → agent_output_digest
     model={"provider": "anthropic",             # the model         → ModelAttestation
            "model_id": "claude-sonnet-4-6",
@@ -122,10 +122,10 @@ passing the argument; omit it and it simply isn't part of the seal.
 
 ## How layers are captured — automatic vs. explicit
 
-The **hashing is always automatic** — whatever reaches `emit()` is canonicalized
-and digest-committed. What varies is *how the value gets to `emit()`*:
+The **hashing is always automatic** — whatever reaches `seal()` is canonicalized
+and digest-committed. What varies is *how the value gets to `seal()`*:
 
-| Layer | Bare `emit()` | Via an adapter |
+| Layer | Bare `seal()` | Via an adapter |
 |---|---|---|
 | `agent_input` | you pass it | **auto** — MCP `@emitter.tool` digests the call args; LangChain/CrewAI capture tool input |
 | `agent_output` | you pass it | **auto** — the adapter digests the return value |
@@ -145,11 +145,11 @@ Hermes demo records `"NVIDIA-NIM-routed"` rather than pretending to detect silic
 
 ## Chaining & disclosure
 
-A confirmation is **itself a capsule** that points at its parent by digest. `emit(..., confirms=…)` writes a chain with `relation="confirms"` by default;
+A confirmation is **itself a capsule** that points at its parent by digest. `seal(..., confirms=…)` writes a chain with `relation="confirms"` by default;
 pass `relation="supersedes"` or `relation="escalates"` to use the other spec relations.
 
 ```python
-done = emit(action="write_order", operator="acme-co", developer="po-agent@v1",
+done = seal({"po_id": "PO-7781"}, action="write_order", operator="acme-co", developer="po-agent@v1",
             verdict="executed",
             effect={"type": "write_order", "status": "confirmed"},
             confirms=cap.capsule_id)          # ← chain.parent_capsule_id
