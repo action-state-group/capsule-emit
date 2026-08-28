@@ -8,7 +8,7 @@
 
 ## 2. The one call
 
-Call `seal(payload)` at each consequential action. Every call appends one entry to a local, append-only ledger and its digest is witnessed — together that's a **witnessed, verifiable ledger** of what your agent did.
+**You already log what your agent does. Move that log to the effect boundary — the moment an action takes effect — and call `seal()` instead of `log()`.** Same habit you already have, one extra benefit: every call appends one entry to a local, append-only ledger and its digest is witnessed — together a **witnessed, verifiable ledger** of what your agent did, checkable by anyone. If you know git: `seal()` is `git commit` for your agent's actions.
 
 ```python
 from capsule_emit import seal
@@ -46,7 +46,22 @@ All adapters are thin shells over one shared base and seal the same capsule you'
 
 At **each consequential action** — the moments where "did your agent really do that, and was it authorized?" has a real answer at stake. → [what counts as consequential](whats-consequential.md).
 
-## 5. Grow into depth, only when needed
+## 5. What's underneath: the Checkpointed Local Log (CLL)
+
+You never touch this to *use* `seal()` — but it's what makes the ledger verifiable, and it's worth 30 seconds. Under every `seal()` is a **Checkpointed Local Log (CLL)**: an append-only Merkle log on your own disk. `seal()` appends a leaf; on a cadence the library folds the whole history into one ~200-byte **checkpoint** and sends *only that* to a **witness** — an independent service that co-signs it so your history can't be quietly rewritten later. Your payloads never leave; only the checkpoint does.
+
+If you know git, you already know the shape:
+
+| git | capsule-emit |
+|---|---|
+| `git commit` | `seal(payload)` — record one action |
+| your commit history | your **CLL** — the append-only log under every `seal()` |
+| a signed tag | a **checkpoint** — one signed value over the whole history so far |
+| `git push` | **witnessing** — an independent party vouches your history existed |
+
+Unpushed git history can be quietly rewritten; pushed history can't. Same here: an unwitnessed log is yours alone, a witnessed one is checkable by strangers.
+
+## 6. Grow into depth, only when needed
 
 You never rewrite anything to add these — they're the same `seal()` surface, reached for when you need them:
 
@@ -73,7 +88,7 @@ You never rewrite anything to add these — they're the same `seal()` surface, r
   ```
 - **Witness / anchor knobs** — witnessing to `witness.agentactioncapsule.org` (`POST /checkpoints`) is on by default; turn it off with one flag (`seal(payload, witness=False)`, or `CAPSULE_WITNESS=off` everywhere). The legacy per-capsule anchor channel is off by default (`anchor=True` to opt back in).
 
-## 6. Read & verify
+## 7. Read & verify
 
 View your ledger:
 
