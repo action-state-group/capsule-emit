@@ -50,6 +50,12 @@ At **each consequential action** — the moments where "did your agent really do
 
 You never touch this to *use* `seal()` — but it's what makes the ledger verifiable, and it's worth 30 seconds. Under every `seal()` is a **Checkpointed Local Log (CLL)**: an append-only Merkle log on your own disk. `seal()` appends a leaf; on a cadence the library folds the whole history into one ~200-byte **checkpoint** and sends *only that* to a **witness** — an independent service that co-signs it so your history can't be quietly rewritten later. Your payloads never leave; only the checkpoint does.
 
+**What one `seal()` actually does — and doesn't:**
+- **Now, at the call:** canonicalizes and digests your payload (the raw value stays on your machine), **self-signs** the capsule with your producer key — a *self-attested* signature, you vouching for your own record — and **appends it as a leaf** to your local CLL. `cap.seq` is that leaf's position; it's in the log immediately, before any checkpoint.
+- **Later, on cadence** (every ~100 records or ~15 min, or right away if you `push()`): the whole log is committed into one ~200-byte **checkpoint**, sent to the witness, which **stamps** it — and your leaf inherits that stamp through its inclusion proof.
+
+`seal()` doesn't fetch a witnessed receipt for the payload the moment you call it — it signs it and drops it in the MMR; the *independent* confirmation arrives with the next checkpoint. (The per-record `signature` is self-attested and immediate; the *witness* stamp is what comes later, via CLL.)
+
 If you know git, you already know the shape:
 
 | git | capsule-emit |
@@ -74,8 +80,13 @@ You never rewrite anything to add these — they're the same `seal()` surface, r
   from capsule_emit import seal, who, can, did, audit
   capsule = seal(who(agent_id), can(mandate), did(action), audit(check))
   ```
-  Composition *is* nesting the slot verbs `who`/`can`/`did`/`audit` inside `seal()` — there is no separate `compose()` call.
-- **Ingest a foreign signed artifact** — bring in something someone else already signed, as-transmitted, under its own declared type:
+  Composition *is* nesting the slot verbs `who`/`can`/`did`/`audit` inside `seal()` — there is no separate `compose()` call. Each member can be a fresh payload **or a receipt you already sealed along the way** — an existing receipt is *referenced* (its digest is cited in its slot), never re-sealed:
+  ```python
+  mandate = seal(payload_a)                     # sealed earlier in the run
+  action  = seal(payload_b)                     # sealed earlier in the run
+  account = seal(can(mandate), did(action))     # composes them BY REFERENCE (digests, in slots)
+  ```
+- **Bring in something already signed** — an artifact someone else (or another system) already signed goes in **as-transmitted, never re-signed** — its bytes committed exactly, its own digest still identifying it:
   ```python
   from capsule_emit import received
   effect = received(mandate_bytes, type="machine-mandate")

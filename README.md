@@ -3,6 +3,8 @@
 [![CI](https://github.com/action-state-group/capsule-emit/actions/workflows/python.yml/badge.svg)](https://github.com/action-state-group/capsule-emit/actions/workflows/python.yml)
 
 > **New here? → [docs/start-here.md](docs/start-here.md)** — the one-page front door.
+>
+> **Vocabulary:** [TRANSLATION.md](TRANSLATION.md) — the dev / auditor / spec decoder.
 
 **Know what your AI agent did — and let anyone verify it.**
 
