@@ -98,10 +98,16 @@ wiring it to a model.
     ```
 
     <Warning>
-    Pass monetary and quantity values as **exact decimal strings**. A `float`
-    argument cannot be sealed into a digest-bearing field; the planned capsule
-    is dropped with a `RuntimeWarning` and the chain is broken, while the tool
-    call itself still succeeds.
+    A `float` tool argument cannot be sealed into a digest-bearing field. The
+    planned capsule is dropped with a `RuntimeWarning`, the tool call still
+    executes, and the outcome capsule seals **without a chain link** — a
+    fail-open gap in the evidence, tracked as
+    [#128](https://github.com/action-state-group/capsule-emit/issues/128).
+    This bites schema-driven tools too: a model filling a JSON-schema `number`
+    parameter hands you a float you never wrote. Until the fix lands, type
+    monetary and quantity parameters as **exact decimal strings**. The gap is
+    detectable after the fact: an unchained `confirmed` record is visible to
+    anyone reading the ledger.
     </Warning>
   </Step>
   <Step title="Read the ledger">
@@ -128,8 +134,9 @@ wiring it to a model.
 
 ## Verification
 
-`verify_capsule` recomputes the capsule identifier from the record's own content
-and checks the signature. Passing `store=` lets it resolve the chain link.
+`verify_capsule` recomputes the capsule identifier and every digest from the
+record's own content. Passing `store=` lets it resolve the chain link. It does
+**not** check the producer signature — that is the second, separate check below.
 
 ```python
 from capsule_emit.verification import verify_capsule
@@ -159,6 +166,29 @@ from capsule_emit.verification import verify_store
 results = verify_store(records)
 assert results and all(r.ok for r in results)
 ```
+
+### Checking the producer signature
+
+Each record's `signature` field is a hex-encoded COSE_Sign1 envelope over the
+capsule id. Authenticate it with the spec package's verifier:
+
+```python
+from agent_action_capsule.producer_envelope import verify_producer_envelope
+
+for record in records:
+    envelope = bytes.fromhex(record["signature"])
+    sig = verify_producer_envelope(record["capsule_id"], envelope)
+    print(f"  {record['effect']['status']:9s} signature_ok={sig.ok}")
+```
+
+A tampered envelope fails with `envelope_signature_invalid`; an envelope
+replayed onto a different capsule fails with `envelope_payload_mismatch`. On
+success the result carries the raw Ed25519 public key that signed the record —
+whether that key is authorized for the stated operator is caller policy.
+
+The two checks together are what "independently verifiable" means on this page:
+`verify_capsule` proves the content is what the identifier commits to and the
+chain is consistent; `verify_producer_envelope` proves who sealed it.
 
 ## Network behavior
 
