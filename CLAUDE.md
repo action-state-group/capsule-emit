@@ -19,7 +19,7 @@ floor.
 
 ## Scope
 
-This library builds Agent Action Capsule format 4 records from facts observed
+This library builds Agent Action Capsule format 4 records from values observed
 by an application at an external-effect boundary. It is a thin deterministic
 layer over `github.com/action-state-group/agent-action-capsule/go`; use upstream
 canonicalization, Capsule-ID, Class 1, and Producer Envelope verification rather
@@ -31,16 +31,17 @@ retry calls, persist Capsules, authorize signers, or maintain a ledger.
 ## Architecture
 
 ```text
-adapter facts → evidence.DigestExchanges → Build / Carry / Received / Compose
-                                                ↓
-                                  signature-free format-4 Capsule
-                                                ↓
-                                     Sign, or Seal = Build + Sign
-                                                ↓
-                                      independent Producer Envelope
+JSON values → DigestJSON → Effect digests → Build / Carry / Received / Compose
+                                              ↓
+                                signature-free format-4 Capsule
+                                              ↓
+                                   Sign, or Seal = Build + Sign
+                                              ↓
+                                    independent Producer Envelope
 ```
 
-- `evidence/` minimizes and digests ordered request and response facts.
+- `digest.go` marshals caller-owned JSON values and derives strict AAC
+  JSON-DIGEST values through upstream JCS.
 - `build.go` assembles, validates, identifies, and Class-1-verifies Capsules.
 - `construction.go` owns typed foreign-artifact and composition bindings.
 - `sign.go` owns immutable signing identities, `Sign`, and `Seal`.
@@ -69,7 +70,8 @@ adapter facts → evidence.DigestExchanges → Build / Carry / Received / Compos
 - **Determinism.** Do not add wall-clock defaults, random action IDs, implicit
   sorting, or mutable global protocol state.
 - **Defensive decoding.** Preserve duplicate-key, trailing-data, invalid UTF-8,
-  unsafe-number, empty-container, and depth checks on their existing paths.
+  unsafe-number, negative-zero normalization, and depth checks on their existing
+  paths.
 
 ## Testing conventions
 

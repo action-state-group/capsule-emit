@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"testing"
 
 	"github.com/action-state-group/agent-action-capsule/go/canonical"
@@ -29,6 +30,25 @@ func TestSealAndIndependentVerification(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, envelope.OK)
 	assert.Equal(t, []byte(publicKey), envelope.PublicKey)
+}
+
+func TestVerifyCapsuleNormalizesNegativeZeroExtension(t *testing.T) {
+	built, err := Build(validInput())
+	require.NoError(t, err)
+	payload, err := DecodePayload(built.JSON)
+	require.NoError(t, err)
+
+	payload["extension_count"] = json.Number("0")
+	capsuleID, err := canonical.ComputeCapsuleID(payload)
+	require.NoError(t, err)
+	payload["capsule_id"] = capsuleID
+	payload["extension_count"] = json.Number("-0")
+	encoded, err := canonical.JCS(payload)
+	require.NoError(t, err)
+
+	result, err := VerifyCapsule(encoded)
+	require.NoError(t, err)
+	assert.True(t, result.OK)
 }
 
 func TestSignSupportsMultipleIndependentEnvelopes(t *testing.T) {

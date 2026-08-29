@@ -3,35 +3,27 @@ package producer
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"net/http"
 	"testing"
 
-	"github.com/ethanyzhang/capsule-producer-go/evidence"
-	"github.com/ethanyzhang/capsule-producer-go/evidence/httpfact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestHTTPFactsToVerifiedV4CapsuleEndToEnd(t *testing.T) {
-	requestBody := []byte(`{"channel":"C123","text":"hello"}`)
-	request, err := http.NewRequest(http.MethodPost, "https://slack.com/api/chat.postMessage", nil)
+func TestJSONDigestsToVerifiedV4CapsuleEndToEnd(t *testing.T) {
+	requestDigest, err := DigestJSON(struct {
+		Channel string `json:"channel"`
+		Text    string `json:"text"`
+	}{Channel: "C123", Text: "hello"})
 	require.NoError(t, err)
-	requestFact, err := httpfact.CaptureRequest(request, requestBody, "slack-api")
+	responseDigest, err := DigestJSON(struct {
+		OK bool   `json:"ok"`
+		TS string `json:"ts"`
+	}{OK: true, TS: "1722781258.001"})
 	require.NoError(t, err)
-
-	responseBody := []byte(`{"ok":true,"ts":"1722781258.001"}`)
-	response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}}
-	responseFact, err := httpfact.CaptureResponse(response, responseBody, "ok", true)
-	require.NoError(t, err)
-	digests, err := evidence.DigestExchanges([]evidence.Exchange{{
-		Provider: "slack", Operation: "chat.postMessage", Request: requestFact, Response: responseFact,
-	}})
-	require.NoError(t, err)
-	require.True(t, digests.ResponseKnown)
 
 	input := validInput()
-	input.Effect.RequestDigest = digests.RequestDigest
-	input.Effect.ResponseDigest = digests.ResponseDigest
+	input.Effect.RequestDigest = requestDigest
+	input.Effect.ResponseDigest = responseDigest
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	identity, err := NewEd25519SigningIdentity(privateKey)

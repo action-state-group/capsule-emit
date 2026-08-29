@@ -2,7 +2,7 @@ package producer
 
 import "time"
 
-// Input contains the application-owned facts needed to build one Capsule.
+// Input contains the application-owned values needed to build one Capsule.
 // ActionID and Timestamp are supplied explicitly so the library never invents
 // business identity or wall-clock semantics.
 type Input struct {
@@ -42,7 +42,7 @@ type Disposition struct {
 	ReasonDigest  string
 }
 
-// Effect describes an external side effect and binds request and response evidence by digest.
+// Effect describes an external side effect and binds request and response JSON by digest.
 type Effect struct {
 	Type                 string
 	Status               EffectStatus

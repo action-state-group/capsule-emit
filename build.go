@@ -294,28 +294,37 @@ func assuranceMap(effect *Effect, chain *Chain) map[string]any {
 	}
 }
 
-// DecodePayload decodes payload bytes with json.Number preservation.
+// DecodePayload decodes payload bytes with json.Number preservation and JCS
+// negative-zero normalization.
 func DecodePayload(payload []byte) (map[string]any, error) {
-	if !utf8.Valid(payload) {
-		return nil, fmt.Errorf("decode capsule payload: JSON must be UTF-8")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.UseNumber()
-	decoded, err := decodeJSONValue(decoder, 1)
+	decoded, err := decodeStrictJSON(payload)
 	if err != nil {
 		return nil, fmt.Errorf("decode capsule payload: %w", err)
-	}
-	if _, err := decoder.Token(); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("decode capsule payload: trailing JSON value")
-		}
-		return nil, fmt.Errorf("decode capsule payload: trailing data: %w", err)
 	}
 	result, ok := decoded.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("capsule payload is not an object")
 	}
 	return result, nil
+}
+
+func decodeStrictJSON(payload []byte) (any, error) {
+	if !utf8.Valid(payload) {
+		return nil, fmt.Errorf("JSON must be UTF-8")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	decoded, err := decodeJSONValue(decoder, 1)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("trailing JSON value")
+		}
+		return nil, fmt.Errorf("trailing data: %w", err)
+	}
+	return decoded, nil
 }
 
 func decodeJSONValue(decoder *json.Decoder, depth int) (any, error) {
@@ -328,6 +337,11 @@ func decodeJSONValue(decoder *json.Decoder, depth int) (any, error) {
 	}
 	delimiter, ok := token.(json.Delim)
 	if !ok {
+		// UseNumber routes every number through this branch. RFC 8785 serializes
+		// negative zero as 0, while the pinned canonical package emits -0 verbatim.
+		if token == json.Number("-0") {
+			return json.Number("0"), nil
+		}
 		return token, nil
 	}
 	switch delimiter {

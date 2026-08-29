@@ -1,6 +1,6 @@
 module github.com/ethanyzhang/capsule-producer-go
 
-go 1.24.0
+go 1.27.0
 
 require (
 	github.com/action-state-group/agent-action-capsule/go v0.0.0-20260825062006-8ccf34573136

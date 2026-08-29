@@ -9,6 +9,8 @@ statement API, and verification rejects formats 2 and 3.
 
 ## Install
 
+Requires Go 1.27 or newer. `DigestJSON` uses `encoding/json/v2`.
+
 ```bash
 go get github.com/ethanyzhang/capsule-producer-go
 ```
@@ -105,14 +107,36 @@ envelope, err := producer.Sign(composed, identity)
 These functions build records only. They do not append logs, persist Capsules,
 deliver to a ledger, retry effects, or authorize signers.
 
-## Evidence capture
+## JSON digests
 
-The `evidence` package digests ordered request and response facts. The
-`evidence/httpfact` adapter captures detached HTTP metadata and content digests,
-never raw body bytes or mutable request and response objects.
+`DigestJSON` accepts any JSON-marshalable value and returns its AAC JSON-DIGEST:
+lowercase hexadecimal SHA-256 over RFC 8785 JCS. It rejects duplicate object
+names, excessive depth, floats, and integers outside the
+interoperable JSON safe range. Marshaling follows Go `encoding/json/v2`
+semantics, including strict UTF-8 and Unicode surrogate validation.
+Represent fractional quantities as strings or integers in their smallest unit.
+When another encoder produces the transmitted bytes, digest the decoded wire
+JSON value rather than assuming its output matches `encoding/json/v2`.
+
+```go
+// Illustrative: request and response are caller-owned values.
+requestDigest, err := producer.DigestJSON(request)
+if err != nil {
+	return err
+}
+responseDigest, err := producer.DigestJSON(response)
+if err != nil {
+	return err
+}
+```
+
+Callers own the JSON shape. The producer does not impose a transport-specific
+wrapper around the values being digested. Assign the results to
+`Effect.RequestDigest` and `Effect.ResponseDigest` on an Effect whose type,
+status, irreversibility class, and attestation are populated by the caller.
 
 All business IDs and timestamps are caller supplied. Assurance fields are
-derived from typed effect and chain facts. A format-4 Capsule declares
+derived from the supplied effect and chain values. A format-4 Capsule declares
 `canonicalization_id: "jcs"`; its Capsule ID commits every field except the
 top-level `capsule_id`, including `chain`.
 

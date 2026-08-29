@@ -1,6 +1,7 @@
 package producer
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -187,6 +188,12 @@ func TestDecodePayloadRejectsInvalidJSONAndNonObject(t *testing.T) {
 	deep := `{"value":` + strings.Repeat("[", maxJSONDepth) + strings.Repeat("]", maxJSONDepth) + `}`
 	_, err = DecodePayload([]byte(deep))
 	require.ErrorContains(t, err, "maximum depth")
+}
+
+func TestDecodePayloadNormalizesNegativeZero(t *testing.T) {
+	decoded, err := DecodePayload([]byte(`{"value":-0}`))
+	require.NoError(t, err)
+	assert.Equal(t, json.Number("0"), decoded["value"])
 }
 
 func TestBuildVerdictEffectOrthogonality(t *testing.T) {
