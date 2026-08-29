@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/action-state-group/capsule-emit/blob/main/docs/schemas/bundle-request.schema.json",
+  "title": "Bundle request / response",
+  "description": "The graduated bundle-request primitive — see ../a2a-request-shape.md for prose. Defines both the request envelope and the three-state response envelope.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": ["subject", "coverage"],
+      "additionalProperties": false,
+      "properties": {
+        "subject": { "$ref": "#/$defs/subject" },
+        "coverage": { "$ref": "#/$defs/coverage" },
+        "derivation": { "$ref": "#/$defs/derivation" },
+        "deadline": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Advisory; the producer's actual SLA is out of band."
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "required": ["kind"],
+      "oneOf": [
+        {
+          "properties": { "kind": { "const": "full_history" } },
+          "additionalProperties": false,
+          "required": ["kind"]
+        },
+        {
+          "properties": {
+            "kind": { "const": "account" },
+            "id": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false,
+          "required": ["kind", "id"]
+        },
+        {
+          "properties": {
+            "kind": { "const": "record" },
+            "digest": { "$ref": "#/$defs/sha256Hex" }
+          },
+          "additionalProperties": false,
+          "required": ["kind", "digest"]
+        },
+        {
+          "properties": {
+            "kind": { "const": "range" },
+            "range": {
+              "type": "object",
+              "required": ["from", "to"],
+              "additionalProperties": false,
+              "properties": {
+                "from": { "type": "string", "minLength": 1 },
+                "to": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": ["kind", "range"]
+        }
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["kind"],
+      "oneOf": [
+        {
+          "properties": {
+            "kind": { "const": "pin" },
+            "digest": { "$ref": "#/$defs/sha256Hex" }
+          },
+          "additionalProperties": false,
+          "required": ["kind", "digest"]
+        },
+        {
+          "properties": {
+            "kind": { "const": "min_freshness" },
+            "min_freshness": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false,
+          "required": ["kind", "min_freshness"]
+        }
+      ]
+    },
+    "derivation": {
+      "type": "object",
+      "required": ["kind"],
+      "oneOf": [
+        {
+          "properties": {
+            "kind": { "const": "token" },
+            "token": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false,
+          "required": ["kind", "token"]
+        },
+        {
+          "properties": {
+            "kind": { "const": "c_digest" },
+            "c_digest": { "$ref": "#/$defs/sha256Hex" }
+          },
+          "additionalProperties": false,
+          "required": ["kind", "c_digest"]
+        }
+      ]
+    },
+    "response": {
+      "type": "object",
+      "required": ["status"],
+      "oneOf": [
+        {
+          "properties": {
+            "status": { "const": "artifact" },
+            "artifact": true
+          },
+          "additionalProperties": false,
+          "required": ["status", "artifact"]
+        },
+        {
+          "properties": {
+            "status": { "const": "refused" },
+            "refusal": {
+              "type": "object",
+              "required": ["reason_class"],
+              "additionalProperties": false,
+              "properties": {
+                "reason_class": { "type": "string", "minLength": 1 },
+                "detail": { "type": "string" },
+                "capsule_id": {
+                  "$ref": "#/$defs/sha256Hex",
+                  "description": "Present when the refusal itself was sealed as a capsule."
+                }
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": ["status", "refusal"]
+        },
+        {
+          "properties": {
+            "status": { "const": "absent" }
+          },
+          "additionalProperties": false,
+          "required": ["status"]
+        }
+      ]
+    },
+    "sha256Hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "oneOf": [{ "$ref": "#/$defs/request" }, { "$ref": "#/$defs/response" }]
+}

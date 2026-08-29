@@ -1,0 +1,15 @@
+{
+  "template_id": "lifecycle.startup.v1",
+  "description": "Illustrative startup lifecycle template. Declares the expected set of action_ids for a 'complete startup': which steps, in what order, and what counts as complete. This is the intension — what SHOULD be there. A concrete run cites the actual sealed capsule digests it produced separately, as the extension (what IS there); evaluate() in run_example.py computes the diff.",
+  "members": [
+    { "action_id": "infra.dnssec_enabled" },
+    { "action_id": "infra.tls_cert_issued" },
+    { "action_id": "infra.dns_propagated" },
+    { "action_id": "app.deploy_confirmed" },
+    { "action_id": "app.health_check_passed" },
+    { "action_id": "site.demo_published.draft" },
+    { "action_id": "site.demo_published.walkthrough" }
+  ],
+  "order": "strict — declared order is the only valid order; an out-of-order member is a finding",
+  "completeness": "all 7 members required, each verified — a partial startup is a finding, never a silent gap"
+}
