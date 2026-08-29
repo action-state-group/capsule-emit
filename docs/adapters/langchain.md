@@ -1,40 +1,191 @@
-# LangChain
+# LangChain adapter — `LangChainCapsuleListener`
 
-Two integration shapes ship in `capsule-emit[langchain]`:
+Seal LangChain tool calls as signed, independently verifiable action records.
 
-## `LangChainCapsuleListener` — recommended
+## Overview
 
-A `BaseCallbackHandler` registered once via `config={"callbacks": [listener]}`;
-every tool call seals evidence with a planned → outcome chain:
+`capsule-emit` seals what a LangChain agent did into signed records that a third
+party can check without trusting — or contacting — the system that produced them.
 
-```python
-from capsule_emit.adapters.langchain_listener import LangChainCapsuleListener
+## Why
 
-listener = LangChainCapsuleListener(operator="acme-co", developer="my-agent@v1")
-agent.invoke(..., config={"callbacks": [listener]})
-```
+Traces answer "what happened?" for the team that owns the trace. They do not
+answer "can a stranger confirm this months later?", because the same party that
+ran the agent also holds and can rewrite the trace.
+
+`capsule-emit` writes an *action record* — a capsule — for each tool call: what
+was about to happen, then what did happen, signed and content-addressed. Anyone
+holding the records can recompute the identifiers and check the signatures
+offline.
+
+## How it works
+
+The listener is a standard LangChain
+[`BaseCallbackHandler`](https://docs.langchain.com/oss/python/langchain/callbacks). Attach it to any
+`invoke()` and it seals the tool lifecycle:
 
 | LangChain callback | Capsule |
 |---|---|
-| `on_tool_start` | `effect.status="planned"` — the commitment record |
-| `on_tool_end` | `effect.status="confirmed"`, `confirms`-chained to the planned capsule |
-| `on_tool_error` | `verdict_class="errored"`, `effect.status="failed"`, chained — errors are evidence |
-| root `on_chain_start/end/error` | fyi lifecycle capsules (root runs only; `include_lifecycle=False` to disable) |
-| `on_llm_start` / `on_chat_model_start` | model auto-capture threaded into tool capsules; LLM call capsules off by default (`include_llm=True`) |
+| `on_tool_start` | `effect.status = "planned"` |
+| `on_tool_end` | `effect.status = "confirmed"`, chained to the planned capsule |
+| `on_tool_error` | `verdict = "errored"`, `effect.status = "failed"`, chained |
+| root chain start/end/error | lifecycle capsules (`include_lifecycle`, default on) |
 
-Pairing is `run_id`-exact (LangChain supplies it), so concurrent calls to the
-same tool chain correctly. Handlers never raise into the host application;
-raw floats in tool payloads fail closed at the digest layer (warning, no
-capsule, run unaffected). Each capsule verifies offline — content digests and chain links over what the listener recorded. `verify()` checks structure and consistency: it proves the record's integrity, not that the tools executed. Tamper-evidence to a third party comes from the anchoring/receipt path (a sealed digest registered with a transparency service); none of it replaces review.
+**The two-record chain is the point.** The `planned` capsule is written *before*
+the tool runs; the `confirmed` capsule is written after and carries
+`chain: {parent_capsule_id: ..., relation: "confirms"}` pointing back at it. A
+record of an intent that has no confirmation, or a confirmation with no prior
+intent, is visible as such to anyone reading the ledger.
 
-Quickstart: `python examples/langchain-listener/demo.py` (hermetic — no LLM
-key, no live services; ends with offline `verify()` + a `capsule-emit
-evidence` render).
+LLM call events are **not** sealed by default (`include_llm=False`) — token
+traffic is volume, not evidence. The model identity is still captured onto the
+tool capsules.
 
-## `LangChainCapsuleEmitter` — surgical
+## Prerequisites
 
-The original single-capsule-per-tool-call handler
-(`capsule_emit.adapters.langchain.LangChainCapsuleEmitter`): one confirmed
-capsule per completed tool call, no planned/outcome chain, errors not sealed.
-Use when you want minimal ledger volume for a narrow surface; the listener is
-the recommended default.
+```shell
+pip install "capsule-emit[langchain]==0.5.1"
+```
+
+<Note>
+`capsule_emit.__version__` reads `0.5.0` in the 0.5.1 release. Check the
+installed version with `importlib.metadata.version("capsule-emit")` instead.
+</Note>
+
+## Example
+
+This example runs with no API key and no network — the evidence path is
+exercised by a plain tool invocation, so you can confirm the behavior before
+wiring it to a model.
+
+<Steps>
+  <Step title="Attach the listener">
+    `operator` and `developer` are required and are stamped on every capsule.
+
+    ```python
+    import json, os, tempfile
+
+    os.environ.setdefault("CAPSULE_WITNESS", "off")  # see Network behavior
+
+    from langchain_core.tools import tool
+    from capsule_emit.adapters.langchain_listener import LangChainCapsuleListener
+    from capsule_emit.verification import verify_capsule
+
+    ledger_path = os.path.join(tempfile.mkdtemp(), "ledger.jsonl")
+
+    listener = LangChainCapsuleListener(
+        operator="acme-corp",             # tenant/org identifier
+        developer="support-agent@1.4.0",  # agent name + version
+        ledger=ledger_path,
+        anchor=False,
+    )
+    ```
+  </Step>
+  <Step title="Run a tool with the listener attached">
+    Pass the listener in `config={"callbacks": [...]}` on any `invoke()`, or
+    register it globally per LangChain's callback docs.
+
+    ```python
+    @tool
+    def issue_refund(order_id: str, amount_usd: str) -> str:
+        """Refund an order. amount_usd is an exact decimal string, not a float."""
+        return f"refunded {order_id} ${amount_usd}"
+
+    result = issue_refund.invoke(
+        {"order_id": "A-1029", "amount_usd": "42.50"},
+        config={"callbacks": [listener]},
+    )
+    ```
+
+    <Warning>
+    Pass monetary and quantity values as **exact decimal strings**. A `float`
+    argument cannot be sealed into a digest-bearing field; the planned capsule
+    is dropped with a `RuntimeWarning` and the chain is broken, while the tool
+    call itself still succeeds.
+    </Warning>
+  </Step>
+  <Step title="Read the ledger">
+    ```python
+    records = [json.loads(line) for line in open(ledger_path)]
+
+    for record in records:
+        chain = record.get("chain")
+        parent = chain["parent_capsule_id"][:16] + "..." if chain else "-"
+        print(
+            f"  {record['effect']['status']:9s} "
+            f"capsule_id={record['capsule_id'][:16]}... "
+            f"parent={parent} "
+            f"ledger_mode={record['assurance']['ledger_mode']}"
+        )
+    ```
+
+    ```text
+    planned   capsule_id=d136b3ca318808f4... parent=- ledger_mode=standalone
+    confirmed capsule_id=9ca0668a9120310b... parent=d136b3ca318808f4... ledger_mode=chained
+    ```
+  </Step>
+</Steps>
+
+## Verification
+
+`verify_capsule` recomputes the capsule identifier from the record's own content
+and checks the signature. Passing `store=` lets it resolve the chain link.
+
+```python
+from capsule_emit.verification import verify_capsule
+
+for record in records:
+    verdict = verify_capsule(record, store=records)
+    notes = ", ".join(f"{f.severity}:{f.code}" for f in verdict.findings) or "none"
+    print(f"  {record['effect']['status']:9s} ok={verdict.ok} findings={notes}")
+```
+
+```text
+planned   ok=True findings=info:unknown_registry_value
+confirmed ok=True findings=info:unknown_registry_value
+```
+
+`verify_capsule` returns a `VerificationResult` with `.ok`, `.findings`,
+`.errors` and `.assurance`. Findings are graded: the `info` finding above
+reports that `effect.type="issue_refund"` is not a value seeded in the spec's
+registry — informational, and explicitly not a rejection.
+
+To check a whole ledger, `verify_store(records)` returns a **list** of
+`VerificationResult` — one per record. Guard the empty case:
+
+```python
+from capsule_emit.verification import verify_store
+
+results = verify_store(records)
+assert results and all(r.ok for r in results)
+```
+
+## Network behavior
+
+Two channels exist, both off or content-free, and both worth knowing about
+before you run this in production:
+
+- **Witnessing** is **on by default**. Once enough ledger entries accumulate, a
+  signed checkpoint — log size, root hash, timestamp, *never* capsule content —
+  is POSTed to the default witness endpoint. Disable with `CAPSULE_WITNESS=off`.
+- **Anchoring** is off unless enabled. When on, it is fire-and-forget by
+  default: `EmitResult.anchored` reports that a **submission was made**, not
+  that an anchor was confirmed. Set `anchor_wait=<seconds>` to block for a
+  genuine outcome; without it, do not read the field as a receipt.
+
+## Limits
+
+- The signing key is generated and held locally. `assurance.attestation_mode`
+  reads `self_attested`: the records are tamper-evident and independently
+  checkable, but they attest that *this process* said so. They are not a
+  third-party attestation of what the model actually did.
+- `effect.effect_attestation` reads `runtime_claimed` — the confirmation is the
+  framework's report that the tool returned, not proof of the external effect.
+- Available for Python only. There is no JavaScript/TypeScript package.
+
+## Resources
+
+- [GitHub](https://github.com/action-state-group/capsule-emit)
+- [PyPI](https://pypi.org/project/capsule-emit/)
+- [Specification](https://github.com/action-state-group/agent-action-capsule)
+- [Issue tracker](https://github.com/action-state-group/capsule-emit/issues)
