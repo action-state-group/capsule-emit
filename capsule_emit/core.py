@@ -502,13 +502,16 @@ def _emit_capsule(
         verdict: Disposition verdict_class (e.g. ``"executed"``, ``"confirmed"``).
         effect: Effect dict with ``"type"`` and ``"status"`` (and optional ``"autonomy"``).
         confirms: capsule_id of the prior capsule this one chains to.
-        relation: Chain relation (``"confirms"`` | ``"supersedes"`` | ``"escalates"`` | …),
-            or ``None`` to keep the chain link (``confirms``) without asserting a
-            relation value on it — e.g. a human refusal that chains to the capsule it
-            denies without claiming to "confirm" it. Passing a non-``None``, non-default
-            relation without ``confirms`` set raises ``ValueError`` (a chain relation
-            needs a chain target); ``relation=None`` never raises regardless of
-            ``confirms``. Default ``"confirms"``.
+        relation: Chain relation (``"confirms"`` | ``"supersedes"`` | ``"escalates"``
+            | ``"assesses"`` | …), or ``None`` to keep the chain link (``confirms``)
+            without asserting a relation value on it — e.g. a human refusal that
+            chains to the capsule it denies without claiming to "confirm" it.
+            ``"assesses"`` is for a judge/verdict capsule that cites a subject
+            capsule by digest without confirming its outcome (a detection
+            relation, never an enforcement one). Passing a non-``None``,
+            non-default relation without ``confirms`` set raises ``ValueError``
+            (a chain relation needs a chain target); ``relation=None`` never
+            raises regardless of ``confirms``. Default ``"confirms"``.
         anchor: Legacy, non-default channel — killed as a default in 0.5.0 (O16
             items 1-2). ``None`` (default) never dispatches. Pass ``True``, or
             set ``CAPSULE_ANCHOR=legacy-on``, to opt back into the old
@@ -569,8 +572,11 @@ def _emit_capsule(
         decision: Disposition decision string (default ``"accept"``).
         action_type: ``"decide"`` | ``"act"`` | ``"retrieve"`` | ``"fyi"`` override.
             When ``None`` (default), auto-derived from *verdict* — disposition verbs
-            (``"executed"``, ``"confirmed"``, ``"denied"``, ``"blocked"``) map to
-            ``"decide"``; anything else maps to ``"fyi"``.
+            (``"executed"``, ``"confirmed"``, ``"denied"``, ``"blocked"``,
+            ``"assessed"``) map to ``"decide"``; anything else maps to ``"fyi"``.
+            ``"assessed"`` is a disposition class for judge/verdict capsules —
+            it is detection, never enforcement, and must never be conflated
+            with ``"executed"``/``"confirmed"``.
         extra_compute: Extra key/value pairs merged into ``compute_attestation``.
             Use for framework-specific context (MCP request ID, host info, etc.).
         disposition_authority: Opaque grant reference stored in
@@ -690,7 +696,7 @@ def _emit_capsule(
         chain_relation = relation
 
     _action_type = action_type if action_type is not None else (
-        "decide" if verdict in ("executed", "confirmed", "denied", "blocked") else "fyi"
+        "decide" if verdict in ("executed", "confirmed", "denied", "blocked", "assessed") else "fyi"
     )
     capsule = _base_emit(
         action_id=None,
