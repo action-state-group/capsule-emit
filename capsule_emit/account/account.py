@@ -26,6 +26,7 @@ from typing import Any
 from .definition import (
     DERIVATION_DETERMINISTIC,
     DERIVATION_MODEL_ASSISTED,
+    SELECTION_CHAIN_SEGMENT,
     SELECTION_EXPLICIT_SET,
     SELECTION_KINDS,
     SELECTION_RANGE,
@@ -53,23 +54,40 @@ class Coverage:
     member. For an ``explicit_set`` selection the coverage carries
     ``references`` (member citations); building that cross-reference path is a
     NOTED dependency, not implemented here.
+
+    For a ``chain_segment`` selection the coverage is the two endpoints of a
+    capsule A->B walk — ``start_digest`` and ``end_digest`` — plus the
+    ``relation`` traversed. The chain linkage is in-record, so those three
+    values identify the whole segment without enumerating (or citing) the
+    members between them: same discipline as ``range``, no per-member refs.
     """
 
     coverage_root: str | None = None
     range: tuple[int, int] | None = None
     references: tuple[str, ...] = ()
+    start_digest: str | None = None
+    end_digest: str | None = None
+    relation: str | None = None
 
     def input_identity(self, selection_kind: str) -> dict:
         """The identity of the inputs this coverage names — the thing a replay
         must reproduce to be comparing the same inputs.
 
-        range        -> {"coverage_root", "range"}   (NEVER per-member digests)
-        explicit_set -> {"references"}
+        range         -> {"coverage_root", "range"}   (NEVER per-member digests)
+        explicit_set  -> {"references"}
+        chain_segment -> {"start_digest", "end_digest", "relation"}
+                         (NEVER per-member digests — linkage is in-record)
         """
         if selection_kind == SELECTION_RANGE:
             return {"coverage_root": self.coverage_root, "range": list(self.range)}  # type: ignore[arg-type]
         if selection_kind == SELECTION_EXPLICIT_SET:
             return {"references": list(self.references)}
+        if selection_kind == SELECTION_CHAIN_SEGMENT:
+            return {
+                "start_digest": self.start_digest,
+                "end_digest": self.end_digest,
+                "relation": self.relation,
+            }
         raise AccountConstructionError(
             UNKNOWN_SELECTION_KIND,
             f"selection_kind {selection_kind!r} is not one of {sorted(SELECTION_KINDS)}; "
@@ -187,6 +205,25 @@ def _validate_coverage(kind: str, coverage: Coverage) -> None:
         if not coverage.references:
             raise AccountConstructionError(
                 MALFORMED_COVERAGE, "explicit_set selection requires a non-empty references[] (its member citations)"
+            )
+    elif kind == SELECTION_CHAIN_SEGMENT:
+        if coverage.references:
+            # Same discipline as range: a chain_segment is identified by its two
+            # endpoints + the relation, and the linkage is in-record. Citing
+            # per-member refs is the same category error a range makes.
+            raise AccountConstructionError(
+                PER_MEMBER_DIGEST_ON_RANGE,
+                "a chain_segment selection's input identity is (start_digest, end_digest, relation); "
+                "it must NOT carry per-member references/digests — the chain linkage is in-record, "
+                "so the segment is identified by its endpoints and the traversal relation, not its members",
+            )
+        if not isinstance(coverage.start_digest, str) or not coverage.start_digest:
+            raise AccountConstructionError(MALFORMED_COVERAGE, "chain_segment selection requires a start_digest")
+        if not isinstance(coverage.end_digest, str) or not coverage.end_digest:
+            raise AccountConstructionError(MALFORMED_COVERAGE, "chain_segment selection requires an end_digest")
+        if not isinstance(coverage.relation, str) or not coverage.relation:
+            raise AccountConstructionError(
+                MALFORMED_COVERAGE, "chain_segment selection requires the traversal relation"
             )
     else:  # defensive: Selection.kind should come from a validated definition
         raise AccountConstructionError(MALFORMED_COVERAGE, f"unknown selection kind {kind!r}")

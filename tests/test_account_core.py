@@ -25,6 +25,7 @@ import pytest
 from capsule_emit.account import (
     DERIVATION_DETERMINISTIC,
     DERIVATION_MODEL_ASSISTED,
+    SELECTION_CHAIN_SEGMENT,
     SELECTION_EXPLICIT_SET,
     SELECTION_RANGE,
     Account,
@@ -274,6 +275,80 @@ def test_explicit_set_cites_members_via_references():
 
 
 # ---------------------------------------------------------------------------
+# chain_segment selection kind (additive; same no-per-member discipline as range)
+# ---------------------------------------------------------------------------
+def _chain_definition() -> AccountDefinition:
+    return parse_definition(
+        {
+            "name": "chain.walk",
+            "selection_kind": SELECTION_CHAIN_SEGMENT,
+            "reads": ["developer", "verdict_class"],
+            "derivation_class": DERIVATION_DETERMINISTIC,
+        }
+    )
+
+
+def _chain_selection() -> Selection:
+    return Selection(
+        kind=SELECTION_CHAIN_SEGMENT,
+        coverage=Coverage(start_digest="A" * 8, end_digest="B" * 8, relation="follows"),
+    )
+
+
+def test_chain_segment_input_identity_is_endpoints_plus_relation():
+    """A chain_segment names its inputs by {start_digest, end_digest, relation}
+    and NEVER by per-member refs — the linkage is in-record."""
+    ident = _chain_selection().input_identity()
+    assert ident == {"start_digest": "AAAAAAAA", "end_digest": "BBBBBBBB", "relation": "follows"}
+    assert "references" not in ident
+    assert "members" not in ident and "member_digests" not in ident
+
+
+def test_chain_segment_account_verifies():
+    definition = _chain_definition()
+    selection = _chain_selection()
+    # A deterministic contract over the segment (e.g. count links A..B).
+    account = build_account(definition=definition, selection=selection, asserted_result=3)
+    assert account.derivation.definition_digest == definition.definition_digest()
+    res = verify_account(account, definition=definition, recompute=lambda sel: 3)
+    assert res.ok and res.method == "recompute"
+
+
+def test_chain_segment_refuses_per_member_references():
+    """Same discipline as range: per-member refs on a chain_segment are a
+    category error and are refused at construction."""
+    definition = _chain_definition()
+    bad = Selection(
+        kind=SELECTION_CHAIN_SEGMENT,
+        coverage=Coverage(
+            start_digest="A" * 8,
+            end_digest="B" * 8,
+            relation="follows",
+            references=("digest-1", "digest-2"),
+        ),
+    )
+    with pytest.raises(AccountConstructionError) as exc:
+        build_account(definition=definition, selection=bad, asserted_result=0)
+    assert exc.value.reason == PER_MEMBER_DIGEST_ON_RANGE
+
+
+def test_chain_segment_requires_both_endpoints_and_relation():
+    definition = _chain_definition()
+    for coverage in (
+        Coverage(end_digest="B" * 8, relation="follows"),  # no start
+        Coverage(start_digest="A" * 8, relation="follows"),  # no end
+        Coverage(start_digest="A" * 8, end_digest="B" * 8),  # no relation
+    ):
+        with pytest.raises(AccountConstructionError) as exc:
+            build_account(
+                definition=definition,
+                selection=Selection(kind=SELECTION_CHAIN_SEGMENT, coverage=coverage),
+                asserted_result=0,
+            )
+        assert exc.value.reason == "malformed_coverage"
+
+
+# ---------------------------------------------------------------------------
 # idempotent-on-replay
 # ---------------------------------------------------------------------------
 def test_verify_is_idempotent():
@@ -327,8 +402,12 @@ def test_only_the_core_implements_definition_digest():
 
 # fail-closed on unknown at verify (unknown kind/class refused, never inert)
 def test_verify_refuses_unknown_selection_kind():
+    # A selection kind the core does not (yet) recognize is refused, never
+    # treated as inert. (chain_segment used to stand in here; now that it is a
+    # real kind, a genuinely-unknown kind is used to keep the fail-closed
+    # guarantee tested — adding a kind stays additive.)
     acct = Account(
-        selection=Selection(kind="chain_segment", coverage=Coverage(coverage_root="r", range=(1, 7))),
+        selection=Selection(kind="dag_frontier", coverage=Coverage(coverage_root="r", range=(1, 7))),
         derivation=Derivation(derivation_class=DERIVATION_DETERMINISTIC, definition_digest="d"),
         asserted_result={"n": 1},
     )
