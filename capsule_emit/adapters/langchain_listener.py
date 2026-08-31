@@ -31,8 +31,25 @@ content-digest idempotence is the backstop if a caller re-runs a chain.
 A handler never raises: LangChain's callback manager already suppresses
 handler exceptions by default (``raise_error=False``), and every seal here
 additionally warns-instead-of-raising, so a broken anchor endpoint cannot
-affect the host application. Floats in tool payloads fail closed at the
-digest layer (``FloatInDigestError`` → warning, no capsule, run unaffected).
+affect the host application.
+
+Floats in tool payloads are canonicalized before they reach the digest layer
+(RFC 8785 §3.2.2.3 decimal strings, via
+:func:`capsule_emit.numbers.canonicalize_for_digest` in
+``adapters._base.emit_capsule``), so an ordinary ``value: float`` tool
+argument seals normally and its two records chain. What remains
+unsealable is a payload with no canonical form at all — NaN, ±Infinity, an
+object JSON cannot carry — or a genuinely broken ledger. Those still warn and
+seal no planned capsule, because warn-and-skip is the only agent-safe choice
+here: raising would surface a capsule-emit problem as the host application's
+tool failure.
+
+Skipping the planned record must not, however, leave a *silent* orphan. The
+run_id stays in the pending map with a ``None`` id, so the outcome record
+keeps the real tool name and carries ``unchained_reason`` in its compute
+attestation — a reader can tell "this outcome has no committed plan, and
+here is why" from the ledger alone, instead of seeing an unremarkable
+confirmed record with ``chain: null`` (capsule-emit#128).
 
 All sealing logic lives in the framework-free :class:`LangChainListenerCore`
 (fully testable without langchain installed); the shell class binds it to
@@ -47,6 +64,13 @@ from typing import Any
 from ._base import CapsuleEmitterBase
 
 __all__ = ["LangChainCapsuleListener", "LangChainListenerCore"]
+
+#: Stamped on an outcome capsule whose planned capsule could not be sealed, so
+#: the missing chain link is self-describing in the ledger rather than silent.
+UNCHAINED_REASON = (
+    "planned capsule could not be sealed for this tool call; this outcome "
+    "record has no parent and is not evidence of a committed plan"
+)
 
 
 def _extract_model_from_serialized(serialized: dict | None) -> dict[str, str] | None:
@@ -169,14 +193,31 @@ class LangChainListenerCore(CapsuleEmitterBase):
             runtime="langchain",
             model=self._captured_model,
         )
-        if result is None:
-            return
         while len(self._pending) >= self._max_pending:
             self._pending.popitem(last=False)  # evict oldest
-        self._pending[run_id] = (tool_name, result.capsule_id)
+        # Recorded even when the seal failed (id None): the outcome handler
+        # needs the real tool name, and needs to know a plan was attempted and
+        # lost rather than never started — see UNCHAINED_REASON.
+        self._pending[run_id] = (tool_name, None if result is None else result.capsule_id)
+
+    def _resolve_pending(self, run_id: Any) -> tuple[str, str | None, bool]:
+        """Return ``(tool_name, planned_id, planned_was_dropped)`` for an outcome.
+
+        An unknown ``run_id`` (an end without a start) is not a dropped plan —
+        there is nothing to have lost — so it gets no ``unchained_reason``.
+        """
+        entry = self._pending.pop(run_id, None)
+        if entry is None:
+            return "tool", None, False
+        tool_name, planned_id = entry
+        return tool_name, planned_id, planned_id is None
+
+    @staticmethod
+    def _unchained_compute(dropped: bool) -> dict[str, Any] | None:
+        return {"unchained_reason": UNCHAINED_REASON} if dropped else None
 
     def on_tool_end_core(self, output: Any, run_id: Any) -> None:
-        tool_name, planned_id = self._pending.pop(run_id, ("tool", None))
+        tool_name, planned_id, dropped = self._resolve_pending(run_id)
         self._seal(
             action=tool_name,
             tool_output=output,
@@ -185,10 +226,11 @@ class LangChainListenerCore(CapsuleEmitterBase):
             action_type="fyi",
             runtime="langchain",
             model=self._take_model(),
+            extra_compute=self._unchained_compute(dropped),
         )
 
     def on_tool_error_core(self, error: BaseException, run_id: Any) -> None:
-        tool_name, planned_id = self._pending.pop(run_id, ("tool", None))
+        tool_name, planned_id, dropped = self._resolve_pending(run_id)
         self._seal(
             action=tool_name,
             tool_output=None if error is None else str(error),
@@ -198,6 +240,7 @@ class LangChainListenerCore(CapsuleEmitterBase):
             action_type="fyi",
             runtime="langchain",
             model=self._take_model(),
+            extra_compute=self._unchained_compute(dropped),
         )
 
     # -- root chain lifecycle ---------------------------------------------

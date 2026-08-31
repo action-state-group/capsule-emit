@@ -19,7 +19,8 @@ Covered:
   into the next tool capsule either way
 - emission failure warns, never raises
 - max_pending bound holds (oldest evicted)
-- float args fail closed but do not crash the host app
+- float args canonicalize and chain (capsule-emit#128); a payload with no
+  canonical form at all still fails closed without crashing the host app
 """
 from __future__ import annotations
 
@@ -214,13 +215,40 @@ def test_max_pending_bound_evicts_oldest(tmp_path):
     assert rids[2] in core._pending and rids[3] in core._pending
 
 
-def test_float_args_fail_closed_but_do_not_crash(tmp_path):
+def test_float_args_seal_and_chain(tmp_path):
+    """capsule-emit#128: a raw float is canonicalized, not dropped.
+
+    Was ``test_float_args_fail_closed_but_do_not_crash``, which pinned the
+    old behavior — the planned capsule was dropped and the outcome record
+    orphaned. §5.1 is unchanged; the adapter now renders the float as an RFC
+    8785 decimal string before digesting. Full coverage: test_float_args_chain.py.
+    """
+    core = _core(tmp_path)
+    rid = uuid.uuid4()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        core.on_tool_start_core(SER, {"amount": 120.5}, rid)
+        core.on_tool_end_core("ok", rid)
+    assert [str(w.message) for w in caught] == []
+    caps = _ledger(tmp_path)
+    assert [c["effect"]["status"] for c in caps] == ["planned", "confirmed"]
+    assert caps[1]["chain"]["parent_capsule_id"] == caps[0]["capsule_id"]
+
+
+def test_unsealable_payload_fails_closed_but_does_not_crash(tmp_path):
+    """NaN has no JCS representation, so it still fails closed — loudly.
+
+    The listener warns and seals no planned capsule rather than raising into
+    the host application. What is new since #128 is that the loss is legible:
+    the warning names the field path and the outcome record is marked.
+    """
     core = _core(tmp_path)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        core.on_tool_start_core(SER, {"amount": 120.5}, uuid.uuid4())
+        core.on_tool_start_core(SER, {"amount": float("nan")}, uuid.uuid4())
     assert core.last is None
     assert any("failed to seal" in str(w.message) for w in caught)
+    assert any("agent_input.amount" in str(w.message) for w in caught)
 
 
 # ---------------------------------------------------------------------------

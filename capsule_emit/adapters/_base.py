@@ -5,6 +5,18 @@ All framework adapters (MCP, LangChain, CrewAI, Hermes, Goose, ADK) extend this
 base. It holds operator/developer/ledger config and exposes a single
 ``emit_capsule()`` helper that calls the internal ``capsule_emit.core._emit_capsule``
 primitive (the same one ``seal()``/``received()`` wrap).
+
+This is also the adapters' canonicalization boundary. ``emit_capsule()`` runs
+tool payloads through :func:`capsule_emit.numbers.canonicalize_for_digest`
+before they reach the digest layer, so a raw ``float`` arriving from a
+framework's tool schema is committed as its RFC 8785 §3.2.2.3 decimal string
+rather than failing the seal. §5.1 still forbids raw floats in digest-bearing
+fields — nothing is loosened; the adapter now does the deterministic
+serialization the rule requires, at the one place every adapter passes
+through. The core ``seal()``/``received()`` surface is deliberately left
+strict: a direct caller owns its data and should hear about a float, while an
+adapter is handed whatever a third-party framework decoded and cannot ask it
+for decimal strings.
 """
 from __future__ import annotations
 
@@ -13,6 +25,7 @@ from collections import deque
 from typing import Any
 
 from capsule_emit.core import EmitResult, _emit_capsule
+from capsule_emit.numbers import canonicalize_for_digest
 
 __all__ = ["CapsuleEmitterBase"]
 
@@ -105,13 +118,20 @@ class CapsuleEmitterBase:
         ``model`` falls back to the instance-level ``_default_model`` when not
         supplied, which itself is set by ``model=`` in the constructor or overridden
         per-call by framework adapters that auto-capture the model (e.g. LangChain).
+
+        ``tool_input`` and ``tool_output`` — the two digest-bearing payload
+        fields — are canonicalized first (floats → RFC 8785 decimal strings).
+        Float-free payloads pass through byte-identical, so no existing digest
+        moves. NaN/±Infinity have no JCS representation and raise
+        ``FloatInDigestError`` from here; listeners catch it at their boundary
+        and degrade loudly rather than breaking the host application.
         """
         result = _emit_capsule(
             action=action,
             operator=self._operator,
             developer=self._developer,
-            agent_input=tool_input,
-            agent_output=tool_output,
+            agent_input=canonicalize_for_digest(tool_input, field="agent_input"),
+            agent_output=canonicalize_for_digest(tool_output, field="agent_output"),
             verdict=verdict,
             effect=effect,
             confirms=prior_capsule_id,

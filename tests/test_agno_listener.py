@@ -19,7 +19,8 @@ Covered:
 - digest-only privacy: raw argument/output values never reach the ledger
 - replay marker for a repeated identical call; off via include_replay_marker
 - max_seen bound holds (oldest evicted)
-- float args fail closed but do not crash the agent run
+- float args canonicalize and chain (capsule-emit#128); a payload with no
+  canonical form at all still fails closed without crashing the agent run
 - async path (wrap_call_async) for arun/aexecute
 - shell: agno's duck-typed hook argument names bind as expected, sync + async,
   success + error, and a real agno cache hit re-runs the hook without re-running
@@ -274,32 +275,54 @@ def test_unsealable_planned_still_seals_an_unchained_outcome(tmp_path, monkeypat
     assert not caps[0].get("chain", {}).get("parent_capsule_id")
 
 
-def test_float_args_fail_closed_but_do_not_crash(tmp_path):
-    """A raw float in the arguments fails the PLANNED digest, not the tool.
+def test_float_args_seal_and_chain(tmp_path):
+    """capsule-emit#128: a raw float is canonicalized, not dropped.
 
-    The outcome capsule still seals (its payload holds no float) and is left
-    unchained rather than pointing at a capsule that does not exist.
+    Was ``test_float_args_fail_closed_but_do_not_crash``, which pinned the old
+    behavior — planned dropped, outcome orphaned, and (until this fix) nothing
+    in the ledger saying so. Full coverage: test_float_args_chain.py.
     """
     core = _core(tmp_path)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         assert core.wrap_call("write_po", _ok, {"amount": 120.5}) == "ok: None"
-    assert any("failed to seal" in str(w.message) for w in caught)
+    assert [str(w.message) for w in caught] == []
     caps = _ledger(tmp_path)
-    assert len(caps) == 1
-    assert caps[0]["effect"]["status"] == "confirmed"
-    assert not caps[0].get("chain", {}).get("parent_capsule_id")
+    assert [c["effect"]["status"] for c in caps] == ["planned", "confirmed"]
+    assert caps[1]["chain"]["parent_capsule_id"] == caps[0]["capsule_id"]
+    assert "unchained_reason" not in _compute(caps[1])
 
 
-def test_float_output_fails_closed_leaving_only_the_planned_record(tmp_path):
+def test_float_output_seals_and_chains(tmp_path):
+    """A float coming back OUT of the tool canonicalizes the same way."""
     core = _core(tmp_path)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         assert core.wrap_call("write_po", lambda **_kw: 12.5, {"po": "PO-1"}) == 12.5
+    assert [str(w.message) for w in caught] == []
+    caps = _ledger(tmp_path)
+    assert [c["effect"]["status"] for c in caps] == ["planned", "confirmed"]
+    assert caps[1]["chain"]["parent_capsule_id"] == caps[0]["capsule_id"]
+
+
+def test_unsealable_payload_fails_closed_and_marks_the_orphan(tmp_path):
+    """NaN has no JCS representation, so the planned record is still lost.
+
+    A raising hook would be reported by agno as the TOOL's failure, so
+    warn-and-skip is the only agent-safe choice. Since #128 the loss is no
+    longer silent: the outcome record carries ``unchained_reason``.
+    """
+    core = _core(tmp_path)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert core.wrap_call("write_po", _ok, {"amount": float("nan")}) == "ok: None"
     assert any("failed to seal" in str(w.message) for w in caught)
+    assert any("agent_input.amount" in str(w.message) for w in caught)
     caps = _ledger(tmp_path)
     assert len(caps) == 1
-    assert caps[0]["effect"]["status"] == "planned"
+    assert caps[0]["effect"]["status"] == "confirmed"
+    assert not caps[0].get("chain", {}).get("parent_capsule_id")
+    assert "unchained_reason" in _compute(caps[0])
 
 
 def test_unfingerprintable_arguments_do_not_crash(tmp_path):
