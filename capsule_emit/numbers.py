@@ -55,6 +55,7 @@ Rust side: ``ryu-js`` 1.0.3 (boa-dev), ECMAScript-compliant.
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from agent_action_capsule.canonical import FloatInDigestError
 
@@ -71,7 +72,7 @@ from agent_action_capsule.canonical import FloatInDigestError
 #: seal()/received()) update automatically.
 CANONICALIZATION_ID: str = "jcs"
 
-__all__ = ["CANONICALIZATION_ID", "float_to_str"]
+__all__ = ["CANONICALIZATION_ID", "canonicalize_for_digest", "float_to_str"]
 
 
 def float_to_str(v: float, *, field: str = "") -> str:
@@ -192,3 +193,89 @@ def float_to_str(v: float, *, field: str = "") -> str:
         body = digits[0] + "." + digits[1:] + ("e+" + str(exp) if exp >= 0 else "e" + str(exp))
 
     return "-" + body if negative else body
+
+
+def canonicalize_for_digest(value: Any, *, field: str = "") -> Any:
+    """Return *value* with every binary64 float replaced by its JCS decimal string.
+
+    This is the producer-side application of :func:`float_to_str` to a whole
+    payload: walk the structure, convert the floats, leave everything else
+    alone.  The result is JSON whose numbers are all integer tokens, so it
+    canonicalizes under RFC 8785 without tripping the §5.1 wire rule.
+
+    Adapters call this on tool arguments and tool results before those values
+    reach the digest layer (see ``capsule_emit.adapters._base.emit_capsule``).
+    The core ``seal()``/``received()`` surface deliberately does NOT: a direct
+    caller owns its own data and is told about a float, whereas an adapter is
+    handed whatever a third-party framework decoded from a tool schema and has
+    no way to ask it for decimal strings.
+
+    Conversion rules, all deterministic:
+
+    - ``float`` → :func:`float_to_str`, embedded as a JSON **string**.
+    - ``bool`` → unchanged.  Checked ahead of the numeric cases because
+      ``bool`` is a subclass of ``int`` in Python.
+    - ``int`` → unchanged.  Integer tokens are legal in digest-bearing fields
+      (``0|-?[1-9][0-9]*``, within ±(2^53 − 1)), so converting them would shift
+      every existing integer-argument digest for no gain.  The consequence is
+      that ``1`` and ``1.0`` digest **differently** — ``{"v":1}`` versus
+      ``{"v":"1"}``.  That is intended and stable: the two are distinct source
+      types with distinct canonical carriers, and preserving the integer token
+      is what keeps pre-existing digests intact.
+    - ``dict`` → rebuilt with the same keys, values converted.  Keys are NOT
+      converted: a JSON object key is a string by definition, and the
+      canonicalizer already rejects every non-string key type (``int``,
+      ``float``, ``tuple`` alike).  Making float keys work while integer keys
+      still failed would trade one inconsistency for a stranger one.
+    - ``list``/``tuple`` → a ``list`` of converted items.  JSON has one array
+      type, and this is the serialization boundary, so both collapse to it.
+      For float-free values this is digest-neutral (a tuple otherwise reaches
+      the digest layer through ``capsule_emit.core._digest``'s legacy
+      ``json.dumps(default=str)`` fallback, which emits the same array bytes).
+      For float-bearing values it is a deliberate correction: that fallback
+      silently digested Python ``repr()`` floats, which is exactly the
+      non-reproducible pre-image §5.1 exists to forbid.
+    - anything else → unchanged.
+
+    Args:
+        value: Any tool payload.  Not mutated.
+        field: Dotted path prefix used to name the offending field in errors.
+
+    Returns:
+        A structurally identical value with floats rendered as canonical
+        decimal strings.
+
+    Raises:
+        FloatInDigestError: If a NaN or ±Infinity is reached.  Neither has a
+            JCS representation, so there is nothing deterministic to commit to
+            and the payload cannot be sealed honestly.  The error names the
+            field path.  Callers at an adapter boundary are expected to catch
+            it and degrade loudly (warn, seal no capsule) rather than raise
+            into the host application — see the listeners' ``_seal``.
+
+    Examples::
+
+        >>> canonicalize_for_digest({"value": 0.75})
+        {'value': '0.75'}
+        >>> canonicalize_for_digest({"rates": [1.5, 2.0]})
+        {'rates': ['1.5', '2']}
+        >>> canonicalize_for_digest({"n": 1, "x": 1.0})   # int token preserved
+        {'n': 1, 'x': '1'}
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        return float_to_str(value, field=field)
+    if isinstance(value, dict):
+        return {
+            key: canonicalize_for_digest(
+                item, field=f"{field}.{key}" if field else str(key)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [
+            canonicalize_for_digest(item, field=f"{field}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    return value

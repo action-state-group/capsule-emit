@@ -58,9 +58,23 @@ capsule id) and ``agno_replay_note`` in its compute attestation — a pointer fo
 a reader, not an assertion that the tool re-ran.
 
 Privacy: inputs and outputs are digested, never stored — the ledger carries
-``agent_input_digest`` / ``agent_output_digest`` only. Raw floats in tool
-payloads fail closed at the digest layer (``FloatInDigestError`` → warning, no
-capsule, run unaffected).
+``agent_input_digest`` / ``agent_output_digest`` only.
+
+Floats in tool payloads are canonicalized before they reach the digest layer
+(RFC 8785 §3.2.2.3 decimal strings, via
+:func:`capsule_emit.numbers.canonicalize_for_digest` in
+``adapters._base.emit_capsule``), so an ordinary ``value: float`` tool argument
+seals normally and its two records chain. What remains unsealable is a payload
+with no canonical form at all — NaN, ±Infinity, an object JSON cannot carry —
+or a genuinely broken ledger. Those still warn and seal no planned capsule:
+warn-and-skip is the only agent-safe choice, because a hook that raises is
+reported by agno as the tool's own failure (fact 2 above).
+
+Skipping the planned record must not leave a *silent* orphan, though. The
+outcome record carries ``unchained_reason`` in its compute attestation, so a
+reader can tell "this outcome has no committed plan, and here is why" from the
+ledger alone instead of seeing an unremarkable confirmed record with
+``chain: null`` (capsule-emit#128).
 
 All sealing logic lives in the framework-free :class:`AgnoListenerCore` (fully
 testable without agno installed); :class:`AgnoCapsuleListener` binds it to
@@ -77,6 +91,13 @@ from typing import Any, Callable
 from ._base import CapsuleEmitterBase
 
 __all__ = ["AgnoCapsuleListener", "AgnoListenerCore"]
+
+#: Stamped on an outcome capsule whose planned capsule could not be sealed, so
+#: the missing chain link is self-describing in the ledger rather than silent.
+UNCHAINED_REASON = (
+    "planned capsule could not be sealed for this tool call; this outcome "
+    "record has no parent and is not evidence of a committed plan"
+)
 
 _REPLAY_NOTE = (
     "identical call previously confirmed by this listener; agno may serve a "
@@ -187,6 +208,15 @@ class AgnoListenerCore(CapsuleEmitterBase):
             return None
         return {"agno_replay_of": prior, "agno_replay_note": _REPLAY_NOTE}
 
+    def _outcome_compute(
+        self, fingerprint: str | None = None, planned_dropped: bool = False
+    ) -> dict[str, Any] | None:
+        """Merge the replay marker and the unchained-orphan marker, if any."""
+        extra = dict(self._replay_compute(fingerprint) or {})
+        if planned_dropped:
+            extra["unchained_reason"] = UNCHAINED_REASON
+        return extra or None
+
     # -- the three records -------------------------------------------------
 
     def seal_planned(
@@ -210,8 +240,14 @@ class AgnoListenerCore(CapsuleEmitterBase):
         planned_id: str | None,
         model: dict[str, str] | None = None,
         fingerprint: str | None = None,
+        planned_dropped: bool = False,
     ) -> None:
-        """Outcome record for a clean return, chained to the planned capsule."""
+        """Outcome record for a clean return, chained to the planned capsule.
+
+        ``planned_dropped`` marks the record as a known orphan (the planned
+        seal was attempted and failed) rather than letting ``chain: null``
+        pass for an ordinary record — see :data:`UNCHAINED_REASON`.
+        """
         result = self._seal(
             action=tool_name,
             tool_output=output,
@@ -220,7 +256,7 @@ class AgnoListenerCore(CapsuleEmitterBase):
             action_type="fyi",
             runtime="agno",
             model=model,
-            extra_compute=self._replay_compute(fingerprint),
+            extra_compute=self._outcome_compute(fingerprint, planned_dropped),
         )
         self._remember(fingerprint, None if result is None else result.capsule_id)
 
@@ -230,6 +266,7 @@ class AgnoListenerCore(CapsuleEmitterBase):
         error: BaseException | None,
         planned_id: str | None,
         model: dict[str, str] | None = None,
+        planned_dropped: bool = False,
     ) -> None:
         """Outcome record for a raising tool — the error is evidence, not silence."""
         self._seal(
@@ -241,6 +278,7 @@ class AgnoListenerCore(CapsuleEmitterBase):
             action_type="fyi",
             runtime="agno",
             model=model,
+            extra_compute=self._outcome_compute(planned_dropped=planned_dropped),
         )
 
     # -- the middleware ----------------------------------------------------
@@ -262,12 +300,13 @@ class AgnoListenerCore(CapsuleEmitterBase):
         arguments = {} if arguments is None else arguments
         fingerprint = _args_fingerprint(tool_name, arguments)
         planned_id = self.seal_planned(tool_name, arguments, model)
+        dropped = planned_id is None
         try:
             result = call_next(**arguments)
         except Exception as exc:
-            self.seal_failed(tool_name, exc, planned_id, model)
+            self.seal_failed(tool_name, exc, planned_id, model, dropped)
             raise
-        self.seal_confirmed(tool_name, result, planned_id, model, fingerprint)
+        self.seal_confirmed(tool_name, result, planned_id, model, fingerprint, dropped)
         return result
 
     async def wrap_call_async(
@@ -281,12 +320,13 @@ class AgnoListenerCore(CapsuleEmitterBase):
         arguments = {} if arguments is None else arguments
         fingerprint = _args_fingerprint(tool_name, arguments)
         planned_id = self.seal_planned(tool_name, arguments, model)
+        dropped = planned_id is None
         try:
             result = await call_next(**arguments)
         except Exception as exc:
-            self.seal_failed(tool_name, exc, planned_id, model)
+            self.seal_failed(tool_name, exc, planned_id, model, dropped)
             raise
-        self.seal_confirmed(tool_name, result, planned_id, model, fingerprint)
+        self.seal_confirmed(tool_name, result, planned_id, model, fingerprint, dropped)
         return result
 
 

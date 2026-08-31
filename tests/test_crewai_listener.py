@@ -222,13 +222,27 @@ def test_max_pending_bound(tmp_path):
     assert len(core._pending[key]) == 2  # bounded, oldest evicted
 
 
-def test_float_args_fail_closed_but_do_not_crash(tmp_path):
-    """Raw float in tool_args → JCS digest fails closed inside emit();
-    the listener warns and the crew is unaffected (no capsule sealed)."""
+def test_float_args_seal_via_the_shared_canonicalizer(tmp_path):
+    """CrewAI rides the same adapters._base commitment path as #128's fix.
+
+    Was ``test_float_args_fail_closed_but_do_not_crash``. The listener itself
+    is unchanged; it inherits float canonicalization because every adapter
+    seals through ``CapsuleEmitterBase.emit_capsule``.
+    """
     core = _core(tmp_path)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         core.on_tool_started(_started(args={"amount": 120.5}))
+    assert [str(w.message) for w in caught] == []
+    assert core.last is not None
+
+
+def test_unsealable_payload_still_fails_closed(tmp_path):
+    """NaN has no JCS representation; the crew is still unaffected."""
+    core = _core(tmp_path)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        core.on_tool_started(_started(args={"amount": float("nan")}))
     assert core.last is None
     assert any("failed to seal" in str(w.message) for w in caught)
 
