@@ -59,10 +59,21 @@ DERIVATION_CLASSES = frozenset({DERIVATION_DETERMINISTIC, DERIVATION_MODEL_ASSIS
 #   explicit_set  -- an enumerated set: cites its members via ``references[]``.
 #                    (That cross-reference path is a NOTED dependency of the
 #                    core, not built here — see ``account.Coverage``.)
+#   chain_segment -- a capsule A->B walk over chain relations, internally
+#                    complete via in-record linkage. Input identity is
+#                    {start_digest, end_digest} + the traversal ``relation`` —
+#                    NEVER per-member refs. Because the linkage lives IN the
+#                    records (each record cites its predecessor via the
+#                    relation), the segment is self-verifying from its two
+#                    endpoints and the relation name; it needs no external
+#                    cross-reference, which keeps it off the xref dependency the
+#                    explicit_set path notes. Same discipline as ``range``: a
+#                    chain_segment must NOT cite per-member digests.
 # ---------------------------------------------------------------------------
 SELECTION_RANGE = "range"
 SELECTION_EXPLICIT_SET = "explicit_set"
-SELECTION_KINDS = frozenset({SELECTION_RANGE, SELECTION_EXPLICIT_SET})
+SELECTION_CHAIN_SEGMENT = "chain_segment"
+SELECTION_KINDS = frozenset({SELECTION_RANGE, SELECTION_EXPLICIT_SET, SELECTION_CHAIN_SEGMENT})
 
 # Bounded predicate operations only — equality, ranges, set membership, prefix.
 # No regex, no user-supplied code (mirrors the ledger fold filter grammar).
