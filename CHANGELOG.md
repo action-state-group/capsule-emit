@@ -12,7 +12,39 @@ Launch-blocker fixes for fresh installs (capsule-emit#123 + a producer/verifier 
 - **capsule_id interop.** With aac 0.2.0, capsules now `verify --store` cleanly. aac 0.2.0 fixes a `capsule_id` recompute that omitted the `signature`/`key_id` local-only envelope exclusion (Python + Go), which had made every capsule-emit 0.5.x capsule fail verification.
 - **CI: clean-room install guard.** A new `clean-room-install` job builds the wheel and, in a fresh PyPI-only venv, runs `seal()` **and** `verify --store` end-to-end — the from-nothing path that was never actually tested. The main test matrix now installs aac from PyPI (via the pin), not from git source.
 
-## [Unreleased]
+## 0.6.0
+
+### Added — neutral fold/account core (`capsule_emit.account`) ([account-fold-core] #132)
+
+**What changed.** A new public subpackage, `capsule_emit.account`, is the single neutral
+implementation of the fold/account contract — definition-as-DATA plus its `definition_digest`,
+the account object, and replay/verify. It exists so downstream consumers (a ledger's folds
+layer, a mesh account capsule) re-import THIS module through the public interface instead of
+re-forking the definition/digest/replay contracts; there must be no second `definition_digest`
+implementation anywhere in the neutral stack.
+
+- **Definition-as-data.** `AccountDefinition` / `parse_definition` model a fold definition as
+  plain data with a stable `definition_digest`, plus a `Predicate` over a bounded op set
+  (`BOUNDED_PREDICATE_OPS`) — no free-form code path.
+- **Both derivation classes.** `DERIVATION_DETERMINISTIC` (replay recomputes the asserted result
+  and byte-matches it) and `DERIVATION_MODEL_ASSISTED` (replay verifies the carried provenance
+  rather than recomputing). `DERIVATION_CLASSES` is the closed set; `verify_account` /
+  `VerificationResult` are idempotent on replay.
+- **Account object.** `build_account` mints an `Account` of
+  `{selection(kind, coverage), derivation(definition_digest | registry_token, class),
+  asserted_result, provenance}`.
+- **Fail-closed on unknown, at BOTH boundaries.** An unrecognized `selection_kind` or
+  `derivation_class` is rejected at construction (`AccountConstructionError`) **and** again at
+  verify (`AccountVerificationError` via `verify_account`) — never guessed, never defaulted.
+  `AccountDefinitionError` covers a malformed definition.
+- **Meter-not-price.** An account counts and asserts a result over a selected range or set; it
+  carries no currency, rate, or price.
+
+### Added — `chain_segment` selection kind ([account-chain-segment] #133)
+
+`SELECTION_CHAIN_SEGMENT` joins `SELECTION_RANGE` and `SELECTION_EXPLICIT_SET` in the closed
+`SELECTION_KINDS` set — an additive third way to name the covered leaves of a fold (a contiguous
+segment of a chain). Unknown selection kinds remain fail-closed at construction and verify.
 
 ### Added / Changed — slot-form composition; `compose()`/`carry()` removed ([v4-surface-complete-050])
 
