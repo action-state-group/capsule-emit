@@ -27,6 +27,7 @@ from .definition import (
     DERIVATION_DETERMINISTIC,
     DERIVATION_MODEL_ASSISTED,
     SELECTION_EXPLICIT_SET,
+    SELECTION_KINDS,
     SELECTION_RANGE,
     AccountDefinition,
 )
@@ -37,6 +38,7 @@ from .errors import (
     MISSING_PROVENANCE,
     PER_MEMBER_DIGEST_ON_RANGE,
     PROVENANCE_ON_DETERMINISTIC,
+    UNKNOWN_SELECTION_KIND,
     AccountConstructionError,
 )
 
@@ -66,7 +68,13 @@ class Coverage:
         """
         if selection_kind == SELECTION_RANGE:
             return {"coverage_root": self.coverage_root, "range": list(self.range)}  # type: ignore[arg-type]
-        return {"references": list(self.references)}
+        if selection_kind == SELECTION_EXPLICIT_SET:
+            return {"references": list(self.references)}
+        raise AccountConstructionError(
+            UNKNOWN_SELECTION_KIND,
+            f"selection_kind {selection_kind!r} is not one of {sorted(SELECTION_KINDS)}; "
+            "input identity is undefined for an unrecognized kind (fail-closed)",
+        )
 
 
 @dataclass(frozen=True)

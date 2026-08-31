@@ -27,9 +27,11 @@ from capsule_emit.account import (
     DERIVATION_MODEL_ASSISTED,
     SELECTION_EXPLICIT_SET,
     SELECTION_RANGE,
+    Account,
     AccountConstructionError,
     AccountDefinition,
     Coverage,
+    Derivation,
     Predicate,
     Provenance,
     Selection,
@@ -42,6 +44,8 @@ from capsule_emit.account.errors import (
     PER_MEMBER_DIGEST_ON_RANGE,
     PROVENANCE_ON_DETERMINISTIC,
     RESULT_MISMATCH,
+    UNKNOWN_DERIVATION_CLASS,
+    UNKNOWN_SELECTION_KIND,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -319,3 +323,26 @@ def test_only_the_core_implements_definition_digest():
             f"a second definition_digest implementation escaped the core: {hit}"
         )
     assert hits, "expected the core to define definition_digest at least once"
+
+
+# fail-closed on unknown at verify (unknown kind/class refused, never inert)
+def test_verify_refuses_unknown_selection_kind():
+    acct = Account(
+        selection=Selection(kind="chain_segment", coverage=Coverage(coverage_root="r", range=(1, 7))),
+        derivation=Derivation(derivation_class=DERIVATION_DETERMINISTIC, definition_digest="d"),
+        asserted_result={"n": 1},
+    )
+    res = verify_account(acct, recompute=lambda sel: {"n": 1})
+    assert res.ok is False
+    assert res.reason == UNKNOWN_SELECTION_KIND
+
+
+def test_verify_refuses_unknown_derivation_class():
+    acct = Account(
+        selection=Selection(kind=SELECTION_RANGE, coverage=Coverage(coverage_root="r", range=(1, 7))),
+        derivation=Derivation(derivation_class="hand_wave", definition_digest="d"),
+        asserted_result={"n": 1},
+    )
+    res = verify_account(acct, recompute=lambda sel: {"n": 1})
+    assert res.ok is False
+    assert res.reason == UNKNOWN_DERIVATION_CLASS

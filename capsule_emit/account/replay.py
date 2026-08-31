@@ -24,8 +24,10 @@ from typing import Any, Callable
 
 from .account import Account, Selection
 from .definition import (
+    DERIVATION_CLASSES,
     DERIVATION_DETERMINISTIC,
     DERIVATION_MODEL_ASSISTED,
+    SELECTION_KINDS,
     AccountDefinition,
 )
 from .errors import (
@@ -34,6 +36,8 @@ from .errors import (
     NOT_RE_ADJUDICABLE,
     RECOMPUTE_REQUIRED_DETERMINISTIC,
     RESULT_MISMATCH,
+    UNKNOWN_DERIVATION_CLASS,
+    UNKNOWN_SELECTION_KIND,
 )
 
 # A recompute callable re-derives the asserted result from the selection alone.
@@ -124,6 +128,26 @@ def verify_account(
     Pure and idempotent: no mutation; identical inputs give identical results.
     """
     cls = account.derivation.derivation_class
+
+    # Fail-closed on unknown: a verifier that does not recognize the selection
+    # kind or derivation class REFUSES -- never treats an unrecognized value as
+    # inert or defaults it to a known path. This is what makes adding a new kind
+    # (e.g. chain_segment) or class later ADDITIVE, not breaking: an old verifier
+    # refuses an account it doesn't understand instead of mis-verifying it.
+    if account.selection.kind not in SELECTION_KINDS:
+        return VerificationResult(
+            ok=False,
+            method="refused",
+            reason=UNKNOWN_SELECTION_KIND,
+            detail=f"selection_kind {account.selection.kind!r} is not one of {sorted(SELECTION_KINDS)}",
+        )
+    if cls not in DERIVATION_CLASSES:
+        return VerificationResult(
+            ok=False,
+            method="refused",
+            reason=UNKNOWN_DERIVATION_CLASS,
+            detail=f"derivation_class {cls!r} is not one of {sorted(DERIVATION_CLASSES)}",
+        )
 
     if definition is not None:
         if definition.derivation_class != cls:
