@@ -80,9 +80,13 @@ func run() error {
 }
 ```
 
-Production code must handle every error. `VerifyEnvelope` authenticates the
-public key carried in the envelope. Whether that key is authorized for an
-operator, developer, or action remains caller policy.
+Production code must handle every error. `VerifyCapsule` validates Capsule
+identity and structure; embedded local-only `signature` and `key_id` fields are
+not authenticated by it. `VerifyEnvelope` authenticates the public key carried
+in the envelope. A consumer of a stored Capsule must also compare that result's
+`PublicKey` with the outer `key_id` before trusting the outer field. Whether the
+authenticated key is authorized for an operator, developer, or action remains
+caller policy.
 
 Multiple signers call `Sign` independently with the same `BuiltPayload`.
 Envelope order and signer count do not change the Capsule or its ID.
@@ -137,8 +141,9 @@ status, irreversibility class, and attestation are populated by the caller.
 
 All business IDs and timestamps are caller supplied. Assurance fields are
 derived from the supplied effect and chain values. A format-4 Capsule declares
-`canonicalization_id: "jcs"`; its Capsule ID commits every field except the
-top-level `capsule_id`, including `chain`.
+`canonicalization_id: "jcs"`; its Capsule ID commits every field except
+top-level `capsule_id` and local-only Producer Envelope fields `signature` and
+`key_id`. The `chain` field remains committed.
 
 ## Development
 

@@ -71,6 +71,9 @@ func IsV4IrreversibilityClass(value IrreversibilityClass) bool {
 }
 
 // VerifyCapsule decodes a format-4 Capsule and performs Class 1 verification.
+// Local-only signature and key_id fields are neither committed by the Capsule
+// ID nor authenticated here. Verify the decoded signature with VerifyEnvelope,
+// and bind any carried key_id to that result's PublicKey before trusting it.
 func VerifyCapsule(data []byte) (verify.VerificationResult, error) {
 	payload, err := DecodePayload(data)
 	if err != nil {

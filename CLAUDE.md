@@ -53,9 +53,12 @@ JSON values → DigestJSON → Effect digests → Build / Carry / Received / Com
 - **Format 4 only.** Emit draft-04, format 4, and
   `canonicalization_id: "jcs"`. Do not restore format-2 construction or the
   legacy signed-payload statement API.
-- **Signer-independent identity.** Capsule ID excludes only top-level
-  `capsule_id`, so `chain` is committed. Signing one or many envelopes never
-  changes Capsule bytes or ID.
+- **Signer-independent identity.** Capsule ID excludes top-level `capsule_id`
+  and local-only Producer Envelope fields `signature` and `key_id`; `chain`
+  remains committed. `VerifyCapsule` does not authenticate those local-only
+  fields; consumers separately verify the envelope and bind its public key to
+  any outer `key_id`. Signing one or many envelopes never changes Capsule bytes
+  or ID.
 - **Exact Producer Envelope.** Attached payload is raw 32-byte Capsule ID;
   protected headers are exactly EdDSA `alg`, the AAC Capsule-ID content type,
   and raw 32-byte Ed25519 public-key `kid`; unprotected map is empty. Signer

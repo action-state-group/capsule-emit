@@ -3,7 +3,7 @@ module github.com/ethanyzhang/capsule-producer-go
 go 1.27.0
 
 require (
-	github.com/action-state-group/agent-action-capsule/go v0.0.0-20260825062006-8ccf34573136
+	github.com/action-state-group/agent-action-capsule/go v0.0.0-20260829034405-7e112c8b877a
 	github.com/stretchr/testify v1.12.1
 	github.com/veraison/go-cose v1.3.0
 )
