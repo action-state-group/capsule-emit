@@ -27,13 +27,38 @@ Gateway config snippet (config.yaml)::
             methods:
               "tools/call": full
             failureMode: failOpen
+            # CEL expressions evaluated per request and delivered as
+            # McpRequest/McpResponse.metadata_context.  These are the audit
+            # references consumed by agentgateway_audit -- identifiers only,
+            # never token material (agentgateway#3042).
+            metadata:
+              backendAuth.subject: jwt.sub
+            # An empty `allowed` list forwards EVERY header to this processor,
+            # `authorization` included.  This adapter never reads headers, but
+            # drop it at the gateway so the credential is not on the wire.
+            requestHeaders:
+              disallowed: [authorization]
+
+Audit metadata (agentgateway#3042)
+----------------------------------
+Whatever the processor's ``metadata`` config resolves arrives as
+``metadata_context`` on both hooks.  :mod:`capsule_emit.adapters.agentgateway_audit`
+turns it into the authority-chain block sealed under
+``compute_attestation["ext.agentgateway.authority"]``: the subject, the ID-JAG
+``jti``/audience, and the resource-token reference, each labelled with the
+config key and the hook phase it came from, plus an explicit ``absent`` list for
+every reference that did not arrive.  Field names are remappable at runtime --
+see ``CAPSULE_AG_AUDIT_KEYS``.
 
 Environment variables::
 
-    CAPSULE_LEDGER     Path to JSONL ledger file (default: ledger.jsonl)
-    CAPSULE_OPERATOR   Tenant / org identifier stamped on every capsule
-    CAPSULE_DEVELOPER  Agent name + version
-    CAPSULE_PORT       gRPC server port (default: 50051)
+    CAPSULE_LEDGER          Path to JSONL ledger file (default: ledger.jsonl)
+    CAPSULE_OPERATOR        Tenant / org identifier stamped on every capsule
+    CAPSULE_DEVELOPER       Agent name + version
+    CAPSULE_PORT            gRPC server port (default: 50051)
+    CAPSULE_AG_AUDIT_KEYS   JSON object remapping audit slots to
+                            metadata_context keys, e.g.
+                            {"idjag_jti": "backendAuth.idJag.jti"}
 
 Run::
 
@@ -53,8 +78,15 @@ from concurrent import futures
 import grpc
 
 from capsule_emit.core import _emit_capsule
+from capsule_emit.numbers import canonicalize_for_digest
 
 from . import ext_mcp_pb2
+from .agentgateway_audit import (
+    build_authority_block,
+    key_map_from_env,
+    metadata_from_message,
+    normalize_key_map,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -91,6 +123,7 @@ class CapsuleEmitServicer:
         developer: str = _DEVELOPER,
         ledger: str = _LEDGER,
         anchor: bool = False,
+        audit_keys: dict[str, object] | None = None,
     ) -> None:
         self._operator = operator
         self._developer = developer
@@ -98,6 +131,12 @@ class CapsuleEmitServicer:
         self._anchor = anchor
         self._pending: collections.deque = collections.deque()
         self._lock = threading.Lock()
+        # Slot -> metadata_context key. #3042 is still open, so the field names
+        # it lands on are not final; this is the seam that makes following them
+        # a config change rather than a code change.
+        self._audit_keys = (
+            normalize_key_map(audit_keys) if audit_keys is not None else key_map_from_env()
+        )
 
     def CheckRequest(
         self, request: ext_mcp_pb2.McpRequest, context: grpc.ServicerContext
@@ -118,8 +157,13 @@ class CapsuleEmitServicer:
                     tool_name, arguments = "unknown", {}
             else:
                 tool_name, arguments = "unknown", {}
+            # Read metadata_context on this hook too: it is evaluated
+            # separately per hook, and a reference that only resolves at request
+            # time would otherwise be lost. Headers are deliberately not read --
+            # see the module docstring.
+            request_md = metadata_from_message(request)
             with self._lock:
-                self._pending.append((tool_name, arguments))
+                self._pending.append((tool_name, arguments, request_md))
             _log.debug("CheckRequest: captured %s args=%s", tool_name, sorted(arguments))
         return _pass_request()
 
@@ -133,12 +177,20 @@ class CapsuleEmitServicer:
             if not self._pending:
                 _log.warning("CheckResponse: queue empty for tools/call — skipping seal")
                 return _pass_response()
-            tool_name, arguments = self._pending.popleft()
+            tool_name, arguments, request_md = self._pending.popleft()
 
         try:
             tool_result = json.loads(request.mcp_response) if request.mcp_response else {}
         except Exception:
             tool_result = {}
+
+        # The authority chain behind this call, cited by reference. Built from
+        # both hooks: on #3042 @howardjohn noted the MCP guardrail runs before
+        # ID-JAG, so a grant reference can only appear on the response-phase
+        # evaluation -- which is why absence is recorded, never assumed.
+        authority = build_authority_block(
+            request_md, metadata_from_message(request), key_map=self._audit_keys
+        )
 
         try:
             # Calls the internal _emit_capsule primitive directly, like every
@@ -150,15 +202,21 @@ class CapsuleEmitServicer:
             # in v3's old shape (frozen surface §1/§9 clean break).
             _emit_capsule(
                 action=tool_name,
-                agent_input=arguments,
+                # Canonicalized for the same reason every _base adapter does
+                # it: a tool argument typed float is a §5.1 error at the digest
+                # layer, and agentgateway's own guardrails tests round-trip
+                # float tool arguments (mcp_tests.rs). Float-free payloads pass
+                # through byte-identical, so no existing digest moves.
+                agent_input=canonicalize_for_digest(arguments, field="agent_input"),
                 operator=self._operator,
                 developer=self._developer,
-                agent_output=tool_result,
+                agent_output=canonicalize_for_digest(tool_result, field="agent_output"),
                 verdict="executed",
                 effect={"type": tool_name, "status": "dispatched"},
                 anchor=self._anchor,
                 ledger=self._ledger,
                 runtime="agentgateway",
+                extra_compute={"ext.agentgateway.authority": authority},
             )
             _log.debug("CheckResponse: sealed capsule for %s", tool_name)
         except Exception as exc:
@@ -194,6 +252,7 @@ def serve(
     ledger: str = _LEDGER,
     anchor: bool = False,
     workers: int = 4,
+    audit_keys: dict[str, object] | None = None,
 ) -> grpc.Server:
     """Start the ExtMcp gRPC server and return it (non-blocking, already started)."""
     servicer = CapsuleEmitServicer(
@@ -201,6 +260,7 @@ def serve(
         developer=developer,
         ledger=ledger,
         anchor=anchor,
+        audit_keys=audit_keys,
     )
     server = _make_server(servicer, port, workers)
     server.start()
