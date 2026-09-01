@@ -30,6 +30,9 @@ agentgateway = ["grpcio>=1.60", "protobuf>=5.0"]
 hermes = []
 adk = ["google-adk>=2.0"]
 agno = ["agno>=3.0"]
+# Pinned to the release the hook contract was read and tested against
+# (BeforeToolCallEvent/AfterToolCallEvent, strands/hooks/events.py:208/:248).
+strands = ["strands-agents>=1.54.0,<2"]
 dapr-agents = ["dapr-agents>=1.0"]
 checkpoint = ["scitt-cose>=0.2.0"]
 
