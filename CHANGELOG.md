@@ -4,6 +4,28 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## 0.6.1
+
+### Fixed — float tool-arg canonicalization broke the capsule chain (capsule-emit#128, #135)
+
+A tool argument typed `float` made the LangChain listener drop the planned capsule at the
+digest layer (raw-float rejection), while the tool still ran — leaving a confirmed record
+with `chain: null` and no ledger trace of why. `AgnoCapsuleListener` reproduced the same
+failure on both its sync and async hooks.
+
+- `capsule_emit.numbers.canonicalize_for_digest` walks a payload and renders every binary64
+  float as its RFC 8785 §3.2.2.3 decimal string before digesting, reusing the existing
+  `float_to_str` — one rule, one place.
+- `adapters/_base.py`'s `emit_capsule()` applies it to `tool_input`/`tool_output`, covering
+  LangChain, Agno, CrewAI, MCP, ADK, Hermes, Goose, and dapr at once. `seal()`/`received()`
+  stay strict — a direct caller still owns its own data.
+- No digest shift for float-free payloads — they pass through byte-identical, guarded by
+  frozen vectors on pristine main (`test_adapter_digest_stability.py`). `1` and `1.0` still
+  digest differently and deterministically; `1.0` and `"1"` digest identically.
+- NaN/±Infinity still cannot be sealed; listeners warn-and-skip rather than raise, and the
+  outcome record now carries `unchained_reason` so an orphaned tool call is legible from the
+  ledger alone.
+
 ## 0.5.1
 
 Launch-blocker fixes for fresh installs (capsule-emit#123 + a producer/verifier interop mismatch):

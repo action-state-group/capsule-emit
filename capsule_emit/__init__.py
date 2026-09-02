@@ -85,7 +85,7 @@ from .verify_canonicalization import (
     verify_canonicalization_id,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.1"
 
 
 def emit(*_args: Any, **_kwargs: Any) -> NoReturn:
