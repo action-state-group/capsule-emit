@@ -18,6 +18,7 @@ methods are unchanged.
 | Hermes / custom loop | [hermes.md](hermes.md) | `HermesCapsuleEmitter` | call at tool boundary |
 | Google ADK | [adk.md](adk.md) | `ADKCapsuleEmitter` | tool callback / event tap |
 | Dapr Agents | [dapr_agents.md](dapr_agents.md) | `DaprAgentsCapsuleEmitter` | tool decorator + HITL gate |
+| LiteLLM proxy | [litellm.md](litellm.md) | `LiteLLMCapsuleListener` | `config.yaml` callback (out of tree) |
 
 **Quickstarts** (copy-paste, framework-specific, five minutes): **[CrewAI](../quickstart-crewai.md)** · **[LangGraph](../quickstart-langgraph.md)**.
 
