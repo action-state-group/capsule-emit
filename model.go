@@ -25,6 +25,7 @@ type digestReference struct {
 	Type      string
 	DigestAlg string
 	Digest    string
+	Slot      string
 }
 
 type computeAttestation struct {
@@ -64,6 +65,13 @@ type BuiltPayload struct {
 	CapsuleID string
 	Value     map[string]any
 	JSON      []byte
+}
+
+// SlotMember binds an existing Capsule to one composition role. Valid values
+// come from Who, Can, Did, or Audit; its zero value is rejected.
+type SlotMember struct {
+	slot   string
+	member BuiltPayload
 }
 
 // Result contains a signature-free Capsule and one Producer Envelope.

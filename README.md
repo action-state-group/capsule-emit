@@ -103,15 +103,28 @@ does the same with a non-empty caller-declared CPB type. Both record the raw
 SHA-256 digest as `carried_artifact.digest` and `carried_input_digest`; they
 never reinterpret foreign bytes as JSON.
 
-`Compose` binds one or more existing `BuiltPayload` values by ordered typed
-Capsule-ID references. It rejects empty membership and duplicate IDs.
+`Who`, `Can`, `Did`, and `Audit` assign existing `BuiltPayload` values to the
+four format-4 composition roles. `BuildComposition` writes references in the
+canonical WHO, CAN, DID, AUDIT order regardless of argument order. It rejects
+empty membership, duplicate slots, duplicate Capsule IDs, and members whose
+stored bytes do not verify against their claimed IDs.
 
 ```go
 // illustrative — see the full example above for setup and error handling
+identityCapsule, err := emit.Build(identityInput)
 carried, err := emit.Received(input, artifactBytes, "provider-ack")
-composed, err := emit.Compose(input, []emit.BuiltPayload{first, carried})
+actionCapsule, err := emit.Build(actionInput)
+composed, err := emit.BuildComposition(
+    input,
+    emit.Who(identityCapsule),
+    emit.Can(carried),
+    emit.Did(actionCapsule),
+)
 envelope, err := emit.Sign(composed, identity)
 ```
+
+Slot helpers reference existing Capsules unchanged. They do not mint or persist
+member Capsules.
 
 These functions build records only. They do not append logs, persist Capsules,
 deliver to a ledger, retry effects, or authorize signers.

@@ -98,11 +98,15 @@ func computeAttestationMap(attestation computeAttestation) map[string]any {
 }
 
 func digestReferenceMap(reference digestReference) map[string]any {
-	return map[string]any{
+	result := map[string]any{
 		"type":       reference.Type,
 		"digest_alg": reference.DigestAlg,
 		"digest":     reference.Digest,
 	}
+	if reference.Slot != "" {
+		result["slot"] = reference.Slot
+	}
+	return result
 }
 
 func validateInput(input Input) error {

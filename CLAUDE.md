@@ -31,13 +31,12 @@ retry calls, persist Capsules, authorize signers, or maintain a ledger.
 ## Architecture
 
 ```text
-JSON values → DigestJSON → Effect digests → Build / Carry / Received / Compose
-                                              ↓
-                                signature-free format-4 Capsule
-                                              ↓
-                                   Sign, or Seal = Build + Sign
-                                              ↓
-                                    independent Producer Envelope
+JSON values → DigestJSON → Effect digests → Build ───────────────→ Capsule
+foreign bytes ───────────────────────→ Carry / Received ─────────→ Capsule
+existing Capsules → Who / Can / Did / Audit → BuildComposition ─→ Capsule
+
+Capsule + identity → Sign → Producer Envelope
+Input + identity → Seal (= Build + Sign) → Capsule + Envelope
 ```
 
 - `digest.go` marshals caller-owned JSON values and derives strict AAC
@@ -68,8 +67,10 @@ JSON values → DigestJSON → Effect digests → Build / Carry / Received / Com
 - **Foreign bytes stay bytes.** `Carry` and `Received` digest exact transmitted
   bytes and never parse or canonicalize them. `Received` requires a non-empty
   caller-declared type.
-- **Composition is typed.** `Compose` binds existing Capsule IDs in caller
-  order and rejects empty or duplicate membership. Persistence is external.
+- **Composition is typed.** `Who`, `Can`, `Did`, and `Audit` bind existing
+  Capsule IDs to closed slot vocabulary. `BuildComposition` canonicalizes slot
+  order and rejects empty membership, duplicate slots, duplicate IDs, and
+  unverified members. Persistence is external.
 - **Determinism.** Do not add wall-clock defaults, random action IDs, implicit
   sorting, or mutable global protocol state.
 - **Defensive decoding.** Preserve duplicate-key, trailing-data, invalid UTF-8,
