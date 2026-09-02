@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""capsule_emit.checkpoint -- the CLL (Checkpointed Local Log) core.
+"""capsule_emit.checkpoint -- thin compatibility re-export over ``cll.checkpoint``.
 
 **Since 0.5.0, ``capsule_emit.core.emit()`` wires this in by DEFAULT** (see
 ``capsule_emit.witness``, and ``docs/checkpoint.md`` for the full story):
@@ -22,22 +22,26 @@ over cadence, signing keys, or a non-default Transparency Service can still
 below ever makes a network call on its own (see ``checkpoint.emit``'s module
 docstring).
 
-``core`` is the pure MMR algorithm (position math, domain-separated hashing,
-inclusion/consistency proofs, no I/O). ``store`` is the v0 in-memory node
-backing. ``index`` wires the MMR to any append-only log exposing the
-``LogSource`` shape (append/scan/fetch/find_gaps/verify) -- structurally, not
-by importing a concrete implementation. ``emit`` builds, signs, and registers
-peaks checkpoints against a Transparency Service (the free public-good tier
-at ``witness.agentactioncapsule.org`` by default -- currently served via
-``anchor.agentactioncapsule.org`` while its CNAME is pending, see
-``emit._PENDING_CNAME_TARGETS`` -- any conforming TS substitutable, and more
-than one may be registered at once for a multi-witness stream, see
-``capsule_emit.witness``).
+**Graduated to the ``cll`` package (2026-09-01, W3.1 CLL extraction).** The
+CLL/MMR core originally lived here (ported from
+``capsule-ledger/capsule_ledger/mmr/{core,index,store}.py`` per Amendment E,
+2026-08-21) on the reasoning that it is substrate a counterparty needs to
+verify a log, so it should live where any consumer can depend on it without
+forking. It has now graduated one level further, to the
+``checkpointed-local-log`` repo's ``cll`` package -- the log layer is
+deliberately NOT capsule-specific (that is its adoption story: e.g. a trace
+registry running this exact mechanism over TRACE records), so it does not
+live under a ``capsule-*``-branded name. This module is what stays: a thin,
+behavior-preserving re-export so every existing
+``capsule_emit.checkpoint.X`` / ``capsule_emit.checkpoint.<submodule>.X``
+caller keeps working unchanged. ``core``/``cose_wire``/``emit``/``index``/
+``store`` are each a one-line re-export of the matching ``cll.checkpoint``
+submodule -- see those files.
 
-Ported from ``capsule-ledger/capsule_ledger/mmr/{core,index,store}.py`` per
-Amendment E (2026-08-21): the CLL core is substrate a counterparty needs to
-verify a log, so it lives here rather than forked per-consumer.
-``capsule-ledger`` consumes this package through its public interface.
+**Removal horizon: 0.8.** These compat aliases are slated for removal in
+capsule-emit 0.8 -- each submodule emits a ``DeprecationWarning`` on
+import; callers should migrate to ``import cll.checkpoint`` (or its
+submodules) directly.
 """
 from .core import (
     ConsistencyProof,

@@ -2,6 +2,20 @@
 """``bundle()`` — the hand-to-anyone artifact (O16 audit item 14, frozen
 surface §2.5).
 
+**Thin wrapper over ``cll.checkpoint.bundle`` (2026-09-01, W3.1 CLL
+extraction).** The generic record/range-level disclosure-bundle mechanism
+(MMR inclusion, checkpoint signature, consistency, witness stamps, COSE
+wire — everything the LOG proves) now lives in ``cll.checkpoint.bundle``,
+genericized (parameterized leaf-id/kind fields, takes pre-read entries
+rather than reading a log file itself) so it carries no capsule vocabulary.
+This module supplies the two things that ARE capsule-specific: reading
+``capsule_emit.ledger``'s JSONL file format, and the receipt's own
+content-authenticity check (a capsule's self-attested producer signature)
+— composed on top of ``cll``'s generic
+:func:`~cll.checkpoint.bundle.verify_bundle_log_integrity` rather than
+duplicating it. See that function's docstring for why content-authenticity
+is deliberately split out of the generic log-integrity check.
+
 The verification chain documented in ``capsule_emit.checkpoint.emit`` is
 four separate, caller-composed primitives: MMR inclusion, checkpoint
 signature, TS receipt, and rollback/consistency. This module is what
@@ -37,165 +51,12 @@ structurally opt-in (``from capsule_emit.bundle import bundle``) so a bare
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
+from cll.checkpoint.bundle import Bundle, BundleError
 
 __all__ = ["Bundle", "BundleError", "bundle", "verify_bundle"]
 
 
-class BundleError(RuntimeError):
-    """A bundle cannot be built for the requested record — not found,
-    ambiguous, or not yet covered by any checkpoint."""
-
-
-@dataclass(frozen=True)
-class Bundle:
-    """A standalone-verifiable evidence package for one ledger record.
-
-    ``prior_checkpoint``/``consistency_proof`` are ``None`` together, iff
-    ``checkpoint.prev_size == 0`` (the covering checkpoint is the log's
-    first) — never independently ``None``.
-    """
-
-    v: int
-    capsule_id: str
-    seq: int  # 1-indexed position in the raw ledger (capsules + stamps)
-    receipt: dict
-    inclusion_proof: Any  # capsule_emit.checkpoint.core.InclusionProof
-    checkpoint: Any  # capsule_emit.checkpoint.CheckpointRecord — covering, carries its stamp(s)
-    prior_checkpoint: Any | None  # capsule_emit.checkpoint.CheckpointRecord | None
-    consistency_proof: Any | None  # capsule_emit.checkpoint.core.ConsistencyProof | None
-    checkpoint_cose: bytes | None = None
-    """The covering checkpoint's COSE_Sign1 wire form
-    ([cll-checkpoint-cose-wire], Decision 1's stranger-facing moment (b)) --
-    ``None`` for a bundle built from a ledger whose checkpoint stamp
-    predates this field, or whose COSE serialization failed at production
-    time (see ``witness._build_checkpoint_cose_hex``); never re-minted here,
-    only ever carried through from what the operator's own process signed.
-    A generic COSE/SCITT verifier can check this checkpoint's signature and
-    CWT identity offline from this field alone, with no capsule-emit code at
-    all (see ``checkpoint.cose_wire.verify_checkpoint_cose_offline``)."""
-
-    def to_dict(self) -> dict:
-        return {
-            "v": self.v,
-            "capsule_id": self.capsule_id,
-            "seq": self.seq,
-            "receipt": self.receipt,
-            "inclusion_proof": _inclusion_proof_to_dict(self.inclusion_proof),
-            "checkpoint": self.checkpoint.to_dict(),
-            "prior_checkpoint": self.prior_checkpoint.to_dict() if self.prior_checkpoint else None,
-            "consistency_proof": (
-                _consistency_proof_to_dict(self.consistency_proof)
-                if self.consistency_proof is not None
-                else None
-            ),
-            "checkpoint_cose": self.checkpoint_cose.hex() if self.checkpoint_cose is not None else None,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict) -> Bundle:
-        from .checkpoint.emit import CheckpointRecord
-
-        prior = d.get("prior_checkpoint")
-        cproof = d.get("consistency_proof")
-        cose_hex = d.get("checkpoint_cose")
-        return cls(
-            v=int(d["v"]),
-            capsule_id=d["capsule_id"],
-            seq=int(d["seq"]),
-            receipt=d["receipt"],
-            inclusion_proof=_inclusion_proof_from_dict(d["inclusion_proof"]),
-            checkpoint=CheckpointRecord.from_dict(d["checkpoint"]),
-            prior_checkpoint=CheckpointRecord.from_dict(prior) if prior else None,
-            consistency_proof=_consistency_proof_from_dict(cproof) if cproof is not None else None,
-            checkpoint_cose=bytes.fromhex(cose_hex) if cose_hex else None,
-        )
-
-
-def _inclusion_proof_to_dict(p: Any) -> dict:
-    return {
-        "v": p.v,
-        "kind": p.kind,
-        "size": p.size,
-        "leaf_index": p.leaf_index,
-        "witness": list(p.witness),
-        "peaks_left": list(p.peaks_left),
-        "peaks_right": list(p.peaks_right),
-    }
-
-
-def _inclusion_proof_from_dict(d: dict) -> Any:
-    from .checkpoint.core import InclusionProof
-
-    return InclusionProof(
-        v=int(d["v"]),
-        kind=d["kind"],
-        size=int(d["size"]),
-        leaf_index=int(d["leaf_index"]),
-        witness=tuple(d["witness"]),
-        peaks_left=tuple(d["peaks_left"]),
-        peaks_right=tuple(d["peaks_right"]),
-    )
-
-
-def _consistency_proof_to_dict(p: Any) -> dict:
-    return {
-        "v": p.v,
-        "kind": p.kind,
-        "size_a": p.size_a,
-        "size_b": p.size_b,
-        "old_peaks": list(p.old_peaks),
-        "witness": [list(w) for w in p.witness],
-        "new_peaks": list(p.new_peaks),
-    }
-
-
-def _consistency_proof_from_dict(d: dict) -> Any:
-    from .checkpoint.core import ConsistencyProof
-
-    return ConsistencyProof(
-        v=int(d["v"]),
-        kind=d["kind"],
-        size_a=int(d["size_a"]),
-        size_b=int(d["size_b"]),
-        old_peaks=tuple(d["old_peaks"]),
-        witness=tuple(tuple(w) for w in d["witness"]),
-        new_peaks=tuple(d["new_peaks"]),
-    )
-
-
-def _find_record(entries: list[dict], capsule_id: str) -> int:
-    """Resolve ``capsule_id`` (full, or an unambiguous >=8-char prefix — same
-    convention as ``ledger.show``/CLI ``--reveal``) to its 0-based index in
-    ``entries``. Checkpoint-stamp and disclosure-record entries are never a
-    match — a bundle is for a record (capsule), never for the log's own
-    bookkeeping (both share the ``capsule_id``-shaped leaf field, since both
-    become MMR leaves too — see ``ledger.NON_CAPSULE_KINDS``)."""
-    from .ledger import NON_CAPSULE_KINDS
-
-    matches = [
-        i
-        for i, e in enumerate(entries)
-        if e.get("kind") not in NON_CAPSULE_KINDS
-        and (
-            e.get("capsule_id") == capsule_id
-            or (len(capsule_id) >= 8 and str(e.get("capsule_id", "")).startswith(capsule_id))
-        )
-    ]
-    if not matches:
-        raise BundleError(f"no record matches capsule_id {capsule_id!r}")
-    exact = [i for i in matches if entries[i]["capsule_id"] == capsule_id]
-    if exact:
-        return exact[0]
-    if len(matches) > 1:
-        raise BundleError(
-            f"capsule_id prefix {capsule_id!r} matches {len(matches)} records — use more characters"
-        )
-    return matches[0]
-
-
-def bundle(path: Any, capsule_id: str) -> Bundle:
+def bundle(path, capsule_id: str) -> Bundle:
     """Build a standalone-verifiable :class:`Bundle` for one record in the
     JSONL ledger at ``path``.
 
@@ -209,72 +70,14 @@ def bundle(path: Any, capsule_id: str) -> Bundle:
     it — see ``capsule_emit.status`` for a read-only way to check that lag
     before calling this).
     """
-    from .checkpoint import core as mmr_core
-    from .checkpoint.emit import CheckpointRecord
-    from .checkpoint.store import MemoryNodeStore
-    from .ledger import CHECKPOINT_STAMP_KIND, read_ledger_entries
+    from cll.checkpoint.bundle import bundle as _cll_bundle
+
+    from .ledger import NON_CAPSULE_KINDS, read_ledger_entries
 
     entries = read_ledger_entries(path)
     if not entries:
         raise BundleError(f"{path}: empty or not found")
-
-    target_idx = _find_record(entries, capsule_id)
-    seq = target_idx + 1  # 1-indexed leaf position, matching production's raw-line numbering
-
-    stamp_entries = [e for e in entries if e.get("kind") == CHECKPOINT_STAMP_KIND]
-    checkpoints: list[CheckpointRecord] = [
-        CheckpointRecord.from_dict(e["checkpoint"]) for e in stamp_entries
-    ]
-    checkpoint_cose_by_size: dict[int, str] = {
-        cp.mmr_size: e["checkpoint_cose"]
-        for cp, e in zip(checkpoints, stamp_entries)
-        if e.get("checkpoint_cose")
-    }
-
-    covering = next((cp for cp in checkpoints if mmr_core.leaf_count(cp.mmr_size) >= seq), None)
-    if covering is None:
-        raise BundleError(
-            f"record {capsule_id!r} (seq={seq}) is not yet covered by any checkpoint — "
-            "no bundle exists yet; it becomes buildable once the next checkpoint covers it"
-        )
-
-    prior = None
-    if covering.prev_size > 0:
-        prior = next((cp for cp in checkpoints if cp.mmr_size == covering.prev_size), None)
-        if prior is None:
-            raise BundleError(
-                f"checkpoint at mmr_size={covering.mmr_size} names a prior checkpoint at "
-                f"mmr_size={covering.prev_size} that is not present in {path} — ledger is incomplete"
-            )
-
-    covered_leaves = mmr_core.leaf_count(covering.mmr_size)
-    store = MemoryNodeStore()
-    for entry in entries[:covered_leaves]:
-        body_digest = bytes.fromhex(entry["capsule_id"])
-        mmr_core.add_leaf(store, mmr_core.leaf_hash(body_digest))
-    if store.size() != covering.mmr_size:
-        raise BundleError(
-            f"reconstructed MMR size {store.size()} does not match checkpoint "
-            f"mmr_size {covering.mmr_size} for {path} — ledger may be corrupt or truncated"
-        )
-
-    inclusion = mmr_core.inclusion_proof(store, seq - 1, covering.mmr_size)
-    consistency = (
-        mmr_core.consistency_proof(store, prior.mmr_size, covering.mmr_size) if prior is not None else None
-    )
-    cose_hex = checkpoint_cose_by_size.get(covering.mmr_size)
-
-    return Bundle(
-        v=1,
-        capsule_id=entries[target_idx]["capsule_id"],
-        seq=seq,
-        receipt=entries[target_idx],
-        inclusion_proof=inclusion,
-        checkpoint=covering,
-        prior_checkpoint=prior,
-        consistency_proof=consistency,
-        checkpoint_cose=bytes.fromhex(cose_hex) if cose_hex else None,
-    )
+    return _cll_bundle(entries, capsule_id, non_leaf_kinds=frozenset(NON_CAPSULE_KINDS))
 
 
 def verify_bundle(
@@ -298,214 +101,47 @@ def verify_bundle(
          (``capsule_emit.signing.verify_capsule_signature``) — a receipt
          body rewritten with a matching, recomputed ``capsule_id`` (the
          [verify-checks-producer-signature] forgery, replayed against a
-         bundle) is caught here instead;
-      2. inclusion — the receipt is genuinely a leaf under the covering
-         checkpoint's root, at this bundle's ``seq``;
-      3. the covering checkpoint's own signature, offline
-         (``capsule_emit.checkpoint.verify_checkpoint_signature_offline`` —
-         Ed25519, via the checkpoint's own ``key_id``, no private key
-         needed);
-      4. if a prior checkpoint is present: its signature too, that the
-         covering checkpoint's ``prev_size``/``prev_root`` genuinely name
-         it, and the consistency proof (the ``bryce-cose-receipts-mmr-profile``
-         relation, verified via ``capsule_emit.checkpoint.core
-         .verify_consistency``) bridging the two roots; if absent: that
-         ``checkpoint.prev_size == 0`` — this is honestly the log's first
-         checkpoint, not a silently dropped lower bound. **Label honestly
-         (Decision 2):** a passing consistency check proves the history
-         *within this bundle* was not rewritten/reordered/truncated between
-         the two checkpoints (anti-REWRITE) — it does NOT prove no divergent
-         history exists elsewhere (anti-FORK/anti-equivocation), since a
-         forker can build two internally-consistent bundles and one offline
-         verifier never sees both sides. The success notice reads exactly
-         "history intact between checkpoints N and M" and never "no fork" /
-         "not equivocated" — that guarantee is the witness's and
-         multi-witness config's job, never this offline check's;
-      5. witness stamp authenticity, if the covering checkpoint carries any
-         (``capsule_emit.checkpoint.verify_witness_stamp_tristate`` per
-         ``WitnessRecord`` — [stamp-authenticity-on-read-not-presence],
-         revised to THREE-STATE by [verify-threestate-trustanchor]). Each
-         stamp resolves to one of three states, per ``ts_url`` matched
-         against ``trust_anchor``/the pinned default witness:
-           - WITNESSED (a supplied/pinned key verifies it) — the checkpoint
-             genuinely is witnessed via this stamp;
-           - UNVERIFIED (well-formed, checkpoint-bound, but its TS has no
-             supplied pin) — reported as a non-fatal notice
-             (``"witnessed by <url>, pin not supplied — unverified
-             stamp"``), NEVER fatal on its own: a self-hosted/zero-egress
-             TS a caller has not pinned is not evidence of forgery, and
-             treating it as fatal false-accused exactly the deployments
-             frozen §1a.2 promises zero-egress operation to;
-           - INVALID (not even a well-formed checkpoint-bound stamp, or a
-             KNOWN/pinned TS's signature that fails) — a fatal notice,
-             UNLESS at least one other stamp is WITNESSED (any-of, matching
-             ``grade()``), in which case it demotes to a non-fatal notice
-             since the checkpoint genuinely IS witnessed via the valid one.
-         The bundle is fatal on the witness dimension iff no stamp is
-         WITNESSED **and** at least one is INVALID — a checkpoint whose
-         only stamps are all UNVERIFIED (every TS unpinned) is NOT fatal;
-         it is exactly the "self-attested, unverified" bundle #94's default
-         (no ``trust_anchor``) path now honestly reports for a self-hosted
-         TS rather than false-accusing it of forgery;
-      6. if present, ``checkpoint_cose`` — the covering checkpoint's
-         COSE_Sign1 wire form ([cll-checkpoint-cose-wire], Decision 1's
-         stranger-facing moment (b)) — independently re-verified via
-         ``capsule_emit.checkpoint.cose_wire.verify_checkpoint_cose_offline``
-         (signature under its own ``kid``, CWT identity, and — if it carries
-         one — a REAL MMR consistency proof, not field equality) and then
-         cross-checked field-for-field against ``b.checkpoint``. Fatal if
-         present but invalid or mismatched; simply absent (older bundles, or
-         a production-time COSE-serialization failure) is non-fatal — this
-         field is additive, never required.
+         bundle) is caught here instead. This step is capsule-specific and
+         lives in THIS module (see :func:`cll.checkpoint.bundle.
+         verify_bundle_log_integrity`'s docstring for why);
+      2–6. everything the LOG proves — inclusion, checkpoint signature,
+         consistency (labeled honestly: anti-REWRITE, never "no fork"),
+         witness stamp tri-state, COSE wire cross-check — delegated to
+         :func:`cll.checkpoint.bundle.verify_bundle_log_integrity`
+         unchanged; see that function's docstring for the full description
+         of each check.
 
     Returns ``(ok, errors)`` — ``ok`` is false iff a FATAL problem was
-    found; ``errors`` also carries non-fatal notices: the point-4 honest
-    consistency/first-checkpoint label, point-5's unverified/mixed stamp
-    notices, and point-6's COSE-wire confirmation — so it is not empty on
-    plenty of fully-passing bundles, not just the mixed-witness case.
+    found; ``errors`` also carries non-fatal notices, in the order: this
+    module's step-1 findings, then ``cll``'s step 2–6 findings.
     """
+    from cll.checkpoint.bundle import verify_bundle_log_integrity
+
     from .canonicalization import compute_capsule_id
-    from .checkpoint import core as mmr_core
-    from .checkpoint.emit import (
-        StampVerdict,
-        verify_checkpoint_signature_offline,
-        verify_witness_stamp_tristate,
-    )
     from .signing import verify_capsule_signature
 
-    errors: list[str] = []
-    notices: list[str] = []
+    step1_errors: list[str] = []
     try:
         if b.receipt.get("capsule_id") != b.capsule_id:
-            errors.append("receipt.capsule_id does not match bundle.capsule_id")
+            step1_errors.append("receipt.capsule_id does not match bundle.capsule_id")
 
         try:
             recomputed_capsule_id = compute_capsule_id(b.receipt)
         except Exception as exc:
-            errors.append(f"receipt {b.capsule_id} content could not be hashed: {exc}")
+            step1_errors.append(f"receipt {b.capsule_id} content could not be hashed: {exc}")
         else:
             if recomputed_capsule_id != b.receipt.get("capsule_id"):
-                errors.append(
+                step1_errors.append(
                     f"receipt {b.capsule_id} does not hash to its own capsule_id -- "
                     "receipt body was tampered"
                 )
         if not verify_capsule_signature(b.receipt):
-            errors.append(
+            step1_errors.append(
                 f"receipt {b.capsule_id} signature does not verify -- receipt content, signature, "
                 "or key_id was tampered, forged, or unsigned"
             )
-
-        body_digest = bytes.fromhex(b.capsule_id)
-        root = bytes.fromhex(b.checkpoint.root)
-        if not mmr_core.verify_inclusion(
-            root, b.checkpoint.mmr_size, b.seq - 1, body_digest, b.inclusion_proof
-        ):
-            errors.append("inclusion proof does not verify against the covering checkpoint's root")
-
-        if not verify_checkpoint_signature_offline(b.checkpoint):
-            errors.append("covering checkpoint signature does not verify")
-
-        if b.prior_checkpoint is not None:
-            if not verify_checkpoint_signature_offline(b.prior_checkpoint):
-                errors.append("prior checkpoint signature does not verify")
-            if b.checkpoint.prev_size != b.prior_checkpoint.mmr_size:
-                errors.append("checkpoint.prev_size does not match prior_checkpoint.mmr_size")
-            if b.checkpoint.prev_root != b.prior_checkpoint.root:
-                errors.append("checkpoint.prev_root does not match prior_checkpoint.root")
-            if b.consistency_proof is None:
-                errors.append("prior_checkpoint is present but consistency_proof is missing")
-            else:
-                root_a = bytes.fromhex(b.prior_checkpoint.root)
-                if not mmr_core.verify_consistency(
-                    root_a,
-                    b.prior_checkpoint.mmr_size,
-                    root,
-                    b.checkpoint.mmr_size,
-                    b.consistency_proof,
-                ):
-                    errors.append("consistency proof does not bridge prior_checkpoint to checkpoint")
-                else:
-                    # Honest label (Decision 2): anti-REWRITE only, never
-                    # "no fork" / "not equivocated" -- see the docstring.
-                    notices.append(
-                        "history intact between checkpoints "
-                        f"{b.prior_checkpoint.mmr_size} and {b.checkpoint.mmr_size} "
-                        "(consistency proof verified) -- rules out rewrite/reorder/"
-                        "truncation between them; does not rule out a divergent fork, "
-                        "which only a witness attests to"
-                    )
-        else:
-            if b.checkpoint.prev_size != 0:
-                errors.append("prior_checkpoint is missing but checkpoint.prev_size != 0")
-            if b.consistency_proof is not None:
-                errors.append("consistency_proof present without a prior_checkpoint")
-            if b.checkpoint.prev_size == 0 and b.consistency_proof is None:
-                notices.append(
-                    f"no prior checkpoint -- checkpoint at mmr_size={b.checkpoint.mmr_size} "
-                    "is this log's first; there is no earlier history to check continuity "
-                    "against"
-                )
-
-        if b.checkpoint_cose is not None:
-            from .checkpoint.cose_wire import verify_checkpoint_cose_offline
-
-            cose_result = verify_checkpoint_cose_offline(b.checkpoint_cose)
-            if not cose_result.ok:
-                errors.append(
-                    "checkpoint COSE-wire statement failed to verify: "
-                    + "; ".join(cose_result.errors)
-                )
-            else:
-                decoded = cose_result.decoded
-                if (
-                    decoded.log_id != b.checkpoint.log_id
-                    or decoded.mmr_size != b.checkpoint.mmr_size
-                    or decoded.root != b.checkpoint.root
-                    or decoded.prev_size != b.checkpoint.prev_size
-                    or decoded.prev_root != b.checkpoint.prev_root
-                    or decoded.key_id != b.checkpoint.key_id
-                ):
-                    errors.append(
-                        "checkpoint COSE-wire statement fields do not match the bundle's "
-                        "JSON checkpoint"
-                    )
-                else:
-                    notices.append(
-                        "checkpoint COSE-wire statement independently verified (signature + "
-                        "CWT identity + consistency proof, if any) -- checkable by a generic "
-                        "COSE/SCITT verifier with no capsule-emit code"
-                    )
-
-        if b.checkpoint.witnesses:
-            stamp_checks = [
-                (
-                    w,
-                    verify_witness_stamp_tristate(
-                        b.checkpoint, w, ts_pubkey_pem=(trust_anchor or {}).get(w.ts_url)
-                    ),
-                )
-                for w in b.checkpoint.witnesses
-            ]
-            any_witnessed = any(v is StampVerdict.WITNESSED for _, (v, _) in stamp_checks)
-            any_invalid = any(v is StampVerdict.INVALID for _, (v, _) in stamp_checks)
-            for w, (verdict, werrs) in stamp_checks:
-                if verdict is StampVerdict.WITNESSED:
-                    continue
-                if verdict is StampVerdict.UNVERIFIED:
-                    # Non-fatal always -- an unpinned TS is not evidence of
-                    # forgery, just evidence we cannot check.
-                    notices.extend(werrs)
-                    continue
-                detail = "; ".join(werrs) if werrs else "does not verify"
-                msg = f"witness stamp ({w.ts_url}) INVALID: {detail}"
-                (notices if any_witnessed else errors).append(msg)
-            if not any_witnessed and any_invalid:
-                errors.append(
-                    f"checkpoint claims {len(b.checkpoint.witnesses)} witness stamp(s) but none "
-                    "verify as authentic TS Receipts for this checkpoint"
-                )
     except Exception as exc:  # noqa: BLE001 — pure verifier, never raises
-        errors.append(f"unexpected error: {exc}")
-        return False, errors + notices
+        return False, step1_errors + [f"unexpected error: {exc}"]
 
-    return not errors, errors + notices
+    log_ok, log_messages = verify_bundle_log_integrity(b, trust_anchor=trust_anchor)
+    return (not step1_errors) and log_ok, step1_errors + log_messages

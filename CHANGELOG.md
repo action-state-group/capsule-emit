@@ -4,6 +4,49 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## 0.7.0
+
+### Changed — emit now depends on `cll` (checkpointed-local-log) ([w3-cll-lib-extraction], #139)
+
+**Minor, not patch:** this release adds a new runtime dependency
+(`checkpointed-local-log`), which changes downstream install graphs —
+that is a MINOR bump by semver, not a patch. 0.6.x remains the pre-`cll`
+line (patches only); 0.7.0 is the "emit now stands on `cll`" release.
+
+**What changed.** `capsule_emit.checkpoint` (the MMR/COSE core) graduates
+out of this repo into the `checkpointed-local-log` repo's `cll` package,
+per the W3 one-neutral-library-per-spec decision — the log layer is
+deliberately not capsule-specific, so it no longer lives under a
+`capsule-*`-branded name. `capsule_emit/checkpoint/{core,cose_wire,emit,
+index,store}.py` become true module aliases over `cll.checkpoint.*` (not
+name-copying re-exports — several call sites and tests rely on real
+identity, e.g. monkeypatching `DEFAULT_TS_URL`). `capsule_emit.bundle`
+becomes a thin wrapper over `cll.checkpoint.bundle`'s genericized
+record/range-level disclosure-bundle primitive, supplying this repo's own
+JSONL-ledger reading and capsule-specific receipt-authenticity check.
+`checkpointed-local-log>=0.1.0` (which pulls in `scitt-cose`/`cbor2`/
+`agent-action-capsule` transitively) moves to `[project.dependencies]` — a
+CORE dependency, not the old `checkpoint` extra (removed): the checkpoint
+submodules import `cll.checkpoint.*` unconditionally at module scope, and
+witnessing reaches that import from a plain `pip install capsule-emit`
+since it's on by default, so every install needs `cll` present.
+
+**Compatibility.** Every existing `capsule_emit.checkpoint.*` /
+`capsule_emit.bundle.*` import path keeps working unchanged — this is a
+dependency-graph and internal-layering change, not an API break. Full
+test suite green against `cll`-as-dependency (1313 passed, 0 failed).
+
+**Alias removal horizon: 0.8.** The `capsule_emit.checkpoint.{core,cose_wire,
+emit,index,store}` compat aliases (the `sys.modules` true-alias shims over
+`cll.checkpoint.*`) are slated for removal in capsule-emit 0.8 — each now
+emits a `DeprecationWarning` on import pointing callers at the equivalent
+`cll.checkpoint.*` import path directly. `capsule_emit.bundle` is unaffected
+(it carries real capsule-specific logic, not a pure alias, and stays).
+
+**Sequencing.** Held until `checkpointed-local-log` flips public (spec-only,
+Sept 9 I-D critical path) and `cll` publishes to PyPI — see that repo's
+held branch, same name (`w3-1-cll-extraction`).
+
 ## 0.6.1
 
 ### Fixed — float tool-arg canonicalization broke the capsule chain (capsule-emit#128, #135)

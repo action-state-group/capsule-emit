@@ -1,30 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
-"""In-memory MMR node store (v0).
+"""Module alias -- ``capsule_emit.checkpoint.store`` IS ``cll.checkpoint.store``.
+See ``capsule_emit/checkpoint/core.py`` and ``capsule_emit/checkpoint/__init__.py``
+for why.
 
-Backs the ``core`` module's ``NodeReader``/``NodeAppender`` protocols. No
-persistence/segment format is built here -- the MMR is rebuilt by replaying
-the wrapped log source (see ``index.MmrLedger.sync``), which is already that
-source's own durable record. A segment/blob format is real future work if
-resuming without a full replay becomes a performance concern, but that's out
-of this task's scope.
+**Removal horizon: 0.8.** Slated for removal in capsule-emit 0.8 -- callers
+should migrate to ``import cll.checkpoint.store`` directly. Importing this
+module emits a ``DeprecationWarning``.
 """
-from __future__ import annotations
+import sys
+import warnings
 
-__all__ = ["MemoryNodeStore"]
+from cll.checkpoint import store as _store
 
+warnings.warn(
+    "capsule_emit.checkpoint.store is a compatibility alias for "
+    "cll.checkpoint.store and will be removed in capsule-emit 0.8 -- "
+    "import cll.checkpoint.store directly instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-class MemoryNodeStore:
-    def __init__(self) -> None:
-        self._nodes: list[bytes] = []
-
-    def size(self) -> int:
-        return len(self._nodes)
-
-    def node(self, pos: int) -> bytes:
-        try:
-            return self._nodes[pos]
-        except IndexError as exc:
-            raise IndexError(f"no node at position {pos}") from exc
-
-    def append_nodes(self, hashes: list[bytes]) -> None:
-        self._nodes.extend(hashes)
+sys.modules[__name__] = _store

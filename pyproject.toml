@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "capsule-emit"
-version = "0.6.1"
+version = "0.7.0"
 description = "One-call emit() for Agent Action Capsules — checkpoint/witness on by default, ledger view CLI, thin framework adapters."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -19,7 +19,22 @@ classifiers = [
     "Topic :: Security :: Cryptography",
     "Development Status :: 3 - Alpha",
 ]
-dependencies = ["agent-action-capsule[anchor,envelope]>=0.2.0", "cryptography>=42.0"]
+# checkpointed-local-log's `cll` package -- the CLL/MMR core, graduated out
+# of this repo per the W3.1 extraction (2026-09-01; was capsule_emit.checkpoint,
+# itself ported from capsule-ledger's mmr/{core,index,store}.py per Amendment
+# E, 2026-08-21). capsule_emit.checkpoint / capsule_emit.bundle are now thin
+# compatibility re-exports over it -- see those modules' docstrings. Pulls in
+# scitt-cose + cbor2 + agent-action-capsule transitively. A CORE dependency,
+# not an extra: capsule_emit/checkpoint/*.py import `cll.checkpoint.*`
+# unconditionally at module scope, and witnessing (which reaches that import
+# lazily but from inside a plain `capsule-emit` install) is ON BY DEFAULT --
+# so every install needs cll available, not just installs that opt into a
+# `checkpoint` extra.
+dependencies = [
+    "agent-action-capsule[anchor,envelope]>=0.2.0",
+    "cryptography>=42.0",
+    "checkpointed-local-log>=0.1.0",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.4,<0.16", "grpcio>=1.60", "protobuf>=5.0"]
@@ -31,7 +46,6 @@ hermes = []
 adk = ["google-adk>=2.0"]
 agno = ["agno>=3.0"]
 dapr-agents = ["dapr-agents>=1.0"]
-checkpoint = ["scitt-cose>=0.2.0"]
 
 [project.scripts]
 capsule-emit = "capsule_emit.cli:main"
