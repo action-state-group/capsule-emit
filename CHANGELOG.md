@@ -33,6 +33,13 @@ of `scitt-cose` directly.
 dependency-graph and internal-layering change, not an API break. Full
 test suite green against `cll`-as-dependency (1313 passed, 0 failed).
 
+**Alias removal horizon: 0.8.** The `capsule_emit.checkpoint.{core,cose_wire,
+emit,index,store}` compat aliases (the `sys.modules` true-alias shims over
+`cll.checkpoint.*`) are slated for removal in capsule-emit 0.8 — each now
+emits a `DeprecationWarning` on import pointing callers at the equivalent
+`cll.checkpoint.*` import path directly. `capsule_emit.bundle` is unaffected
+(it carries real capsule-specific logic, not a pure alias, and stays).
+
 **Sequencing.** Held until `checkpointed-local-log` flips public (spec-only,
 Sept 9 I-D critical path) and `cll` publishes to PyPI — see that repo's
 held branch, same name (`w3-1-cll-extraction`).

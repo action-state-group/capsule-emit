@@ -37,6 +37,11 @@ behavior-preserving re-export so every existing
 caller keeps working unchanged. ``core``/``cose_wire``/``emit``/``index``/
 ``store`` are each a one-line re-export of the matching ``cll.checkpoint``
 submodule -- see those files.
+
+**Removal horizon: 0.8.** These compat aliases are slated for removal in
+capsule-emit 0.8 -- each submodule emits a ``DeprecationWarning`` on
+import; callers should migrate to ``import cll.checkpoint`` (or its
+submodules) directly.
 """
 from .core import (
     ConsistencyProof,
