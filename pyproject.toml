@@ -46,6 +46,12 @@ hermes = []
 adk = ["google-adk>=2.0"]
 agno = ["agno>=3.0"]
 dapr-agents = ["dapr-agents>=1.0"]
+# Microsoft Agent Framework. The middleware surface this adapter rides lives entirely in
+# agent-framework-core; the `agent-framework` meta-package pulls provider/Azure extras we
+# do not need. `agent-framework` is a spelling alias for the same requirement.
+msft-agent-framework = ["agent-framework-core>=1.16.0,<2"]
+agent-framework = ["agent-framework-core>=1.16.0,<2"]
+checkpoint = ["scitt-cose>=0.2.0"]
 
 [project.scripts]
 capsule-emit = "capsule_emit.cli:main"
