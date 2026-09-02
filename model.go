@@ -18,7 +18,41 @@ type Input struct {
 	Disposition *Disposition
 	Effect      *Effect
 	Chain       *Chain
+	Model       *Model
+	Compute     *ComputeAttestation
 	compute     *computeAttestation
+}
+
+// Model identifies the provider and model that performed the recorded work.
+// Either field may be omitted when the application did not observe it.
+type Model struct {
+	Provider string
+	ModelID  string
+}
+
+// ComputeAttestation binds the model invocation to its input, output, and
+// runtime. Digests are AAC JSON-DIGEST values produced by DigestJSON.
+type ComputeAttestation struct {
+	AgentInputDigest  string
+	AgentOutputDigest string
+	Runtime           string
+}
+
+// SealInput is the application-facing one-call producer API. For a regular
+// Capsule, non-nil Payload is digest-committed as agent_input_digest and
+// non-nil AgentOutput is digest-committed as agent_output_digest. Nil includes
+// typed nil pointer, map, and slice values. Use a non-nil
+// json.RawMessage("null") to commit explicit JSON null. For a
+// composition, set Members to values returned by Who, Can, Did, or Audit;
+// Payload and AgentOutput must then be nil.
+type SealInput struct {
+	Capsule     Input
+	Payload     any
+	AgentOutput any
+	Model       *Model
+	Runtime     string
+	Members     []SlotMember
+	Identity    SigningIdentity
 }
 
 type digestReference struct {
@@ -67,11 +101,12 @@ type BuiltPayload struct {
 	JSON      []byte
 }
 
-// SlotMember binds an existing Capsule to one composition role. Valid values
-// come from Who, Can, Did, or Audit; its zero value is rejected.
+// SlotMember binds an existing built or sealed Capsule to one composition
+// role. Valid values come from Who, Can, Did, or Audit; its zero value is
+// rejected.
 type SlotMember struct {
 	slot   string
-	member BuiltPayload
+	member compositionCapsule
 }
 
 // Result contains a signature-free Capsule and one Producer Envelope.

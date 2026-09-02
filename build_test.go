@@ -101,6 +101,25 @@ func TestBuildAllowsCounterpartyApprover(t *testing.T) {
 	assert.Equal(t, "counterparty", built.Value["disposition"].(map[string]any)["approver"])
 }
 
+func TestBuildMapsExplicitModelAndComputeAttestation(t *testing.T) {
+	input := validInput()
+	input.Model = &Model{Provider: "openai", ModelID: "gpt-5"}
+	input.Compute = &ComputeAttestation{
+		AgentInputDigest:  requestDigest,
+		AgentOutputDigest: responseDigest,
+		Runtime:           "custom-runtime",
+	}
+	built, err := Build(input)
+	require.NoError(t, err)
+	model := built.Value["model_attestation"].(map[string]any)
+	assert.Equal(t, "openai", model["provider"])
+	assert.Equal(t, "gpt-5", model["model_id"])
+	compute := model["compute_attestation"].(map[string]any)
+	assert.Equal(t, requestDigest, compute["agent_input_digest"])
+	assert.Equal(t, responseDigest, compute["agent_output_digest"])
+	assert.Equal(t, "custom-runtime", compute["runtime"])
+}
+
 func TestBuildRejectsInvalidInput(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -112,6 +131,15 @@ func TestBuildRejectsInvalidInput(t *testing.T) {
 		{name: "developer", mutate: func(input *Input) { input.Developer = "" }, contains: "developer"},
 		{name: "timestamp", mutate: func(input *Input) { input.Timestamp = time.Time{} }, contains: "timestamp"},
 		{name: "action type", mutate: func(input *Input) { input.ActionType = "execute" }, contains: "action type"},
+		{name: "act remains non-conformant", mutate: func(input *Input) { input.ActionType = "act" }, contains: "action type"},
+		{name: "retrieve remains non-conformant", mutate: func(input *Input) { input.ActionType = "retrieve" }, contains: "action type"},
+		{name: "empty model", mutate: func(input *Input) { input.Model = &Model{} }, contains: "model must include"},
+		{name: "blank model provider", mutate: func(input *Input) { input.Model = &Model{Provider: " ", ModelID: "model"} }, contains: "model provider"},
+		{name: "blank model id", mutate: func(input *Input) { input.Model = &Model{Provider: "provider", ModelID: " "} }, contains: "model id"},
+		{name: "empty compute", mutate: func(input *Input) { input.Compute = &ComputeAttestation{} }, contains: "compute attestation must include"},
+		{name: "input compute digest", mutate: func(input *Input) { input.Compute = &ComputeAttestation{AgentInputDigest: "bad"} }, contains: "agent input digest"},
+		{name: "output compute digest", mutate: func(input *Input) { input.Compute = &ComputeAttestation{AgentOutputDigest: "bad"} }, contains: "agent output digest"},
+		{name: "blank runtime", mutate: func(input *Input) { input.Compute = &ComputeAttestation{Runtime: " "} }, contains: "runtime must be non-empty"},
 		{name: "decide disposition", mutate: func(input *Input) { input.Disposition = nil }, contains: "requires a disposition"},
 		{name: "decision", mutate: func(input *Input) { input.Disposition.Decision = "" }, contains: "decision"},
 		{name: "approver", mutate: func(input *Input) { input.Disposition.Approver = "robot" }, contains: "approver"},

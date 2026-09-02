@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"reflect"
 
 	"github.com/veraison/go-cose"
 )
@@ -98,15 +99,67 @@ func producerProtectedHeaders(publicKey ed25519.PublicKey) []byte {
 	return protected
 }
 
-// Seal builds one signature-free Capsule and attaches one Producer Envelope.
-func Seal(input Input, identity SigningIdentity) (Result, error) {
-	built, err := Build(input)
+// Seal digest-commits caller-owned JSON, builds one signature-free Capsule,
+// and attaches one Producer Envelope. It delegates canonicalization and
+// signing to DigestJSON, Build or BuildComposition, and Sign.
+func Seal(input SealInput) (Result, error) {
+	if input.Capsule.Model != nil || input.Capsule.Compute != nil {
+		return Result{}, fmt.Errorf("SealInput model and compute metadata must use Model and Runtime fields")
+	}
+
+	capsule := input.Capsule
+	capsule.Model = input.Model
+	var built BuiltPayload
+	var err error
+	if input.Members != nil {
+		if !isAbsentJSONValue(input.Payload) || !isAbsentJSONValue(input.AgentOutput) {
+			return Result{}, fmt.Errorf("composition Seal must not include payload or agent output")
+		}
+		if input.Runtime != "" {
+			capsule.Compute = &ComputeAttestation{Runtime: input.Runtime}
+		}
+		built, err = BuildComposition(capsule, input.Members...)
+	} else {
+		compute := &ComputeAttestation{
+			Runtime: input.Runtime,
+		}
+		var digestErr error
+		if !isAbsentJSONValue(input.Payload) {
+			compute.AgentInputDigest, digestErr = DigestJSON(input.Payload)
+			if digestErr != nil {
+				return Result{}, fmt.Errorf("digest agent input: %w", digestErr)
+			}
+		}
+		if !isAbsentJSONValue(input.AgentOutput) {
+			compute.AgentOutputDigest, digestErr = DigestJSON(input.AgentOutput)
+			if digestErr != nil {
+				return Result{}, fmt.Errorf("digest agent output: %w", digestErr)
+			}
+		}
+		if hasComputeAttestation(compute) {
+			capsule.Compute = compute
+		}
+		built, err = Build(capsule)
+	}
 	if err != nil {
 		return Result{}, err
 	}
-	envelope, err := Sign(built, identity)
+	envelope, err := Sign(built, input.Identity)
 	if err != nil {
 		return Result{}, err
 	}
 	return Result{CapsuleID: built.CapsuleID, Payload: append([]byte(nil), built.JSON...), Envelope: envelope}, nil
+}
+
+func isAbsentJSONValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflected.IsNil()
+	default:
+		return false
+	}
 }

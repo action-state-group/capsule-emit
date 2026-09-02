@@ -45,24 +45,50 @@ func Received(input Input, artifact []byte, artifactType string) (BuiltPayload, 
 	return Build(input)
 }
 
-// Who assigns an existing Capsule to the identity or pedigree slot.
-func Who(member BuiltPayload) SlotMember {
-	return SlotMember{slot: slotWho, member: member}
+type compositionCapsule struct {
+	capsuleID string
+	json      []byte
 }
 
-// Can assigns an existing Capsule to the authority or mandate slot.
-func Can(member BuiltPayload) SlotMember {
-	return SlotMember{slot: slotCan, member: member}
+type compositionMember interface {
+	BuiltPayload | Result
 }
 
-// Did assigns an existing Capsule to the performed-action slot.
-func Did(member BuiltPayload) SlotMember {
-	return SlotMember{slot: slotDid, member: member}
+// Who assigns an existing built or sealed Capsule to the identity or pedigree slot.
+func Who[T compositionMember](member T) SlotMember {
+	return newSlotMember(slotWho, member)
 }
 
-// Audit assigns an existing Capsule to the independent-review slot.
-func Audit(member BuiltPayload) SlotMember {
-	return SlotMember{slot: slotAudit, member: member}
+// Can assigns an existing built or sealed Capsule to the authority or mandate slot.
+func Can[T compositionMember](member T) SlotMember {
+	return newSlotMember(slotCan, member)
+}
+
+// Did assigns an existing built or sealed Capsule to the performed-action slot.
+func Did[T compositionMember](member T) SlotMember {
+	return newSlotMember(slotDid, member)
+}
+
+// Audit assigns an existing built or sealed Capsule to the independent-review slot.
+func Audit[T compositionMember](member T) SlotMember {
+	return newSlotMember(slotAudit, member)
+}
+
+func newSlotMember[T compositionMember](slot string, member T) SlotMember {
+	var reference compositionCapsule
+	switch value := any(member).(type) {
+	case BuiltPayload:
+		reference = compositionCapsule{
+			capsuleID: value.CapsuleID,
+			json:      append([]byte(nil), value.JSON...),
+		}
+	case Result:
+		reference = compositionCapsule{
+			capsuleID: value.CapsuleID,
+			json:      append([]byte(nil), value.Payload...),
+		}
+	}
+	return SlotMember{slot: slot, member: reference}
 }
 
 // BuildComposition builds a Capsule that binds existing signature-free
@@ -73,7 +99,7 @@ func BuildComposition(input Input, members ...SlotMember) (BuiltPayload, error) 
 	if len(members) == 0 {
 		return BuiltPayload{}, fmt.Errorf("composition requires at least one slot member")
 	}
-	bySlot := make(map[string]BuiltPayload, len(members))
+	bySlot := make(map[string]compositionCapsule, len(members))
 	seenIDs := make(map[string]string, len(members))
 	for index, slotted := range members {
 		if !isCompositionSlot(slotted.slot) {
@@ -83,17 +109,17 @@ func BuildComposition(input Input, members ...SlotMember) (BuiltPayload, error) 
 			return BuiltPayload{}, fmt.Errorf("composition duplicates %s slot", slotted.slot)
 		}
 		member := slotted.member
-		if !hexDigestPattern.MatchString(member.CapsuleID) {
+		if !hexDigestPattern.MatchString(member.capsuleID) {
 			return BuiltPayload{}, fmt.Errorf("composition %s member has malformed Capsule ID", slotted.slot)
 		}
-		verified, err := VerifyCapsule(member.JSON)
-		if err != nil || verified.CapsuleID == nil || *verified.CapsuleID != member.CapsuleID {
+		verified, err := VerifyCapsule(member.json)
+		if err != nil || verified.CapsuleID == nil || *verified.CapsuleID != member.capsuleID {
 			return BuiltPayload{}, fmt.Errorf("composition %s member is not a matching verified format-4 Capsule", slotted.slot)
 		}
-		if priorSlot, exists := seenIDs[member.CapsuleID]; exists {
-			return BuiltPayload{}, fmt.Errorf("composition %s slot duplicates Capsule ID %s from %s slot", slotted.slot, member.CapsuleID, priorSlot)
+		if priorSlot, exists := seenIDs[member.capsuleID]; exists {
+			return BuiltPayload{}, fmt.Errorf("composition %s slot duplicates Capsule ID %s from %s slot", slotted.slot, member.capsuleID, priorSlot)
 		}
-		seenIDs[member.CapsuleID] = slotted.slot
+		seenIDs[member.capsuleID] = slotted.slot
 		bySlot[slotted.slot] = member
 	}
 
@@ -106,7 +132,7 @@ func BuildComposition(input Input, members ...SlotMember) (BuiltPayload, error) 
 		references = append(references, digestReference{
 			Type:      capsuleReferenceType,
 			DigestAlg: digestAlgorithmSHA256,
-			Digest:    member.CapsuleID,
+			Digest:    member.capsuleID,
 			Slot:      slot,
 		})
 	}

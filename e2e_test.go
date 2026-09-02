@@ -28,7 +28,11 @@ func TestJSONDigestsToVerifiedV4CapsuleEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	identity, err := NewEd25519SigningIdentity(privateKey)
 	require.NoError(t, err)
-	created, err := Seal(input, identity)
+	created, err := Seal(SealInput{
+		Capsule:  input,
+		Payload:  map[string]any{"channel": "C123", "text": "hello"},
+		Identity: identity,
+	})
 	require.NoError(t, err)
 	class1, err := VerifyCapsule(created.Payload)
 	require.NoError(t, err)

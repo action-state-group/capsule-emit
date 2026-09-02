@@ -31,12 +31,12 @@ retry calls, persist Capsules, authorize signers, or maintain a ledger.
 ## Architecture
 
 ```text
-JSON values → DigestJSON → Effect digests → Build ───────────────→ Capsule
+JSON values → DigestJSON → agent input/output digests → Build ──→ Capsule
 foreign bytes ───────────────────────→ Carry / Received ─────────→ Capsule
 existing Capsules → Who / Can / Did / Audit → BuildComposition ─→ Capsule
 
 Capsule + identity → Sign → Producer Envelope
-Input + identity → Seal (= Build + Sign) → Capsule + Envelope
+SealInput → DigestJSON + Build/BuildComposition + Sign → Capsule + Envelope
 ```
 
 - `digest.go` marshals caller-owned JSON values and derives strict AAC
@@ -52,6 +52,12 @@ Input + identity → Seal (= Build + Sign) → Capsule + Envelope
 - **Format 4 only.** Emit draft-04, format 4, and
   `canonicalization_id: "jcs"`. Do not restore format-2 construction or the
   legacy signed-payload statement API.
+- **Class 1 action types.** Emit only `fyi` and `decide`. Although the Python
+  convenience producer currently accepts `act` and `retrieve`, draft-04 and
+  both reference verifiers reject those wire values as `action_type_invalid`.
+- **One implementation per primitive.** `Seal` orchestrates `DigestJSON`,
+  `Build` or `BuildComposition`, and `Sign`. It must not duplicate JSON
+  canonicalization, Capsule-ID, composition, or envelope logic.
 - **Signer-independent identity.** Capsule ID excludes top-level `capsule_id`
   and local-only Producer Envelope fields `signature` and `key_id`; `chain`
   remains committed. `VerifyCapsule` does not authenticate those local-only
@@ -71,6 +77,9 @@ Input + identity → Seal (= Build + Sign) → Capsule + Envelope
   Capsule IDs to closed slot vocabulary. `BuildComposition` canonicalizes slot
   order and rejects empty membership, duplicate slots, duplicate IDs, and
   unverified members. Persistence is external.
+- **Construction commitments do not mix.** Authored agent input or output
+  digests cannot coexist with carried-artifact or composed-member bindings.
+  Enforce this at the shared `Build` validation boundary.
 - **Determinism.** Do not add wall-clock defaults, random action IDs, implicit
   sorting, or mutable global protocol state.
 - **Defensive decoding.** Preserve duplicate-key, trailing-data, invalid UTF-8,

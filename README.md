@@ -66,7 +66,20 @@ func run() error {
 		},
 	}
 
-	result, err := emit.Seal(input, identity)
+	result, err := emit.Seal(emit.SealInput{
+		Capsule: input,
+		Payload: map[string]any{
+			"channel": "C123",
+			"text":    "hello",
+		},
+		AgentOutput: map[string]any{"message_id": "M456"},
+		Model: &emit.Model{
+			Provider: "anthropic",
+			ModelID:  "claude-sonnet-4-6",
+		},
+		Runtime:  "example-runtime",
+		Identity: identity,
+	})
 	if err != nil {
 		return err
 	}
@@ -96,6 +109,24 @@ caller policy.
 Multiple signers call `Sign` independently with the same `BuiltPayload`.
 Envelope order and signer count do not change the Capsule or its ID.
 
+`Seal` is the recommended application-facing API. It computes
+`agent_input_digest` from non-nil `Payload`, computes `agent_output_digest` when
+`AgentOutput` is present, maps provider and model ID into
+`model_attestation`, maps runtime into `compute_attestation`, then delegates
+to `Build` and `Sign`. A nil payload, including a typed nil pointer, map, or
+slice, is absent; use a non-nil
+`json.RawMessage("null")` to commit explicit JSON null. Raw payload values never
+enter the Capsule.
+
+`DigestJSON`, `Build`, `BuildComposition`, and `Sign` remain public stable
+primitives for applications that need to control projections, commitments,
+construction, or signing separately. Effect request and response digests stay
+caller-owned; `Seal` does not replace them with the general agent digests.
+
+AAC draft-04 defines only `fyi` and `decide` as conformant `action_type`
+values. The package rejects other values so every `Build` result continues to
+pass the current AAC Class 1 verifier.
+
 ## Typed construction
 
 `Carry` binds exact opaque bytes as a generic `foreign-artifact`. `Received`
@@ -103,8 +134,9 @@ does the same with a non-empty caller-declared CPB type. Both record the raw
 SHA-256 digest as `carried_artifact.digest` and `carried_input_digest`; they
 never reinterpret foreign bytes as JSON.
 
-`Who`, `Can`, `Did`, and `Audit` assign existing `BuiltPayload` values to the
-four format-4 composition roles. `BuildComposition` writes references in the
+`Who`, `Can`, `Did`, and `Audit` assign existing `BuiltPayload` values or
+high-level `Seal` results to the four format-4 composition roles.
+`BuildComposition` writes references in the
 canonical WHO, CAN, DID, AUDIT order regardless of argument order. It rejects
 empty membership, duplicate slots, duplicate Capsule IDs, and members whose
 stored bytes do not verify against their claimed IDs.
@@ -123,8 +155,23 @@ composed, err := emit.BuildComposition(
 envelope, err := emit.Sign(composed, identity)
 ```
 
+The same DID composition can use the high-level signing path:
+
+```go
+result, err := emit.Seal(emit.SealInput{
+	Capsule:  input,
+	Members:  []emit.SlotMember{emit.Did(actionCapsule)},
+	Identity: identity,
+})
+```
+
 Slot helpers reference existing Capsules unchanged. They do not mint or persist
 member Capsules.
+
+`Received` and `BuildComposition` may carry provider, model, and runtime
+metadata, but reject explicit agent input or output digests. Carried bytes and
+slot members already own those construction commitments; mixing authored
+payload digests into the same record would make provenance ambiguous.
 
 These functions build records only. They do not append logs, persist Capsules,
 deliver to a ledger, retry effects, or authorize signers.

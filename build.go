@@ -56,10 +56,8 @@ func Build(input Input) (BuiltPayload, error) {
 			"relation":          string(input.Chain.Relation),
 		}
 	}
-	if input.compute != nil {
-		payload["model_attestation"] = map[string]any{
-			"compute_attestation": computeAttestationMap(*input.compute),
-		}
+	if attestation := modelAttestationMap(input); attestation != nil {
+		payload["model_attestation"] = attestation
 	}
 	if err := validatePayloadText(payload, "$"); err != nil {
 		return BuiltPayload{}, err
@@ -81,15 +79,46 @@ func Build(input Input) (BuiltPayload, error) {
 	return BuiltPayload{CapsuleID: capsuleID, Value: payload, JSON: encoded}, nil
 }
 
-func computeAttestationMap(attestation computeAttestation) map[string]any {
+func modelAttestationMap(input Input) map[string]any {
 	result := make(map[string]any)
-	if attestation.CarriedArtifact != nil {
-		result["carried_artifact"] = digestReferenceMap(*attestation.CarriedArtifact)
-		result["carried_input_digest"] = attestation.CarriedInputDigest
+	if input.Model != nil {
+		if input.Model.ModelID != "" {
+			result["model_id"] = input.Model.ModelID
+		}
+		if input.Model.Provider != "" {
+			result["provider"] = input.Model.Provider
+		}
 	}
-	if len(attestation.ComposedMembers) > 0 {
-		members := make([]any, 0, len(attestation.ComposedMembers))
-		for _, member := range attestation.ComposedMembers {
+	compute := computeAttestationMap(input.Compute, input.compute)
+	if len(compute) > 0 {
+		result["compute_attestation"] = compute
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func computeAttestationMap(attestation *ComputeAttestation, binding *computeAttestation) map[string]any {
+	result := make(map[string]any)
+	if attestation != nil {
+		if attestation.AgentInputDigest != "" {
+			result["agent_input_digest"] = attestation.AgentInputDigest
+		}
+		if attestation.AgentOutputDigest != "" {
+			result["agent_output_digest"] = attestation.AgentOutputDigest
+		}
+		if attestation.Runtime != "" {
+			result["runtime"] = attestation.Runtime
+		}
+	}
+	if binding != nil && binding.CarriedArtifact != nil {
+		result["carried_artifact"] = digestReferenceMap(*binding.CarriedArtifact)
+		result["carried_input_digest"] = binding.CarriedInputDigest
+	}
+	if binding != nil && len(binding.ComposedMembers) > 0 {
+		members := make([]any, 0, len(binding.ComposedMembers))
+		for _, member := range binding.ComposedMembers {
 			members = append(members, digestReferenceMap(member))
 		}
 		result["composed_members"] = members
@@ -138,6 +167,12 @@ func validateInput(input Input) error {
 			return err
 		}
 	}
+	if err := validateAttestation(input.Model, input.Compute); err != nil {
+		return err
+	}
+	if input.compute != nil && hasAuthoredDigests(input.Compute) {
+		return fmt.Errorf("carried or composed binding must not include agent input or output digest")
+	}
 	if input.Chain != nil {
 		if !hexDigestPattern.MatchString(input.Chain.ParentCapsuleID) {
 			return fmt.Errorf("chain parent capsule id must be 64 lowercase hex characters")
@@ -150,6 +185,49 @@ func validateInput(input Input) error {
 		}
 	}
 	return nil
+}
+
+func validateAttestation(model *Model, compute *ComputeAttestation) error {
+	if model != nil {
+		if strings.TrimSpace(model.Provider) == "" && strings.TrimSpace(model.ModelID) == "" {
+			return fmt.Errorf("model must include provider or model id")
+		}
+		if model.Provider != "" && strings.TrimSpace(model.Provider) == "" {
+			return fmt.Errorf("model provider must be non-empty when present")
+		}
+		if model.ModelID != "" && strings.TrimSpace(model.ModelID) == "" {
+			return fmt.Errorf("model id must be non-empty when present")
+		}
+	}
+	if compute == nil {
+		return nil
+	}
+	if compute.Runtime != "" && strings.TrimSpace(compute.Runtime) == "" {
+		return fmt.Errorf("compute attestation runtime must be non-empty when present")
+	}
+	if !hasComputeAttestation(compute) {
+		return fmt.Errorf("compute attestation must include a digest or runtime")
+	}
+	for _, field := range []struct {
+		name   string
+		digest string
+	}{
+		{name: "agent input", digest: compute.AgentInputDigest},
+		{name: "agent output", digest: compute.AgentOutputDigest},
+	} {
+		if field.digest != "" && !hexDigestPattern.MatchString(field.digest) {
+			return fmt.Errorf("compute attestation %s digest must be 64 lowercase hex characters", field.name)
+		}
+	}
+	return nil
+}
+
+func hasComputeAttestation(compute *ComputeAttestation) bool {
+	return compute != nil && (compute.AgentInputDigest != "" || compute.AgentOutputDigest != "" || compute.Runtime != "")
+}
+
+func hasAuthoredDigests(compute *ComputeAttestation) bool {
+	return compute != nil && (compute.AgentInputDigest != "" || compute.AgentOutputDigest != "")
 }
 
 func validateDisposition(disposition Disposition) error {

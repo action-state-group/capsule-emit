@@ -92,6 +92,35 @@ func TestReceivedRejectsAmbiguousArtifact(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestReceivedRejectsAuthoredDigestsButAllowsRuntime(t *testing.T) {
+	input := validInput()
+	input.Compute = &ComputeAttestation{AgentInputDigest: requestDigest}
+	_, err := Received(input, []byte("artifact"), "provider-ack")
+	assert.ErrorContains(t, err, "must not include agent input or output digest")
+
+	input.Compute = &ComputeAttestation{Runtime: "gateway"}
+	built, err := Received(input, []byte("artifact"), "provider-ack")
+	require.NoError(t, err)
+	compute := built.Value["model_attestation"].(map[string]any)["compute_attestation"].(map[string]any)
+	assert.Equal(t, "gateway", compute["runtime"])
+	assert.Contains(t, compute, "carried_artifact")
+}
+
+func TestBuildCompositionRejectsAuthoredDigestsButAllowsRuntime(t *testing.T) {
+	member := buildMember(t, "composition-member")
+	input := validInput()
+	input.Compute = &ComputeAttestation{AgentOutputDigest: responseDigest}
+	_, err := BuildComposition(input, Did(member))
+	assert.ErrorContains(t, err, "must not include agent input or output digest")
+
+	input.Compute = &ComputeAttestation{Runtime: "orchestrator"}
+	built, err := BuildComposition(input, Did(member))
+	require.NoError(t, err)
+	compute := built.Value["model_attestation"].(map[string]any)["compute_attestation"].(map[string]any)
+	assert.Equal(t, "orchestrator", compute["runtime"])
+	assert.Contains(t, compute, "composed_members")
+}
+
 func buildMember(t *testing.T, actionID string) BuiltPayload {
 	t.Helper()
 	input := validInput()
