@@ -23,10 +23,13 @@ name-copying re-exports — several call sites and tests rely on real
 identity, e.g. monkeypatching `DEFAULT_TS_URL`). `capsule_emit.bundle`
 becomes a thin wrapper over `cll.checkpoint.bundle`'s genericized
 record/range-level disclosure-bundle primitive, supplying this repo's own
-JSONL-ledger reading and capsule-specific receipt-authenticity check. The
-`checkpoint` extra now requests `checkpointed-local-log>=0.1.0` (which
-pulls in `scitt-cose`/`cbor2`/`agent-action-capsule` transitively) instead
-of `scitt-cose` directly.
+JSONL-ledger reading and capsule-specific receipt-authenticity check.
+`checkpointed-local-log>=0.1.0` (which pulls in `scitt-cose`/`cbor2`/
+`agent-action-capsule` transitively) moves to `[project.dependencies]` — a
+CORE dependency, not the old `checkpoint` extra (removed): the checkpoint
+submodules import `cll.checkpoint.*` unconditionally at module scope, and
+witnessing reaches that import from a plain `pip install capsule-emit`
+since it's on by default, so every install needs `cll` present.
 
 **Compatibility.** Every existing `capsule_emit.checkpoint.*` /
 `capsule_emit.bundle.*` import path keeps working unchanged — this is a
