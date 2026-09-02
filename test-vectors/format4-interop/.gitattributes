@@ -1,0 +1,5 @@
+input.json -text
+vectors.json -text
+SHA256SUMS -text
+valid/** -text
+valid/*/*.cose binary
