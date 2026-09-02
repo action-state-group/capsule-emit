@@ -2,7 +2,7 @@
 set -euo pipefail
 
 threshold="${1:-90.0}"
-profile="$(mktemp "${TMPDIR:-/tmp}/capsule-producer-coverage.XXXXXX")"
+profile="$(mktemp "${TMPDIR:-/tmp}/capsule-emit-go-coverage.XXXXXX")"
 trap 'rm -f -- "${profile}"' EXIT
 
 go test ./... -covermode=atomic -coverprofile="${profile}"

@@ -1,4 +1,4 @@
-package producer
+package emit
 
 import (
 	"bytes"

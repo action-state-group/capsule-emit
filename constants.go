@@ -1,4 +1,4 @@
-package producer
+package emit
 
 const (
 	// SpecVersion is the AAC profile version implemented by this package.

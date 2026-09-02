@@ -1,4 +1,4 @@
-package producer
+package emit
 
 import (
 	jsonv2 "encoding/json/v2"

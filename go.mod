@@ -1,4 +1,4 @@
-module github.com/ethanyzhang/capsule-producer-go
+module github.com/ethanyzhang/capsule-emit-go
 
 go 1.27.0
 

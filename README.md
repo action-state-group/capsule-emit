@@ -1,8 +1,13 @@
-# capsule-producer-go
+# capsule-emit-go
 
-Go producer for Agent Action Capsule format 4. The library builds deterministic,
-signature-free Capsules and creates independent COSE_Sign1 Producer Envelopes
-over their raw 32-byte Capsule IDs.
+Go emission core for Agent Action Capsule format 4. The library builds
+deterministic, signature-free Capsules and creates independent COSE_Sign1
+Producer Envelopes over their raw 32-byte Capsule IDs.
+
+The Go API keeps persistence explicit: `Seal` builds and signs but does not
+append a ledger or contact a witness. Applications that need ordered
+persistence and witnessed checkpoints compose it with
+[`capsule-ledger-go`](https://github.com/ethanyzhang/capsule-ledger-go).
 
 It supports format 4 only. There is no legacy `Create` or signed-payload
 statement API, and verification rejects formats 2 and 3.
@@ -12,7 +17,7 @@ statement API, and verification rejects formats 2 and 3.
 Requires Go 1.27 or newer. `DigestJSON` uses `encoding/json/v2`.
 
 ```bash
-go get github.com/ethanyzhang/capsule-producer-go
+go get github.com/ethanyzhang/capsule-emit-go
 ```
 
 ## Build, sign, and verify
@@ -28,7 +33,7 @@ import (
 	"log"
 	"time"
 
-	producer "github.com/ethanyzhang/capsule-producer-go"
+	"github.com/ethanyzhang/capsule-emit-go"
 )
 
 func main() {
@@ -42,34 +47,34 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	identity, err := producer.NewEd25519SigningIdentity(privateKey)
+	identity, err := emit.NewEd25519SigningIdentity(privateKey)
 	if err != nil {
 		return err
 	}
 
-	input := producer.Input{
+	input := emit.Input{
 		ActionID:   "send-018f6f4d",
-		ActionType: producer.ActionTypeDecide,
+		ActionType: emit.ActionTypeDecide,
 		Operator:   "local-operator",
 		Developer:  "example-agent@1.0.0",
 		Timestamp:  time.Now(),
-		Disposition: &producer.Disposition{
-			Decision:      producer.DecisionAccept,
-			Approver:      producer.ApproverPolicy,
-			VerdictClass:  producer.VerdictExecuted,
+		Disposition: &emit.Disposition{
+			Decision:      emit.DecisionAccept,
+			Approver:      emit.ApproverPolicy,
+			VerdictClass:  emit.VerdictExecuted,
 			HumanDisposed: false,
 		},
 	}
 
-	result, err := producer.Seal(input, identity)
+	result, err := emit.Seal(input, identity)
 	if err != nil {
 		return err
 	}
-	class1, err := producer.VerifyCapsule(result.Payload)
+	class1, err := emit.VerifyCapsule(result.Payload)
 	if err != nil || !class1.OK {
 		return err
 	}
-	authenticated, err := producer.VerifyEnvelope(result.CapsuleID, result.Envelope)
+	authenticated, err := emit.VerifyEnvelope(result.CapsuleID, result.Envelope)
 	if err != nil {
 		return err
 	}
@@ -103,9 +108,9 @@ Capsule-ID references. It rejects empty membership and duplicate IDs.
 
 ```go
 // illustrative — see the full example above for setup and error handling
-carried, err := producer.Received(input, artifactBytes, "provider-ack")
-composed, err := producer.Compose(input, []producer.BuiltPayload{first, carried})
-envelope, err := producer.Sign(composed, identity)
+carried, err := emit.Received(input, artifactBytes, "provider-ack")
+composed, err := emit.Compose(input, []emit.BuiltPayload{first, carried})
+envelope, err := emit.Sign(composed, identity)
 ```
 
 These functions build records only. They do not append logs, persist Capsules,
@@ -124,11 +129,11 @@ JSON value rather than assuming its output matches `encoding/json/v2`.
 
 ```go
 // Illustrative: request and response are caller-owned values.
-requestDigest, err := producer.DigestJSON(request)
+requestDigest, err := emit.DigestJSON(request)
 if err != nil {
 	return err
 }
-responseDigest, err := producer.DigestJSON(response)
+responseDigest, err := emit.DigestJSON(response)
 if err != nil {
 	return err
 }

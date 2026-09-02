@@ -1,4 +1,4 @@
-package producer
+package emit
 
 import (
 	"crypto/ed25519"
