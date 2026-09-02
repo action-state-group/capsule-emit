@@ -1,0 +1,31 @@
+{
+  "format_version": "1",
+  "profile": "draft-mih-scitt-agent-action-capsule-04#format4-interop",
+  "generator": "capsule_emit.surface seal/received/slot composition",
+  "generator_versions": {
+    "capsule-emit": "0.6.1",
+    "agent-action-capsule": "0.2.0"
+  },
+  "cases": [
+    {
+      "name": "authored",
+      "path": "valid/authored"
+    },
+    {
+      "name": "received",
+      "path": "valid/received"
+    },
+    {
+      "name": "who",
+      "path": "valid/who"
+    },
+    {
+      "name": "did",
+      "path": "valid/did"
+    },
+    {
+      "name": "composition",
+      "path": "valid/composition"
+    }
+  ]
+}

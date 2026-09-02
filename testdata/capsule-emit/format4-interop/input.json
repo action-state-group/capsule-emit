@@ -1,0 +1,87 @@
+{
+  "format_version": "1",
+  "seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "timestamp": "2026-09-01T12:34:56.836000Z",
+  "operator": "example-org",
+  "developer": "example-agent@v1",
+  "disposition": {
+    "decision": "accept",
+    "approver": "policy",
+    "human_disposed": false
+  },
+  "records": [
+    {
+      "name": "authored",
+      "operation": "seal",
+      "uuid": "00000000-0000-0000-0000-000000000001",
+      "action_id": "investigate/00000000-0000-0000-0000-000000000001",
+      "action": "investigate",
+      "action_type": "decide",
+      "verdict": "executed",
+      "payload": {
+        "task": "summarize",
+        "ticket": 105
+      },
+      "agent_output": {
+        "scope": "image configuration",
+        "status": "identified"
+      },
+      "model": {
+        "provider": "openai",
+        "model_id": "gpt-5"
+      },
+      "runtime": "custom-runtime@v1"
+    },
+    {
+      "name": "received",
+      "operation": "received",
+      "uuid": "00000000-0000-0000-0000-000000000002",
+      "action_id": "carry/00000000-0000-0000-0000-000000000002",
+      "action": "carry",
+      "action_type": "decide",
+      "verdict": "executed",
+      "artifact_type": "machine-mandate",
+      "artifact_utf8": "{\"iss\":\"example-authority\",\"scope\":\"investigate\"}"
+    },
+    {
+      "name": "who",
+      "operation": "seal",
+      "uuid": "00000000-0000-0000-0000-000000000003",
+      "action_id": "who/00000000-0000-0000-0000-000000000003",
+      "action": "who",
+      "action_type": "decide",
+      "verdict": "executed",
+      "payload": {
+        "agent": "example-agent@v1",
+        "tenant": "example-org"
+      }
+    },
+    {
+      "name": "did",
+      "operation": "seal",
+      "uuid": "00000000-0000-0000-0000-000000000004",
+      "action_id": "did/00000000-0000-0000-0000-000000000004",
+      "action": "did",
+      "action_type": "decide",
+      "verdict": "executed",
+      "payload": {
+        "comment_id": 9001,
+        "repository": "example/project"
+      }
+    },
+    {
+      "name": "composition",
+      "operation": "composition",
+      "uuid": "00000000-0000-0000-0000-000000000005",
+      "action_id": "compose/00000000-0000-0000-0000-000000000005",
+      "action": "compose",
+      "action_type": "decide",
+      "verdict": "executed",
+      "members": [
+        {"slot": "did", "record": "did"},
+        {"slot": "can", "record": "received"},
+        {"slot": "who", "record": "who"}
+      ]
+    }
+  ]
+}

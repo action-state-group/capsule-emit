@@ -32,7 +32,7 @@ func Build(input Input) (BuiltPayload, error) {
 		"action_type":         string(input.ActionType),
 		"operator":            input.Operator,
 		"developer":           input.Developer,
-		"timestamp":           input.Timestamp.UTC().Format(time.RFC3339Nano),
+		"timestamp":           formatTimestamp(input.Timestamp),
 		"assurance":           assuranceMap(input.Effect, input.Chain),
 	}
 	if input.EpochID != "" {
@@ -185,6 +185,16 @@ func validateInput(input Input) error {
 		}
 	}
 	return nil
+}
+
+// formatTimestamp matches capsule-emit's UTC datetime wire form: whole seconds
+// omit the fraction, while non-zero microseconds always use six digits.
+func formatTimestamp(timestamp time.Time) string {
+	utc := timestamp.UTC().Truncate(time.Microsecond)
+	if utc.Nanosecond() == 0 {
+		return utc.Format(time.RFC3339)
+	}
+	return utc.Format("2006-01-02T15:04:05.000000Z")
 }
 
 func validateAttestation(model *Model, compute *ComputeAttestation) error {

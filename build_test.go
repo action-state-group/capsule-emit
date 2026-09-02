@@ -27,7 +27,7 @@ func TestBuildConfirmedDecisionDerivesAssuranceAndCapsuleID(t *testing.T) {
 	payload, encoded := built.Value, built.JSON
 
 	assert.Equal(t, SpecVersion, payload["spec_version"])
-	assert.Equal(t, "2026-08-04T14:20:58.025365707Z", payload["timestamp"])
+	assert.Equal(t, "2026-08-04T14:20:58.025365Z", payload["timestamp"])
 	assert.Equal(t, "action", payload["domain"])
 	assert.Equal(t, "gate", payload["provenance"])
 	assert.Equal(t, "policy-2026-08", payload["epoch_id"])
@@ -42,6 +42,22 @@ func TestBuildConfirmedDecisionDerivesAssuranceAndCapsuleID(t *testing.T) {
 	decoded, err := DecodePayload(encoded)
 	require.NoError(t, err)
 	assert.Equal(t, payload["capsule_id"], decoded["capsule_id"])
+}
+
+func TestBuildFormatsWholeSecondTimestampWithoutFraction(t *testing.T) {
+	input := validInput()
+	input.Timestamp = time.Date(2026, 8, 4, 14, 20, 58, 0, time.UTC)
+	built, err := Build(input)
+	require.NoError(t, err)
+	assert.Equal(t, "2026-08-04T14:20:58Z", built.Value["timestamp"])
+}
+
+func TestBuildNormalizesSubMicrosecondTimestamp(t *testing.T) {
+	input := validInput()
+	input.Timestamp = input.Timestamp.Add(999 * time.Nanosecond)
+	built, err := Build(input)
+	require.NoError(t, err)
+	assert.Equal(t, "2026-08-04T14:20:58.025365Z", built.Value["timestamp"])
 }
 
 func TestBuildCommitsChainBlockAndDerivesChainedAssurance(t *testing.T) {
@@ -258,7 +274,7 @@ func validInput() Input {
 		ActionType: ActionTypeDecide,
 		Operator:   "local-operator",
 		Developer:  "test-producer@1.0.0",
-		Timestamp:  time.Date(2026, 8, 4, 14, 20, 58, 25_365_707, time.UTC),
+		Timestamp:  time.Date(2026, 8, 4, 14, 20, 58, 25_365_000, time.UTC),
 		Disposition: &Disposition{
 			Decision:      DecisionAccept,
 			Approver:      ApproverPolicy,

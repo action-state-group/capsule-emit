@@ -1,5 +1,19 @@
 # capsule-emit interoperability fixtures
 
+`format4-interop/` was generated with the unmodified Python library at
+`action-state-group/capsule-emit` release `v0.6.1`, commit
+`004f8ca14372829dfa93a8816949e6713fb14596`. The Go repository owns this
+frozen pack; the Python repository does not need a matching test-vector change.
+The Go-owned `format4-interop/scripts/generate_vectors.py` regenerates the pack
+through that release's public `seal`, `received`, and slot-composition API.
+It freezes authored sealing with model/runtime
+metadata, opaque receive/carry, WHO and DID members, WHO/CAN/DID slot
+composition, signature-free canonical Capsule bytes, Python's stored
+representation, and detached Producer Envelopes. Go reconstructs every record
+from `input.json` and compares Capsule and Envelope bytes exactly.
+The input's six-digit fractional timestamp and deliberately non-canonical
+`did`/`can`/`who` member order are regression traps, not arbitrary examples.
+
 `producer-envelope-valid-capsule.json` is copied without modification from
 `action-state-group/capsule-emit` commit
 `63dbb282236b184ae6ea6653c122a2125dd2976f`, path

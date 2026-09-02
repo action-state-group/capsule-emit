@@ -4,7 +4,8 @@ import "time"
 
 // Input contains the application-owned values needed to build one Capsule.
 // ActionID and Timestamp are supplied explicitly so the library never invents
-// business identity or wall-clock semantics.
+// business identity or wall-clock semantics. Timestamp is normalized to
+// microsecond precision, matching capsule-emit's UTC datetime wire form.
 type Input struct {
 	ActionID   string
 	ActionType ActionType
