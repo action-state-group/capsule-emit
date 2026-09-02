@@ -50,6 +50,7 @@ agno = ["agno>=3.0"]
 strands = ["strands-agents>=1.54.0,<2"]
 # Verified against openai-agents 0.22.0 (see docs/adapters/openai-agents.md).
 openai-agents = ["openai-agents>=0.22"]
+llamaindex = ["llama-index-core>=0.14,<0.15"]
 dapr-agents = ["dapr-agents>=1.0"]
 # Microsoft Agent Framework. The middleware surface this adapter rides lives entirely in
 # agent-framework-core; the `agent-framework` meta-package pulls provider/Azure extras we
