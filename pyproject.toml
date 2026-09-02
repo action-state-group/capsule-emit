@@ -31,7 +31,13 @@ hermes = []
 adk = ["google-adk>=2.0"]
 agno = ["agno>=3.0"]
 dapr-agents = ["dapr-agents>=1.0"]
-checkpoint = ["scitt-cose>=0.2.0"]
+# checkpointed-local-log's `cll` package -- the CLL/MMR core, graduated out
+# of this repo per the W3.1 extraction (2026-09-01; was capsule_emit.checkpoint,
+# itself ported from capsule-ledger's mmr/{core,index,store}.py per Amendment
+# E, 2026-08-21). capsule_emit.checkpoint / capsule_emit.bundle are now thin
+# compatibility re-exports over it -- see those modules' docstrings. Pulls in
+# scitt-cose + cbor2 + agent-action-capsule transitively.
+checkpoint = ["checkpointed-local-log>=0.1.0"]
 
 [project.scripts]
 capsule-emit = "capsule_emit.cli:main"

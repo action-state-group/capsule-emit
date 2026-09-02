@@ -261,14 +261,17 @@ def test_bundle_ambiguous_prefix_raises(two_checkpoint_ledger):
     # An 8-char (or longer) prefix common to two DIFFERENT full ids should be
     # rejected rather than silently picking one — construct that collision
     # directly against the resolver so the test doesn't depend on hash luck.
-    from capsule_emit.bundle import _find_record
+    # `_find_record` now lives in `cll.checkpoint.bundle` (genericized,
+    # W3.1 CLL extraction, 2026-09-01) -- `capsule_emit.bundle` is a thin
+    # wrapper that no longer defines its own copy.
+    from cll.checkpoint.bundle import _find_record
 
     entries = [
         {"capsule_id": "aaaaaaaa1111"},
         {"capsule_id": "aaaaaaaa2222"},
     ]
     with pytest.raises(BundleError, match="matches 2 records"):
-        _find_record(entries, "aaaaaaaa")
+        _find_record(entries, "aaaaaaaa", id_field="capsule_id", kind_field="kind", non_leaf_kinds=frozenset())
 
 
 def test_bundle_uncovered_record_raises(tmp_path, stub_ts, monkeypatch):
