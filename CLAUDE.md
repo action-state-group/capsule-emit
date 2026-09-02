@@ -13,7 +13,8 @@ go test -race ./...
 scripts/check-coverage.sh 90.0
 ```
 
-CI runs these checks and the frozen upstream vector suites. New logic needs
+CI runs these checks and the frozen upstream vector suites from upstream
+`main`. New logic needs
 same-change tests, including error paths, to preserve the 90-percent coverage
 floor.
 

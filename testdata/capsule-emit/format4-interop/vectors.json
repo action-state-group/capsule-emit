@@ -3,7 +3,7 @@
   "profile": "draft-mih-scitt-agent-action-capsule-04#format4-interop",
   "generator": "capsule_emit.surface seal/received/slot composition",
   "generator_versions": {
-    "capsule-emit": "0.6.1",
+    "capsule-emit": "0.7.0",
     "agent-action-capsule": "0.2.0"
   },
   "cases": [
