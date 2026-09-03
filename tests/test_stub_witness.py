@@ -267,8 +267,13 @@ def test_status_marks_a_stub_only_checkpoint_loudly(tmp_path, monkeypatch):
     ledger = tmp_path / "ledger.jsonl"
 
     seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
-    key = witness._resolve_key(str(ledger))
-    assert _wait_for(lambda: witness._states.get(key) is not None and witness._states[key].prev is not None)
+    # Synchronize on the artifact this test actually asserts (compute_status's
+    # derived checkpoint), not the upstream in-memory _states.prev flag — the
+    # background witness thread can set the flag before compute_status reflects
+    # the checkpoint, which raced green locally and flaked red under CI load.
+    assert _wait_for(
+        lambda: compute_status(str(ledger), offline=True)["latest_checkpoint"] is not None
+    ), "stub checkpoint did not surface in compute_status within the timeout"
 
     result = compute_status(str(ledger), offline=True)
     cp = result["latest_checkpoint"]
