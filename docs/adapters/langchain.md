@@ -44,13 +44,8 @@ tool capsules.
 ## Prerequisites
 
 ```shell
-pip install "capsule-emit[langchain]==0.5.1"
+pip install "capsule-emit[langchain]>=0.7.0"
 ```
-
-<Note>
-`capsule_emit.__version__` reads `0.5.0` in the 0.5.1 release. Check the
-installed version with `importlib.metadata.version("capsule-emit")` instead.
-</Note>
 
 ## Example
 
@@ -97,18 +92,12 @@ wiring it to a model.
     )
     ```
 
-    <Warning>
-    A `float` tool argument cannot be sealed into a digest-bearing field. The
-    planned capsule is dropped with a `RuntimeWarning`, the tool call still
-    executes, and the outcome capsule seals **without a chain link** — a
-    fail-open gap in the evidence, tracked as
-    [#128](https://github.com/action-state-group/capsule-emit/issues/128).
-    This bites schema-driven tools too: a model filling a JSON-schema `number`
-    parameter hands you a float you never wrote. Until the fix lands, type
-    monetary and quantity parameters as **exact decimal strings**. The gap is
-    detectable after the fact: an unchained `confirmed` record is visible to
-    anyone reading the ledger.
-    </Warning>
+    <Note>
+    Float tool arguments chain correctly as of 0.7.0 — they are canonicalized
+    to RFC 8785 decimal strings before digesting (#128, fixed by #135). On
+    releases before 0.7.0, a float argument silently dropped the planned
+    capsule and left the outcome unchained.
+    </Note>
   </Step>
   <Step title="Read the ledger">
     ```python
