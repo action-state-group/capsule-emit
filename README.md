@@ -5,7 +5,7 @@ deterministic, signature-free Capsules and creates independent COSE_Sign1
 Producer Envelopes over their raw 32-byte Capsule IDs.
 
 The Go API keeps persistence explicit: `Seal` builds and signs but does not
-append a ledger or contact a witness. Applications that need ordered
+append to a CLL or contact a witness. Applications that need ordered
 persistence and witnessed checkpoints compose it with
 [`cll-go`](https://github.com/action-state-group/cll-go).
 
@@ -127,6 +127,91 @@ AAC draft-04 defines only `fyi` and `decide` as conformant `action_type`
 values. The package rejects other values so every `Build` result continues to
 pass the current AAC Class 1 verifier.
 
+## Persist and append to CLL
+
+`capsule-emit-go` and `cll-go` do not depend on each other. An application may
+import both and connect them through their public APIs. Keep the complete
+Capsule and Producer Envelope in application-owned storage; CLL stores only the
+decoded 32-byte Capsule ID.
+
+```go
+package integration
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	"encoding/hex"
+	"fmt"
+	"time"
+
+	emit "github.com/action-state-group/capsule-emit-go"
+	"github.com/action-state-group/cll-go/cll"
+)
+
+// CapsuleStore is application-owned persistence. Its schema and transaction
+// model are deliberately outside both libraries.
+type CapsuleStore interface {
+	PutCapsule(
+		ctx context.Context,
+		capsuleID string,
+		capsule []byte,
+		envelope []byte,
+	) error
+}
+
+func PersistAndAppend(
+	ctx context.Context,
+	records CapsuleStore,
+	log cll.EntryStore,
+	result emit.Result,
+	producerPublicKey ed25519.PublicKey,
+	observedAt time.Time,
+) (cll.AppendResult, error) {
+	_, err := emit.VerifyCapsule(result.Payload)
+	if err != nil {
+		return cll.AppendResult{}, fmt.Errorf("verify Capsule: %w", err)
+	}
+	authenticated, err := emit.VerifyEnvelope(result.CapsuleID, result.Envelope)
+	if err != nil {
+		return cll.AppendResult{}, err
+	}
+	if !bytes.Equal(authenticated.PublicKey, producerPublicKey) {
+		return cll.AppendResult{}, fmt.Errorf("Producer Envelope signer is not authorized")
+	}
+
+	identity, err := hex.DecodeString(result.CapsuleID)
+	if err != nil || len(identity) != cll.EntryBytes ||
+		hex.EncodeToString(identity) != result.CapsuleID {
+		return cll.AppendResult{}, fmt.Errorf("invalid Capsule ID")
+	}
+
+	// Persist exact business evidence before publishing its identity to CLL.
+	if err := records.PutCapsule(
+		ctx,
+		result.CapsuleID,
+		result.Payload,
+		result.Envelope,
+	); err != nil {
+		return cll.AppendResult{}, err
+	}
+
+	return log.Append(ctx, cll.AppendInput{
+		Value:      identity,
+		AppendedAt: observedAt,
+	})
+}
+```
+
+If application persistence succeeds but the CLL append fails, retry the append
+with the same identity. CLL append is idempotent and returns the original entry
+and timestamp. The application decides how to make that retry durable, for
+example with its own outbox.
+
+Pass any `cll.EntryStore` implementation to this function. Backend selection,
+checkpointing, and witness delivery remain entirely in `cll-go`; see its
+[backend documentation](https://github.com/action-state-group/cll-go#backends).
+
 ## Typed construction
 
 `Carry` binds exact opaque bytes as a generic `foreign-artifact`. `Received`
@@ -174,7 +259,7 @@ slot members already own those construction commitments; mixing authored
 payload digests into the same record would make provenance ambiguous.
 
 These functions build records only. They do not append logs, persist Capsules,
-deliver to a ledger, retry effects, or authorize signers.
+deliver checkpoints, retry effects, or authorize signers.
 
 ## JSON digests
 
@@ -225,7 +310,7 @@ scripts/check-coverage.sh 90.0
 
 - Executing or retrying provider actions
 - Generating business IDs or timestamps
-- Persistence, journals, ledgers, or transparency receipts
+- Persistence, journals, local logs, or transparency receipts
 - Signer authorization policy
 - Workflow-engine or provider-specific business semantics
 
