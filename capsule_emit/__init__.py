@@ -49,6 +49,7 @@ of the above are configurable.
 """
 from typing import Any, NoReturn
 
+from .adjudication import contradicted, seal_adjudication
 from .approval import list_pending, seal_approval
 from .core import EmitResult
 from .disclosure import DisclosureError, build_disclosure_envelope
@@ -118,6 +119,9 @@ __all__ = [
     # Approval record + pending
     "seal_approval",
     "list_pending",
+    # Adjudication record (twin comparison)
+    "seal_adjudication",
+    "contradicted",
     # Gate / wicket
     "Constraint",
     "CheckResult",

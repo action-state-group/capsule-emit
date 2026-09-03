@@ -503,12 +503,15 @@ def _emit_capsule(
         effect: Effect dict with ``"type"`` and ``"status"`` (and optional ``"autonomy"``).
         confirms: capsule_id of the prior capsule this one chains to.
         relation: Chain relation (``"confirms"`` | ``"supersedes"`` | ``"escalates"``
-            | ``"assesses"`` | …), or ``None`` to keep the chain link (``confirms``)
-            without asserting a relation value on it — e.g. a human refusal that
-            chains to the capsule it denies without claiming to "confirm" it.
-            ``"assesses"`` is for a judge/verdict capsule that cites a subject
-            capsule by digest without confirming its outcome (a detection
-            relation, never an enforcement one). Passing a non-``None``,
+            | ``"assesses"`` | ``"adjudicates"`` | …), or ``None`` to keep the chain
+            link (``confirms``) without asserting a relation value on it — e.g. a
+            human refusal that chains to the capsule it denies without claiming to
+            "confirm" it. ``"assesses"`` is for a judge/verdict capsule that cites a
+            subject capsule by digest without confirming its outcome (a detection
+            relation, never an enforcement one). ``"adjudicates"`` is for a
+            twin-comparison referee capsule that cites two compared halves and
+            records a ``corroborated``/``inconclusive``/``contradicted:<owner_id>``
+            verdict — see :mod:`capsule_emit.adjudication`. Passing a non-``None``,
             non-default relation without ``confirms`` set raises ``ValueError``
             (a chain relation needs a chain target); ``relation=None`` never
             raises regardless of ``confirms``. Default ``"confirms"``.
