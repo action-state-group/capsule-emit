@@ -7,7 +7,7 @@ Producer Envelopes over their raw 32-byte Capsule IDs.
 The Go API keeps persistence explicit: `Seal` builds and signs but does not
 append a ledger or contact a witness. Applications that need ordered
 persistence and witnessed checkpoints compose it with
-[`capsule-ledger-go`](https://github.com/ethanyzhang/capsule-ledger-go).
+[`cll-go`](https://github.com/action-state-group/cll-go).
 
 It supports format 4 only. There is no legacy `Create` or signed-payload
 statement API, and verification rejects formats 2 and 3.
