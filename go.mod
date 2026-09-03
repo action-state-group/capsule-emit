@@ -1,4 +1,4 @@
-module github.com/ethanyzhang/capsule-emit-go
+module github.com/action-state-group/capsule-emit-go
 
 go 1.27.0
 

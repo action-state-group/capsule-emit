@@ -87,7 +87,7 @@ jobs:
       - name: Check out capsule-emit-ts main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ethanyzhang/capsule-emit-ts
+          repository: action-state-group/capsule-emit-ts
           ref: main
           path: capsule-emit-ts
       - name: Check out Python emit main

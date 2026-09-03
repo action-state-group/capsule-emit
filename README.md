@@ -17,7 +17,7 @@ statement API, and verification rejects formats 2 and 3.
 Requires Go 1.27 or newer. `DigestJSON` uses `encoding/json/v2`.
 
 ```bash
-go get github.com/ethanyzhang/capsule-emit-go
+go get github.com/action-state-group/capsule-emit-go
 ```
 
 ## Build, sign, and verify
@@ -33,7 +33,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/ethanyzhang/capsule-emit-go"
+	"github.com/action-state-group/capsule-emit-go"
 )
 
 func main() {
