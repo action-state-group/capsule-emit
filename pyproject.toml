@@ -51,6 +51,13 @@ strands = ["strands-agents>=1.54.0,<2"]
 # Verified against openai-agents 0.22.0 (see docs/adapters/openai-agents.md).
 openai-agents = ["openai-agents>=0.22"]
 llamaindex = ["llama-index-core>=0.14,<0.15"]
+# Pinned to the release the rail-decision contract was read and tested against
+# (RailOutcome/RailDecision, actions/rail_outcome.py:50-92; LLMRails.register_action,
+# llmrails.py:1735). Upper bound is tight on purpose: nemoguardrails is 0.x, so a
+# minor bump may change that contract. The environment marker is required because
+# nemoguardrails declares Requires-Python ">=3.10,<3.14" while capsule-emit supports
+# >=3.9 — without it, `pip install capsule-emit[nemo-guardrails]` hard-fails on 3.9.
+nemo-guardrails = ["nemoguardrails>=0.24.0,<0.25; python_version >= '3.10'"]
 dapr-agents = ["dapr-agents>=1.0"]
 # Microsoft Agent Framework. The middleware surface this adapter rides lives entirely in
 # agent-framework-core; the `agent-framework` meta-package pulls provider/Azure extras we
