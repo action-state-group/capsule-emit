@@ -12,6 +12,7 @@ import json
 
 import pytest
 
+import capsule_emit.evidence_request as evidence_request
 from capsule_emit import seal, witness
 from capsule_emit.bundle import bundle as _bundle_fn
 from capsule_emit.evidence_request import (
@@ -25,7 +26,6 @@ from capsule_emit.evidence_request import (
     parse_request,
     verify_refusal_offline,
 )
-import capsule_emit.evidence_request as evidence_request
 
 
 @pytest.fixture(autouse=True)
