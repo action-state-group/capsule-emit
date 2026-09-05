@@ -347,6 +347,57 @@ backlog = witness.checkpoint_witness_backlog(ledger_path, ["https://witness.exam
 witness.retry_pending_witness_stamps(ledger_path, ts_url="https://witness.example")
 ```
 
+## Fail-closed: `require_witness=True` ([capsule-emit-witness-required-profile])
+
+Everything above — the default cadence, the outage backlog, the retry drain —
+is deliberately **best-effort**: a `seal()`/`received()` call never blocks on
+witnessing, and a witness that is down simply means the checkpoint stays
+self-attested until it comes back. That is the right default for most
+callers, but a profile that specifically *requires* a witness (per
+JamesCarnley's `projnanda/nandatown#217` review of the acceptance shape for a
+witness-required anchoring profile) needs the opposite posture: the absence
+of a witness must be explicit, never silent.
+
+`require_witness=True` (passed to `seal()` / `received()` / `_emit_capsule()`)
+gives you that:
+
+```python
+from capsule_emit import seal
+from capsule_emit.witness import WitnessRequiredError
+
+try:
+    capsule = seal(payload, ledger=ledger_path, require_witness=True)
+except WitnessRequiredError:
+    ...  # no witness confirmed this capsule -- handle explicitly, never ignore
+```
+
+Instead of the async, cadence-batched `maybe_checkpoint`, this forces an
+immediate, synchronous checkpoint (like `witness.push()`) covering the
+just-sealed capsule, and raises `capsule_emit.witness.WitnessRequiredError`
+unless a configured witness actually confirms it — whether because
+witnessing itself is disabled (`witness=False` / `CAPSULE_WITNESS=off`) or
+every configured Transparency Service was unreachable or returned no
+receipt. The capsule is still sealed, signed, and appended to the ledger
+before this check runs (there is no rollback of an already-signed record),
+but the caller never gets back a normal, ok-looking `EmitResult` for a
+capsule that quietly stayed local-only.
+
+`EmitResult.witness_outcome` names which of four states applied — distinct
+from the legacy, non-default `anchored`/`anchor_status` fields (unchanged,
+kept as a compat alias — see [`docs/why-anchoring.md`](why-anchoring.md)),
+which report only the old per-record anchor channel:
+
+| `witness_outcome`            | When                                                                 |
+|-------------------------------|-----------------------------------------------------------------------|
+| `local_sealed`                 | Witnessing is disabled for this ledger — no witness channel at all.  |
+| `checkpoint_queued`            | Default (`require_witness=False`) path: counted toward cadence, or a due checkpoint just dispatched async — outcome not yet known. |
+| `witness_receipt_obtained`     | `require_witness=True` and a witness confirmed synchronously.        |
+| `witness_unavailable`          | `require_witness=True` and no witness could be confirmed — paired with `WitnessRequiredError` being raised, so a caller sees the exception, not this value, in practice. |
+
+Default behavior (`require_witness=False`, i.e. every existing caller) is
+unchanged: it is exactly the best-effort path described earlier in this
+document.
+
 ## Bundle — the hand-to-anyone artifact (O16 audit item 14)
 
 The verification chain above (`checkpoint/emit.py`'s module docstring) is four
@@ -362,6 +413,44 @@ from capsule_emit.bundle import bundle, verify_bundle
 b = bundle("ledger.jsonl", capsule_id)   # or an unambiguous >=8-char prefix
 ok, errors = verify_bundle(b)            # pure, offline, never raises
 ```
+
+### Anti-equivocation: verify with `bundle()`, not `verify_input_digest()`
+
+Named explicitly here because it was the gap in the acceptance shape
+JamesCarnley's `projnanda/nandatown#217` review called out: **`verify_input_digest()`
+(`capsule_emit.verify`) is a plain JCS-SHA256 digest check of one payload
+against the value a capsule already claims to have sealed — it says nothing
+about the log, the checkpoint, or any witness.** It cannot tell you whether
+the capsule was ever entered into an append-only history, whether that
+history was later rewritten, or whether a different history was shown to a
+different party (equivocation). A verifier that only calls
+`verify_input_digest()` and treats a match as "this capsule is authentic and
+un-equivocated" is trusting exactly the weaker of the two primitives this
+library ships.
+
+**For anti-equivocation, verify with `capsule_emit.bundle`** (`bundle()` +
+`verify_bundle()`, above): it is the one primitive that actually chains a
+record to a signed checkpoint, an inclusion proof, a witness stamp, and the
+prior checkpoint's consistency proof — the full two-sided append bracket.
+`verify_input_digest()` still has a legitimate, narrower job (confirming a
+plaintext candidate matches a specific committed field, e.g. when handling a
+`disclose()`d payload) — it is simply the wrong tool for "was this capsule
+honestly logged," and a profile or verifier claiming anti-equivocation MUST
+reach for `bundle`/`verify_bundle` instead.
+
+**The discipline that makes any of this matter: verify against the
+ORIGINALLY pinned commitment, never whichever capsule the presenter or a
+local cache happens to supply.** A verifier that re-fetches "the current
+capsule for this id" from a mutable cache — rather than checking the exact
+capsule bytes it first pinned (by `capsule_id`, or better, by an already-held
+`Bundle`/checkpoint) — has no anti-equivocation property left, no matter how
+strong `verify_bundle()`'s own checks are: a cache-overwrite between the
+first pin and the later re-check silently substitutes a different capsule
+underneath the verifier, and it never notices. This was the concrete bug in
+the reviewed PR's patch (a cache-overwrite that let a later, different
+capsule quietly stand in for the one originally pinned). Pin once, at first
+sight, and verify against that pin every time after — never against
+"whatever is there now."
 
 `Bundle` carries:
 

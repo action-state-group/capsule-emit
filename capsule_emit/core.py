@@ -16,8 +16,11 @@ It wraps ``agent_action_capsule.emit()`` with:
   call (see ``capsule_emit.signing``)
 - Automatic JSONL ledger append
 - A typed EmitResult with .capsule_id, .anchored, .anchor_status, .signature,
-  and .key_id (.anchored / .anchor_status report the legacy, non-default
-  anchor channel — see below)
+  .key_id, and .witness_outcome (.anchored / .anchor_status report the
+  legacy, non-default anchor channel — see below; .witness_outcome reports
+  the default checkpoint/witness stream's outcome, and pairs with the
+  fail-closed ``require_witness=True`` profile —
+  [capsule-emit-witness-required-profile])
 
 **Single egress (2026-08, O16 items 1-2):** the per-seal SCITT anchor
 submission that used to dispatch on every ``seal()``/``received()`` call by
@@ -88,6 +91,35 @@ __all__ = ["_emit_capsule", "EmitResult"]
 _DEFAULT_LEDGER = "ledger.jsonl"
 
 AnchorStatus = Literal["confirmed", "submitted", "failed", "skipped"]
+
+#: The witness/anchoring outcome for one ``_emit_capsule()`` call --
+#: [capsule-emit-witness-required-profile], per JamesCarnley's
+#: projnanda/nandatown#217 review, which asked for outcome states more
+#: granular than a single ``anchored`` bool. Distinct from ``anchor_status``
+#: above (which reports only the legacy, non-default per-record anchor
+#: channel): this reports the default checkpoint/witness stream instead --
+#: the channel that is actually on by default as of 0.5.0.
+#:
+#: - ``"local_sealed"`` -- witnessing is disabled for this ledger
+#:   (``witness=False`` / ``CAPSULE_WITNESS=off``); the capsule is sealed and
+#:   signed, but no witness channel is configured for it at all.
+#: - ``"checkpoint_queued"`` -- witnessing is enabled and this call fed the
+#:   default best-effort pipeline (counted toward cadence, or a due
+#:   checkpoint was just dispatched on a background thread); the outcome is
+#:   not yet known at return time -- this is the default, unchanged posture.
+#: - ``"witness_receipt_obtained"`` -- ``require_witness=True`` forced a
+#:   synchronous checkpoint and at least one configured witness confirmed it
+#:   before this call returned.
+#: - ``"witness_unavailable"`` -- ``require_witness=True`` and no witness
+#:   could be synchronously confirmed (channel disabled, or every configured
+#:   Transparency Service was unreachable / rejected the submission); paired
+#:   with :class:`capsule_emit.witness.WitnessRequiredError` being raised, so
+#:   in practice this value is never seen on a returned ``EmitResult`` -- it
+#:   is documented here for completeness/testing, not as a silent outcome a
+#:   caller must remember to check.
+WitnessOutcome = Literal[
+    "local_sealed", "checkpoint_queued", "witness_receipt_obtained", "witness_unavailable"
+]
 
 #: How long the atexit handler blocks, in total, joining outstanding anchor
 #: futures before giving up and warning. Overridable for tests.
@@ -441,6 +473,16 @@ class EmitResult:
     leaf in your log" (§2.1): once a checkpoint covers this position, ``seq``
     is the MMR leaf index too. Rendered as ``#logged @ leaf <seq>`` by
     ``__repr__`` and by ``ledger.show()``.
+
+    ``witness_outcome`` reports the checkpoint/witness stream's outcome — the
+    channel that is actually on by default (unlike ``anchored``/
+    ``anchor_status``, which report only the legacy, non-default per-record
+    anchor channel and are kept unchanged, as a compat alias, for existing
+    callers). See :data:`WitnessOutcome` above for the four states. Pass
+    ``require_witness=True`` to ``_emit_capsule()`` to demand
+    ``"witness_receipt_obtained"`` synchronously — see that parameter's
+    docs and ``capsule_emit.witness.WitnessRequiredError``
+    ([capsule-emit-witness-required-profile]).
     """
 
     capsule_id: str
@@ -450,6 +492,7 @@ class EmitResult:
     signature: str
     key_id: str
     seq: int
+    witness_outcome: WitnessOutcome = "checkpoint_queued"
 
     def __repr__(self) -> str:
         return (
@@ -477,6 +520,7 @@ def _emit_capsule(
     anchor_wait: float | None = None,
     witness: bool | None = None,
     witness_url: str | list[str] | None = None,
+    require_witness: bool = False,
     human_disposed: bool = False,
     approver: str = "policy",
     decision: str = "accept",
@@ -569,6 +613,25 @@ def _emit_capsule(
             checkpoint with more than one Transparency Service at once --
             what climbs from *witnessed (single witness)* to *multi-witness,
             equivocation-resistant* (see ``docs/checkpoint.md``).
+        require_witness: Fail-closed witness profile
+            ([capsule-emit-witness-required-profile], per JamesCarnley's
+            projnanda/nandatown#217 review). ``False`` (default): unchanged
+            best-effort behavior — witnessing (if enabled) runs on its usual
+            async, cadence-batched schedule and this call never blocks on it
+            (see ``EmitResult.witness_outcome``: ``"local_sealed"`` or
+            ``"checkpoint_queued"``). ``True``: forces an immediate,
+            synchronous checkpoint (like :func:`capsule_emit.witness.push`)
+            covering this capsule and RAISES
+            ``capsule_emit.witness.WitnessRequiredError`` unless a configured
+            witness actually confirms it — either because witnessing itself
+            is disabled, or every configured Transparency Service was
+            unreachable or returned no receipt. The capsule is still sealed,
+            signed, and appended to the ledger before this check runs (it is
+            not rolled back), but the caller never gets back a normal,
+            ok-looking ``EmitResult`` for a capsule that silently stayed
+            local-only — the whole point of this profile is that a required
+            witness's absence must remain explicit, never silent. On success
+            ``EmitResult.witness_outcome`` is ``"witness_receipt_obtained"``.
         human_disposed: Whether a human made the disposition decision. When True,
             ``approver`` MUST be ``"human"`` — raises ``ValueError`` otherwise.
         approver: Who approved the disposition: ``"human"`` or ``"policy"`` (default).
@@ -780,9 +843,22 @@ def _emit_capsule(
         witness_endpoint=witness_endpoint,
     )
 
-    _witness.maybe_checkpoint(
-        os.fspath(ledger), ts_url=witness_endpoint, enabled=witness, signer=signer_obj
-    )
+    # [capsule-emit-witness-required-profile]: require_witness=True trades the
+    # default async, cadence-batched maybe_checkpoint() for a synchronous
+    # push() that must actually be confirmed by a witness -- WitnessRequiredError
+    # propagates uncaught (fail-closed: never a silent local-only capsule for a
+    # profile that demanded a witness). require_witness=False (default) is the
+    # unchanged best-effort path.
+    if require_witness:
+        _witness.require_witness_receipt(
+            os.fspath(ledger), ts_url=witness_endpoint, witness=witness, signer=signer_obj
+        )
+        witness_outcome: WitnessOutcome = "witness_receipt_obtained"
+    else:
+        _witness.maybe_checkpoint(
+            os.fspath(ledger), ts_url=witness_endpoint, enabled=witness, signer=signer_obj
+        )
+        witness_outcome = "local_sealed" if _witness.witness_mode(witness) == "off" else "checkpoint_queued"
 
     capsule_id = capsule["capsule_id"]
     anchored = False
@@ -817,4 +893,5 @@ def _emit_capsule(
         signature=capsule["signature"],
         key_id=capsule["key_id"],
         seq=seq,
+        witness_outcome=witness_outcome,
     )

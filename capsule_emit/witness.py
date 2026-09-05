@@ -172,11 +172,13 @@ from . import signing as _signing
 __all__ = [
     "maybe_checkpoint",
     "push",
+    "require_witness_receipt",
     "witness_enabled",
     "witness_mode",
     "witness_is_stub",
     "refuse_stub_in_production",
     "StubWitnessInProductionError",
+    "WitnessRequiredError",
     "WITNESS_ENV_VAR",
     "WITNESS_URL_ENV_VAR",
     "CADENCE_ENV_VAR",
@@ -212,6 +214,22 @@ class StubWitnessInProductionError(RuntimeError):
     both set. The stub witness proves nothing beyond self-attested (frozen
     surface §1a.4) -- shipping to production on it must never happen
     silently, so this is a hard, synchronous refusal, not a warning."""
+
+
+class WitnessRequiredError(RuntimeError):
+    """Raised by :func:`require_witness_receipt` (and therefore by
+    ``_emit_capsule(require_witness=True)``) when a witness receipt could not
+    be synchronously confirmed for the ledger -- witnessing is disabled, or
+    every configured Transparency Service was unreachable or failed to
+    register the checkpoint covering the just-sealed capsule.
+
+    A profile that sets ``require_witness=True`` is asking for the fail-closed
+    posture named in [capsule-emit-witness-required-profile] (per
+    JamesCarnley's projnanda/nandatown#217 review): "if a profile requires a
+    witness, its absence must remain explicit." This exception is that
+    explicitness -- the alternative (returning a normal, ok-looking
+    ``EmitResult`` when no witness actually confirmed) would silently degrade
+    to a local-only capsule, exactly what this profile exists to prevent."""
 
 #: Overrides the default TS URL for the witness path specifically (mirrors
 #: ``AAC_ANCHOR_URL`` for the anchor path). ``emit(..., witness_url=...)``
@@ -1121,6 +1139,56 @@ def push(
 
         _build_and_register(state, urls, stub=is_stub)
         return state.prev
+
+
+def require_witness_receipt(
+    ledger_path: str,
+    *,
+    ts_url: str | list[str] | None = None,
+    witness: bool | None = None,
+    signer: _signing.Signer | None = None,
+):
+    """The fail-closed counterpart to the default best-effort
+    :func:`maybe_checkpoint` -- force a checkpoint covering everything sealed
+    so far (via :func:`push`, synchronously) and raise
+    :class:`WitnessRequiredError` unless at least one configured witness
+    actually confirmed it.
+
+    Called from ``core._emit_capsule(require_witness=True)`` in place of the
+    normal fire-and-forget ``maybe_checkpoint`` dispatch -- a caller opting
+    into this profile has already said the async, cadence-batched default
+    isn't good enough; this trades the batching (a ``push()`` per capsule,
+    not per ``cadence_entries`` capsules) for a synchronous, real outcome.
+
+    Raises immediately, before attempting anything, if witnessing itself is
+    kill-switched off (``witness=False`` / ``CAPSULE_WITNESS=off``) -- there
+    is no channel to obtain a receipt from. Otherwise delegates to
+    :func:`push` and inspects the returned ``CheckpointRecord.witnesses``:
+    empty means every configured endpoint was unreachable or rejected the
+    submission (the checkpoint stayed self-attested), which is exactly the
+    "unreachable or returns no receipt" case this profile must fail on. A
+    non-empty list means at least one Transparency Service accepted the
+    checkpoint and returned a witness record -- ``bundle()``/``verify_bundle()``
+    remain the tool for later, full cryptographic re-verification of that
+    receipt; this function's job is only the synchronous "did anyone confirm
+    it" gate.
+
+    Returns the witnessed ``CheckpointRecord`` on success.
+    """
+    if witness_mode(witness) == "off":
+        raise WitnessRequiredError(
+            f"require_witness=True but witnessing is disabled for {ledger_path!r} "
+            "(witness=False / CAPSULE_WITNESS=off) -- no witness channel is "
+            "configured to obtain a receipt from"
+        )
+    cp = push(ledger_path, ts_url=ts_url, witness=witness, signer=signer)
+    if cp is None or not cp.witnesses:
+        raise WitnessRequiredError(
+            f"require_witness=True but no configured witness confirmed a receipt "
+            f"for {ledger_path!r} -- the checkpoint stayed self-attested (every "
+            "Transparency Service was unreachable or rejected the submission)"
+        )
+    return cp
 
 
 def maybe_checkpoint(
