@@ -86,7 +86,7 @@ from .ledger import append_to_ledger
 from .numbers import CANONICALIZATION_ID
 from .signing import Signer
 
-__all__ = ["_emit_capsule", "EmitResult"]
+__all__ = ["_emit_capsule", "_emit_log_entry", "EmitResult", "LogEntry"]
 
 _DEFAULT_LEDGER = "ledger.jsonl"
 
@@ -501,6 +501,40 @@ class EmitResult:
         )
 
 
+@dataclass
+class LogEntry:
+    """The result of a :func:`capsule_emit.surface.log` call --
+    [verify-entry-authorship-tristate-and-log] RULING 3: deliberately NOT an
+    :class:`EmitResult`. ``EmitResult``'s own docstring guarantees
+    ``signature``/``key_id`` are "Always present; every EmitResult is
+    signed" -- a ``log()`` entry never carries a producer signature, so
+    giving it the ``EmitResult`` shape would either violate that documented
+    invariant or force a fake ``signature=None`` a caller could mistake for
+    a real (if empty) claim. A distinct return type makes the weaker
+    guarantee legible at the call site, in the type itself, not just in
+    prose.
+
+    ``capsule`` is the raw ledger dict actually appended -- it carries no
+    ``signature``/``key_id`` keys at all (not empty strings; the keys are
+    absent), which is exactly what
+    ``capsule_emit.signing.verify_capsule_signature_tristate`` reads to
+    grade it :attr:`~capsule_emit.signing.AuthorshipVerdict.UNCLAIMED`
+    rather than :attr:`~capsule_emit.signing.AuthorshipVerdict.INVALID`.
+    ``seq``/``witness_outcome`` mean exactly what they mean on
+    :class:`EmitResult` -- a log() entry is a full MMR leaf and participates
+    in checkpointing/witnessing identically to a signed capsule; only the
+    per-entry producer-authorship claim is absent.
+    """
+
+    capsule_id: str
+    capsule: dict
+    seq: int
+    witness_outcome: WitnessOutcome = "checkpoint_queued"
+
+    def __repr__(self) -> str:
+        return f"LogEntry(capsule_id={self.capsule_id!r}) #logged @ leaf {self.seq}"
+
+
 def _emit_capsule(
     action: str,
     operator: str = "",
@@ -892,6 +926,107 @@ def _emit_capsule(
         anchor_status=anchor_status,
         signature=capsule["signature"],
         key_id=capsule["key_id"],
+        seq=seq,
+        witness_outcome=witness_outcome,
+    )
+
+
+def _emit_log_entry(
+    action: str,
+    operator: str = "",
+    developer: str = "",
+    *,
+    log_digest: str,
+    ledger: str | os.PathLike = _DEFAULT_LEDGER,
+    witness: bool | None = None,
+    witness_url: str | list[str] | None = None,
+    require_witness: bool = False,
+    extra_compute: dict[str, Any] | None = None,
+    canonicalization_id: str = CANONICALIZATION_ID,
+    signer: Signer | None = None,
+    signing_key_path: str | os.PathLike | None = None,
+) -> LogEntry:
+    """Internal primitive behind :func:`capsule_emit.surface.log` --
+    [verify-entry-authorship-tristate-and-log] RULING 3. Builds and appends
+    an entry that NEVER carries a producer signature: no ``sign`` parameter
+    exists on this function, by design -- ``log()``'s whole point is that
+    the weaker guarantee is reached through a distinct, honestly-named verb,
+    never a flag on ``seal()``/``_emit_capsule`` (which pass every caller
+    kwarg straight through, so a boolean flag there would be reachable as
+    ``seal(sign=False)``, exactly what RULING 3 forbids).
+
+    ``log_digest`` is the caller's already-computed opaque SHA-256 digest of
+    their own raw bytes (see ``capsule_emit.surface.log`` -- no JCS
+    re-canonicalization, unlike ``seal()``'s JSON-native ``agent_input``;
+    the same "opaque digest" posture ``received()`` uses for foreign
+    artifacts). Stored under ``compute_attestation.log_digest`` rather than
+    ``agent_input_digest`` for the same reason ``received()`` does not reuse
+    that field name: the contract differs (raw-bytes digest, not
+    ``SHA-256(JCS(value))``).
+
+    Otherwise shares ``_emit_capsule``'s CLL participation exactly: this
+    entry is a full MMR leaf, checkpointed and witnessed on the same
+    cadence/``require_witness`` terms -- the CLL layer's guarantees (order,
+    completeness, contemporaneity, tamper-evidence, witnessing) hold
+    unchanged. The checkpoint/witness signer is still resolved and still
+    signs the COVERING CHECKPOINT as usual -- only THIS entry's own
+    producer-authorship claim is absent, which is exactly what
+    ``capsule_emit.signing.verify_capsule_signature_tristate`` grades
+    :attr:`~capsule_emit.signing.AuthorshipVerdict.UNCLAIMED` (log-verified,
+    authorship not claimed), never
+    :attr:`~capsule_emit.signing.AuthorshipVerdict.INVALID`.
+    """
+    _witness.refuse_stub_in_production(witness)
+
+    compute_att: dict[str, Any] = {"log_digest": log_digest, "digest_alg": "SHA-256"}
+    if extra_compute:
+        compute_att.update(extra_compute)
+
+    disposition = Disposition(
+        decision="accept",
+        approver="policy",
+        human_disposed=False,
+        verdict_class="logged",
+    )
+
+    entry = _base_emit(
+        action_id=None,
+        action_type="fyi",
+        operator=operator,
+        developer=developer,
+        compute_attestation=compute_att,
+        disposition=disposition,
+        tool_name=action,
+    )
+    entry["canonicalization_id"] = canonicalization_id
+    entry["capsule_id"] = compute_capsule_id(entry)
+    # Deliberately NO signature / key_id keys -- see LogEntry's docstring
+    # and verify_capsule_signature_tristate's UNCLAIMED state.
+
+    seq = append_to_ledger(entry, ledger)
+
+    # The checkpoint/witness layer needs a real Signer regardless -- it
+    # signs the COVERING CHECKPOINT, never this entry's own content (see
+    # this function's docstring).
+    signer_obj = _signing.resolve_signer(
+        os.fspath(ledger), signer=signer, key_path=signing_key_path
+    )
+    witness_endpoint = witness_url or os.environ.get(_witness.WITNESS_URL_ENV_VAR, None)
+
+    if require_witness:
+        _witness.require_witness_receipt(
+            os.fspath(ledger), ts_url=witness_endpoint, witness=witness, signer=signer_obj
+        )
+        witness_outcome: WitnessOutcome = "witness_receipt_obtained"
+    else:
+        _witness.maybe_checkpoint(
+            os.fspath(ledger), ts_url=witness_endpoint, enabled=witness, signer=signer_obj
+        )
+        witness_outcome = "local_sealed" if _witness.witness_mode(witness) == "off" else "checkpoint_queued"
+
+    return LogEntry(
+        capsule_id=entry["capsule_id"],
+        capsule=entry,
         seq=seq,
         witness_outcome=witness_outcome,
     )

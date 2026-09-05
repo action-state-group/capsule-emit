@@ -85,6 +85,7 @@ from __future__ import annotations
 import os
 import threading
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
@@ -95,7 +96,9 @@ __all__ = [
     "SIGNING_KEY_PATH_ENV_VAR",
     "resolve_signer",
     "sign_producer_envelope",
+    "AuthorshipVerdict",
     "verify_capsule_signature",
+    "verify_capsule_signature_tristate",
     "verify_store_signed",
 ]
 
@@ -359,9 +362,50 @@ def sign_producer_envelope(signer: Signer, capsule_id: str) -> tuple[str, str]:
     return signer.sign(payload)
 
 
-def verify_capsule_signature(capsule: dict) -> bool:
-    """Recompute and check a capsule's self-attested producer signature.
-    Never raises.
+class AuthorshipVerdict(str, Enum):
+    """Three-state per-entry authorship verdict
+    [verify-entry-authorship-tristate-and-log] -- the SAME shape already
+    shipped for witness-stamp authenticity (see
+    ``cll.checkpoint.emit.StampVerdict``, which folds in the self-hosted-TS
+    pin case too): a claim, once made, is either upheld or a forgery: never
+    is *absence* of a claim treated as forgery. Capsule-authorship and
+    witness-stamp authenticity are different concepts living in different
+    repos (``capsule_emit`` carries capsule vocabulary that
+    ``cll``/``cll.checkpoint`` deliberately never does -- see
+    ``capsule_emit.bundle``'s module docstring), so this is a distinct enum
+    rather than a re-exported one -- "one shared tri-state code path" here
+    means every capsule-emit call site that must grade authorship
+    (:func:`capsule_emit.bundle.verify_bundle`,
+    :func:`verify_store_signed`) routes through the ONE function below
+    (:func:`verify_capsule_signature_tristate`), not that the two repos
+    share a Python class across the capsule/log boundary.
+    """
+
+    AUTHORED = "authored"
+    """Claimed (``signature``+``key_id`` present) and the producer envelope
+    verifies. The full self-attested authorship guarantee."""
+
+    UNCLAIMED = "unclaimed"
+    """No producer signature was ever claimed (``signature``/``key_id`` both
+    absent -- e.g. a :func:`capsule_emit.surface.log` entry). NOT evidence of
+    forgery -- the log-integrity guarantees (order, completeness,
+    contemporaneity, tamper-evidence, witnessing) still hold from the CLL
+    layer alone; only per-record *authorship* is unclaimed."""
+
+    INVALID = "invalid"
+    """Either a malformed claim (only one of ``signature``/``key_id``
+    present) or a claim that was made and fails to verify -- forgery, or
+    content/signature/key_id tampered after signing."""
+
+
+def verify_capsule_signature_tristate(capsule: dict) -> tuple[AuthorshipVerdict, list[str]]:
+    """Grade a capsule's self-attested producer-authorship claim as one of
+    THREE states -- never raises. See :class:`AuthorshipVerdict` for the
+    discipline this enforces: absence of a claim (``signature``/``key_id``
+    both missing, e.g. a :func:`capsule_emit.surface.log` entry) is
+    :attr:`AuthorshipVerdict.UNCLAIMED`, never :attr:`AuthorshipVerdict.INVALID`
+    -- conflating the two would report a genuinely-unsigned, honestly-logged
+    entry as forged.
 
     ``capsule["signature"]`` is a hex-encoded COSE_Sign1 envelope over the
     raw ``capsule_id`` digest (the frozen AAC producer-envelope profile);
@@ -379,11 +423,32 @@ def verify_capsule_signature(capsule: dict) -> bool:
     excluding only ``capsule_id`` itself plus ``signature``/``key_id`` (see
     ``capsule_emit.canonicalization`` -- never folded in, so no strip-and-
     recompute dance is needed here; ``compute_capsule_id`` already excludes
-    them).
+    them, which is exactly what makes an absent-signature entry's
+    ``capsule_id`` identical to what it would be once later signed).
+
+    Returns ``(verdict, messages)`` -- ``messages`` is empty for
+    :attr:`AuthorshipVerdict.AUTHORED` and :attr:`AuthorshipVerdict.UNCLAIMED`
+    (nothing wrong to report), and carries a human-readable finding for
+    :attr:`AuthorshipVerdict.INVALID`.
     """
     from agent_action_capsule.producer_envelope import verify_producer_envelope
 
     from .canonicalization import compute_capsule_id
+
+    if not isinstance(capsule, dict):
+        return AuthorshipVerdict.INVALID, ["not a mapping"]
+
+    cid = capsule.get("capsule_id", "<none>")
+    has_signature = "signature" in capsule
+    has_key_id = "key_id" in capsule
+
+    if not has_signature and not has_key_id:
+        return AuthorshipVerdict.UNCLAIMED, []
+    if has_signature != has_key_id:
+        return AuthorshipVerdict.INVALID, [
+            f"capsule_id={cid}: only one of signature/key_id present -- "
+            "malformed producer envelope"
+        ]
 
     try:
         envelope_hex = capsule["signature"]
@@ -391,9 +456,33 @@ def verify_capsule_signature(capsule: dict) -> bool:
         capsule_id = compute_capsule_id(capsule)
         envelope = bytes.fromhex(envelope_hex)
         result = verify_producer_envelope(capsule_id, envelope)
-        return result.ok and result.public_key == bytes.fromhex(key_id)
-    except (KeyError, ValueError, TypeError):
-        return False
+        ok = result.ok and result.public_key == bytes.fromhex(key_id)
+    except (KeyError, ValueError, TypeError) as exc:
+        return AuthorshipVerdict.INVALID, [f"capsule_id={cid}: producer envelope malformed: {exc}"]
+
+    if ok:
+        return AuthorshipVerdict.AUTHORED, []
+    return AuthorshipVerdict.INVALID, [
+        f"capsule_id={cid}: self-attested Ed25519 signature does not verify against key_id -- "
+        "content, signature, or key_id was tampered or forged"
+    ]
+
+
+def verify_capsule_signature(capsule: dict) -> bool:
+    """Thin bool collapse of :func:`verify_capsule_signature_tristate` --
+    ``True`` iff :attr:`AuthorshipVerdict.AUTHORED`. Every capsule minted by
+    ``seal()``/``received()`` is always signed (0.5.0, no opt-out), so for
+    that whole population this is equivalent to the pre-tristate behavior.
+    Callers that must tell an honestly-unclaimed :func:`capsule_emit.surface.log`
+    entry apart from a forged one -- :func:`capsule_emit.bundle.verify_bundle`,
+    :func:`verify_store_signed` -- use the tristate function instead; this
+    bool form flattens :attr:`AuthorshipVerdict.UNCLAIMED` and
+    :attr:`AuthorshipVerdict.INVALID` together, which is exactly the
+    conflation [verify-entry-authorship-tristate-and-log] fixes at those two
+    call sites.
+    """
+    verdict, _ = verify_capsule_signature_tristate(capsule)
+    return verdict is AuthorshipVerdict.AUTHORED
 
 
 def verify_store_signed(records: list[dict]) -> list:
@@ -420,8 +509,19 @@ def verify_store_signed(records: list[dict]) -> list:
 
     Mutates and returns the same ``VerificationResult`` list
     ``verify_store`` produces (``result.ok``/``result.findings`` gain the
-    producer-signature verdict) so every existing caller of ``verify_store``
+    producer-authorship verdict) so every existing caller of ``verify_store``
     becomes a drop-in caller of this instead. Never raises.
+
+    **Three-state, not two** [verify-entry-authorship-tristate-and-log]: an
+    entry with no producer signature at all (e.g. a
+    :func:`capsule_emit.surface.log` entry) gets a ``severity="warning"``
+    finding (``producer_signature_unclaimed``) that does NOT gate
+    ``result.ok`` -- ``agent_action_capsule.contracts``'s own severity
+    convention already treats ``"warning"`` as non-gating (see
+    ``Finding``'s docstring), so this reuses that convention rather than
+    inventing a new one. Only a claimed-and-failing signature
+    (``producer_signature_invalid``, ``severity="error"``) gates ``ok``, the
+    same as before.
     """
     from agent_action_capsule import Finding
 
@@ -429,17 +529,26 @@ def verify_store_signed(records: list[dict]) -> list:
 
     results = verify_store(records)
     for record, result in zip(records, results):
-        if not isinstance(record, dict) or not verify_capsule_signature(record):
-            result.ok = False
+        verdict, messages = verify_capsule_signature_tristate(record)
+        cid = record.get("capsule_id", "<none>") if isinstance(record, dict) else "<none>"
+        if verdict is AuthorshipVerdict.INVALID:
             result.findings.append(
                 Finding(
                     code="producer_signature_invalid",
-                    detail=(
-                        f"capsule_id={record.get('capsule_id', '<none>') if isinstance(record, dict) else '<none>'}: "
-                        "self-attested Ed25519 signature does not verify against key_id -- "
-                        "content, signature, or key_id was tampered or forged"
-                    ),
+                    detail="; ".join(messages) or f"capsule_id={cid}: producer signature invalid",
                     severity="error",
                 )
             )
+        elif verdict is AuthorshipVerdict.UNCLAIMED:
+            result.findings.append(
+                Finding(
+                    code="producer_signature_unclaimed",
+                    detail=(
+                        f"capsule_id={cid}: no producer signature present -- "
+                        "log-verified, authorship not claimed"
+                    ),
+                    severity="warning",
+                )
+            )
+        result.ok = not any(f.severity == "error" for f in result.findings)
     return results

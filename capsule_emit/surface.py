@@ -78,6 +78,16 @@ mechanism for binding a member that lives in someone else's log:
 ``received()`` localizes the foreign artifact as a capsule in *your* log
 first, and then a slot wrapper references it exactly like any member you
 authored yourself.
+
+**A third, unsigned verb: ``log()``** [verify-entry-authorship-tristate-and-log].
+``seal()``/``received()`` always sign — there is no flag on either to opt
+out. ``log(artifact_bytes)`` is the distinct, honestly-named unsigned append:
+an opaque digest enters the log with full CLL guarantees (order,
+completeness, tamper-evidence, witnessing) but no producer-authorship claim
+— graded ``UNCLAIMED``, never ``INVALID``, by
+:func:`capsule_emit.signing.verify_capsule_signature_tristate`. Returns a
+:class:`~capsule_emit.core.LogEntry`, never a :data:`Capsule` — see
+:func:`log`'s own docstring.
 """
 from __future__ import annotations
 
@@ -85,9 +95,9 @@ import hashlib
 from collections.abc import Iterable
 from typing import Any
 
-from .core import _DEFAULT_LEDGER, EmitResult, _emit_capsule
+from .core import _DEFAULT_LEDGER, EmitResult, LogEntry, _emit_capsule, _emit_log_entry
 
-__all__ = ["Capsule", "seal", "received", "who", "can", "did", "audit", "push"]
+__all__ = ["Capsule", "seal", "received", "who", "can", "did", "audit", "push", "log"]
 
 #: The noun. seal()/received() (standalone or composed) all return this type.
 #: An alias, not a new class — Capsule *is* an EmitResult; the rename is a
@@ -304,6 +314,32 @@ def _seal_slots(members: list[_SlotMember], **kwargs: Any) -> Capsule:
     return _compose(resolved, slots=slots, **kwargs)
 
 
+def _coerce_artifact_bytes(value: Any, *, caller: str) -> bytes:
+    """Shared no-implicit-coercion buffer check behind ``received()`` and
+    ``log()``.
+
+    ``bytes(value)`` accepts far more than "an explicit buffer" —
+    ``bytes(7)`` NUL-pads to 7 bytes, ``bytes(True)`` becomes a single
+    ``\\x01`` byte, ``bytes([1, 2, 3])`` treats a list of ints as a byte
+    sequence — and every one of those silently commits the record to bytes
+    the caller never actually transmitted. Only ``str`` (utf-8 encoded) and
+    explicit buffer types (``bytes``/``bytearray``/``memoryview``) are
+    accepted; anything else is a caller error, raised rather than guessed.
+    """
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(value)
+    raise TypeError(
+        f"{caller}() artifact_bytes must be str (utf-8 encoded) or "
+        "an explicit buffer (bytes/bytearray/memoryview) — got "
+        f"{type(value).__name__}. Implicit coercions like bytes(some_int) or "
+        "bytes(list_of_ints) would commit the record to bytes the caller "
+        "never actually transmitted, so they are refused rather than "
+        "guessed at."
+    )
+
+
 def _carry(
     artifact_bytes: bytes | bytearray | memoryview | str,
     *,
@@ -323,28 +359,8 @@ def _carry(
     ``SHA-256(JCS(agent_input))`` over a JSON-native value; a carried artifact
     is opaque bytes that must never be JCS-reinterpreted, so it gets its own,
     equally-raw digest field instead.
-
-    **No implicit buffer coercion.** ``bytes(value)`` accepts far more than
-    "an explicit buffer" — ``bytes(7)`` NUL-pads to 7 bytes, ``bytes(True)``
-    becomes a single ``\\x01`` byte, ``bytes([1, 2, 3])`` treats a list of
-    ints as a byte sequence — and every one of those silently commits the
-    capsule to bytes the caller never actually transmitted. Only ``str`` (utf-8
-    encoded) and explicit buffer types (``bytes``/``bytearray``/``memoryview``)
-    are accepted; anything else is a caller error, raised rather than guessed.
     """
-    if isinstance(artifact_bytes, str):
-        raw = artifact_bytes.encode("utf-8")
-    elif isinstance(artifact_bytes, (bytes, bytearray, memoryview)):
-        raw = bytes(artifact_bytes)
-    else:
-        raise TypeError(
-            "received() artifact_bytes must be str (utf-8 encoded) or "
-            "an explicit buffer (bytes/bytearray/memoryview) — got "
-            f"{type(artifact_bytes).__name__}. Implicit coercions like "
-            "bytes(some_int) or bytes(list_of_ints) would commit the capsule "
-            "to bytes the caller never actually transmitted, so they are "
-            "refused rather than guessed at."
-        )
+    raw = _coerce_artifact_bytes(artifact_bytes, caller="received")
     carried_digest = hashlib.sha256(raw).hexdigest()
     carried_ref = {
         "type": carried_type,
@@ -391,6 +407,49 @@ def received(
             "capsule with a null, absent, or wrong committed type."
         )
     return _carry(artifact_bytes, carried_type=type, action=action, kwargs=kwargs)
+
+
+def log(
+    artifact_bytes: bytes | bytearray | memoryview | str,
+    *,
+    action: str = "log",
+    **kwargs: Any,
+) -> LogEntry:
+    """Append *artifact_bytes* to the log WITHOUT a producer signature — the
+    honestly-named unsigned, mass-market tier
+    [verify-entry-authorship-tristate-and-log] RULING 3.
+
+    ``seal()``/``received()`` always sign; there is no way to reach a weaker
+    guarantee through either of them (0.5.0, "no opt-out, only a choice of
+    key" — see ``CHANGELOG.md``), and this function deliberately does not
+    add one — there is no ``sign=`` kwarg anywhere on this surface. ``log()``
+    is the ONLY way to append unsigned, so the weaker guarantee is legible
+    at the call site rather than hidden behind a flag on the verb everyone
+    already reads as "I authored this."
+
+    *artifact_bytes* is committed by the SHA-256 digest of its exact bytes —
+    no JCS re-canonicalization (the same "opaque digest" posture
+    :func:`received` uses; see :func:`_coerce_artifact_bytes` for the
+    accepted types and why implicit coercions are refused).
+
+    **What this establishes, from the CLL layer alone** (this entry is a
+    full MMR leaf, checkpointed and witnessed exactly like a signed
+    capsule): order, completeness, contemporaneity, tamper-evidence, and
+    witnessing. **What it does NOT establish:** who authored this content —
+    :func:`capsule_emit.bundle.verify_bundle` and
+    :func:`capsule_emit.signing.verify_store_signed` grade a ``log()`` entry
+    :attr:`~capsule_emit.signing.AuthorshipVerdict.UNCLAIMED` ("log-verified,
+    authorship not claimed"), never
+    :attr:`~capsule_emit.signing.AuthorshipVerdict.INVALID` — absence of a
+    claim is never treated as forgery. Upgrade to a producer-signed capsule
+    any time via :func:`seal`.
+
+    Returns a :class:`~capsule_emit.core.LogEntry`, never a :data:`Capsule`
+    — see that type's docstring for why the distinct shape matters.
+    """
+    raw = _coerce_artifact_bytes(artifact_bytes, caller="log")
+    log_digest = hashlib.sha256(raw).hexdigest()
+    return _emit_log_entry(action, log_digest=log_digest, **kwargs)
 
 
 def _compose(
