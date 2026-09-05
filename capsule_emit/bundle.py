@@ -97,13 +97,17 @@ def verify_bundle(
          proof was built for, AND is recomputed from the receipt's own
          content (not just compared as an opaque label) — a bundle whose
          receipt body was tampered but whose ``capsule_id`` was left alone
-         is caught here; AND its self-attested producer signature verifies
-         (``capsule_emit.signing.verify_capsule_signature``) — a receipt
-         body rewritten with a matching, recomputed ``capsule_id`` (the
-         [verify-checks-producer-signature] forgery, replayed against a
-         bundle) is caught here instead. This step is capsule-specific and
-         lives in THIS module (see :func:`cll.checkpoint.bundle.
-         verify_bundle_log_integrity`'s docstring for why);
+         is caught here; AND its self-attested producer-authorship claim is
+         graded THREE-STATE
+         (``capsule_emit.signing.verify_capsule_signature_tristate``)
+         [verify-entry-authorship-tristate-and-log]: claimed-and-verifies is
+         fine; claimed-and-fails — a receipt body rewritten with a matching,
+         recomputed ``capsule_id`` (the [verify-checks-producer-signature]
+         forgery, replayed against a bundle) — is FATAL here; absent (a
+         :func:`capsule_emit.surface.log` entry, no ``signature``/``key_id``
+         at all) is a non-fatal notice, never treated as forgery. This step
+         is capsule-specific and lives in THIS module (see :func:`cll.
+         checkpoint.bundle.verify_bundle_log_integrity`'s docstring for why);
       2–6. everything the LOG proves — inclusion, checkpoint signature,
          consistency (labeled honestly: anti-REWRITE, never "no fork"),
          witness stamp tri-state, COSE wire cross-check — delegated to
@@ -118,30 +122,42 @@ def verify_bundle(
     from cll.checkpoint.bundle import verify_bundle_log_integrity
 
     from .canonicalization import compute_capsule_id
-    from .signing import verify_capsule_signature
+    from .signing import AuthorshipVerdict, verify_capsule_signature_tristate
 
     step1_errors: list[str] = []
+    step1_ok = True
     try:
         if b.receipt.get("capsule_id") != b.capsule_id:
             step1_errors.append("receipt.capsule_id does not match bundle.capsule_id")
+            step1_ok = False
 
         try:
             recomputed_capsule_id = compute_capsule_id(b.receipt)
         except Exception as exc:
             step1_errors.append(f"receipt {b.capsule_id} content could not be hashed: {exc}")
+            step1_ok = False
         else:
             if recomputed_capsule_id != b.receipt.get("capsule_id"):
                 step1_errors.append(
                     f"receipt {b.capsule_id} does not hash to its own capsule_id -- "
                     "receipt body was tampered"
                 )
-        if not verify_capsule_signature(b.receipt):
+                step1_ok = False
+
+        # Three-state, not two [verify-entry-authorship-tristate-and-log]:
+        # UNCLAIMED (no signature/key_id at all -- a log() entry) is a
+        # non-fatal notice, never treated the same as a claimed-and-failing
+        # (INVALID) signature.
+        verdict, verdict_messages = verify_capsule_signature_tristate(b.receipt)
+        if verdict is AuthorshipVerdict.INVALID:
+            step1_errors.extend(verdict_messages)
+            step1_ok = False
+        elif verdict is AuthorshipVerdict.UNCLAIMED:
             step1_errors.append(
-                f"receipt {b.capsule_id} signature does not verify -- receipt content, signature, "
-                "or key_id was tampered, forged, or unsigned"
+                f"receipt {b.capsule_id}: log-verified, authorship not claimed"
             )
     except Exception as exc:  # noqa: BLE001 — pure verifier, never raises
         return False, step1_errors + [f"unexpected error: {exc}"]
 
     log_ok, log_messages = verify_bundle_log_integrity(b, trust_anchor=trust_anchor)
-    return (not step1_errors) and log_ok, step1_errors + log_messages
+    return step1_ok and log_ok, step1_errors + log_messages

@@ -41,17 +41,20 @@ checkpoint-only (never capsule content), lazy per ledger — see
 ``capsule_emit.witness`` and ``docs/checkpoint.md``). The older per-capsule
 anchor channel is a legacy,
 non-default opt-in (``anchor=True`` / ``CAPSULE_ANCHOR=legacy-on``) kept only
-as a rollback path. Every capsule is also cryptographically signed, always,
-by a persisted producer key (see ``capsule_emit.signing``) — this one has no
-off switch, only a choice of *which* key signs (``signer=``/
-``signing_key_path=``). Ledger is written to ``ledger.jsonl`` by default. All
-of the above are configurable.
+as a rollback path. Every capsule minted by ``seal()``/``received()`` is also
+cryptographically signed, always, by a persisted producer key (see
+``capsule_emit.signing``) — neither has an off switch, only a choice of
+*which* key signs (``signer=``/``signing_key_path=``). The ONE way to append
+unsigned is the distinct ``log()`` verb — see ``capsule_emit.surface.log``
+and ``capsule_emit.signing.verify_capsule_signature_tristate``
+[verify-entry-authorship-tristate-and-log]. Ledger is written to
+``ledger.jsonl`` by default. All of the above are configurable.
 """
 from typing import Any, NoReturn
 
 from .adjudication import contradicted, seal_adjudication
 from .approval import list_pending, seal_approval
-from .core import EmitResult
+from .core import EmitResult, LogEntry
 from .disclosure import DisclosureError, build_disclosure_envelope
 from .gate import (
     CheckResult,
@@ -71,13 +74,15 @@ from .ledger import view_chains as ledger_view_chains
 from .manifest import ManifestDeclaration, find_manifest, load_manifest
 from .numbers import CANONICALIZATION_ID, float_to_str
 from .signing import (
+    AuthorshipVerdict,
     LocalKeypairSigner,
     RotationRecord,
     Signer,
     verify_capsule_signature,
+    verify_capsule_signature_tristate,
     verify_store_signed,
 )
-from .surface import Capsule, audit, can, did, push, received, seal, who
+from .surface import Capsule, audit, can, did, log, push, received, seal, who
 from .verify import InputDigestResult, VerifyReason, verify_input_digest
 from .verify_canonicalization import (
     KNOWN_ALGORITHMS,
@@ -113,9 +118,11 @@ __all__ = [
     "did",
     "audit",
     "push",
+    "log",
     # Core
     "emit",
     "EmitResult",
+    "LogEntry",
     # Approval record + pending
     "seal_approval",
     "list_pending",
@@ -164,6 +171,8 @@ __all__ = [
     "Signer",
     "LocalKeypairSigner",
     "RotationRecord",
+    "AuthorshipVerdict",
     "verify_capsule_signature",
+    "verify_capsule_signature_tristate",
     "verify_store_signed",
 ]
