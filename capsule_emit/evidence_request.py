@@ -13,7 +13,13 @@ selected record — **digests only**, never :func:`capsule_emit.disclose
 answer to a stranger stays digests-only regardless of what a *local*
 disclosure store (PR #79's default-on text-disclosure preimage store) holds
 for this node's own use — field-level disclosure to a stranger is a
-separate, off-by-default decision this module never makes on its own.
+separate, off-by-default decision this module never makes on its own. A
+``chain_segment`` subject (``{kind: "chain_segment", from_size, to_size}``
+or ``{kind: "chain_segment", last: N}``) dispatches to
+:func:`capsule_emit.chain_segment.chain_segment` instead — the CHEAP form of
+history: the checkpoint chain itself (signed checkpoints, witness receipts,
+one consistency proof per link, per-checkpoint leaf counts by kind), never
+per-record bundles. See that module's docstring for the full shape.
 
 Every well-formed request gets exactly one of three answers — never a bare,
 unsigned absence:
@@ -69,7 +75,7 @@ REFUSAL_REASONS = frozenset(
     {REASON_REQUEST_MALFORMED, REASON_COVERAGE_UNSATISFIABLE, REASON_NO_SUCH_RECORD}
 )
 
-SUBJECT_KINDS = frozenset({"record", "range"})
+SUBJECT_KINDS = frozenset({"record", "range", "chain_segment"})
 
 
 class RequestMalformedError(RuntimeError):
@@ -101,6 +107,36 @@ def _require(cond: bool, message: str) -> None:
         raise RequestMalformedError(message)
 
 
+def _is_size_int(v: Any) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
+def _valid_chain_segment_subject(subject: dict) -> bool:
+    """``{last: <positive int>}`` XOR ``{from_size, to_size}`` (each a
+    non-negative int, ``to_size >= from_size``) — never both, never
+    neither. Mirrors the exact validation
+    :func:`capsule_emit.chain_segment.chain_segment` itself enforces, so a
+    malformed shape is caught here as ``request_malformed`` rather than
+    surfacing as a ``chain_segment.ChainSegmentError`` deep in
+    ``_build_bundles``."""
+    has_last = "last" in subject
+    has_range = "from_size" in subject or "to_size" in subject
+    if has_last and has_range:
+        return False
+    if has_last:
+        last = subject["last"]
+        return isinstance(last, int) and not isinstance(last, bool) and last > 0
+    if has_range:
+        return (
+            "from_size" in subject
+            and "to_size" in subject
+            and _is_size_int(subject["from_size"])
+            and _is_size_int(subject["to_size"])
+            and subject["to_size"] >= subject["from_size"]
+        )
+    return False
+
+
 def parse_request(request_bytes: bytes) -> RequestMap:
     """Parse ``request_bytes`` into a :class:`RequestMap`.
 
@@ -120,8 +156,14 @@ def parse_request(request_bytes: bytes) -> RequestMap:
     _require(isinstance(kind, str) and kind in SUBJECT_KINDS, f"subject.kind must be one of {sorted(SUBJECT_KINDS)}")
     if kind == "record":
         _require(isinstance(subject.get("capsule_id"), str) and subject["capsule_id"], "subject.kind='record' requires a non-empty subject.capsule_id")
-    else:  # "range"
+    elif kind == "range":
         _require(isinstance(subject.get("selector"), str) and subject["selector"], "subject.kind='range' requires a non-empty subject.selector")
+    else:  # "chain_segment"
+        _require(
+            _valid_chain_segment_subject(subject),
+            "subject.kind='chain_segment' requires either {last: <positive int>} or "
+            "{from_size: <non-negative int>, to_size: <int >= from_size>} — never both",
+        )
 
     coverage = data.get("coverage") or {}
     _require(isinstance(coverage, dict), "coverage must be an object")
@@ -275,7 +317,37 @@ def _range_capsule_ids(ledger: Any, selector: str) -> list[str] | None:
     return [r["capsule_id"] for r in selected]
 
 
-def _build_bundles(ledger: Any, req: RequestMap) -> tuple[tuple[Any, ...] | None, str | None]:
+def _build_chain_segment(ledger: Any, req: RequestMap, *, self_owner_id: str | None) -> tuple[tuple[Any, ...] | None, str | None]:
+    """The ``chain_segment`` leg of :func:`_build_bundles` — split out since
+    it dispatches to :mod:`capsule_emit.chain_segment` over the checkpoint
+    CHAIN, not to :func:`capsule_emit.bundle.bundle` over individual
+    records. Returns the same ``(bundles, reason)`` shape so
+    :func:`answer`'s pin/freshness resolution (which reads ``b.checkpoint``
+    generically) needs no ``chain_segment``-specific branch."""
+    from .chain_segment import ChainSegmentError
+    from .chain_segment import chain_segment as _chain_segment_fn
+    from .ledger import read_ledger_entries
+
+    entries = read_ledger_entries(ledger)
+    if not entries:
+        return None, REASON_NO_SUCH_RECORD
+
+    subject = req.subject
+    try:
+        segment = _chain_segment_fn(
+            entries,
+            from_size=subject.get("from_size"),
+            to_size=subject.get("to_size"),
+            last=subject.get("last"),
+            self_owner_id=self_owner_id,
+            leaf_digests=bool(subject.get("leaf_digests", False)),
+        )
+    except ChainSegmentError:
+        return None, REASON_COVERAGE_UNSATISFIABLE
+    return (segment,), None
+
+
+def _build_bundles(ledger: Any, req: RequestMap, *, self_owner_id: str | None = None) -> tuple[tuple[Any, ...] | None, str | None]:
     """Attempt to build the bundles this request's subject names.
 
     Returns ``(bundles, None)`` on success, or ``(None, reason)`` naming
@@ -288,6 +360,8 @@ def _build_bundles(ledger: Any, req: RequestMap) -> tuple[tuple[Any, ...] | None
     from .ledger import read_ledger_entries
 
     kind = req.subject["kind"]
+    if kind == "chain_segment":
+        return _build_chain_segment(ledger, req, self_owner_id=self_owner_id)
     if kind == "record":
         capsule_ids = [req.subject["capsule_id"]]
     else:  # "range"
@@ -326,11 +400,13 @@ def answer(
     """The one evidence-request responder.
 
     Parses ``request_bytes`` (the wire's request map), resolves
-    ``coverage``, and dispatches to :func:`capsule_emit.bundle.bundle` (via
-    :func:`_build_bundles`) for the record(s) the subject names. Returns
-    exactly one of:
+    ``coverage``, and dispatches (via :func:`_build_bundles`) to
+    :func:`capsule_emit.bundle.bundle` for the record(s) a ``record``/
+    ``range`` subject names, or to :func:`capsule_emit.chain_segment
+    .chain_segment` for a ``chain_segment`` subject. Returns exactly one of:
 
-      * :class:`Artifact` — one or more offline-verifiable ``Bundle`` s;
+      * :class:`Artifact` — one or more offline-verifiable ``Bundle``/
+        ``ChainSegment`` objects;
       * :class:`Refusal` — signed, offline-verifiable, one of
         ``REFUSAL_REASONS``.
 
@@ -356,14 +432,14 @@ def answer(
     except RequestMalformedError:
         return _refuse(request_digest, REASON_REQUEST_MALFORMED, signer=signer_obj, issued_at=issued_at)
 
-    bundles, reason = _build_bundles(ledger, req)
+    bundles, reason = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
 
     min_freshness = req.coverage.get("min_freshness")
     if bundles is None and reason == REASON_COVERAGE_UNSATISFIABLE and min_freshness and req.has_deadline:
         # min_freshness licenses doing the work under a deadline: force a
         # checkpoint now and retry once.
         _witness.push(os.fspath(ledger), signer=signer_obj)
-        bundles, reason = _build_bundles(ledger, req)
+        bundles, reason = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
 
     if bundles is None:
         return _refuse(request_digest, reason, signer=signer_obj, issued_at=issued_at)
@@ -385,7 +461,7 @@ def answer(
         if stale:
             if req.has_deadline:
                 _witness.push(os.fspath(ledger), signer=signer_obj)
-                bundles, reason = _build_bundles(ledger, req)
+                bundles, reason = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
                 if bundles is None:
                     return _refuse(request_digest, reason, signer=signer_obj, issued_at=issued_at)
                 stale = any(_checkpoint_age_seconds(b.checkpoint.timestamp, issued_at) > max_age for b in bundles)
