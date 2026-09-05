@@ -39,11 +39,36 @@ is citable (frozen surface's "requests are evidence").
 
 **Caller invariance by construction.** The answer is a pure function of
 ``request_bytes`` — this module has no requester-identity parameter at all.
-Two requesters sending byte-identical ``(subject, coverage, derivation)``
-(their ``nonce`` may differ) against an unchanged ledger get a
+Two requesters sending byte-identical ``(subject, coverage, derivation,
+page)`` (their ``nonce`` may differ) against an unchanged ledger get a
 byte-identical :class:`Artifact`; only a per-request field (``nonce``,
 buried inside a *refusal*'s ``request_digest``) ever varies, and it never
 reaches artifact content.
+
+**Caps and paging.** A ``range`` subject can name an arbitrarily large
+selection — a full-ledger selector against a long-lived ledger is a
+one-request memory/CPU amplifier otherwise. ``answer()`` never returns more
+than :data:`MAX_PAGE_SIZE` bundles for one ``range`` request, and defaults
+to :data:`DEFAULT_PAGE_SIZE` when the requester names no ``page.size`` of
+its own. When more of the selection remains, the :class:`Artifact` carries
+``next_page_token`` — an opaque string the requester echoes back verbatim
+as ``request.page.token`` to fetch the next slice; its absence means the
+selection ended, not that the door refused to page. A ``record`` or
+``chain_segment`` subject never produces more than one answer object, so a
+``page`` field on those requests is accepted and ignored. ``record``/
+``range`` subjects a stranger can drill into; ``correlation`` — asking a
+node about ITS OWN counterparties rather than its own records — is a
+separate, not-yet-built subject kind (tracked at
+``[mesh-e14-correlation-subject]``, gated on the requester-nonce work) and
+this module makes no claim it exists.
+
+**Checkpoint writes are pull-only by default.** A ``min_freshness``
+request against a stale/uncovered subject can only make ``answer()`` call
+:func:`capsule_emit.witness.push` — a WRITE — when BOTH the requester
+supplied a ``deadline`` (licensing the work) AND the responding node opted
+in via ``allow_forced_checkpoint=True``. The node-side opt-in defaults to
+``False``: an unconfigured door never writes in response to a read, no
+matter what a requester asks for.
 """
 from __future__ import annotations
 
@@ -59,6 +84,8 @@ __all__ = [
     "REASON_NO_SUCH_RECORD",
     "REFUSAL_REASONS",
     "SUBJECT_KINDS",
+    "DEFAULT_PAGE_SIZE",
+    "MAX_PAGE_SIZE",
     "RequestMalformedError",
     "RequestMap",
     "Artifact",
@@ -77,6 +104,15 @@ REFUSAL_REASONS = frozenset(
 
 SUBJECT_KINDS = frozenset({"record", "range", "chain_segment"})
 
+#: A ``range`` answer never exceeds this many bundles absent an explicit
+#: ``page.size`` — the bound that keeps a full-ledger selector from being a
+#: one-request memory/CPU amplifier.
+DEFAULT_PAGE_SIZE = 50
+
+#: The hard ceiling on ``page.size`` — a requester cannot ask its way past
+#: this by naming a larger size.
+MAX_PAGE_SIZE = 200
+
 
 class RequestMalformedError(RuntimeError):
     """A request map failed to parse — caught by :func:`answer` and turned
@@ -88,11 +124,16 @@ class RequestMap:
     """The parsed request — see the module docstring for the wire shape.
 
     ``has_deadline`` is a bool, not the deadline's value: its PRESENCE is
-    what licenses :func:`answer` to call ``push()`` to satisfy
-    ``min_freshness`` (the requester is asking for fresh-enough evidence
-    and accepting the work that takes); the deadline's own value is a
-    transport-level concern (how long the requester will wait), not this
-    module's.
+    one of two conditions :func:`answer` requires to call ``push()`` to
+    satisfy ``min_freshness`` (the requester is asking for fresh-enough
+    evidence and accepting the work that takes) — the other is the
+    responding node's own ``allow_forced_checkpoint`` opt-in, which
+    defaults off; the deadline's own value is a transport-level concern
+    (how long the requester will wait), not this module's.
+
+    ``page`` is ``{token?: str, size?: int}`` — see the module docstring's
+    "Caps and paging" note. Only a ``range`` subject reads it; present but
+    unused for ``record``/``chain_segment``.
     """
 
     subject: dict
@@ -100,6 +141,7 @@ class RequestMap:
     derivation: str | None
     has_deadline: bool
     nonce: str | None
+    page: dict
 
 
 def _require(cond: bool, message: str) -> None:
@@ -186,12 +228,28 @@ def parse_request(request_bytes: bytes) -> RequestMap:
     nonce = data.get("nonce")
     _require(nonce is None or isinstance(nonce, str), "nonce must be a string when present")
 
+    page = data.get("page") or {}
+    _require(isinstance(page, dict), "page must be an object")
+    if "token" in page:
+        token = page["token"]
+        _require(
+            isinstance(token, str) and token.isdigit(),
+            "page.token must be a token this door itself issued as a prior answer's next_page_token",
+        )
+    if "size" in page:
+        size = page["size"]
+        _require(
+            isinstance(size, int) and not isinstance(size, bool) and size > 0,
+            "page.size must be a positive int",
+        )
+
     return RequestMap(
         subject=subject,
         coverage=coverage,
         derivation=derivation,
         has_deadline=data.get("deadline") is not None,
         nonce=nonce,
+        page=page,
     )
 
 
@@ -205,13 +263,17 @@ class Artifact:
     v: int
     subject_kind: str
     bundles: tuple[Any, ...]  # capsule_emit.bundle.Bundle, one or more
+    next_page_token: str | None = None
 
     def to_dict(self) -> dict:
-        return {
+        d: dict[str, Any] = {
             "v": self.v,
             "subject_kind": self.subject_kind,
             "bundles": [b.to_dict() for b in self.bundles],
         }
+        if self.next_page_token is not None:
+            d["next_page_token"] = self.next_page_token
+        return d
 
 
 @dataclass(frozen=True)
@@ -317,20 +379,23 @@ def _range_capsule_ids(ledger: Any, selector: str) -> list[str] | None:
     return [r["capsule_id"] for r in selected]
 
 
-def _build_chain_segment(ledger: Any, req: RequestMap, *, self_owner_id: str | None) -> tuple[tuple[Any, ...] | None, str | None]:
+def _build_chain_segment(
+    ledger: Any, req: RequestMap, *, self_owner_id: str | None
+) -> tuple[tuple[Any, ...] | None, str | None, str | None]:
     """The ``chain_segment`` leg of :func:`_build_bundles` — split out since
     it dispatches to :mod:`capsule_emit.chain_segment` over the checkpoint
     CHAIN, not to :func:`capsule_emit.bundle.bundle` over individual
-    records. Returns the same ``(bundles, reason)`` shape so
-    :func:`answer`'s pin/freshness resolution (which reads ``b.checkpoint``
-    generically) needs no ``chain_segment``-specific branch."""
+    records. Returns the same ``(bundles, reason, next_page_token)`` shape
+    :func:`_build_bundles` does — ``next_page_token`` is always ``None``
+    here: a chain segment is O(checkpoints), not O(records), so it is
+    cheap by construction and never paged (see the module docstring)."""
     from .chain_segment import ChainSegmentError
     from .chain_segment import chain_segment as _chain_segment_fn
     from .ledger import read_ledger_entries
 
     entries = read_ledger_entries(ledger)
     if not entries:
-        return None, REASON_NO_SUCH_RECORD
+        return None, REASON_NO_SUCH_RECORD, None
 
     subject = req.subject
     try:
@@ -343,17 +408,40 @@ def _build_chain_segment(ledger: Any, req: RequestMap, *, self_owner_id: str | N
             leaf_digests=bool(subject.get("leaf_digests", False)),
         )
     except ChainSegmentError:
-        return None, REASON_COVERAGE_UNSATISFIABLE
-    return (segment,), None
+        return None, REASON_COVERAGE_UNSATISFIABLE, None
+    return (segment,), None, None
 
 
-def _build_bundles(ledger: Any, req: RequestMap, *, self_owner_id: str | None = None) -> tuple[tuple[Any, ...] | None, str | None]:
+def _page_slice(capsule_ids: list[str], page: dict) -> tuple[list[str], str | None]:
+    """Slice ``capsule_ids`` (already resolved, in ledger order) to the
+    requested page — see the module docstring's "Caps and paging" note.
+    ``page.token`` (validated numeric-string by :func:`parse_request`) is
+    the offset into ``capsule_ids`` the previous answer stopped at;
+    ``page.size`` (validated positive int) overrides
+    :data:`DEFAULT_PAGE_SIZE`, capped at :data:`MAX_PAGE_SIZE` either way.
+    Returns ``(this_page_ids, next_page_token)`` — ``next_page_token`` is
+    ``None`` exactly when this page reaches the end of ``capsule_ids``.
+    """
+    offset = int(page["token"]) if "token" in page else 0
+    size = min(page.get("size", DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE)
+    offset = min(offset, len(capsule_ids))
+    page_ids = capsule_ids[offset : offset + size]
+    next_offset = offset + size
+    next_token = str(next_offset) if next_offset < len(capsule_ids) else None
+    return page_ids, next_token
+
+
+def _build_bundles(
+    ledger: Any, req: RequestMap, *, self_owner_id: str | None = None
+) -> tuple[tuple[Any, ...] | None, str | None, str | None]:
     """Attempt to build the bundles this request's subject names.
 
-    Returns ``(bundles, None)`` on success, or ``(None, reason)`` naming
-    which refusal reason applies — ``no_such_record`` (the subject names
-    nothing this node ever sealed) or ``coverage_unsatisfiable`` (the
-    subject exists but is not yet covered by any checkpoint).
+    Returns ``(bundles, None, next_page_token)`` on success, or ``(None,
+    reason, None)`` naming which refusal reason applies —
+    ``no_such_record`` (the subject names nothing this node ever sealed) or
+    ``coverage_unsatisfiable`` (the subject exists but is not yet covered
+    by any checkpoint). ``next_page_token`` is non-``None`` only for a
+    ``range`` subject whose resolved selection exceeds one page.
     """
     from .bundle import BundleError
     from .bundle import bundle as _bundle_fn
@@ -362,25 +450,26 @@ def _build_bundles(ledger: Any, req: RequestMap, *, self_owner_id: str | None = 
     kind = req.subject["kind"]
     if kind == "chain_segment":
         return _build_chain_segment(ledger, req, self_owner_id=self_owner_id)
+    next_page_token = None
     if kind == "record":
         capsule_ids = [req.subject["capsule_id"]]
     else:  # "range"
         resolved = _range_capsule_ids(ledger, req.subject["selector"])
         if not resolved:
-            return None, REASON_NO_SUCH_RECORD
-        capsule_ids = resolved
+            return None, REASON_NO_SUCH_RECORD, None
+        capsule_ids, next_page_token = _page_slice(resolved, req.page)
 
     entries = read_ledger_entries(ledger)
     if not entries or not all(_record_exists(entries, cid) for cid in capsule_ids):
-        return None, REASON_NO_SUCH_RECORD
+        return None, REASON_NO_SUCH_RECORD, None
 
     try:
         bundles = tuple(_bundle_fn(ledger, cid) for cid in capsule_ids)
     except BundleError:
         # The record(s) exist but at least one isn't covered by any
         # checkpoint yet — a coverage lag, not an absence.
-        return None, REASON_COVERAGE_UNSATISFIABLE
-    return bundles, None
+        return None, REASON_COVERAGE_UNSATISFIABLE, None
+    return bundles, None, next_page_token
 
 
 def _checkpoint_age_seconds(timestamp: str, issued_at: str) -> float:
@@ -396,6 +485,7 @@ def answer(
     signer: Any = None,
     signing_key_path: Any = None,
     now: str | None = None,
+    allow_forced_checkpoint: bool = False,
 ) -> Artifact | Refusal:
     """The one evidence-request responder.
 
@@ -417,6 +507,11 @@ def answer(
 
     ``now`` overrides the wall clock (for deterministic tests); defaults to
     the real UTC time.
+
+    ``allow_forced_checkpoint`` is this NODE's own policy opt-in (default
+    ``False``) — see the module docstring's "Checkpoint writes are
+    pull-only by default" note. A requester's ``deadline`` alone never
+    forces a write; both sides must agree.
     """
     import os
 
@@ -432,14 +527,16 @@ def answer(
     except RequestMalformedError:
         return _refuse(request_digest, REASON_REQUEST_MALFORMED, signer=signer_obj, issued_at=issued_at)
 
-    bundles, reason = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
+    bundles, reason, next_page_token = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
 
     min_freshness = req.coverage.get("min_freshness")
-    if bundles is None and reason == REASON_COVERAGE_UNSATISFIABLE and min_freshness and req.has_deadline:
-        # min_freshness licenses doing the work under a deadline: force a
-        # checkpoint now and retry once.
+    may_force_checkpoint = req.has_deadline and allow_forced_checkpoint
+    if bundles is None and reason == REASON_COVERAGE_UNSATISFIABLE and min_freshness and may_force_checkpoint:
+        # min_freshness licenses doing the work under a deadline, and this
+        # node has opted in to doing it: force a checkpoint now and retry
+        # once.
         _witness.push(os.fspath(ledger), signer=signer_obj)
-        bundles, reason = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
+        bundles, reason, next_page_token = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
 
     if bundles is None:
         return _refuse(request_digest, reason, signer=signer_obj, issued_at=issued_at)
@@ -459,13 +556,13 @@ def answer(
         max_age = min_freshness["max_age_seconds"]
         stale = any(_checkpoint_age_seconds(b.checkpoint.timestamp, issued_at) > max_age for b in bundles)
         if stale:
-            if req.has_deadline:
+            if may_force_checkpoint:
                 _witness.push(os.fspath(ledger), signer=signer_obj)
-                bundles, reason = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
+                bundles, reason, next_page_token = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
                 if bundles is None:
                     return _refuse(request_digest, reason, signer=signer_obj, issued_at=issued_at)
                 stale = any(_checkpoint_age_seconds(b.checkpoint.timestamp, issued_at) > max_age for b in bundles)
             if stale:
                 return _refuse(request_digest, REASON_COVERAGE_UNSATISFIABLE, signer=signer_obj, issued_at=issued_at)
 
-    return Artifact(v=1, subject_kind=req.subject["kind"], bundles=bundles)
+    return Artifact(v=1, subject_kind=req.subject["kind"], bundles=bundles, next_page_token=next_page_token)
