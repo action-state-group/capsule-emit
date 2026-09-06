@@ -4,7 +4,16 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## Unreleased
+## 0.8.0
+
+### Added — `strict-tier KAT class`: dup keys, -0, leading zero (#157, [strict-tier-kat-class])
+
+The strict verification tier previously only caught float tokens (a post-parse float-value
+scan), missing duplicate object keys and the negative-zero integer token — `json.loads`
+silently collapses both before the verifier ever sees them. Rewritten to inspect raw JSON
+tokens directly via `json.loads`'s `parse_int`/`parse_float`/`object_pairs_hook`, closing the
+gap so the tier implements the full four-item KAT class: float token form, duplicate keys,
+negative zero, and leading-zero integers.
 
 ### Added — `ledger.py` learns the `cll.ledger.store.LedgerStore` layout ([mesh-ledger-store-migration])
 
@@ -36,6 +45,53 @@ Floor bumped to `checkpointed-local-log>=0.2.0` (segment rotation/archival
 `unmount_segment`, `SegmentManifest` — shipped there). Purely additive: a
 flat-file ledger (this repo's own default `seal()`/`push()` convention) is
 completely unaffected.
+
+### Added — `correlation` evidence-request subject (#155, E14 addendum, [mesh-e14-correlation-subject])
+
+`subject: {kind: "correlation", by: "nonce" | "exchange_id" | "counterparty", value}` on the
+evidence-request door: resolves to every capsule in this ledger carrying `value` under `by`'s
+correlator field. Answer is range-shaped (capped/paged like `range`); a value matching nothing
+is a signed `no_such_record` refusal, never an empty artifact.
+
+### Fixed — three-state entry-authorship; `log()`, the unsigned append verb ([verify-entry-authorship-tristate-and-log])
+
+`verify_bundle`/`verify_store_signed` collapsed "no producer signature" and "producer
+signature fails" into the same INVALID verdict, so an honestly-unsigned entry read as forged.
+`capsule_emit.signing.AuthorshipVerdict` (AUTHORED/UNCLAIMED/INVALID) is now the one shared
+path both verifiers route through; UNCLAIMED is a non-fatal notice, INVALID still gates
+fatal. `capsule_emit.surface.log()` is a new, honestly-named unsigned append verb (opaque
+digest, full MMR/checkpoint/witness participation, never a signature/key_id) — there is no
+`sign=` kwarg anywhere, so `seal(sign=False)` can never become reachable.
+
+### Fixed — evidence-request `range` cap/paging; pull-only checkpoint writes (ADV-10, [adv-evidence-door-caps-and-subjects])
+
+A `range` subject had no cap or paging, so a large ledger's selector was a one-request
+memory/CPU amplifier. `answer()` now returns at most `MAX_PAGE_SIZE` bundles per `range`
+request, carrying `next_page_token` when more remains. Also: a `min_freshness` request with a
+deadline could force a node to write a checkpoint just because the requester asked;
+`allow_forced_checkpoint` (default `False`) now gates that on the node's own opt-in as well.
+
+### Added — fail-closed `require_witness` profile + anti-equivocation docs ([capsule-emit-witness-required-profile])
+
+`require_witness=True` on `_emit_capsule()` (and therefore `seal()`/`received()`) forces a
+synchronous checkpoint and raises `capsule_emit.witness.WitnessRequiredError` unless a
+configured witness actually confirms it — never a silent local-only capsule for a profile
+that demanded one. Default behavior (`require_witness=False`) is unchanged.
+`EmitResult.witness_outcome` reports which of four states applied. `docs/checkpoint.md` gains
+a "Fail-closed" section and an anti-equivocation section on verifying with `bundle()`, not
+`verify_input_digest()`.
+
+### Added — `chain_segment` evidence-request subject, the cheap form of history (E14)
+
+A third E14 subject kind, `{kind: "chain_segment", from_size, to_size}` (or `{last: N}`): the
+checkpoint CHAIN itself — each signed checkpoint, its witness receipts, and one consistency
+proof per link — plus per-checkpoint leaf counts by kind, and for adjudication leaves a
+verdict/role split. No records, no inclusion proofs; O(checkpoints), not O(records), so a
+stranger's history ask no longer costs one full bundle per record. `capsule_emit.chain_segment`
+ships only the vocabulary this repo already owns (`stamp`, `adjudication`); a caller with its
+own record taxonomy supplies its own `classify` callback. `verify_chain_segment()` is the
+paired offline verifier — walks every link from the artifact alone, stops at the first broken
+link.
 
 ## 0.7.0
 
