@@ -56,11 +56,19 @@ as ``request.page.token`` to fetch the next slice; its absence means the
 selection ended, not that the door refused to page. A ``record`` or
 ``chain_segment`` subject never produces more than one answer object, so a
 ``page`` field on those requests is accepted and ignored. ``record``/
-``range`` subjects a stranger can drill into; ``correlation`` — asking a
-node about ITS OWN counterparties rather than its own records — is a
-separate, not-yet-built subject kind (tracked at
-``[mesh-e14-correlation-subject]``, gated on the requester-nonce work) and
-this module makes no claim it exists.
+``range`` subjects a stranger drills into by capsule id; ``correlation``
+(``{kind: "correlation", by: "nonce" | "exchange_id" | "counterparty",
+value}``) asks instead about a CORRELATOR this node's own records carry —
+every record (both halves this node holds for a shared ``nonce``, every
+exchange naming a ``counterparty``, and every adjudication whose verdict
+names one) that matches resolves the same way a ``range`` selection does:
+one bundle per matched record, capped and paged identically (see
+:func:`_correlation_capsule_ids`). Correlator fields are free-form
+``compute_attestation`` extension data — never a fixed, registered schema
+position (a producer namespaces them however it likes, e.g. under an
+``x-mesh-poc-v1`` block) — so resolution walks the record for the
+matching key(s) wherever a producer put them, rather than assuming one
+path.
 
 **Checkpoint writes are pull-only by default.** A ``min_freshness``
 request against a stale/uncovered subject can only make ``answer()`` call
@@ -74,6 +82,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -102,16 +111,30 @@ REFUSAL_REASONS = frozenset(
     {REASON_REQUEST_MALFORMED, REASON_COVERAGE_UNSATISFIABLE, REASON_NO_SUCH_RECORD}
 )
 
-SUBJECT_KINDS = frozenset({"record", "range", "chain_segment"})
+SUBJECT_KINDS = frozenset({"record", "range", "chain_segment", "correlation"})
 
-#: A ``range`` answer never exceeds this many bundles absent an explicit
-#: ``page.size`` — the bound that keeps a full-ledger selector from being a
-#: one-request memory/CPU amplifier.
+#: A ``range``/``correlation`` answer never exceeds this many bundles absent
+#: an explicit ``page.size`` — the bound that keeps a full-ledger selector
+#: from being a one-request memory/CPU amplifier.
 DEFAULT_PAGE_SIZE = 50
 
 #: The hard ceiling on ``page.size`` — a requester cannot ask its way past
 #: this by naming a larger size.
 MAX_PAGE_SIZE = 200
+
+#: ``subject.by`` values a ``correlation`` subject accepts.
+CORRELATION_BY_VALUES = frozenset({"nonce", "exchange_id", "counterparty"})
+
+#: Which ``compute_attestation``-nested key name(s) carry each correlator.
+#: More than one alias exists per correlator because it is free-form
+#: extension data, not a fixed schema position — different producers (e.g.
+#: a Rust host-side envelope vs. the Python sidecar's ``x-mesh-poc-v1``
+#: block) have named the same concept differently.
+_CORRELATION_KEY_ALIASES: dict[str, frozenset[str]] = {
+    "nonce": frozenset({"nonce", "client_nonce"}),
+    "exchange_id": frozenset({"exchange_id"}),
+    "counterparty": frozenset({"counterparty_ref"}),
+}
 
 
 class RequestMalformedError(RuntimeError):
@@ -200,6 +223,13 @@ def parse_request(request_bytes: bytes) -> RequestMap:
         _require(isinstance(subject.get("capsule_id"), str) and subject["capsule_id"], "subject.kind='record' requires a non-empty subject.capsule_id")
     elif kind == "range":
         _require(isinstance(subject.get("selector"), str) and subject["selector"], "subject.kind='range' requires a non-empty subject.selector")
+    elif kind == "correlation":
+        by = subject.get("by")
+        _require(
+            isinstance(by, str) and by in CORRELATION_BY_VALUES,
+            f"subject.kind='correlation' requires subject.by to be one of {sorted(CORRELATION_BY_VALUES)}",
+        )
+        _require(isinstance(subject.get("value"), str) and subject["value"], "subject.kind='correlation' requires a non-empty subject.value")
     else:  # "chain_segment"
         _require(
             _valid_chain_segment_subject(subject),
@@ -256,9 +286,9 @@ def parse_request(request_bytes: bytes) -> RequestMap:
 @dataclass(frozen=True)
 class Artifact:
     """One well-formed answer — one ``Bundle`` for a ``record`` subject, one
-    per selected record for a ``range`` subject. Digests-only, always: this
-    is the SAME object a stranger and a trusted counterparty both receive
-    for the same request."""
+    per selected/matched record for a ``range`` or ``correlation`` subject.
+    Digests-only, always: this is the SAME object a stranger and a trusted
+    counterparty both receive for the same request."""
 
     v: int
     subject_kind: str
@@ -379,6 +409,71 @@ def _range_capsule_ids(ledger: Any, selector: str) -> list[str] | None:
     return [r["capsule_id"] for r in selected]
 
 
+def _iter_values_by_key(obj: Any, keys: frozenset[str]) -> Iterator[str]:
+    """Recursively walk *obj* (a JSON-decoded capsule record — nested
+    dicts/lists only) and yield every string value found under a key in
+    *keys*, at any depth. Correlator fields are free-form
+    ``compute_attestation`` extension data (see the module docstring), so
+    this finds the value wherever a producer nested it rather than
+    assuming one fixed path."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in keys and isinstance(v, str):
+                yield v
+            yield from _iter_values_by_key(v, keys)
+    elif isinstance(obj, list):
+        for item in obj:
+            yield from _iter_values_by_key(item, keys)
+
+
+def _iter_dicts_by_key(obj: Any, key: str) -> Iterator[dict]:
+    """Like :func:`_iter_values_by_key`, but yields dict VALUES found under
+    *key* at any depth — used to find the ``adjudication`` block wherever
+    it is nested (``model_attestation.compute_attestation.adjudication``
+    today; this module never hardcodes that path — see the module
+    docstring)."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == key and isinstance(v, dict):
+                yield v
+            yield from _iter_dicts_by_key(v, key)
+    elif isinstance(obj, list):
+        for item in obj:
+            yield from _iter_dicts_by_key(item, key)
+
+
+def _entry_names_counterparty_in_adjudication(entry: dict, value: str) -> bool:
+    """``counterparty`` correlation also matches an adjudication capsule
+    whose verdict names *value* as the divergent owner
+    (``"contradicted:<owner_id>"`` — see
+    :func:`capsule_emit.adjudication.seal_adjudication`) — the one place an
+    adjudication record names a counterparty, since ``corroborated``/
+    ``inconclusive`` verdicts name no owner at all."""
+    return any(
+        adjudication.get("verdict") == f"contradicted:{value}"
+        for adjudication in _iter_dicts_by_key(entry, "adjudication")
+    )
+
+
+def _entry_matches_correlation(entry: dict, by: str, value: str) -> bool:
+    if by == "counterparty" and _entry_names_counterparty_in_adjudication(entry, value):
+        return True
+    return any(v == value for v in _iter_values_by_key(entry, _CORRELATION_KEY_ALIASES[by]))
+
+
+def _correlation_capsule_ids(ledger: Any, by: str, value: str) -> list[str] | None:
+    """Resolve a ``correlation`` subject to every capsule_id in this ledger
+    carrying *value* under *by*'s correlator field(s), in ledger (append)
+    order — same ordering :func:`_range_capsule_ids` uses, so paging is
+    stable. Returns ``None`` when nothing matches (this subject's
+    ``no_such_record`` case, not a malformed request)."""
+    from .ledger import read_ledger
+
+    records = read_ledger(ledger)
+    matched = [r["capsule_id"] for r in records if _entry_matches_correlation(r, by, value)]
+    return matched or None
+
+
 def _build_chain_segment(
     ledger: Any, req: RequestMap, *, self_owner_id: str | None
 ) -> tuple[tuple[Any, ...] | None, str | None, str | None]:
@@ -453,8 +548,13 @@ def _build_bundles(
     next_page_token = None
     if kind == "record":
         capsule_ids = [req.subject["capsule_id"]]
-    else:  # "range"
+    elif kind == "range":
         resolved = _range_capsule_ids(ledger, req.subject["selector"])
+        if not resolved:
+            return None, REASON_NO_SUCH_RECORD, None
+        capsule_ids, next_page_token = _page_slice(resolved, req.page)
+    else:  # "correlation"
+        resolved = _correlation_capsule_ids(ledger, req.subject["by"], req.subject["value"])
         if not resolved:
             return None, REASON_NO_SUCH_RECORD, None
         capsule_ids, next_page_token = _page_slice(resolved, req.page)
@@ -492,8 +592,9 @@ def answer(
     Parses ``request_bytes`` (the wire's request map), resolves
     ``coverage``, and dispatches (via :func:`_build_bundles`) to
     :func:`capsule_emit.bundle.bundle` for the record(s) a ``record``/
-    ``range`` subject names, or to :func:`capsule_emit.chain_segment
-    .chain_segment` for a ``chain_segment`` subject. Returns exactly one of:
+    ``range``/``correlation`` subject names, or to
+    :func:`capsule_emit.chain_segment.chain_segment` for a
+    ``chain_segment`` subject. Returns exactly one of:
 
       * :class:`Artifact` — one or more offline-verifiable ``Bundle``/
         ``ChainSegment`` objects;
