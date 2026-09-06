@@ -30,10 +30,15 @@ classifiers = [
 # lazily but from inside a plain `capsule-emit` install) is ON BY DEFAULT --
 # so every install needs cll available, not just installs that opt into a
 # `checkpoint` extra.
+# Floor bumped to 0.2.0 ([mesh-ledger-store-migration]): capsule_emit.ledger's
+# read_ledger/read_ledger_entries now detect a cll.ledger.store.LedgerStore
+# directory (manifest.json present) and read it via cll.ledger.store /
+# cll.ledger.segments directly -- segment rotation/archival (list_segments,
+# mount_segment/unmount_segment, SegmentManifest) shipped in 0.2.0.
 dependencies = [
     "agent-action-capsule[anchor,envelope]>=0.2.0",
     "cryptography>=42.0",
-    "checkpointed-local-log>=0.1.0",
+    "checkpointed-local-log>=0.2.0",
 ]
 
 [project.optional-dependencies]
