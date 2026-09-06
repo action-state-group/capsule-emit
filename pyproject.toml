@@ -63,6 +63,16 @@ llamaindex = ["llama-index-core>=0.14,<0.15"]
 # nemoguardrails declares Requires-Python ">=3.10,<3.14" while capsule-emit supports
 # >=3.9 — without it, `pip install capsule-emit[nemo-guardrails]` hard-fails on 3.9.
 nemo-guardrails = ["nemoguardrails>=0.24.0,<0.25; python_version >= '3.10'"]
+# capsule_emit.ledger_io -- the ledger-backed-verb read/verify seam moved
+# here from capsule-ledger's cli/ledger_io.py ([emit-ledger-io-home];
+# capsule-ledger archived 2026-09-02, stays archived). Only
+# ledger_io.local_payload_store() needs this extra (PayloadStore has no
+# checkpointed-local-log equivalent); every other ledger_io function uses
+# LedgerStore/ScanQuery from `cll.ledger`, already a hard dependency above.
+# capsule-ledger declares Requires-Python ">=3.10"; the marker keeps
+# `pip install capsule-emit[ledger-io]` resolvable (as a no-op) on the 3.9
+# floor this package still supports, same shape as nemo-guardrails above.
+ledger-io = ["capsule-ledger>=0.0.1; python_version >= '3.10'"]
 dapr-agents = ["dapr-agents>=1.0"]
 # Microsoft Agent Framework. The middleware surface this adapter rides lives entirely in
 # agent-framework-core; the `agent-framework` meta-package pulls provider/Azure extras we

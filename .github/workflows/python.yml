@@ -25,8 +25,14 @@ jobs:
           pip install
           "git+https://github.com/action-state-group/capsule-anchor.git"
 
+      - name: install capsule-ledger (from source; not on PyPI; needed for the ledger-io extra; requires Python >=3.10)
+        if: matrix.python-version == '3.12'
+        run: >
+          pip install
+          "git+https://github.com/action-state-group/capsule-ledger.git"
+
       - name: install capsule-emit
-        run: pip install -e ".[dev,agentgateway,langchain,agno]"
+        run: pip install -e ".[dev,agentgateway,langchain,agno,ledger-io]"
 
       - name: ruff
         run: python -m ruff check .
