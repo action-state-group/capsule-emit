@@ -4,6 +4,39 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Added — `ledger.py` learns the `cll.ledger.store.LedgerStore` layout ([mesh-ledger-store-migration])
+
+`read_ledger`/`read_ledger_entries` (and therefore `view`/`view_chains`/
+`show`, and every internal caller — `evidence_request.answer`,
+`signing.resolve_signer`) now accept a directory holding a
+`cll.ledger.store.LedgerStore` (`manifest.json` present — see the new
+`is_ledger_store()`) in addition to this repo's own flat JSONL file. A
+consumer that has adopted `cll.ledger.store.LedgerStore` as its own capsule
+backend (capsule-emit-mesh's `[mesh-ledger-store-migration]` is the first)
+can now point `ledger show`/the library functions straight at its ledger
+directory, without capsule-emit needing any consumer-specific wiring.
+
+Reads a store segment-by-segment via `cll.ledger.store`/`cll.ledger.
+segments` directly (never `LedgerStore.scan()`, which raises
+`SegmentUnmounted` for the whole call the instant any segment anywhere in
+the log is archived) — an unmounted segment is reported as one synthesized
+`kind="archived_segment"` entry (`ARCHIVED_SEGMENT_KIND`, carrying
+`segment`/`first_seq`/`last_seq`/`record_count`/`checkpoint_root`/
+`mmr_size`/`note="archived -- mount to view"`) in `read_ledger_entries`'s
+raw stream, filtered out of `read_ledger`'s capsule-only view the same way
+the other bookkeeping kinds already are — never a crash, never silently
+dropped. `show()` reports a labeled "archived -- mount to view" hint
+instead of a flat "not found" when the missing capsule might be behind an
+unmounted segment.
+
+Floor bumped to `checkpointed-local-log>=0.2.0` (segment rotation/archival
+— `LedgerStore.rotate_at_checkpoint`, `list_segments`/`mount_segment`/
+`unmount_segment`, `SegmentManifest` — shipped there). Purely additive: a
+flat-file ledger (this repo's own default `seal()`/`push()` convention) is
+completely unaffected.
+
 ## 0.7.0
 
 ### Changed — emit now depends on `cll` (checkpointed-local-log) ([w3-cll-lib-extraction], #139)

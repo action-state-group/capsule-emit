@@ -75,7 +75,10 @@ __all__ = [
     "CHECKPOINT_STAMP_KIND",
     "DISCLOSURE_RECORD_KIND",
     "WITNESS_BACKFILL_KIND",
+    "ARCHIVED_SEGMENT_KIND",
     "NON_CAPSULE_KINDS",
+    "LEDGER_STORE_MANIFEST_FILENAME",
+    "is_ledger_store",
     "LedgerLockedError",
     "view",
     "view_chains",
@@ -97,13 +100,37 @@ DISCLOSURE_RECORD_KIND = "disclosure_record"
 #: retry queue (O5 audit item, "witness-outage is launch behavior").
 WITNESS_BACKFILL_KIND = "checkpoint_witness_backfill"
 
+#: Synthesized (never actually on disk) by :func:`read_ledger_entries` for a
+#: ``cll.ledger.store.LedgerStore`` segment this process could not open
+#: because it is unmounted (archived) -- see that function's docstring.
+#: Never a capsule; filtered by :func:`read_ledger` the same way the other
+#: bookkeeping kinds are.
+ARCHIVED_SEGMENT_KIND = "archived_segment"
+
 #: Every ``kind`` a ledger line can carry that is NOT a capsule -- the
 #: log's own bookkeeping. Consumers that must resolve a *record* (a sealed
 #: capsule -- ``capsule_emit.bundle``, ``capsule_emit.disclose``) filter
 #: these out the same way ``read_ledger`` does, so bookkeeping entries are
 #: never mistaken for the capsule they happen to share a ``capsule_id``-shaped
 #: field with.
-NON_CAPSULE_KINDS = (CHECKPOINT_STAMP_KIND, DISCLOSURE_RECORD_KIND, WITNESS_BACKFILL_KIND)
+NON_CAPSULE_KINDS = (CHECKPOINT_STAMP_KIND, DISCLOSURE_RECORD_KIND, WITNESS_BACKFILL_KIND, ARCHIVED_SEGMENT_KIND)
+
+#: What ``cll.ledger.store.LedgerStore`` names its own bookkeeping file --
+#: presence (in a directory) is the store/flat discriminator
+#: :func:`is_ledger_store` and :func:`read_ledger_entries` key on.
+LEDGER_STORE_MANIFEST_FILENAME = "manifest.json"
+
+
+def is_ledger_store(path: str | os.PathLike) -> bool:
+    """Whether ``path`` is a directory holding a ``cll.ledger.store.
+    LedgerStore`` (``manifest.json`` present) rather than a flat JSONL
+    ledger file -- the discriminator every ledger-reading function here
+    keys on. ``False`` for a plain file path (this repo's own default
+    ledger convention) or a directory with no manifest (an older node, or
+    one that never migrated -- see ``read_ledger_entries``'s read-only flat
+    fallback)."""
+    p = Path(path)
+    return p.is_dir() and (p / LEDGER_STORE_MANIFEST_FILENAME).exists()
 
 # Physical write safety: two threads calling append_to_ledger for
 # *different* files never contend, but two threads appending to the SAME
@@ -243,12 +270,31 @@ def append_to_ledger(
 
 
 def read_ledger_entries(path: str | os.PathLike) -> list[dict]:
-    """Read every line of a JSONL ledger file, capsules and checkpoint-stamp
-    records alike, in append order.
+    """Read every entry of a ledger, capsules and checkpoint-stamp records
+    alike, in append order.
 
-    Corrupt lines (truncated writes, disk errors) are skipped with a warning so
-    that one bad line never makes the entire ledger unreadable.
+    Store-aware ([mesh-ledger-store-migration]): if ``path`` is a directory
+    holding a ``cll.ledger.store.LedgerStore`` (:func:`is_ledger_store`),
+    reads it via ``cll.ledger.store``/``cll.ledger.segments`` directly
+    rather than as a flat file. An archived (unmounted) segment never
+    raises ``cll.ledger.segments.SegmentUnmounted`` up to this caller --
+    the records this process CAN read are still returned, and one
+    synthesized ``kind="archived_segment"`` entry per unreadable segment
+    (``ARCHIVED_SEGMENT_KIND`` -- carrying ``segment``/``first_seq``/
+    ``last_seq``/``record_count``/``checkpoint_root``/``mmr_size``/
+    ``note="archived -- mount to view"``) marks the gap rather than
+    silently dropping it. :func:`read_ledger` filters these out along with
+    every other bookkeeping kind.
+
+    Otherwise (a flat file, or a directory with no ``manifest.json`` --
+    an older node, or a store-shaped dir with never migrated) reads it as a
+    plain JSONL file. Corrupt lines (truncated writes, disk errors) are
+    skipped with a warning so that one bad line never makes the entire
+    ledger unreadable; a missing path returns ``[]`` rather than raising.
     """
+    if is_ledger_store(path):
+        return _read_ledger_store_entries(Path(path))
+
     import logging
 
     p = Path(path)
@@ -267,6 +313,62 @@ def read_ledger_entries(path: str | os.PathLike) -> list[dict]:
                     "read_ledger: skipping corrupt line %d in %s: %r", lineno, p, line[:80]
                 )
     return records
+
+
+def _read_ledger_store_entries(ledger_dir: Path) -> list[dict]:
+    """:func:`read_ledger_entries`'s ``cll.ledger.store.LedgerStore`` path.
+
+    Deliberately never calls ``LedgerStore.scan()`` -- it raises
+    ``SegmentUnmounted`` for the WHOLE call the instant ANY segment
+    anywhere in the log is archived (eager list comprehension under one
+    lock; see that method's docstring). Instead walks
+    ``LedgerStore.list_segments()`` in append order and resolves each
+    MOUNTED, closed segment's own ``[first_seq, last_seq]`` range via
+    ``LedgerStore.by_seq_range`` -- a bounded SQL lookup that only ever
+    touches rows inside that one segment -- so one archived segment never
+    blocks reading the records before or after it. Opens with
+    ``rotate_at_checkpoint=True`` unconditionally: ``manifest.json``
+    (:func:`is_ledger_store`'s own signal) only ever exists on a store that
+    was itself created that way.
+    """
+    from cll.ledger.segments import SegmentManifest
+    from cll.ledger.store import LedgerStore
+
+    store = LedgerStore(root=ledger_dir, rotate_at_checkpoint=True)
+    try:
+        entries: list[dict] = []
+        next_seq = 1
+        for seg in store.list_segments():
+            if seg.manifest is not None:
+                manifest = SegmentManifest.from_dict(json.loads((ledger_dir / seg.manifest).read_text()))
+                if seg.mounted:
+                    hits = store.by_seq_range(manifest.first_seq, manifest.last_seq)
+                    entries.extend(r.capsule for r in hits)
+                else:
+                    entries.append(
+                        {
+                            "kind": ARCHIVED_SEGMENT_KIND,
+                            "segment": seg.name,
+                            "first_seq": manifest.first_seq,
+                            "last_seq": manifest.last_seq,
+                            "record_count": manifest.record_count,
+                            "checkpoint_root": seg.checkpoint_root,
+                            "mmr_size": seg.mmr_size,
+                            "note": "archived -- mount to view",
+                        }
+                    )
+                next_seq = manifest.last_seq + 1
+            else:
+                # The active, still-open segment -- always last in append
+                # order, always mounted. Its own upper bound isn't known
+                # without a manifest, so ask for everything from where the
+                # previous segment left off; by_seq_range is a bounded SQL
+                # query, so this never touches an earlier segment.
+                hits = store.by_seq_range(next_seq, next_seq + 10**9)
+                entries.extend(r.capsule for r in hits)
+        return entries
+    finally:
+        store.close()
 
 
 def read_ledger(path: str | os.PathLike) -> list[dict]:
@@ -457,7 +559,8 @@ def show(
     blocks.  Returns ``True`` when found, ``False`` when not.
 
     Args:
-        path: Path to the JSONL ledger file.
+        path: Path to the JSONL ledger file, or (``[mesh-ledger-store-
+            migration]``) a ``cll.ledger.store.LedgerStore`` directory.
         capsule_id: Full or prefix (≥8 chars) capsule_id to look up.
         out: File-like object for output (defaults to stdout).
     """
@@ -475,7 +578,16 @@ def show(
             break
 
     if cap is None:
-        print(f"capsule {capsule_id!r} not found in {path}", file=out)
+        archived = [r for r in read_ledger_entries(path) if r.get("kind") == ARCHIVED_SEGMENT_KIND]
+        if archived:
+            print(
+                f"capsule {capsule_id!r} not found in {path} -- "
+                f"{len(archived)} archived segment(s) not mounted, it may be among them "
+                "(archived -- mount to view)",
+                file=out,
+            )
+        else:
+            print(f"capsule {capsule_id!r} not found in {path}", file=out)
         return False
 
     cid = cap.get("capsule_id", "?")
