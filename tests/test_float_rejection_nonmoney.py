@@ -2,8 +2,8 @@
 """Seal-time float rejection must be universal, not money-field-specific.
 
 O16 audit item 15 ("Float rejection EVERYWHERE, not just money"): verify-side
-strict-tier checking (``verify.py``'s ``_has_float_tokens``) is confirmed
-field-name-agnostic, with real non-money test coverage
+strict-tier checking (``verify.py``'s ``_has_strict_token_violations``) is
+confirmed field-name-agnostic, with real non-money test coverage
 (``test_hybrid_verifier.py``). Seal-time rejection delegates to the external
 ``agent_action_capsule.canonical`` package — every seal-time test that
 existed before this file used only money-shaped fields (``amount``,
