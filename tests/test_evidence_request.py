@@ -14,6 +14,7 @@ import pytest
 
 import capsule_emit.evidence_request as evidence_request
 from capsule_emit import seal, witness
+from capsule_emit.adjudication import VERDICT_CORROBORATED, contradicted, seal_adjudication
 from capsule_emit.bundle import bundle as _bundle_fn
 from capsule_emit.evidence_request import (
     REASON_COVERAGE_UNSATISFIABLE,
@@ -402,6 +403,253 @@ def test_min_freshness_without_deadline_refuses_without_pushing(tmp_path, stub_w
     # Confirm no checkpoint was forced as a side effect of the refused call
     # -- absent deadline, even an opted-in node never pushes.
     assert _stamp_count(ledger_path) == 0
+
+
+# ---------------------------------------------------------------------------
+# correlation subject — nonce / exchange_id / counterparty
+# ---------------------------------------------------------------------------
+
+
+def _correlation_request(by: str, value: str, **page_or_coverage) -> bytes:
+    page = page_or_coverage.pop("page", None)
+    body = {"subject": {"kind": "correlation", "by": by, "value": value}, "coverage": page_or_coverage}
+    if page is not None:
+        body["page"] = page
+    return json.dumps(body).encode()
+
+
+def test_parse_request_rejects_bad_correlation_by():
+    with pytest.raises(RequestMalformedError):
+        parse_request(json.dumps({"subject": {"kind": "correlation", "by": "bogus", "value": "x"}}).encode())
+
+
+def test_parse_request_rejects_correlation_missing_value():
+    with pytest.raises(RequestMalformedError):
+        parse_request(json.dumps({"subject": {"kind": "correlation", "by": "nonce"}}).encode())
+
+
+def test_correlation_matches_rust_shaped_top_level_fields(tmp_path, stub_witness):
+    """A Rust-producer capsule names its correlator fields directly
+    (``compute_attestation.nonce`` / ``.exchange_id``) rather than nesting
+    them under a PoC namespace — resolution must find both shapes."""
+    ledger_path = tmp_path / "ledger.jsonl"
+    requester = seal(
+        None,
+        action="requester_half",
+        operator="acme",
+        anchor=False,
+        ledger=ledger_path,
+        extra_compute={"nonce": "shared-nonce-1", "exchange_id": "exch-1"},
+    ).capsule
+    provider = seal(
+        None,
+        action="served_half",
+        operator="acme",
+        anchor=False,
+        ledger=ledger_path,
+        extra_compute={"nonce": "shared-nonce-1", "exchange_id": "exch-1"},
+    ).capsule
+    other = seal(
+        None,
+        action="unrelated",
+        operator="acme",
+        anchor=False,
+        ledger=ledger_path,
+        extra_compute={"nonce": "different-nonce"},
+    ).capsule
+    assert witness.push(str(ledger_path)) is not None
+
+    result = answer(_correlation_request("nonce", "shared-nonce-1"), ledger=ledger_path)
+    assert isinstance(result, Artifact)
+    assert result.subject_kind == "correlation"
+    matched = {b.capsule_id for b in result.bundles}
+    assert matched == {requester["capsule_id"], provider["capsule_id"]}
+    assert other["capsule_id"] not in matched
+
+
+def test_correlation_by_exchange_id_matches_nested_sidecar_shape(tmp_path, stub_witness):
+    """The Python-sidecar capsule shape namespaces its correlators under a
+    free-form ``x-mesh-poc-v1.serving_provenance`` block — resolution must
+    find the value wherever a producer nested it, not just at a fixed
+    path."""
+    ledger_path = tmp_path / "ledger.jsonl"
+    requester = seal(
+        None,
+        action="requester_half",
+        operator="acme",
+        anchor=False,
+        ledger=ledger_path,
+        extra_compute={
+            "x-mesh-poc-v1": {
+                "client_nonce": "n1",
+                "serving_provenance": {"exchange_id": "exch-42", "counterparty_ref": "node-b"},
+            }
+        },
+    ).capsule
+    provider = seal(
+        None,
+        action="served_half",
+        operator="acme",
+        anchor=False,
+        ledger=ledger_path,
+        extra_compute={
+            "x-mesh-poc-v1": {
+                "client_nonce": "n2",
+                "serving_provenance": {"exchange_id": "exch-42", "counterparty_ref": None},
+            }
+        },
+    ).capsule
+    assert witness.push(str(ledger_path)) is not None
+
+    result = answer(_correlation_request("exchange_id", "exch-42"), ledger=ledger_path)
+    assert isinstance(result, Artifact)
+    assert {b.capsule_id for b in result.bundles} == {requester["capsule_id"], provider["capsule_id"]}
+
+
+def test_correlation_by_nonce_matches_client_nonce_alias(tmp_path, stub_witness):
+    ledger_path = tmp_path / "ledger.jsonl"
+    requester = seal(
+        None,
+        action="requester_half",
+        operator="acme",
+        anchor=False,
+        ledger=ledger_path,
+        extra_compute={"x-mesh-poc-v1": {"client_nonce": "shared-nonce-2"}},
+    ).capsule
+    assert witness.push(str(ledger_path)) is not None
+
+    result = answer(_correlation_request("nonce", "shared-nonce-2"), ledger=ledger_path)
+    assert isinstance(result, Artifact)
+    assert {b.capsule_id for b in result.bundles} == {requester["capsule_id"]}
+
+
+def test_correlation_by_counterparty_matches_exchange_and_adjudication(tmp_path, stub_witness):
+    ledger_path = tmp_path / "ledger.jsonl"
+    exchange = seal(
+        None,
+        action="requester_half",
+        operator="acme",
+        anchor=False,
+        ledger=ledger_path,
+        extra_compute={
+            "x-mesh-poc-v1": {"serving_provenance": {"exchange_id": "exch-9", "counterparty_ref": "node-owner-x"}}
+        },
+    ).capsule
+    half_a = seal(None, action="serve_a", operator="acme", anchor=False, ledger=ledger_path).capsule
+    half_b = seal(None, action="serve_b", operator="acme", anchor=False, ledger=ledger_path).capsule
+    adjudication = seal_adjudication(
+        half_a["capsule_id"],
+        half_b["capsule_id"],
+        contradicted("node-owner-x"),
+        margin=0.5,
+        margin_tau=0.9,
+        ledger=ledger_path,
+        anchor=False,
+    ).capsule
+    unrelated_adjudication = seal_adjudication(
+        half_a["capsule_id"],
+        half_b["capsule_id"],
+        VERDICT_CORROBORATED,
+        margin=1.0,
+        margin_tau=0.9,
+        ledger=ledger_path,
+        anchor=False,
+    ).capsule
+    assert witness.push(str(ledger_path)) is not None
+
+    result = answer(_correlation_request("counterparty", "node-owner-x"), ledger=ledger_path)
+    assert isinstance(result, Artifact)
+    matched = {b.capsule_id for b in result.bundles}
+    assert matched == {exchange["capsule_id"], adjudication["capsule_id"]}
+    assert unrelated_adjudication["capsule_id"] not in matched
+
+
+def test_correlation_no_match_is_signed_no_such_record_not_empty_artifact(covered_ledger):
+    """The mutant this subject must catch: a value matching nothing is a
+    SIGNED refusal, never a bare/empty Artifact."""
+    ledger_path, _caps = covered_ledger
+    result = answer(_correlation_request("nonce", "no-such-nonce-anywhere"), ledger=ledger_path)
+    assert isinstance(result, Refusal)
+    assert result.reason == REASON_NO_SUCH_RECORD
+    assert verify_refusal_offline(result)
+
+
+def test_correlation_caller_invariance(tmp_path, stub_witness):
+    ledger_path = tmp_path / "ledger.jsonl"
+    seal(
+        None,
+        action="requester_half",
+        operator="acme",
+        anchor=False,
+        ledger=ledger_path,
+        extra_compute={"nonce": "shared-nonce-3"},
+    )
+    assert witness.push(str(ledger_path)) is not None
+    now = "2026-09-05T00:00:00Z"
+
+    request_a = json.loads(_correlation_request("nonce", "shared-nonce-3"))
+    request_a["nonce"] = "asker-a"
+    request_b = json.loads(_correlation_request("nonce", "shared-nonce-3"))
+    request_b["nonce"] = "asker-b"
+
+    result_a = answer(json.dumps(request_a).encode(), ledger=ledger_path, now=now)
+    result_b = answer(json.dumps(request_b).encode(), ledger=ledger_path, now=now)
+    assert json.dumps(result_a.to_dict(), sort_keys=True) == json.dumps(result_b.to_dict(), sort_keys=True)
+
+
+def test_correlation_default_page_size_caps_and_pages(monkeypatch, tmp_path, stub_witness):
+    monkeypatch.setattr(evidence_request, "DEFAULT_PAGE_SIZE", 2)
+    ledger_path = tmp_path / "ledger.jsonl"
+    cids = [
+        seal(
+            None,
+            action=f"half-{i}",
+            operator="acme",
+            anchor=False,
+            ledger=ledger_path,
+            extra_compute={"exchange_id": "shared-exchange"},
+        ).capsule["capsule_id"]
+        for i in range(5)
+    ]
+    assert witness.push(str(ledger_path)) is not None
+
+    seen: list[str] = []
+    token = None
+    pages = 0
+    while True:
+        page = {"token": token} if token is not None else {}
+        result = answer(_correlation_request("exchange_id", "shared-exchange", page=page), ledger=ledger_path)
+        assert isinstance(result, Artifact)
+        assert len(result.bundles) <= 2
+        seen.extend(b.capsule_id for b in result.bundles)
+        pages += 1
+        token = result.next_page_token
+        if token is None:
+            break
+        assert pages < 10  # guard against an infinite loop if paging regresses
+
+    assert pages == 3  # 2 + 2 + 1
+    assert seen == cids  # every capsule, in ledger order, no duplicates, none dropped
+
+
+def test_correlation_within_one_page_carries_no_next_page_token(covered_ledger):
+    """A ``correlation`` subject pages the SAME as ``range`` — confirms the
+    module docstring's "capped and paged identically" claim rather than a
+    subject-specific paging path that could silently diverge."""
+    ledger_path, _caps = covered_ledger
+    seal(
+        None,
+        action="extra_correlated",
+        operator="acme",
+        anchor=False,
+        ledger=ledger_path,
+        extra_compute={"exchange_id": "single-page-exchange"},
+    )
+    assert witness.push(str(ledger_path)) is not None
+    result = answer(_correlation_request("exchange_id", "single-page-exchange"), ledger=ledger_path)
+    assert isinstance(result, Artifact)
+    assert len(result.bundles) == 1
+    assert result.next_page_token is None
 
 
 # ---------------------------------------------------------------------------
