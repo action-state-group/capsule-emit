@@ -46,6 +46,41 @@ from __future__ import annotations
 from typing import Any
 
 
+def _fetch_witness_identity(ts_url: str, *, timeout: float = 15.0) -> dict:
+    """Best-effort GET of the witness's own ``/.well-known/did.json``, purely
+    for display -- this is NEVER used as a trust anchor (verification stays
+    pinned to ``capsule_emit.checkpoint``'s ``DEFAULT_TS_PUBLIC_KEY_PEM`` / a
+    caller-supplied ``trust_anchor``; see [anchor-did-from-host]).
+
+    Returns ``{"kid_tail": str | None, "operator": str}``. Any failure
+    (witness offline, no did.json, malformed response) degrades to
+    ``{"kid_tail": None, "operator": "unknown"}`` -- never raises, and never
+    fabricates our own brand as the fallback when the operator is unknown.
+    """
+    import json
+    import urllib.request
+    from urllib.parse import urlsplit
+
+    origin = ts_url.rstrip("/")
+    url = f"{origin}/.well-known/did.json"
+    try:
+        if urlsplit(url).scheme not in ("http", "https"):
+            raise ValueError("not an http(s) witness URL")
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+            doc = json.loads(resp.read().decode("utf-8"))
+        kid_tail = None
+        vm = doc.get("verificationMethod") or []
+        if vm and isinstance(vm[0], dict):
+            vm_id = vm[0].get("id", "")
+            if "#" in vm_id:
+                kid = vm_id.rsplit("#", 1)[1]
+                kid_tail = f"…{kid[-8:]}" if kid else None
+        operator = doc.get("operator") or "unknown"
+        return {"kid_tail": kid_tail, "operator": operator}
+    except Exception:  # noqa: BLE001 -- display-only, never fatal to status
+        return {"kid_tail": None, "operator": "unknown"}
+
+
 def compute_status(path: str, *, offline: bool = False, ts_url: str | list[str] | None = None) -> dict:
     """Read ``path`` (a JSONL ledger) and report its ladder position.
 
@@ -113,7 +148,20 @@ def compute_status(path: str, *, offline: bool = False, ts_url: str | list[str] 
         # switch that zeroes all egress, not just an alias for --offline.
         skip_network_recheck = offline or not witnessing_enabled_now
         for w in last_state.effective_witnesses.values():
-            info: dict[str, Any] = {"ts_url": w.ts_url, "is_stub": w.is_stub, "confirmed": None}
+            from urllib.parse import urlsplit
+
+            host = urlsplit(w.ts_url).netloc or w.ts_url
+            # [anchor-did-from-host]: display identity defaults to "unknown"
+            # operator / no key -- never our own brand -- until a live
+            # did.json fetch (below) says otherwise.
+            info: dict[str, Any] = {
+                "ts_url": w.ts_url,
+                "host": host,
+                "is_stub": w.is_stub,
+                "confirmed": None,
+                "kid_tail": None,
+                "operator": "unknown",
+            }
             if w.is_stub:
                 # Never re-checked over the network -- a stub stamp was never
                 # registered with anything, so there is nothing to confirm.
@@ -125,6 +173,7 @@ def compute_status(path: str, *, offline: bool = False, ts_url: str | list[str] 
                 info["confirmed"] = ok
                 if not ok:
                     info["errors"] = errors
+                info.update(_fetch_witness_identity(w.ts_url))
             witnesses_info.append(info)
         # Stub scream (frozen surface §1a.4): the latest checkpoint's grade
         # already stays self-attested when its witnesses are stub-only (see
@@ -191,7 +240,14 @@ def render_status(status: dict, *, out: Any = None) -> None:
             else:
                 detail = f" ({w['errors'][0]})" if w.get("errors") else ""
                 state = f"NOT confirmed{detail}"
-            print(f"    {w['ts_url']:<40}{state}", file=out)
+            # [anchor-did-from-host]: identify the witness by the host it is
+            # actually served from + its self-declared operator (from its own
+            # did.json) -- never a hard-coded brand name.
+            label = f"witness: {w.get('host', w['ts_url'])}"
+            if w.get("kid_tail"):
+                label += f" · key {w['kid_tail']}"
+            label += f" · operated by: {w.get('operator', 'unknown')}"
+            print(f"    {label:<52}{state}", file=out)
 
     # Only printed when at least one configured witness genuinely has a
     # backlog -- idle-silence precedent (checkpoint.md's age-cadence leg):
