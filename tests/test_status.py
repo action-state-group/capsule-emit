@@ -393,3 +393,124 @@ def test_status_text_differs_between_self_attested_and_witnessed(
     assert "latest checkpoint grade       witnessed" in out_b.getvalue()
     assert "witnessed" not in out_a.getvalue()
     assert out_a.getvalue() != out_b.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# (i) witness identity render — host/kid/operator from the witness's own
+#     did.json, never our brand [anchor-did-from-host]
+# ---------------------------------------------------------------------------
+
+
+class _DidDocHandler(_StubWitnessTSHandler):
+    """The same stub Transparency Service (``POST /checkpoints``) PLUS a
+    ``/.well-known/did.json`` GET -- so a full ``seal()`` -> witness ->
+    identity-fetch round trip can run against one hermetic server."""
+
+    doc: dict = {}
+
+    def do_GET(self):
+        if self.path == "/.well-known/did.json":
+            payload = json.dumps(self.doc).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        else:
+            super().do_GET()
+
+
+def _start_did_doc_server(doc: dict):
+    handler_cls = type(
+        "_BoundDidDocHandler", (_DidDocHandler,), {"doc": doc, "received": []}
+    )
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
+    port = srv.server_address[1]
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    return f"http://127.0.0.1:{port}", srv.shutdown
+
+
+def test_fetch_witness_identity_parses_kid_tail_and_self_declared_operator():
+    base_url, stop = _start_did_doc_server({
+        "id": "did:web:example.org",
+        "verificationMethod": [{"id": "did:web:example.org#39bb654c9dc0afe1"}],
+        "operator": "Example Corp",
+    })
+    try:
+        identity = status._fetch_witness_identity(base_url)
+    finally:
+        stop()
+    assert identity == {"kid_tail": "…9dc0afe1", "operator": "Example Corp"}
+
+
+def test_fetch_witness_identity_degrades_to_unknown_without_fabricating_our_brand():
+    """No did.json (a witness that hasn't shipped this endpoint, or is simply
+    down) must degrade to "unknown" -- never fall back to naming us."""
+    base_url, stop = _start_did_doc_server({})  # 404s -- doc unused for this path
+    try:
+        identity = status._fetch_witness_identity(f"{base_url}/nonexistent-base")
+    finally:
+        stop()
+    assert identity == {"kid_tail": None, "operator": "unknown"}
+
+
+def test_fetch_witness_identity_degrades_to_unknown_when_operator_absent():
+    base_url, stop = _start_did_doc_server({
+        "id": "did:web:example.org",
+        "verificationMethod": [{"id": "did:web:example.org#39bb654c9dc0afe1"}],
+    })
+    try:
+        identity = status._fetch_witness_identity(base_url)
+    finally:
+        stop()
+    assert identity == {"kid_tail": "…9dc0afe1", "operator": "unknown"}
+
+
+def test_fetch_witness_identity_unreachable_host_degrades_to_unknown(dead_ts):
+    identity = status._fetch_witness_identity(dead_ts)
+    assert identity == {"kid_tail": None, "operator": "unknown"}
+
+
+def test_render_status_shows_witness_host_and_operator_never_our_brand(
+    tmp_path, monkeypatch
+):
+    """End-to-end: render_status's witness line must name the host it
+    actually talked to and that host's self-declared operator (or
+    "unknown") -- never a hard-coded "Agent Action Capsule"/agentactioncapsule
+    brand string, since a self-hosted witness is not us."""
+    did_url, stop = _start_did_doc_server({
+        "id": "did:web:example.org",
+        "verificationMethod": [{"id": "did:web:example.org#39bb654c9dc0afe1"}],
+        "operator": "Example Corp",
+    })
+    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", did_url)
+    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
+    try:
+        monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "2")
+        ledger_path = tmp_path / "ledger.jsonl"
+        for i in range(2):
+            seal(None, action=f"action-{i}", operator="acme", anchor=False,
+                 ledger=ledger_path, witness_url=did_url)
+        assert _wait_for(lambda: _has_stamp(ledger_path))
+
+        # ts_url pinned to the one witness actually used, so the (unrelated)
+        # "witness backlog" section -- which reports lag for CONFIGURED
+        # witnesses, not the one(s) a checkpoint actually reached -- doesn't
+        # print the real default witness's host into this assertion's way.
+        result = status.compute_status(str(ledger_path), offline=False, ts_url=did_url)
+        cp = result["latest_checkpoint"]
+        assert cp["witnesses"][0]["host"] == did_url.split("//", 1)[1]
+        assert cp["witnesses"][0]["kid_tail"] == "…9dc0afe1"
+        assert cp["witnesses"][0]["operator"] == "Example Corp"
+
+        out = io.StringIO()
+        status.render_status(result, out=out)
+        rendered = out.getvalue()
+        assert f"witness: {did_url.split('//', 1)[1]}" in rendered
+        assert "key …9dc0afe1" in rendered
+        assert "operated by: Example Corp" in rendered
+        assert "agentactioncapsule" not in rendered.lower()
+        assert "agent action capsule" not in rendered.lower()
+    finally:
+        stop()
