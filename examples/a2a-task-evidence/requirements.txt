@@ -1,0 +1,14 @@
+# a2a-task-evidence reference implementation — pinned runtime deps.
+# Same a2a-sdk/protobuf pin as examples/a2a-ap2/boundary-seal/server
+# (capsule-emit issue #29 interop coordinate): a2a-sdk 1.1.1 raises
+# AttributeError under protobuf>=7 (its proto_utils.py reads a
+# FieldDescriptor.label attribute the upb backend dropped in protobuf 7.x),
+# so this pin is load-bearing, not cosmetic.
+a2a-sdk==1.1.1
+protobuf==6.33.6
+sse-starlette
+fastapi==0.121.2
+uvicorn==0.38.0
+httpx
+cryptography
+capsule-emit

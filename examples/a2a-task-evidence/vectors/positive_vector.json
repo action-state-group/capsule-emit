@@ -1,0 +1,328 @@
+{
+  "classification": "reference-demo (loopback A2A server + hermetic local-ts, non-independent)",
+  "endpoint": "http://127.0.0.1:8099/a2a",
+  "evidenceBundle": {
+    "capsule": {
+      "action_id": "a2a.task_evidence.v1/b5706a2a-6800-4358-b959-7704b350d7bd",
+      "action_type": "decide",
+      "assurance": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "confirmed",
+        "ledger_mode": "standalone"
+      },
+      "canonicalization_id": "jcs",
+      "capsule_id": "af5b0a3e981a411e40ce22a81264e54f28702b693a33e71b1db8c47384ee49a9",
+      "developer": "capsule-emit-examples/a2a-task-evidence@v1",
+      "disposition": {
+        "approver": "policy",
+        "decision": "accept",
+        "human_disposed": false,
+        "verdict_class": "executed"
+      },
+      "effect": {
+        "effect_attestation": "runtime_claimed",
+        "response_digest": "a102b10cedee485fe77d39a9e81d9892494fc1e1117f31c9776477562355dc4d",
+        "status": "confirmed",
+        "type": "a2a.task_completed"
+      },
+      "format_version": "4",
+      "key_id": "fa23ec5d3e4082b21d56d5393e7db282072d65b8d1539fb96af6f89206c423b3",
+      "model_attestation": {
+        "compute_attestation": {
+          "agent_input_digest": "44539bedef5152e23a0771755a894080d5de9df37301dbbaba1269825a519c0e",
+          "agent_output_digest": "a102b10cedee485fe77d39a9e81d9892494fc1e1117f31c9776477562355dc4d"
+        }
+      },
+      "operator": "reference-implementation",
+      "signature": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d6964045820fa23ec5d3e4082b21d56d5393e7db282072d65b8d1539fb96af6f89206c423b30127a05820af5b0a3e981a411e40ce22a81264e54f28702b693a33e71b1db8c47384ee49a9584006178f2f5bd42e4f3d9b10a4815acccd712dbfdd86731fbf36504c22bfcc832b19cedf183b9cfa13162cd3c95d6467b2fd9926ff8a5f5ab956186d2b0916d20d",
+      "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+      "timestamp": "2026-09-08T06:04:12.936504Z"
+    },
+    "coreManifestDigest": "4248a21ca4db3ef9f1e627bb54e22f38d02ded57f0e158bcafb79ddce49dc6cf",
+    "evidenceId": "44539bedef5152e23a0771755a894080d5de9df37301dbbaba1269825a519c0e",
+    "extensionVersion": "1",
+    "manifest": {
+      "capturePolicyId": "a2a-server-boundary-v1",
+      "cllCheckpoint": {
+        "key_id": "fa23ec5d3e4082b21d56d5393e7db282072d65b8d1539fb96af6f89206c423b3",
+        "kind": "mmr_checkpoint",
+        "log_id": "9760b4d3abf16e7ff90f666417d7d72a3b440093e6a298675e95408fa3c2d781",
+        "mmr_size": 1,
+        "prev_root": "",
+        "prev_size": 0,
+        "root": "f4ea150c1272a7b83f5ca4775ad4d14fc616e63c64fdfdf4db11406d3386085c",
+        "signature": "900c5b539797af05232d9f0262ca5df52b584be109117f7e1e580e64e19993a3bef4008853d7671103af9893df810cd4f1e5a3e5e4d7f43ba51efe3f5e2cca0a",
+        "timestamp": "2026-09-08T06:04:12.940746Z",
+        "v": 1,
+        "witnesses": [
+          {
+            "entry_hash": "668b60287313bb04a5a9a810e37694b98a636fe0be1ed4f3d70677fe9ce64b9c",
+            "leaf_index": 0,
+            "receipt_b64": "0oRHohkBiwEBJ6EZAYyhIIFEgwEAgPZYQK1505Tq0WeC06f2Du7XCuy52IQy9t31ZgZQUQnHGBpMNiAO1U4kkbnRfpNRAFXmDrm7kS90QsMjSCRe/+v1sgM=",
+            "tree_size": 1,
+            "ts_url": "http://127.0.0.1:53533"
+          }
+        ]
+      },
+      "consistencyProof": null,
+      "localInclusionProof": {
+        "kind": "inclusion",
+        "leafIndex": 0,
+        "peaksLeft": [],
+        "peaksRight": [],
+        "size": 1,
+        "v": 1,
+        "witness": []
+      },
+      "priorCheckpoint": null,
+      "producerEnvelope": {
+        "capsuleId": "af5b0a3e981a411e40ce22a81264e54f28702b693a33e71b1db8c47384ee49a9",
+        "keyId": "fa23ec5d3e4082b21d56d5393e7db282072d65b8d1539fb96af6f89206c423b3",
+        "signature": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d6964045820fa23ec5d3e4082b21d56d5393e7db282072d65b8d1539fb96af6f89206c423b30127a05820af5b0a3e981a411e40ce22a81264e54f28702b693a33e71b1db8c47384ee49a9584006178f2f5bd42e4f3d9b10a4815acccd712dbfdd86731fbf36504c22bfcc832b19cedf183b9cfa13162cd3c95d6467b2fd9926ff8a5f5ab956186d2b0916d20d"
+      },
+      "taskEvidencePayload": {
+        "authority": "reference-implementation-server",
+        "capturePolicyId": "a2a-server-boundary-v1",
+        "contextId": "3e9ff504-0f58-49e2-9d8d-141e41824948",
+        "nonEvidenceArtifacts": [
+          {
+            "artifactId": "response",
+            "contentCommitment": "73c952366f05c772f23228d55f011157a1524ce177ec2bf441f02cc14219ec8f",
+            "name": "response"
+          }
+        ],
+        "sealTime": "2026-09-08T06:04:12.936000+00:00",
+        "taskId": "56e99505-caeb-40dd-9865-becfe2077d4d",
+        "tenantId": null,
+        "terminalState": "TASK_STATE_COMPLETED",
+        "transcript": [
+          {
+            "messageId": "msg-task-evidence-001",
+            "partCommitment": "f9096a204f4ce03bc50a07484a997aa0de398e65346d34234e480c9ef732ebf7",
+            "role": "ROLE_USER",
+            "sequence": 0
+          }
+        ]
+      }
+    },
+    "recordProfile": "https://agentactioncapsule.org/profiles/a2a-task-evidence/aac-cll-scitt/v1",
+    "taskEvidencePayload": {
+      "authority": "reference-implementation-server",
+      "capturePolicyId": "a2a-server-boundary-v1",
+      "contextId": "3e9ff504-0f58-49e2-9d8d-141e41824948",
+      "nonEvidenceArtifacts": [
+        {
+          "artifactId": "response",
+          "contentCommitment": "73c952366f05c772f23228d55f011157a1524ce177ec2bf441f02cc14219ec8f",
+          "name": "response"
+        }
+      ],
+      "sealTime": "2026-09-08T06:04:12.936000+00:00",
+      "taskId": "56e99505-caeb-40dd-9865-becfe2077d4d",
+      "tenantId": null,
+      "terminalState": "TASK_STATE_COMPLETED",
+      "transcript": [
+        {
+          "messageId": "msg-task-evidence-001",
+          "partCommitment": "f9096a204f4ce03bc50a07484a997aa0de398e65346d34234e480c9ef732ebf7",
+          "role": "ROLE_USER",
+          "sequence": 0
+        }
+      ]
+    },
+    "taskEvidenceReference": {
+      "coreManifestDigest": "4248a21ca4db3ef9f1e627bb54e22f38d02ded57f0e158bcafb79ddce49dc6cf",
+      "coverageScope": "TASK_TRANSCRIPT",
+      "deliveryMode": "EVIDENCE_ARTIFACT",
+      "evidenceId": "44539bedef5152e23a0771755a894080d5de9df37301dbbaba1269825a519c0e",
+      "evidenceStatus": "EVIDENCE_STATUS_EXTERNALLY_REGISTERED",
+      "extensionVersion": "1",
+      "recordProfile": "https://agentactioncapsule.org/profiles/a2a-task-evidence/aac-cll-scitt/v1",
+      "terminalState": "TASK_STATE_COMPLETED"
+    }
+  },
+  "extensionUri": "https://agentactioncapsule.org/extensions/a2a-task-evidence/v1",
+  "finalTask": {
+    "artifacts": [
+      {
+        "artifactId": "a501101c-1a43-43de-98dc-a10e1691eb76",
+        "name": "response",
+        "parts": [
+          {
+            "text": "SEAL THIS EXCHANGE"
+          }
+        ]
+      },
+      {
+        "artifactId": "task-evidence-bundle",
+        "extensions": [
+          "https://agentactioncapsule.org/extensions/a2a-task-evidence/v1"
+        ],
+        "metadata": {
+          "https://agentactioncapsule.org/extensions/a2a-task-evidence/v1": {
+            "coreManifestDigest": "4248a21ca4db3ef9f1e627bb54e22f38d02ded57f0e158bcafb79ddce49dc6cf",
+            "coverageScope": "TASK_TRANSCRIPT",
+            "deliveryMode": "EVIDENCE_ARTIFACT",
+            "evidenceId": "44539bedef5152e23a0771755a894080d5de9df37301dbbaba1269825a519c0e",
+            "evidenceStatus": "EVIDENCE_STATUS_EXTERNALLY_REGISTERED",
+            "extensionVersion": "1",
+            "recordProfile": "https://agentactioncapsule.org/profiles/a2a-task-evidence/aac-cll-scitt/v1",
+            "terminalState": "TASK_STATE_COMPLETED"
+          }
+        },
+        "name": "task-evidence-bundle",
+        "parts": [
+          {
+            "filename": "task-evidence-bundle.json",
+            "mediaType": "application/vnd.agentactioncapsule.a2a-task-evidence+json",
+            "raw": "eyJjYXBzdWxlIjp7ImFjdGlvbl9pZCI6ImEyYS50YXNrX2V2aWRlbmNlLnYxL2I1NzA2YTJhLTY4MDAtNDM1OC1iOTU5LTc3MDRiMzUwZDdiZCIsImFjdGlvbl90eXBlIjoiZGVjaWRlIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJjb25maXJtZWQiLCJsZWRnZXJfbW9kZSI6InN0YW5kYWxvbmUifSwiY2Fub25pY2FsaXphdGlvbl9pZCI6ImpjcyIsImNhcHN1bGVfaWQiOiJhZjViMGEzZTk4MWE0MTFlNDBjZTIyYTgxMjY0ZTU0ZjI4NzAyYjY5M2EzM2U3MWIxZGI4YzQ3Mzg0ZWU0OWE5IiwiZGV2ZWxvcGVyIjoiY2Fwc3VsZS1lbWl0LWV4YW1wbGVzL2EyYS10YXNrLWV2aWRlbmNlQHYxIiwiZGlzcG9zaXRpb24iOnsiYXBwcm92ZXIiOiJwb2xpY3kiLCJkZWNpc2lvbiI6ImFjY2VwdCIsImh1bWFuX2Rpc3Bvc2VkIjpmYWxzZSwidmVyZGljdF9jbGFzcyI6ImV4ZWN1dGVkIn0sImVmZmVjdCI6eyJlZmZlY3RfYXR0ZXN0YXRpb24iOiJydW50aW1lX2NsYWltZWQiLCJyZXNwb25zZV9kaWdlc3QiOiJhMTAyYjEwY2VkZWU0ODVmZTc3ZDM5YTllODFkOTg5MjQ5NGZjMWUxMTE3ZjMxYzk3NzY0Nzc1NjIzNTVkYzRkIiwic3RhdHVzIjoiY29uZmlybWVkIiwidHlwZSI6ImEyYS50YXNrX2NvbXBsZXRlZCJ9LCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJrZXlfaWQiOiJmYTIzZWM1ZDNlNDA4MmIyMWQ1NmQ1MzkzZTdkYjI4MjA3MmQ2NWI4ZDE1MzlmYjk2YWY2Zjg5MjA2YzQyM2IzIiwibW9kZWxfYXR0ZXN0YXRpb24iOnsiY29tcHV0ZV9hdHRlc3RhdGlvbiI6eyJhZ2VudF9pbnB1dF9kaWdlc3QiOiI0NDUzOWJlZGVmNTE1MmUyM2EwNzcxNzU1YTg5NDA4MGQ1ZGU5ZGYzNzMwMWRiYmFiYTEyNjk4MjVhNTE5YzBlIiwiYWdlbnRfb3V0cHV0X2RpZ2VzdCI6ImExMDJiMTBjZWRlZTQ4NWZlNzdkMzlhOWU4MWQ5ODkyNDk0ZmMxZTExMTdmMzFjOTc3NjQ3NzU2MjM1NWRjNGQifX0sIm9wZXJhdG9yIjoicmVmZXJlbmNlLWltcGxlbWVudGF0aW9uIiwic2lnbmF0dXJlIjoiZDI4NDU4NGNhMzAzNzgyMzYxNzA3MDZjNjk2MzYxNzQ2OTZmNmUyZjYxNjc2NTZlNzQyZDYxNjM3NDY5NmY2ZTJkNjM2MTcwNzM3NTZjNjUyZDY5NjQwNDU4MjBmYTIzZWM1ZDNlNDA4MmIyMWQ1NmQ1MzkzZTdkYjI4MjA3MmQ2NWI4ZDE1MzlmYjk2YWY2Zjg5MjA2YzQyM2IzMDEyN2EwNTgyMGFmNWIwYTNlOTgxYTQxMWU0MGNlMjJhODEyNjRlNTRmMjg3MDJiNjkzYTMzZTcxYjFkYjhjNDczODRlZTQ5YTk1ODQwMDYxNzhmMmY1YmQ0MmU0ZjNkOWIxMGE0ODE1YWNjY2Q3MTJkYmZkZDg2NzMxZmJmMzY1MDRjMjJiZmNjODMyYjE5Y2VkZjE4M2I5Y2ZhMTMxNjJjZDNjOTVkNjQ2N2IyZmQ5OTI2ZmY4YTVmNWFiOTU2MTg2ZDJiMDkxNmQyMGQiLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDQiLCJ0aW1lc3RhbXAiOiIyMDI2LTA5LTA4VDA2OjA0OjEyLjkzNjUwNFoifSwiY29yZU1hbmlmZXN0RGlnZXN0IjoiNDI0OGEyMWNhNGRiM2VmOWYxZTYyN2JiNTRlMjJmMzhkMDJkZWQ1N2YwZTE1OGJjYWZiNzlkZGNlNDlkYzZjZiIsImV2aWRlbmNlSWQiOiI0NDUzOWJlZGVmNTE1MmUyM2EwNzcxNzU1YTg5NDA4MGQ1ZGU5ZGYzNzMwMWRiYmFiYTEyNjk4MjVhNTE5YzBlIiwiZXh0ZW5zaW9uVmVyc2lvbiI6IjEiLCJtYW5pZmVzdCI6eyJjYXB0dXJlUG9saWN5SWQiOiJhMmEtc2VydmVyLWJvdW5kYXJ5LXYxIiwiY2xsQ2hlY2twb2ludCI6eyJrZXlfaWQiOiJmYTIzZWM1ZDNlNDA4MmIyMWQ1NmQ1MzkzZTdkYjI4MjA3MmQ2NWI4ZDE1MzlmYjk2YWY2Zjg5MjA2YzQyM2IzIiwia2luZCI6Im1tcl9jaGVja3BvaW50IiwibG9nX2lkIjoiOTc2MGI0ZDNhYmYxNmU3ZmY5MGY2NjY0MTdkN2Q3MmEzYjQ0MDA5M2U2YTI5ODY3NWU5NTQwOGZhM2MyZDc4MSIsIm1tcl9zaXplIjoxLCJwcmV2X3Jvb3QiOiIiLCJwcmV2X3NpemUiOjAsInJvb3QiOiJmNGVhMTUwYzEyNzJhN2I4M2Y1Y2E0Nzc1YWQ0ZDE0ZmM2MTZlNjNjNjRmZGZkZjRkYjExNDA2ZDMzODYwODVjIiwic2lnbmF0dXJlIjoiOTAwYzViNTM5Nzk3YWYwNTIzMmQ5ZjAyNjJjYTVkZjUyYjU4NGJlMTA5MTE3ZjdlMWU1ODBlNjRlMTk5OTNhM2JlZjQwMDg4NTNkNzY3MTEwM2FmOTg5M2RmODEwY2Q0ZjFlNWEzZTVlNGQ3ZjQzYmE1MWVmZTNmNWUyY2NhMGEiLCJ0aW1lc3RhbXAiOiIyMDI2LTA5LTA4VDA2OjA0OjEyLjk0MDc0NloiLCJ2IjoxLCJ3aXRuZXNzZXMiOlt7ImVudHJ5X2hhc2giOiI2NjhiNjAyODczMTNiYjA0YTVhOWE4MTBlMzc2OTRiOThhNjM2ZmUwYmUxZWQ0ZjNkNzA2NzdmZTljZTY0YjljIiwibGVhZl9pbmRleCI6MCwicmVjZWlwdF9iNjQiOiIwb1JIb2hrQml3RUJKNkVaQVl5aElJRkVnd0VBZ1BaWVFLMTUwNVRxMFdlQzA2ZjJEdTdYQ3V5NTJJUXk5dDMxWmdaUVVRbkhHQnBNTmlBTzFVNGtrYm5SZnBOUkFGWG1Ecm03a1M5MFFzTWpTQ1JlLyt2MXNnTT0iLCJ0cmVlX3NpemUiOjEsInRzX3VybCI6Imh0dHA6Ly8xMjcuMC4wLjE6NTM1MzMifV19LCJjb25zaXN0ZW5jeVByb29mIjpudWxsLCJsb2NhbEluY2x1c2lvblByb29mIjp7ImtpbmQiOiJpbmNsdXNpb24iLCJsZWFmSW5kZXgiOjAsInBlYWtzTGVmdCI6W10sInBlYWtzUmlnaHQiOltdLCJzaXplIjoxLCJ2IjoxLCJ3aXRuZXNzIjpbXX0sInByaW9yQ2hlY2twb2ludCI6bnVsbCwicHJvZHVjZXJFbnZlbG9wZSI6eyJjYXBzdWxlSWQiOiJhZjViMGEzZTk4MWE0MTFlNDBjZTIyYTgxMjY0ZTU0ZjI4NzAyYjY5M2EzM2U3MWIxZGI4YzQ3Mzg0ZWU0OWE5Iiwia2V5SWQiOiJmYTIzZWM1ZDNlNDA4MmIyMWQ1NmQ1MzkzZTdkYjI4MjA3MmQ2NWI4ZDE1MzlmYjk2YWY2Zjg5MjA2YzQyM2IzIiwic2lnbmF0dXJlIjoiZDI4NDU4NGNhMzAzNzgyMzYxNzA3MDZjNjk2MzYxNzQ2OTZmNmUyZjYxNjc2NTZlNzQyZDYxNjM3NDY5NmY2ZTJkNjM2MTcwNzM3NTZjNjUyZDY5NjQwNDU4MjBmYTIzZWM1ZDNlNDA4MmIyMWQ1NmQ1MzkzZTdkYjI4MjA3MmQ2NWI4ZDE1MzlmYjk2YWY2Zjg5MjA2YzQyM2IzMDEyN2EwNTgyMGFmNWIwYTNlOTgxYTQxMWU0MGNlMjJhODEyNjRlNTRmMjg3MDJiNjkzYTMzZTcxYjFkYjhjNDczODRlZTQ5YTk1ODQwMDYxNzhmMmY1YmQ0MmU0ZjNkOWIxMGE0ODE1YWNjY2Q3MTJkYmZkZDg2NzMxZmJmMzY1MDRjMjJiZmNjODMyYjE5Y2VkZjE4M2I5Y2ZhMTMxNjJjZDNjOTVkNjQ2N2IyZmQ5OTI2ZmY4YTVmNWFiOTU2MTg2ZDJiMDkxNmQyMGQifSwidGFza0V2aWRlbmNlUGF5bG9hZCI6eyJhdXRob3JpdHkiOiJyZWZlcmVuY2UtaW1wbGVtZW50YXRpb24tc2VydmVyIiwiY2FwdHVyZVBvbGljeUlkIjoiYTJhLXNlcnZlci1ib3VuZGFyeS12MSIsImNvbnRleHRJZCI6IjNlOWZmNTA0LTBmNTgtNDllMi05ZDhkLTE0MWU0MTgyNDk0OCIsIm5vbkV2aWRlbmNlQXJ0aWZhY3RzIjpbeyJhcnRpZmFjdElkIjoicmVzcG9uc2UiLCJjb250ZW50Q29tbWl0bWVudCI6IjczYzk1MjM2NmYwNWM3NzJmMjMyMjhkNTVmMDExMTU3YTE1MjRjZTE3N2VjMmJmNDQxZjAyY2MxNDIxOWVjOGYiLCJuYW1lIjoicmVzcG9uc2UifV0sInNlYWxUaW1lIjoiMjAyNi0wOS0wOFQwNjowNDoxMi45MzYwMDArMDA6MDAiLCJ0YXNrSWQiOiI1NmU5OTUwNS1jYWViLTQwZGQtOTg2NS1iZWNmZTIwNzdkNGQiLCJ0ZW5hbnRJZCI6bnVsbCwidGVybWluYWxTdGF0ZSI6IlRBU0tfU1RBVEVfQ09NUExFVEVEIiwidHJhbnNjcmlwdCI6W3sibWVzc2FnZUlkIjoibXNnLXRhc2stZXZpZGVuY2UtMDAxIiwicGFydENvbW1pdG1lbnQiOiJmOTA5NmEyMDRmNGNlMDNiYzUwYTA3NDg0YTk5N2FhMGRlMzk4ZTY1MzQ2ZDM0MjM0ZTQ4MGM5ZWY3MzJlYmY3Iiwicm9sZSI6IlJPTEVfVVNFUiIsInNlcXVlbmNlIjowfV19fSwicmVjb3JkUHJvZmlsZSI6Imh0dHBzOi8vYWdlbnRhY3Rpb25jYXBzdWxlLm9yZy9wcm9maWxlcy9hMmEtdGFzay1ldmlkZW5jZS9hYWMtY2xsLXNjaXR0L3YxIiwidGFza0V2aWRlbmNlUGF5bG9hZCI6eyJhdXRob3JpdHkiOiJyZWZlcmVuY2UtaW1wbGVtZW50YXRpb24tc2VydmVyIiwiY2FwdHVyZVBvbGljeUlkIjoiYTJhLXNlcnZlci1ib3VuZGFyeS12MSIsImNvbnRleHRJZCI6IjNlOWZmNTA0LTBmNTgtNDllMi05ZDhkLTE0MWU0MTgyNDk0OCIsIm5vbkV2aWRlbmNlQXJ0aWZhY3RzIjpbeyJhcnRpZmFjdElkIjoicmVzcG9uc2UiLCJjb250ZW50Q29tbWl0bWVudCI6IjczYzk1MjM2NmYwNWM3NzJmMjMyMjhkNTVmMDExMTU3YTE1MjRjZTE3N2VjMmJmNDQxZjAyY2MxNDIxOWVjOGYiLCJuYW1lIjoicmVzcG9uc2UifV0sInNlYWxUaW1lIjoiMjAyNi0wOS0wOFQwNjowNDoxMi45MzYwMDArMDA6MDAiLCJ0YXNrSWQiOiI1NmU5OTUwNS1jYWViLTQwZGQtOTg2NS1iZWNmZTIwNzdkNGQiLCJ0ZW5hbnRJZCI6bnVsbCwidGVybWluYWxTdGF0ZSI6IlRBU0tfU1RBVEVfQ09NUExFVEVEIiwidHJhbnNjcmlwdCI6W3sibWVzc2FnZUlkIjoibXNnLXRhc2stZXZpZGVuY2UtMDAxIiwicGFydENvbW1pdG1lbnQiOiJmOTA5NmEyMDRmNGNlMDNiYzUwYTA3NDg0YTk5N2FhMGRlMzk4ZTY1MzQ2ZDM0MjM0ZTQ4MGM5ZWY3MzJlYmY3Iiwicm9sZSI6IlJPTEVfVVNFUiIsInNlcXVlbmNlIjowfV19LCJ0YXNrRXZpZGVuY2VSZWZlcmVuY2UiOnsiY29yZU1hbmlmZXN0RGlnZXN0IjoiNDI0OGEyMWNhNGRiM2VmOWYxZTYyN2JiNTRlMjJmMzhkMDJkZWQ1N2YwZTE1OGJjYWZiNzlkZGNlNDlkYzZjZiIsImNvdmVyYWdlU2NvcGUiOiJUQVNLX1RSQU5TQ1JJUFQiLCJkZWxpdmVyeU1vZGUiOiJFVklERU5DRV9BUlRJRkFDVCIsImV2aWRlbmNlSWQiOiI0NDUzOWJlZGVmNTE1MmUyM2EwNzcxNzU1YTg5NDA4MGQ1ZGU5ZGYzNzMwMWRiYmFiYTEyNjk4MjVhNTE5YzBlIiwiZXZpZGVuY2VTdGF0dXMiOiJFVklERU5DRV9TVEFUVVNfRVhURVJOQUxMWV9SRUdJU1RFUkVEIiwiZXh0ZW5zaW9uVmVyc2lvbiI6IjEiLCJyZWNvcmRQcm9maWxlIjoiaHR0cHM6Ly9hZ2VudGFjdGlvbmNhcHN1bGUub3JnL3Byb2ZpbGVzL2EyYS10YXNrLWV2aWRlbmNlL2FhYy1jbGwtc2NpdHQvdjEiLCJ0ZXJtaW5hbFN0YXRlIjoiVEFTS19TVEFURV9DT01QTEVURUQifX0="
+          }
+        ]
+      }
+    ],
+    "contextId": "3e9ff504-0f58-49e2-9d8d-141e41824948",
+    "history": [
+      {
+        "contextId": "3e9ff504-0f58-49e2-9d8d-141e41824948",
+        "extensions": [
+          "https://agentactioncapsule.org/extensions/a2a-task-evidence/v1"
+        ],
+        "messageId": "msg-task-evidence-001",
+        "metadata": {
+          "https://agentactioncapsule.org/extensions/a2a-task-evidence/v1": {
+            "deliveryModes": [
+              "EVIDENCE_ARTIFACT"
+            ],
+            "maximumRegistrationDelaySeconds": 60.0,
+            "minimumEvidence": "EXTERNALLY_REGISTERED",
+            "recordProfile": "https://agentactioncapsule.org/profiles/a2a-task-evidence/aac-cll-scitt/v1",
+            "requireTask": true,
+            "requirement": "REQUIRED"
+          }
+        },
+        "parts": [
+          {
+            "text": "seal this exchange"
+          }
+        ],
+        "role": "ROLE_USER",
+        "taskId": "56e99505-caeb-40dd-9865-becfe2077d4d"
+      }
+    ],
+    "id": "56e99505-caeb-40dd-9865-becfe2077d4d",
+    "metadata": {
+      "https://agentactioncapsule.org/extensions/a2a-task-evidence/v1": {
+        "coreManifestDigest": "4248a21ca4db3ef9f1e627bb54e22f38d02ded57f0e158bcafb79ddce49dc6cf",
+        "coverageScope": "TASK_TRANSCRIPT",
+        "deliveryMode": "EVIDENCE_ARTIFACT",
+        "evidenceId": "44539bedef5152e23a0771755a894080d5de9df37301dbbaba1269825a519c0e",
+        "evidenceStatus": "EVIDENCE_STATUS_EXTERNALLY_REGISTERED",
+        "extensionVersion": "1",
+        "recordProfile": "https://agentactioncapsule.org/profiles/a2a-task-evidence/aac-cll-scitt/v1",
+        "terminalState": "TASK_STATE_COMPLETED"
+      }
+    },
+    "status": {
+      "state": "TASK_STATE_COMPLETED",
+      "timestamp": "2026-09-08T06:04:12.956649Z"
+    }
+  },
+  "firstTask": {
+    "contextId": "3e9ff504-0f58-49e2-9d8d-141e41824948",
+    "history": [
+      {
+        "contextId": "3e9ff504-0f58-49e2-9d8d-141e41824948",
+        "extensions": [
+          "https://agentactioncapsule.org/extensions/a2a-task-evidence/v1"
+        ],
+        "messageId": "msg-task-evidence-001",
+        "metadata": {
+          "https://agentactioncapsule.org/extensions/a2a-task-evidence/v1": {
+            "deliveryModes": [
+              "EVIDENCE_ARTIFACT"
+            ],
+            "maximumRegistrationDelaySeconds": 60.0,
+            "minimumEvidence": "EXTERNALLY_REGISTERED",
+            "recordProfile": "https://agentactioncapsule.org/profiles/a2a-task-evidence/aac-cll-scitt/v1",
+            "requireTask": true,
+            "requirement": "REQUIRED"
+          }
+        },
+        "parts": [
+          {
+            "text": "seal this exchange"
+          }
+        ],
+        "role": "ROLE_USER",
+        "taskId": "56e99505-caeb-40dd-9865-becfe2077d4d"
+      }
+    ],
+    "id": "56e99505-caeb-40dd-9865-becfe2077d4d",
+    "metadata": {
+      "https://agentactioncapsule.org/extensions/a2a-task-evidence/v1": {
+        "evidenceAcceptance": {
+          "maximumRegistrationDelaySeconds": 60.0,
+          "minimumEvidence": "EXTERNALLY_REGISTERED",
+          "recordProfile": "https://agentactioncapsule.org/profiles/a2a-task-evidence/aac-cll-scitt/v1",
+          "state": "ACCEPTED"
+        },
+        "evidenceStatus": "EVIDENCE_STATUS_PENDING"
+      }
+    },
+    "status": {
+      "state": "TASK_STATE_SUBMITTED"
+    }
+  },
+  "trustConfig": {
+    "authorizedSigners": {
+      "reference-implementation-server": [
+        "fa23ec5d3e4082b21d56d5393e7db282072d65b8d1539fb96af6f89206c423b3"
+      ]
+    },
+    "tsPubkeysB64": {
+      "http://127.0.0.1:53533": "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUNvd0JRWURLMlZ3QXlFQW5GQlpjTUNCWG9VaUhBZzZLbjZKL1hzSmwvY3YrUjNGS1NnN2ZXZHg0UkE9Ci0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLQo="
+    }
+  },
+  "verification": {
+    "captureCoverage": {
+      "detail": "payload declares capturePolicyId=a2a-server-boundary-v1; a single record cannot establish that every eligible interaction under that policy was captured",
+      "state": "INCONCLUSIVE"
+    },
+    "checkpointSignature": {
+      "detail": "checkpoint signature under key_id=fa23ec5d3e4082b21d56d5393e7db282072d65b8d1539fb96af6f89206c423b3",
+      "state": "PASS"
+    },
+    "contentBinding": {
+      "detail": "recomputed evidenceId matches: 44539bedef5152e23a0771755a894080d5de9df37301dbbaba1269825a519c0e",
+      "state": "PASS"
+    },
+    "continuity": {
+      "detail": "v1 base profile carries no continuity assertion",
+      "state": "NOT_PRESENT"
+    },
+    "externalRegistration": {
+      "detail": "http://127.0.0.1:53533: witnessed",
+      "state": "PASS"
+    },
+    "identityAuthorityBinding": {
+      "detail": "key_id=fa23ec5d3e4082b21d56d5393e7db282072d65b8d1539fb96af6f89206c423b3 authorized for authority=reference-implementation-server",
+      "state": "PASS"
+    },
+    "localInclusion": {
+      "detail": "leaf_index=0 against checkpoint root at mmr_size=1",
+      "state": "PASS"
+    },
+    "outcomeCorroboration": {
+      "detail": "no independent outcome corroboration collected (out of scope, \u00a715)",
+      "state": "NOT_PRESENT"
+    },
+    "producerSignature": {
+      "detail": "producer key signed the carried capsule_id",
+      "state": "PASS"
+    },
+    "taskBinding": {
+      "detail": "payload binds the observed authority/task/transcript/artifacts",
+      "state": "PASS"
+    }
+  }
+}
