@@ -27,6 +27,7 @@ func TestKnownRegistriesMatchV4Seeds(t *testing.T) {
 		),
 		"effect_attestation": set("gate_executed", "runtime_claimed"),
 		"chain.relation":     set("confirms", "supersedes", "epoch_opens"),
+		"citation_purpose":   set("acted_on", "responds_to"),
 	}, knownRegistries())
 }
 

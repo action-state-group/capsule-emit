@@ -19,6 +19,7 @@ type Input struct {
 	Disposition *Disposition
 	Effect      *Effect
 	Chain       *Chain
+	References  []Reference
 	Model       *Model
 	Compute     *ComputeAttestation
 	compute     *computeAttestation
@@ -93,6 +94,18 @@ type Effect struct {
 type Chain struct {
 	ParentCapsuleID string
 	Relation        ChainRelation
+}
+
+// Reference cites an external artifact under its own CPB digest context
+// (draft-04 §5.5.5). Digest representation is defined by Type, not by AAC.
+// LogCoordinates, when present, carries log_id, leaf_index and inclusion_proof
+// as an opaque recorded claim. The producer does not verify that proof.
+type Reference struct {
+	Type            string
+	DigestAlg       string
+	Digest          string
+	CitationPurpose string
+	LogCoordinates  map[string]any
 }
 
 // BuiltPayload is a validated signature-free format-4 Capsule.

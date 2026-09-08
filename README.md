@@ -168,9 +168,12 @@ func PersistAndAppend(
 	producerPublicKey ed25519.PublicKey,
 	observedAt time.Time,
 ) (cll.AppendResult, error) {
-	_, err := emit.VerifyCapsule(result.Payload)
+	verified, err := emit.VerifyCapsule(result.Payload)
 	if err != nil {
 		return cll.AppendResult{}, fmt.Errorf("verify Capsule: %w", err)
+	}
+	if verified.CapsuleID == nil || *verified.CapsuleID != result.CapsuleID {
+		return cll.AppendResult{}, fmt.Errorf("Capsule ID mismatch")
 	}
 	authenticated, err := emit.VerifyEnvelope(result.CapsuleID, result.Envelope)
 	if err != nil {
@@ -227,17 +230,32 @@ empty membership, duplicate slots, duplicate Capsule IDs, and members whose
 stored bytes do not verify against their claimed IDs.
 
 ```go
-// illustrative — see the full example above for setup and error handling
+// Illustrative: inputs and identity are caller-owned; run inside an error-returning function.
 identityCapsule, err := emit.Build(identityInput)
+if err != nil {
+	return err
+}
 carried, err := emit.Received(input, artifactBytes, "provider-ack")
+if err != nil {
+	return err
+}
 actionCapsule, err := emit.Build(actionInput)
+if err != nil {
+	return err
+}
 composed, err := emit.BuildComposition(
     input,
     emit.Who(identityCapsule),
     emit.Can(carried),
     emit.Did(actionCapsule),
 )
+if err != nil {
+	return err
+}
 envelope, err := emit.Sign(composed, identity)
+if err != nil {
+	return err
+}
 ```
 
 The same DID composition can use the high-level signing path:
@@ -248,6 +266,9 @@ result, err := emit.Seal(emit.SealInput{
 	Members:  []emit.SlotMember{emit.Did(actionCapsule)},
 	Identity: identity,
 })
+if err != nil {
+	return err
+}
 ```
 
 Slot helpers reference existing Capsules unchanged. They do not mint or persist
@@ -295,7 +316,70 @@ derived from the supplied effect and chain values. A format-4 Capsule declares
 top-level `capsule_id` and local-only Producer Envelope fields `signature` and
 `key_id`. The `chain` field remains committed.
 
+## Cross-record references
+
+`Input.References` adds draft-04 external citations to the committed payload.
+Use `Reference{Type: "agent-action-capsule", DigestAlg: "SHA-256", Digest: id,
+CitationPurpose: "responds_to"}` to cite another AAC record. `acted_on` is also
+seeded; additional purposes remain informational. References must not duplicate
+the Capsule's own chain parent. Foreign artifact types retain their own digest
+representation, and their content is not resolved by this producer.
+
+Optional `LogCoordinates` is caller-owned JSON containing `log_id`, `leaf_index`
+and `inclusion_proof`. All three are recorded claims; Class 1 does not verify
+the proof. A nil `References` slice omits the field; an empty slice emits `[]`.
+Those forms have different format-4 IDs because JCS preserves the distinction.
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+
+	emit "github.com/action-state-group/capsule-emit-go"
+)
+
+func main() {
+	if err := run(); err != nil {
+		panic(err)
+	}
+}
+
+func run() error {
+	input := emit.Input{
+		ActionID: "request/1", ActionType: emit.ActionTypeFYI,
+		Operator: "example-org", Developer: "example-agent@v1",
+		Timestamp: time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC),
+	}
+	request, err := emit.Build(input)
+	if err != nil {
+		return err
+	}
+	input.ActionID = "response/1"
+	input.References = []emit.Reference{{
+		Type: "agent-action-capsule", DigestAlg: "SHA-256",
+		Digest: request.CapsuleID, CitationPurpose: "responds_to",
+	}}
+	response, err := emit.Build(input)
+	if err != nil {
+		return err
+	}
+	if _, err := emit.VerifyCapsule(response.JSON); err != nil {
+		return err
+	}
+	fmt.Println(request.CapsuleID, response.CapsuleID)
+	return nil
+}
+```
+
+The reference enters through `Input`, including `SealInput.Capsule` when using
+`Seal`. There is no separate reference builder or closed purpose enum.
+
 ## Development
+
+`DigestJSON` keeps JCS negative-zero normalization. Python's optional strict
+raw-input verification tier is a separate API, not a new Capsule-ID algorithm.
 
 ```bash
 go fmt ./...
@@ -305,6 +389,16 @@ go test ./...
 go test -race ./...
 scripts/check-coverage.sh 90.0
 ```
+
+`scripts/check-producer-cll-interop.sh` exercises both producers through both
+Go/TypeScript CLL append and checkpoint runners, then verifies every checkpoint
+with Python. It uses a temporary module so CLL is not a production dependency.
+Build the sibling `capsule-emit-ts` and `cll-ts` packages first, and use a Python
+environment with `checkpointed-local-log` installed. `PYTHON` selects its
+interpreter; sibling locations can be set through `AAC_REPO`,
+`CAPSULE_EMIT_TS_ROOT`, `CLL_GO_ROOT` and `CLL_TS_ROOT`.
+This is an in-memory, offline integration check, not a witness-delivery or
+durable-storage recovery test.
 
 ## Non-goals
 

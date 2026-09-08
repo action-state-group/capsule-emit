@@ -59,6 +59,7 @@ var v4Registries = map[string]map[string]bool{
 	),
 	"effect_attestation": registrySet(string(AttestationGateExecuted), string(AttestationRuntimeClaimed)),
 	"chain.relation":     registrySet(string(ChainConfirms), string(ChainSupersedes), string(ChainEpochOpens)),
+	"citation_purpose":   registrySet("acted_on", "responds_to"),
 }
 
 func knownRegistries() map[string]map[string]bool {

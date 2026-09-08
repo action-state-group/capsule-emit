@@ -59,6 +59,24 @@ func Build(input Input) (BuiltPayload, error) {
 	if attestation := modelAttestationMap(input); attestation != nil {
 		payload["model_attestation"] = attestation
 	}
+	if input.References != nil {
+		references := make([]any, 0, len(input.References))
+		for _, reference := range input.References {
+			value := digestReferenceMap(digestReference{Type: reference.Type, DigestAlg: reference.DigestAlg, Digest: reference.Digest})
+			if reference.CitationPurpose != "" {
+				value["citation_purpose"] = reference.CitationPurpose
+			}
+			if reference.LogCoordinates != nil {
+				coordinates, err := marshalDigestValue(reference.LogCoordinates)
+				if err != nil {
+					return BuiltPayload{}, fmt.Errorf("reference log coordinates: %w", err)
+				}
+				value["log_coordinates"] = coordinates
+			}
+			references = append(references, value)
+		}
+		payload["references"] = references
+	}
 	if err := validatePayloadText(payload, "$"); err != nil {
 		return BuiltPayload{}, err
 	}

@@ -132,3 +132,23 @@ jobs:
       - name: Verify Python vectors with TypeScript
         run: npm run test:interop
         working-directory: capsule-emit-ts
+      - name: Check out cll-go main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: action-state-group/cll-go
+          ref: main
+          path: cll-go
+      - name: Check out cll-ts main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: action-state-group/cll-ts
+          ref: main
+          path: cll-ts
+      - name: Build TypeScript producer and CLL
+        run: |
+          npm --prefix capsule-emit-ts run build
+          npm --prefix cll-ts ci
+          npm --prefix cll-ts run build
+      - name: Verify producer to CLL interoperability
+        run: scripts/check-producer-cll-interop.sh
+        working-directory: capsule-emit-go

@@ -14,17 +14,27 @@ import (
 // names, excessive depth, floats, and integers outside the interoperable JSON
 // safe range. Negative zero is canonicalized to zero as required by RFC 8785.
 func DigestJSON(value any) (string, error) {
-	encoded, err := jsonv2.Marshal(value)
+	decoded, err := marshalDigestValue(value)
 	if err != nil {
-		return "", fmt.Errorf("marshal JSON digest input: %w", err)
-	}
-	decoded, err := decodeStrictJSON(encoded)
-	if err != nil {
-		return "", fmt.Errorf("decode JSON digest input: %w", err)
+		return "", err
 	}
 	digest, err := canonical.JSONDigest(decoded)
 	if err != nil {
 		return "", fmt.Errorf("canonicalize JSON digest input: %w", err)
 	}
 	return digest, nil
+}
+
+// marshalDigestValue prepares caller-owned JSON for AAC's number-preserving
+// canonicalizer, shared by standalone digests and opaque reference coordinates.
+func marshalDigestValue(value any) (any, error) {
+	encoded, err := jsonv2.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("marshal JSON digest input: %w", err)
+	}
+	decoded, err := decodeStrictJSON(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decode JSON digest input: %w", err)
+	}
+	return decoded, nil
 }

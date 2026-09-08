@@ -102,6 +102,16 @@ func TestDigestJSONCanonicalizesNegativeZero(t *testing.T) {
 	assert.Equal(t, arrayPositiveZero, arrayNegativeZero)
 }
 
+func TestDigestJSONRawTokenProfile(t *testing.T) {
+	for _, input := range []string{`{"n":1e2}`, `{"n":100.0}`, `{"n":01}`} {
+		t.Run(input, func(t *testing.T) {
+			_, err := DigestJSON(rawJSONMarshaler(input))
+			require.Error(t, err)
+		})
+	}
+
+}
+
 func TestDigestJSONEnforcesMaximumDepth(t *testing.T) {
 	var value any = "leaf"
 	for range maxJSONDepth {
