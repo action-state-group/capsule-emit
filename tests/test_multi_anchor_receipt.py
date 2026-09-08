@@ -89,8 +89,13 @@ def _emit_capsule(tmp_path, action: str = "multi_anchor_test") -> str:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def anchor(tmp_path):
+def anchor(tmp_path, monkeypatch):
     """Single capsule-anchor TestClient (in-memory, ephemeral key)."""
+    # create_app() requires CAPSULE_ANCHOR_PUBLIC_HOST (the did:web identity host
+    # published at /.well-known/did.json). This in-memory test only needs *a* valid
+    # host so the app constructs; pin a clearly-test value so the suite is
+    # self-contained (no CI env dependency). monkeypatch auto-reverts.
+    monkeypatch.setenv("CAPSULE_ANCHOR_PUBLIC_HOST", "anchor.test.local")
     from capsule_anchor.app import create_app
     from fastapi.testclient import TestClient
     with TestClient(create_app()) as client:
