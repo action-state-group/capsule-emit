@@ -1,22 +1,53 @@
 # LangChain adapter — `LangChainCapsuleListener`
 
-Seal LangChain tool calls as signed, independently verifiable action records.
+Your LangChain callbacks tell *you* what your agent did. A capsule turns each
+tool call into a record built for **someone who doesn't already trust you** —
+your customer, their CISO, an auditor, the other side of a deal — including the
+calls the agent tried to make and didn't complete.
 
-## Overview
+That's the difference between a log and a record. A log is for you. A record is
+for the person who has to believe you. Traces answer "what happened?" for the
+team that owns the trace; they don't answer "can a stranger confirm this months
+later?", because the party that ran the agent also holds and can rewrite the
+trace. A capsule is content-addressed and independently checkable, so it can.
 
-`capsule-emit` seals what a LangChain agent did into signed records that a third
-party can check without trusting — or contacting — the system that produced them.
+## What you get, in three claims
 
-## Why
+1. **The attempt and its outcome are both in the record — including the ones
+   that didn't go through.** Each tool call seals a `planned` record and chains
+   the outcome to it. A guard that *raises* to block a call seals a `failed`
+   record (*"proposed, did not happen"*); a guard that *returns* a denial seals
+   `confirmed` with the denial in the recorded output. Either way the decision is
+   in the record, not just your logs.
+2. **Each record is addressed by the digest of its own bytes.** Change one byte
+   and the id changes and the chain link stops resolving — so anyone *other than
+   the ledger's holder* is caught by arithmetic, not policy. The holder, who
+   could re-seal the whole chain, is caught by the external anchor — see
+   [Network behavior](#network-behavior).
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+   recomputes the whole chain — no account, no service, no network. That is the
+   chain/structure check; the separate producer-signature check is under
+   [Verification](#verification).
 
-Traces answer "what happened?" for the team that owns the trace. They do not
-answer "can a stranger confirm this months later?", because the same party that
-ran the agent also holds and can rewrite the trace.
+## The 10-minute proof
 
-`capsule-emit` writes an *action record* — a capsule — for each tool call: what
-was about to happen, then what did happen, signed and content-addressed. Anyone
-holding the records can recompute the identifiers and check the signatures
-offline.
+The adapter ships a runnable demo — a hermetic local transparency stub (no
+external network), real `langchain-core` tools, a call that succeeds and one
+that's refused, every record verified offline:
+
+```shell
+git clone https://github.com/action-state-group/capsule-emit
+cd capsule-emit
+python -m venv .venv && . .venv/bin/activate
+pip install "capsule-emit[langchain]"
+python examples/langchain-listener/demo.py
+```
+
+You'll watch it seal `planned → confirmed` for the call that works and
+`planned → failed` for the one that raises, each record `PASS` on offline
+verify, and a fail-closed `capsule-emit evidence` render. The demo seals to a
+throwaway ledger and checks it for you; the step-by-step version of that code —
+and how to keep a ledger of your own — is under [Example](#example) below.
 
 ## How it works
 
