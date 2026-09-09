@@ -81,3 +81,19 @@ def test_quickstart_demo_offline():
         f"quickstart_demo.py exited {result.returncode}\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
+
+
+def test_cross_record_references_example():
+    """cross-record-references/run_example.py must exit 0.
+
+    Exercises seal(..., references=...) plumbing through the slot-composition
+    path — plain seal + slot-form + payload-key non-leak all asserted inline.
+    """
+    result = _run(
+        EXAMPLES / "cross-record-references" / "run_example.py",
+        env={"CAPSULE_WITNESS": "off"},
+    )
+    assert result.returncode == 0, (
+        f"cross-record-references/run_example.py exited {result.returncode}\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )

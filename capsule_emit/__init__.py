@@ -54,7 +54,7 @@ from typing import Any, NoReturn
 
 from .adjudication import contradicted, seal_adjudication
 from .approval import list_pending, seal_approval
-from .core import EmitResult, LogEntry
+from .core import EmitResult, LogEntry, ReferenceEntry
 from .disclosure import DisclosureError, build_disclosure_envelope
 from .gate import (
     CheckResult,
@@ -123,6 +123,7 @@ __all__ = [
     "emit",
     "EmitResult",
     "LogEntry",
+    "ReferenceEntry",
     # Approval record + pending
     "seal_approval",
     "list_pending",

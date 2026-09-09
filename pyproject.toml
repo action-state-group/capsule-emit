@@ -36,7 +36,7 @@ classifiers = [
 # cll.ledger.segments directly -- segment rotation/archival (list_segments,
 # mount_segment/unmount_segment, SegmentManifest) shipped in 0.2.0.
 dependencies = [
-    "agent-action-capsule[anchor,envelope]>=0.2.0",
+    "agent-action-capsule[anchor,envelope]>=0.3.0",
     "cryptography>=42.0",
     "checkpointed-local-log>=0.2.0",
 ]

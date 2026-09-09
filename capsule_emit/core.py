@@ -77,7 +77,7 @@ from typing import Any, Literal
 from agent_action_capsule import emit as _base_emit
 from agent_action_capsule.anchor import AnchorError, AnchorFuture, AnchorResult, async_anchor
 from agent_action_capsule.canonical import jcs, json_digest, normalize
-from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError
+from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError, ReferenceEntry
 
 from . import signing as _signing
 from . import witness as _witness
@@ -86,7 +86,7 @@ from .ledger import append_to_ledger
 from .numbers import CANONICALIZATION_ID
 from .signing import Signer
 
-__all__ = ["_emit_capsule", "_emit_log_entry", "EmitResult", "LogEntry"]
+__all__ = ["_emit_capsule", "_emit_log_entry", "EmitResult", "LogEntry", "ReferenceEntry"]
 
 _DEFAULT_LEDGER = "ledger.jsonl"
 
@@ -565,6 +565,7 @@ def _emit_capsule(
     canonicalization_id: str = CANONICALIZATION_ID,
     signer: Signer | None = None,
     signing_key_path: str | os.PathLike | None = None,
+    references: tuple[ReferenceEntry, ...] | None = None,
 ) -> EmitResult:
     """Emit a sealed, optionally anchored Agent Action Capsule.
 
@@ -712,6 +713,26 @@ def _emit_capsule(
             :class:`~capsule_emit.signing.LocalKeypairSigner` persists its
             key (else ``CAPSULE_SIGNING_KEY_PATH``, else a file next to
             ``ledger``). Ignored when ``signer`` is given.
+        references: Cross-record citations to records outside this Capsule's
+            own ``chain`` scope (draft-04 §5.5.5). Each entry is a
+            :class:`~agent_action_capsule.contracts.ReferenceEntry` with
+            ``type``/``digest_alg``/``digest`` (and optional
+            ``citation_purpose`` / ``log_coordinates``). ``None`` (default)
+            omits the ``references`` key; ``()`` emits ``"references": []``.
+            Threading happens BEFORE ``capsule_id`` computation and signing,
+            so references are committed to the capsule's identity.
+
+            **Slot-composition semantics (CRITICAL):** When using the
+            slot-form (``seal(who(...), can(...), did(...))``) the
+            ``references`` keyword is forwarded to the *composition* capsule
+            only — the capsule that binds the slot members together. Raw
+            payloads inside an ordinary ``seal(payload)`` call carry their
+            own content; they do NOT produce top-level Capsule
+            ``references[]``. Only a caller that explicitly passes
+            ``references=`` into ``seal()`` (or directly into
+            ``_emit_capsule()``) gets ``references[]`` on that capsule —
+            there is no automatic promotion, no inference, and no leak from
+            payload content.
 
     Returns:
         :class:`EmitResult` with ``.capsule_id``, ``.anchored``,
@@ -810,6 +831,7 @@ def _emit_capsule(
         prior_capsule_id=confirms,
         chain_relation=chain_relation,
         disposition=disposition,
+        references=references,
         tool_name=action,
     )
 
