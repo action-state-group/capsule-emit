@@ -5,8 +5,11 @@ existing storage-free behavior.
 
 ## Storage boundary
 
-- MySQL stores exact sealed Capsule bytes, a Producer Envelope, and associated
-  originals. It does not seal, append to CLL, or publish checkpoints.
+- Two peer backends implement the same `artifact.Store` contract: `artifact/mysql`
+  (MySQL 8.4/InnoDB) and `artifact/sqlite` (modernc, pure-Go, single file). Neither
+  is the default; the caller selects one. Each stores exact sealed Capsule bytes, a
+  Producer Envelope, and associated originals. Neither seals, appends to CLL, or
+  publishes checkpoints.
 - `capsule_store_capsules` holds immutable Capsule/envelope bytes and an inventory
   checksum. `capsule_store_artifacts` holds named originals and purge tombstones.
 - Artifacts normally use `payload` and optional `agent_output`. Explicit digest
@@ -66,6 +69,14 @@ unless its backend explicitly supports that same transaction contract.
 context-aware bounded backoff. Each attempt owns and rolls back its SQL transaction.
 `PutTx` never retries: the caller decides how to replay its entire transaction.
 
+The SQLite backend (`artifact/sqlite`) exposes the identical
+`New`/`Init`/`Put`/`PutTx`/`Get`/`GetTx`/`Purge` API and the same immutability,
+idempotent-retry, conflict, and fail-closed-read semantics. Open it with the
+`sqlite` driver, `PRAGMA foreign_keys=ON`, and a single open connection so writes
+serialize; it retries transient `SQLITE_BUSY`/`SQLITE_LOCKED` in place of an InnoDB
+deadlock. It stores the same two tables in one local file, which may also hold a
+cll-go SQLite log in its own tables.
+
 ## Lifecycle and operations
 
 Writes are immutable and byte-identical retries are idempotent. Changed bytes,
@@ -99,9 +110,10 @@ Schema upgrades need explicit migrations. Producer key rotation is supported by
 configuring an allowlist containing both retained historical and current keys.
 
 No application-specific schema migrations, field-level selective disclosure,
-filesystem backend, profile management, or CLI commands are included. The root
-emit package and artifact interface do not import a MySQL driver. Only importing
-artifact/mysql links that backend into an application.
+profile management, or CLI commands are included. The root emit package and the
+`artifact` interface import no storage driver. Importing `artifact/mysql` links the
+MySQL driver; importing `artifact/sqlite` links the pure-Go SQLite driver. An
+application links only the backend it chooses.
 
 ## Tests
 
@@ -113,7 +125,8 @@ Generic MySQL integration tests opt in through `CAPSULE_STORAGE_TEST_DSN` and
 accept only TCP `127.0.0.1` and database `capsule_storage_test`. Use a disposable
 MySQL 8.4 instance; the tests create namespace-scoped fixtures and intentionally
 corrupt their own rows to exercise fail-closed behavior. Without that variable,
-MySQL tests skip. Unit tests use testify `assert` and `require`.
+MySQL tests skip. SQLite tests need no external server and always run against a
+temporary file. Unit tests use testify `assert` and `require`.
 
 Application-specific, one-off migration rehearsal tools are deliberately outside
 this repository and are not part of its distribution.

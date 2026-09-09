@@ -130,9 +130,11 @@ pass the current AAC Class 1 verifier.
 ## Optional artifact storage
 
 `artifact` defines originals, digest bindings, verification, and a backend-neutral
-Store interface. `artifact/mysql` provides explicit transactional persistence.
-The root emit package remains storage-free and does not import the MySQL driver.
-See [artifact storage](artifact/README.md) for initialization, limits, trusted-key
+Store interface. Two peer backends implement it with explicit transactional
+persistence: `artifact/mysql` (MySQL 8.4/InnoDB) and `artifact/sqlite` (modernc,
+pure-Go, single file). The root emit package remains storage-free and imports no
+storage driver; an application links only the backend it selects. See
+[artifact storage](artifact/README.md) for initialization, limits, trusted-key
 policy, retention, and tests. Application workflow state remains caller-owned.
 
 ## Persist and append to CLL
