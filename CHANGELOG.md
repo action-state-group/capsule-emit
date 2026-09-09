@@ -4,6 +4,34 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## 0.8.1
+
+### Added — `seal(..., references=...)`: draft-04 §5.5.5 cross-record citations (#166, [emit-references-seal-plumbing])
+
+`seal()` now accepts `references=` (a tuple of `agent-action-capsule` `ReferenceEntry`
+citations) and threads them to AAC **before** `capsule_id` calculation, signing, and
+persistence — so references are committed to the content address, not bolted on after.
+Slot composition rules: `seal(payload, references=...)` cites on the single payload capsule;
+`seal(who(...), did(...), references=...)` cites on the **composition capsule only** (member
+capsules never receive `references[]`). A `"references"` key *inside* the payload dict stays
+inside the payload digest and is never promoted to a top-level Capsule `references[]` — only an
+explicit `references=` kwarg does (guarded by tests). The AAC dependency floor is raised to
+`>=0.3.0` (the version that carries `references[]`).
+
+### Added — `ledger_io.py`: capsule-ledger's read/verify seam homed here (#160, [emit-ledger-io-home])
+
+The read/verify seam previously living in capsule-ledger now has its home in capsule-emit, so a
+consumer reads and verifies a ledger through one library.
+
+### Added — `examples/a2a-task-evidence` + adapter docs
+
+A running a2a-task-evidence reference example, plus Strands and LlamaIndex adapter doc pages.
+
+### Fixed — `status` renders witness identity neutrally
+
+`status` now renders a witness by its host and self-declared operator, never by our brand — the
+neutral-surface discipline (a witness is one row in an alphabetical directory).
+
 ## 0.8.0
 
 ### Added — `strict-tier KAT class`: dup keys, -0, leading zero (#157, [strict-tier-kat-class])
