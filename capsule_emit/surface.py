@@ -95,9 +95,9 @@ import hashlib
 from collections.abc import Iterable
 from typing import Any
 
-from .core import _DEFAULT_LEDGER, EmitResult, LogEntry, _emit_capsule, _emit_log_entry
+from .core import _DEFAULT_LEDGER, EmitResult, LogEntry, ReferenceEntry, _emit_capsule, _emit_log_entry
 
-__all__ = ["Capsule", "seal", "received", "who", "can", "did", "audit", "push", "log"]
+__all__ = ["Capsule", "seal", "received", "who", "can", "did", "audit", "push", "log", "ReferenceEntry"]
 
 #: The noun. seal()/received() (standalone or composed) all return this type.
 #: An alias, not a new class — Capsule *is* an EmitResult; the rename is a
@@ -299,6 +299,14 @@ def _resolve_slot_member(member: _SlotMember, **kwargs: Any) -> Capsule:
 
 
 def _seal_slots(members: list[_SlotMember], **kwargs: Any) -> Capsule:
+    # Pop references NOW so it is NOT forwarded into _resolve_slot_member:
+    # references[] belong on the composition capsule (the one that binds the
+    # slots together), never on the individual member capsules that are minted
+    # for raw payloads. This is the "slot-composition semantics" boundary: only
+    # the caller's explicit references=... on the outer seal() call — or on a
+    # _emit_capsule() call directly — adds references[] to a capsule; payload
+    # content is never inspected for references, and no implicit promotion occurs.
+    composition_references = kwargs.pop("references", None)
     resolved: list[Capsule] = []
     slots: dict[str, str] = {}
     for member in members:
@@ -311,7 +319,7 @@ def _seal_slots(members: list[_SlotMember], **kwargs: Any) -> Capsule:
     # positional args (O8, cross-language conformance with Go's fixed
     # struct order).
     resolved.sort(key=lambda c: _SLOTS.index(slots[c.capsule_id]))
-    return _compose(resolved, slots=slots, **kwargs)
+    return _compose(resolved, slots=slots, references=composition_references, **kwargs)
 
 
 def _coerce_artifact_bytes(value: Any, *, caller: str) -> bytes:

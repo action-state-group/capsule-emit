@@ -78,6 +78,7 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 
 - **Capture more, write less** — a decorator [adapter](docs/adapters/) (MCP / LangChain / CrewAI / Hermes / Goose / ADK) seals each wrapped tool call automatically; the [agentgateway](docs/adapters/agentgateway.md) adapter seals all consequential traffic at the gateway chokepoint — no per-tool changes needed.
 - **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence. → `seal(payload, confirms=parent_id)` · [within one stream, and across (under revision)](docs/chaining.md)
+- **Cite external records** — add a cross-record citation to a capsule outside this chain's scope (draft-04 §5.5.5): `seal(payload, references=(ReferenceEntry(type="agent-action-capsule", digest_alg="SHA-256", digest=other_id),))`. On the slot-form `seal(who(...), did(...), references=...)` the citation lands on the composition capsule only, not the individual members. References are committed to `capsule_id` before signing.
 - **Declare now, enforce later** — a `manifest.md` declares your rules; a compatible gateway enforces the *same file*, with no change to your `seal()` calls.
 
 The unit is the **capsule** (one action). What you keep and grow is the **ledger** (the witnessed trail). Chaining links specific capsules within it. Start with the ledger; add the rest when you need it. → walk it end-to-end in the **[tutorials](docs/tutorials/)**.
