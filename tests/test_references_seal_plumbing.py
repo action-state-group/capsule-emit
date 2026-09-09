@@ -13,14 +13,11 @@ own chain scope. Tests confirm:
 """
 from __future__ import annotations
 
-import pytest
-
 from agent_action_capsule.contracts import ReferenceEntry
-from capsule_emit import ReferenceEntry as CapsuleEmitReferenceEntry
-from capsule_emit import audit, can, did, seal, who
-from capsule_emit import received
-from capsule_emit.verification import verify_capsule as verify
 
+from capsule_emit import ReferenceEntry as CapsuleEmitReferenceEntry
+from capsule_emit import can, did, received, seal, who
+from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
 # 1. Basic plumbing: references= threads to AAC before id/sign/persist

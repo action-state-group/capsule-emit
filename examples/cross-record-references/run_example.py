@@ -24,7 +24,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_ROOT))
 
-from capsule_emit import ReferenceEntry, did, seal, who
+from capsule_emit import ReferenceEntry, did, seal, who  # noqa: E402
 
 
 def main() -> None:
@@ -62,7 +62,7 @@ def main() -> None:
             ledger=ledger,
         )
         assert "references" not in cap2.capsule
-        print(f"[2] payload with 'references' key — no top-level references[]: OK")
+        print("[2] payload with 'references' key — no top-level references[]: OK")
 
         # --- 3. Slot-composition: references on the composition only ----------
         # On the slot-form, references= routes to the COMPOSITION capsule,
@@ -83,7 +83,7 @@ def main() -> None:
         )
         assert "references" in composition.capsule
         assert composition.capsule["references"][0]["digest"] == ext_id
-        print(f"[3] slot-composition with references on composition: OK")
+        print("[3] slot-composition with references on composition: OK")
         print(f"    composition capsule_id={composition.capsule_id[:16]}…")
         print(f"    references[0].digest={composition.capsule['references'][0]['digest'][:16]}…")
 
@@ -94,7 +94,7 @@ def main() -> None:
         for m in members:
             member_capsule = records[m["digest"]]
             assert "references" not in member_capsule
-        print(f"    member capsules carry no references[]: OK")
+        print("    member capsules carry no references[]: OK")
 
     print("\nAll assertions passed.")
 
