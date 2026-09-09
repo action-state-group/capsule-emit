@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"regexp"
@@ -193,6 +194,11 @@ func rawDigest(data []byte) string {
 // inventory, including original byte hashes. It survives intentional purge
 // while detecting missing rows, changed bindings, or accidental corruption.
 // This storage checksum is NOT an additional producer authentication claim.
+//
+// It marshals with encoding/json/v2, matching the rest of this library's JSON
+// handling. v2 encodes an empty inventory as [] rather than v1's null, so the
+// checksum agrees with a JavaScript reader's JSON.stringify over the same shape;
+// a shared database therefore stays portable across the Go and TypeScript stores.
 func (record Record) StorageChecksum() (string, error) {
 	record.Artifacts = append([]Artifact(nil), record.Artifacts...)
 	for i := range record.Artifacts {
@@ -202,7 +208,7 @@ func (record Record) StorageChecksum() (string, error) {
 		}
 	}
 	sort.Slice(record.Artifacts, func(i, j int) bool { return record.Artifacts[i].Name < record.Artifacts[j].Name })
-	data, err := json.Marshal(record)
+	data, err := jsonv2.Marshal(record)
 	if err != nil {
 		return "", err
 	}

@@ -53,6 +53,21 @@ func TestStorageChecksumGolden(t *testing.T) {
 	assert.Equal(t, golden, checksum)
 }
 
+// Pin the empty-inventory encoding, which is where v1 encoding/json (nil slice
+// -> null) and encoding/json/v2 (-> []) differ. The store marshals with v2 so a
+// zero-artifact record stays byte-compatible with a JavaScript reader's
+// JSON.stringify; the capsule-emit-ts suite pins the identical golden.
+func TestStorageChecksumGoldenEmpty(t *testing.T) {
+	record, err := artifact.Prepare(artifact.Record{
+		CapsuleID: strings.Repeat("a", 64), Capsule: []byte("{}"), ProducerEnvelope: []byte{0, 1, 2, 255},
+	})
+	require.NoError(t, err)
+	require.Empty(t, record.Artifacts)
+	checksum, err := record.StorageChecksum()
+	require.NoError(t, err)
+	assert.Equal(t, "33be5d36fbe3fcd89e5ec0a3ac5feb0ea764fa08053c34d0978c99fc2dfb71f4", checksum)
+}
+
 func TestVerifyIdentityAndRawIntegrity(t *testing.T) {
 	record, pub := testutil.Record(t, "identity-regression")
 	other, _ := testutil.Record(t, "other-identity")
