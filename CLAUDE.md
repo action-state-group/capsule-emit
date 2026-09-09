@@ -92,3 +92,11 @@ SealInput → DigestJSON + Build/BuildComposition + Sign → Capsule + Envelope
 Use `github.com/stretchr/testify/assert` and `require`. Tests live beside source.
 Set `AAC_REPO` to an `agent-action-capsule` checkout to run frozen Capsule and
 Producer Envelope corpus tests locally; CI pins and supplies the upstream ref.
+
+## Optional artifact persistence
+
+The root emission package retains the storage-free scope above. `artifact` owns
+originals, digest bindings, inventory checks and the backend-neutral Store
+interface. `artifact/mysql` owns explicit MySQL persistence and transaction
+integration. Only the backend imports its SQL driver. Trusted signer keys are
+caller policy. Keep application-specific, one-off migrations outside this repo.

@@ -35,7 +35,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: capsule_storage_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     env:
+      CAPSULE_STORAGE_TEST_DSN: "root@tcp(127.0.0.1:3306)/capsule_storage_test?parseTime=true"
       AAC_REPO: ${{ github.workspace }}/agent-action-capsule
     steps:
       - name: Check out repository
@@ -57,7 +71,21 @@ jobs:
   race:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: capsule_storage_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     env:
+      CAPSULE_STORAGE_TEST_DSN: "root@tcp(127.0.0.1:3306)/capsule_storage_test?parseTime=true"
       AAC_REPO: ${{ github.workspace }}/agent-action-capsule
     steps:
       - name: Check out repository

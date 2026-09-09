@@ -127,6 +127,14 @@ AAC draft-04 defines only `fyi` and `decide` as conformant `action_type`
 values. The package rejects other values so every `Build` result continues to
 pass the current AAC Class 1 verifier.
 
+## Optional artifact storage
+
+`artifact` defines originals, digest bindings, verification, and a backend-neutral
+Store interface. `artifact/mysql` provides explicit transactional persistence.
+The root emit package remains storage-free and does not import the MySQL driver.
+See [artifact storage](artifact/README.md) for initialization, limits, trusted-key
+policy, retention, and tests. Application workflow state remains caller-owned.
+
 ## Persist and append to CLL
 
 `capsule-emit-go` and `cll-go` do not depend on each other. An application may
@@ -150,7 +158,7 @@ import (
 )
 
 // CapsuleStore is application-owned persistence. Its schema and transaction
-// model are deliberately outside both libraries.
+// model can be adapted to the optional artifact/mysql backend.
 type CapsuleStore interface {
 	PutCapsule(
 		ctx context.Context,
@@ -400,7 +408,7 @@ interpreter; sibling locations can be set through `AAC_REPO`,
 This is an in-memory, offline integration check, not a witness-delivery or
 durable-storage recovery test.
 
-## Non-goals
+## Emission-core non-goals
 
 - Executing or retrying provider actions
 - Generating business IDs or timestamps
