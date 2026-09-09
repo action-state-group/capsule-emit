@@ -19,8 +19,6 @@ import (
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-var _ artifact.Store = (*Store)(nil)
-
 //go:embed schema.sql
 var schema string
 
@@ -70,11 +68,9 @@ func (s *Store) Init(ctx context.Context) error {
 }
 
 // Put persists an immutable record atomically, accepting byte-identical retries.
-func (s *Store) Put(ctx context.Context, record artifact.Record) error {
-	return retryBusy(ctx, func() error { return s.putOnce(ctx, record) })
-}
-
-func (s *Store) putOnce(ctx context.Context, record artifact.Record) (err error) {
+// The single open connection with busy_timeout serializes writers, so no
+// SQLITE_BUSY retry loop is needed.
+func (s *Store) Put(ctx context.Context, record artifact.Record) (err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -160,7 +156,7 @@ func (s *Store) Get(ctx context.Context, id string) (_ artifact.Record, err erro
 
 // GetTx reads within a caller transaction. SQLite serializes writers, so no
 // row lock is needed to keep this read consistent with PutTx/Purge.
-func (s *Store) GetTx(ctx context.Context, tx *sql.Tx, id string, _ bool) (artifact.Record, error) {
+func (s *Store) GetTx(ctx context.Context, tx *sql.Tx, id string) (artifact.Record, error) {
 	if tx == nil {
 		return artifact.Record{}, artifact.ErrInvalid
 	}
@@ -212,29 +208,27 @@ func (s *Store) read(ctx context.Context, tx *sql.Tx, id string) (_ artifact.Rec
 // Purge deletes business originals, retaining the exact Capsule/envelope,
 // inventory and tombstones. It does not remove CLL entries. Erasure requires
 // only namespace-scoped existence, not integrity or signer verification.
-func (s *Store) Purge(ctx context.Context, id string) error {
+func (s *Store) Purge(ctx context.Context, id string) (err error) {
 	if !idPattern.MatchString(id) {
 		return artifact.ErrInvalid
 	}
-	return retryBusy(ctx, func() (err error) {
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer finishRollback(tx, &err)
-		var exists string
-		err = tx.QueryRowContext(ctx, `SELECT capsule_id FROM capsule_store_capsules WHERE namespace=? AND capsule_id=?`, s.namespace, id).Scan(&exists)
-		if errors.Is(err, sql.ErrNoRows) {
-			return artifact.ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if _, err = tx.ExecContext(ctx, `UPDATE capsule_store_artifacts SET content_bytes=NULL, retention_state='purged', purged_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE namespace=? AND capsule_id=? AND retention_state='present'`, s.namespace, id); err != nil {
-			return err
-		}
-		return tx.Commit()
-	})
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer finishRollback(tx, &err)
+	var exists string
+	err = tx.QueryRowContext(ctx, `SELECT capsule_id FROM capsule_store_capsules WHERE namespace=? AND capsule_id=?`, s.namespace, id).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return artifact.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE capsule_store_artifacts SET content_bytes=NULL, retention_state='purged', purged_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE namespace=? AND capsule_id=? AND retention_state='present'`, s.namespace, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func finishRollback(tx *sql.Tx, err *error) {

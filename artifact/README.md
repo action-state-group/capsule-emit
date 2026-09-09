@@ -5,7 +5,8 @@ existing storage-free behavior.
 
 ## Storage boundary
 
-- Two peer backends implement the same `artifact.Store` contract: `artifact/mysql`
+- Two peer backends provide the same `Store` method contract, each as a concrete
+  `*Store` type rather than a shared Go interface: `artifact/mysql`
   (MySQL 8.4/InnoDB) and `artifact/sqlite` (modernc, pure-Go, single file). Neither
   is the default; the caller selects one. Each stores exact sealed Capsule bytes, a
   Producer Envelope, and associated originals. Neither seals, appends to CLL, or

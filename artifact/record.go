@@ -4,7 +4,6 @@ package artifact
 
 import (
 	"bytes"
-	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
@@ -213,14 +212,6 @@ func (record Record) StorageChecksum() (string, error) {
 		return "", err
 	}
 	return rawDigest(data), nil
-}
-
-// Store is the backend-neutral artifact lifecycle. Transactions are exposed by
-// backends separately so this interface does not depend on database/sql.
-type Store interface {
-	Put(context.Context, Record) error
-	Get(context.Context, string) (Record, error)
-	Purge(context.Context, string) error
 }
 
 // Prepare copies a caller record's mutable slices, fills exact-byte checksums,

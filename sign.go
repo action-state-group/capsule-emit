@@ -91,6 +91,9 @@ func signCapsuleID(payload []byte, identity SigningIdentity) ([]byte, error) {
 // producerProtectedHeaders preserves the byte order frozen by the upstream
 // cross-runtime corpus: content type, raw-public-key kid, then EdDSA alg.
 func producerProtectedHeaders(publicKey ed25519.PublicKey) []byte {
+	// The 0x78 length prefix encodes ContentType as a one-byte-length CBOR text
+	// string, valid only while len(ContentType) is in 24..255. ContentType is a
+	// 35-byte constant, so this hand-rolled prefix stays within that range.
 	protected := []byte{0xa3, 0x03, 0x78, byte(len(ContentType))}
 	protected = append(protected, ContentType...)
 	protected = append(protected, 0x04, 0x58, ed25519.PublicKeySize)
