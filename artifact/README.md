@@ -73,10 +73,13 @@ context-aware bounded backoff. Each attempt owns and rolls back its SQL transact
 The SQLite backend (`artifact/sqlite`) exposes the identical
 `New`/`Init`/`Put`/`PutTx`/`Get`/`GetTx`/`Purge` API and the same immutability,
 idempotent-retry, conflict, and fail-closed-read semantics. Open it with the
-`sqlite` driver, `PRAGMA foreign_keys=ON`, and a single open connection so writes
-serialize; it retries transient `SQLITE_BUSY`/`SQLITE_LOCKED` in place of an InnoDB
-deadlock. It stores the same two tables in one local file, which may also hold a
-cll-go SQLite log in its own tables.
+`sqlite` driver, `PRAGMA foreign_keys=ON`, a `busy_timeout`, and a single open
+connection so writes serialize. `busy_timeout` absorbs transient
+`SQLITE_BUSY`/`SQLITE_LOCKED` while another connection holds the write lock;
+persistent contention surfaces as a retryable error the caller replays, rather
+than an internal busy loop (unlike the MySQL backend's InnoDB deadlock retry). It
+stores the same two tables in one local file, which may also hold a cll-go SQLite
+log in its own tables.
 
 ## Lifecycle and operations
 
@@ -112,7 +115,7 @@ configuring an allowlist containing both retained historical and current keys.
 
 No application-specific schema migrations, field-level selective disclosure,
 profile management, or CLI commands are included. The root emit package and the
-`artifact` interface import no storage driver. Importing `artifact/mysql` links the
+`artifact` package import no storage driver. Importing `artifact/mysql` links the
 MySQL driver; importing `artifact/sqlite` links the pure-Go SQLite driver. An
 application links only the backend it chooses.
 
