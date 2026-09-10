@@ -116,3 +116,77 @@ func TestSQLiteReadRejectsMalformedID(t *testing.T) {
 	_, err = store.Get(t.Context(), "not-a-hex-id")
 	assert.ErrorIs(t, err, artifact.ErrInvalid)
 }
+
+func TestSQLiteNewRejectsInvalidConfig(t *testing.T) {
+	db := openTestDB(t)
+	_, pub := testutil.Record(t, "sqlite-new")
+	good := []ed25519.PublicKey{pub}
+	cases := map[string]struct {
+		db        *sql.DB
+		namespace string
+		trusted   []ed25519.PublicKey
+	}{
+		"nil db":          {nil, "ns", good},
+		"empty namespace": {db, "", good},
+		"bad namespace":   {db, "bad namespace!", good},
+		"no trusted keys": {db, "ns", nil},
+		"bad key size":    {db, "ns", []ed25519.PublicKey{{1, 2, 3}}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := sqlitestore.New(tc.db, tc.namespace, tc.trusted)
+			assert.ErrorIs(t, err, artifact.ErrInvalid)
+		})
+	}
+}
+
+func TestSQLiteNamespace(t *testing.T) {
+	db := openTestDB(t)
+	_, pub := testutil.Record(t, "sqlite-ns")
+	store, err := sqlitestore.New(db, "test-namespace", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	assert.Equal(t, "test-namespace", store.Namespace())
+}
+
+func TestSQLitePutTxGetTxJoinCallerTransaction(t *testing.T) {
+	db := openTestDB(t)
+	record, pub := testutil.Record(t, "sqlite-tx")
+	store, err := sqlitestore.New(db, "test-tx", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	require.NoError(t, store.Init(t.Context()))
+
+	// PutTx and GetTx must join a caller-owned transaction: a write and read in
+	// the same tx observe each other, and the write persists only on commit.
+	tx, err := db.BeginTx(t.Context(), nil)
+	require.NoError(t, err)
+	require.NoError(t, store.PutTx(t.Context(), tx, record))
+	got, err := store.GetTx(t.Context(), tx, record.CapsuleID)
+	require.NoError(t, err)
+	assert.Equal(t, record.Capsule, got.Capsule)
+	require.NoError(t, tx.Commit())
+
+	got, err = store.Get(t.Context(), record.CapsuleID)
+	require.NoError(t, err)
+	assert.Equal(t, record.Capsule, got.Capsule)
+}
+
+func TestSQLiteTxMethodsRejectNilTx(t *testing.T) {
+	db := openTestDB(t)
+	record, pub := testutil.Record(t, "sqlite-niltx")
+	store, err := sqlitestore.New(db, "test-niltx", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	require.NoError(t, store.Init(t.Context()))
+	assert.ErrorIs(t, store.PutTx(t.Context(), nil, record), artifact.ErrInvalid)
+	_, err = store.GetTx(t.Context(), nil, record.CapsuleID)
+	assert.ErrorIs(t, err, artifact.ErrInvalid)
+}
+
+func TestSQLitePurgeRejectsMissingAndMalformed(t *testing.T) {
+	db := openTestDB(t)
+	_, pub := testutil.Record(t, "sqlite-purge-missing")
+	store, err := sqlitestore.New(db, "test-purge-missing", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	require.NoError(t, store.Init(t.Context()))
+	assert.ErrorIs(t, store.Purge(t.Context(), fmt.Sprintf("%064x", 0)), artifact.ErrNotFound)
+	assert.ErrorIs(t, store.Purge(t.Context(), "not-a-hex-id"), artifact.ErrInvalid)
+}
