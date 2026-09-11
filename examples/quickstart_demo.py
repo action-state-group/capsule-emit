@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """capsule-emit quickstart demo — the 5-minute acceptance bar.
 
-Demonstrates: seal → anchor (async, fire-and-forget) → ledger view → verify.
+Demonstrates: seal → witnessed ledger (default, async) → ledger view → verify.
 
 Run:
     pip install "capsule-emit[dev]"
@@ -36,11 +36,10 @@ def main() -> int:
         model={"provider": "anthropic", "model_id": "claude-sonnet-4-6"},
         verdict="executed",
         effect={"type": "write_po", "status": "dispatched"},
-        anchor=True,                # fire-and-forget POST to agentactioncapsule.org/v1/digest
         ledger=LEDGER_PATH,
     )
     print(f"  capsule_id : {cap.capsule_id}")
-    print(f"  anchored   : {cap.anchored}  (async dispatch to agentactioncapsule.org)")
+    print(f"  {cap}  (witnessed by default — checkpointed async, no opt-in)")
     assert len(cap.capsule_id) == 64, "capsule_id must be 64-char hex"
     print("  ✓ sealed\n")
 
@@ -54,7 +53,6 @@ def main() -> int:
         confirms=cap.capsule_id,
         verdict="confirmed",
         effect={"type": "write_po", "status": "confirmed"},
-        anchor=True,
         ledger=LEDGER_PATH,
     )
     print(f"  capsule_id : {confirm.capsule_id}")

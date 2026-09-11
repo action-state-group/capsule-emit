@@ -69,13 +69,15 @@ def test_wicket_demo():
 def test_quickstart_demo_offline():
     """quickstart_demo.py must exit 0 with no floats in agent_input.
 
-    Run with a nonexistent anchor URL so the anchor POST fails fast (connection
-    refused) rather than timing out against the real endpoint in CI.  The anchor
-    is fire-and-forget so a failed POST does not affect exit code.
+    Run with a nonexistent witness URL so the checkpoint POST fails fast
+    (connection refused) rather than timing out against the real endpoint in
+    CI.  Witnessing is async and fire-and-forget, so a failed POST does not
+    affect exit code. (The demo no longer opts into the legacy anchor
+    channel, so AAC_ANCHOR_URL is not relevant here.)
     """
     result = _run(
         EXAMPLES / "quickstart_demo.py",
-        env={"AAC_ANCHOR_URL": "http://127.0.0.1:19999"},
+        env={"CAPSULE_WITNESS_URL": "http://127.0.0.1:19999"},
     )
     assert result.returncode == 0, (
         f"quickstart_demo.py exited {result.returncode}\n"

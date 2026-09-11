@@ -30,22 +30,24 @@ cap = seal(
 )
 
 print("sealed:", cap.capsule_id)
-print("anchored:", cap.anchored)
+print(cap)
 ```
 
 ```console
 $ python first.py
 sealed: cfed7f490132212ae653a90a3ba472ffa363811af0b963ea14f1d7b7d6fea541
-anchored: False
+EmitResult(capsule_id='cfed7f490132212ae653a90a3ba472ffa363811af0b963ea14f1d7b7d6fea541') #logged @ leaf 1
 ```
 
 That's it. You sealed an action.
 
 - **`sealed:`** is the `capsule_id` — a fingerprint of the whole capsule. Change any
   byte later and this fingerprint won't match. That mismatch *is* the tamper-evidence.
-- **`anchored: False`** is expected — the legacy per-capsule anchor channel is an
-  explicit opt-in (`seal(..., anchor=True)`), off by default. That's not a gap: by
-  default `seal()` instead folds this capsule into your ledger's **witness stream** —
+- **`#logged @ leaf 1`** is the witnessed story: this capsule already has a position
+  in your ledger, ambiently, no opt-in required. There's also a legacy, off-by-default
+  per-capsule anchor channel (`seal(..., anchor=True)`) that this repr no longer
+  surfaces by default — by default `seal()` instead folds this capsule into your
+  ledger's **witness stream** —
   every ~100 entries (or 15 minutes, whichever comes first) a signed checkpoint over
   the whole ledger is registered with a public log, no opt-in code required. More on
   that in the next section, and in depth in [docs/checkpoint.md](../checkpoint.md).
