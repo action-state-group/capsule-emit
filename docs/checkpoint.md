@@ -514,10 +514,14 @@ Where a JSON `CheckpointRecord` uses dev-ergonomic field names,
 `log_size`/`commitment`/`prev_commitment`/`issued_at` instead of
 `mmr_size`/`root`/`prev_root`/`timestamp`, `log_id` moved onto the signed
 CWT `iss` header, `key_id` onto the COSE `kid` header. The full dev↔I-D
-field-mapping table lives in
-`capsule_emit/checkpoint/cose_wire.py`'s module docstring (this is the
+field-mapping table — plus a known `iss`/`sub` semantics deviation from
+the I-D's producer/log identity split, worth reading before relying on
+those two claims for cross-implementation identity matching — lives in
+`cll.checkpoint.cose_wire`'s module docstring (this is the
 [cll-id-field-mapping-doc] resolution: ship the mapping table, don't rename
-`CheckpointRecord`'s own fields).
+`CheckpointRecord`'s own fields). `capsule_emit.checkpoint.cose_wire` is a
+deprecated alias for the same module — import `cll.checkpoint.cose_wire`
+directly.
 
 If the checkpoint has a prior, the claims ALSO carry a real MMR consistency
 (extension) proof — not just the `prev_size`/`prev_commitment` fields —
