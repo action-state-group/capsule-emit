@@ -4,6 +4,23 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Deprecated — `EmitResult.anchored` / `.anchor_status` (O16 follow-up 2, [o16-fu-2-deprecate-anchored-fields-repr])
+
+**What changed.** `EmitResult.anchored` / `.anchor_status` report only the legacy,
+non-default anchor channel and are kept for backward compatibility — new code should use
+`witness_outcome`, the channel actually on by default since 0.5.0. Both fields are now
+explicitly marked deprecated in the class docstring. `repr(EmitResult(...))` no longer
+shows `anchored=`/`anchor_status=` on the default (non-legacy) path, where
+`anchor_status` is always `"skipped"` and the fields were vestigial — it renders the
+frozen `EmitResult(capsule_id=...) #logged @ leaf N` shape (item 9, PR #87) with nothing
+stale beside it. When the legacy channel is actually engaged (`anchor_status !=
+"skipped"`), the repr still surfaces both fields, since they're meaningful there. The
+fields themselves are unchanged and still populated on every `EmitResult`.
+
+See `tests/test_logged_leaf_repr.py`.
+
 ## 0.8.1
 
 ### Added — `seal(..., references=...)`: draft-04 §5.5.5 cross-record citations (#166, [emit-references-seal-plumbing])

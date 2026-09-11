@@ -15,6 +15,7 @@ import pytest
 
 from capsule_emit import ledger_show, seal
 from capsule_emit.cli import main as cli_main
+from capsule_emit.core import EmitResult
 from capsule_emit.ledger import append_to_ledger
 
 
@@ -45,12 +46,35 @@ def test_seq_is_1_indexed_position_in_ledger(tmp_ledger):
 
 
 def test_repr_includes_logged_at_leaf(tmp_ledger):
+    """Default path (legacy anchor channel not engaged): the frozen
+    '#logged @ leaf N' shape only -- the deprecated anchored/anchor_status
+    fields (both vestigial on this path, see [o16-fu-2-deprecate-anchored-fields-repr])
+    are not surfaced."""
     cap = _seal(tmp_ledger)
-    assert repr(cap) == (
-        f"EmitResult(capsule_id={cap.capsule_id!r}, anchored={cap.anchored}, "
-        f"anchor_status={cap.anchor_status!r}) #logged @ leaf {cap.seq}"
-    )
+    assert cap.anchor_status == "skipped"
+    assert repr(cap) == f"EmitResult(capsule_id={cap.capsule_id!r}) #logged @ leaf {cap.seq}"
     assert "#logged @ leaf 1" in repr(cap)
+    assert "anchor_status" not in repr(cap)
+    assert "anchored" not in repr(cap)
+
+
+def test_repr_surfaces_anchor_status_when_legacy_channel_engaged():
+    """When the deprecated legacy anchor channel was actually engaged
+    (anchor_status != 'skipped'), the repr still surfaces it -- only the
+    vestigial default-path case is hidden."""
+    cap = EmitResult(
+        capsule_id="urn:capsule:test",
+        anchored=True,
+        capsule={},
+        anchor_status="confirmed",
+        signature="deadbeef",
+        key_id="cafebabe",
+        seq=3,
+    )
+    assert repr(cap) == (
+        "EmitResult(capsule_id='urn:capsule:test', anchored=True, "
+        "anchor_status='confirmed') #logged @ leaf 3"
+    )
 
 
 def test_second_capsule_reprs_its_own_leaf(tmp_ledger):
