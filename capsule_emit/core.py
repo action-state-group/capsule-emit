@@ -433,13 +433,16 @@ def _digest(value: Any, salt: str | None = None) -> str:
 class EmitResult:
     """The result of a capsule-emit _emit_capsule() call.
 
-    ``anchored`` / ``anchor_status`` report the legacy, non-default anchor
-    channel (see ``ANCHOR_ENV_VAR`` / ``_anchor_enabled`` above) — as of
-    0.5.0 the checkpoint/witness stream is the only default egress path, so
-    for the overwhelming majority of calls ``anchor_status`` is
-    ``"skipped"``. These fields only become meaningful when the legacy
-    channel was explicitly opted into (``anchor=True`` or
-    ``CAPSULE_ANCHOR=legacy-on``).
+    **Deprecated:** ``anchored`` / ``anchor_status`` report the legacy,
+    non-default anchor channel (see ``ANCHOR_ENV_VAR`` / ``_anchor_enabled``
+    above) — as of 0.5.0 the checkpoint/witness stream (``witness_outcome``)
+    is the only default egress path and the one that matters for new code.
+    These two fields are kept for backward compatibility only, are no
+    longer surfaced by ``__repr__`` on the default (non-legacy) path, and
+    should not be relied on by new callers; prefer ``witness_outcome``. For
+    the overwhelming majority of calls ``anchor_status`` is ``"skipped"``.
+    These fields only become meaningful when the legacy channel was
+    explicitly opted into (``anchor=True`` or ``CAPSULE_ANCHOR=legacy-on``).
 
     ``anchored`` is ``True`` ONLY when a real ``AnchorResult`` confirmed the
     submission (i.e. ``anchor_wait`` was set and the future resolved to a
@@ -486,15 +489,17 @@ class EmitResult:
     """
 
     capsule_id: str
-    anchored: bool
+    anchored: bool  # deprecated -- legacy anchor channel only, see class docstring
     capsule: dict
-    anchor_status: AnchorStatus
+    anchor_status: AnchorStatus  # deprecated -- legacy anchor channel only, see class docstring
     signature: str
     key_id: str
     seq: int
     witness_outcome: WitnessOutcome = "checkpoint_queued"
 
     def __repr__(self) -> str:
+        if self.anchor_status == "skipped":
+            return f"EmitResult(capsule_id={self.capsule_id!r}) #logged @ leaf {self.seq}"
         return (
             f"EmitResult(capsule_id={self.capsule_id!r}, anchored={self.anchored}, "
             f"anchor_status={self.anchor_status!r}) #logged @ leaf {self.seq}"
