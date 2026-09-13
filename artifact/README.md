@@ -5,21 +5,33 @@ existing storage-free behavior.
 
 ## Storage boundary
 
-- Two peer backends provide the same `Store` method contract, each as a concrete
+- Three peer backends provide the same core
+  `New`/`Init`/`Namespace`/`Put`/`Get`/`Purge` contract, each as a concrete
   `*Store` type rather than a shared Go interface: `artifact/mysql`
-  (MySQL 8.4/InnoDB) and `artifact/sqlite` (modernc, pure-Go, single file). Neither
-  is the default; the caller selects one. Each stores exact sealed Capsule bytes, a
-  Producer Envelope, and associated originals. Neither seals, appends to CLL, or
-  publishes checkpoints.
-- `capsule_store_capsules` holds immutable Capsule/envelope bytes and an inventory
-  checksum. `capsule_store_artifacts` holds named originals and purge tombstones.
+  (MySQL 8.4/InnoDB), `artifact/sqlite` (modernc, pure-Go, single file), and
+  `artifact/jsonl` (a flat JSONL file, single writer, no database driver). None is
+  the default; the caller selects one. Each stores exact sealed Capsule bytes, a
+  Producer Envelope, and associated originals. None seals, appends to CLL, or
+  publishes checkpoints. Only the SQL backends add `PutTx`/`GetTx` for joining a
+  caller-owned transaction; the JSONL backend does not.
+- The SQL backends hold immutable Capsule/envelope bytes and an inventory checksum
+  in `capsule_store_capsules`, and named originals plus purge tombstones in
+  `capsule_store_artifacts`. The JSONL backend instead stores one record per line
+  (the same `snake_case` wire shape as `artifact.Record`, portable to the
+  capsule-emit-ts JSONL store), with an in-memory `capsule_id`-to-offset index built
+  on open and no separate inventory checksum, so read-time verification proves the
+  retained record's authenticity but not inventory completeness.
 - Artifacts normally use `payload` and optional `agent_output`. Explicit digest
   bindings also support effect request/response preimages. The current AAC wire
   name for a payload commitment is `agent_input_digest`; storage does not rename it.
 - An attachment with no digest binding is NOT authenticated by the Capsule.
   Exact-byte SHA-256 checksums detect storage corruption, not producer intent.
-- Reads verify Capsule identity, Producer Envelope, configured trusted signer,
-  inventory, and every retained bound preimage using the upstream JCS algorithm.
+- Reads verify Capsule identity, Producer Envelope, the configured trusted
+  signer, and every retained bound preimage using the upstream JCS algorithm.
+  The SQL backends additionally detect inventory tampering via a stored record
+  checksum; the JSONL backend has no independent inventory checksum, so an
+  otherwise-valid line with an unbound or never-retained entry removed still
+  reads. It verifies the retained contents, not inventory completeness.
 - Namespace is a storage boundary, not a CLL log ID. Multiple logs can reference
   the same stored Capsule. Separate namespaces require separate reader policy.
 
@@ -81,11 +93,24 @@ than an internal busy loop (unlike the MySQL backend's InnoDB deadlock retry). I
 stores the same two tables in one local file, which may also hold a cll-go SQLite
 log in its own tables.
 
+The JSONL backend (`artifact/jsonl`) exposes the same
+`New`/`Init`/`Namespace`/`Put`/`Get`/`Purge` API and the same immutability,
+idempotent-retry, conflict, and fail-closed-read semantics, backed by a single
+UTF-8 file of one record per line. `New` builds the offset index by scanning the
+file, `Put` appends a line, `Get` seeks to the indexed line, and `Purge` rewrites
+the file through a temp file and atomic rename, blanking Present originals to
+Purged while preserving the inventory and each original's SHA-256. It assumes a
+single writer and provides no multi-process file locking, no crash-atomicity
+beyond the rename, and no `PutTx`/`GetTx`. The on-disk format is byte-compatible
+with the capsule-emit-ts `artifact/jsonl` store in either direction.
+
 ## Lifecycle and operations
 
 Writes are immutable and byte-identical retries are idempotent. Changed bytes,
 bindings, names, or retention declarations return `ErrConflict`. Reads return
-`ErrNotFound` for unknown IDs and fail closed on digest/signature/inventory errors.
+`ErrNotFound` for unknown IDs and fail closed on digest and signature errors (the
+SQL backends also fail closed on an inventory-checksum mismatch; JSONL has no such
+checksum, per the storage-boundary note above).
 `Purge` removes all associated originals while preserving commitments and
 tombstones; retries cannot resurrect them. It cannot erase backups or exports.
 Purged/never-retained originals are unavailable, not digest-verified.
@@ -116,8 +141,9 @@ configuring an allowlist containing both retained historical and current keys.
 No application-specific schema migrations, field-level selective disclosure,
 profile management, or CLI commands are included. The root emit package and the
 `artifact` package import no storage driver. Importing `artifact/mysql` links the
-MySQL driver; importing `artifact/sqlite` links the pure-Go SQLite driver. An
-application links only the backend it chooses.
+MySQL driver; importing `artifact/sqlite` links the pure-Go SQLite driver;
+`artifact/jsonl` links no driver at all (standard library only). An application
+links only the backend it chooses.
 
 ## Tests
 
@@ -129,8 +155,8 @@ Generic MySQL integration tests opt in through `CAPSULE_STORAGE_TEST_DSN` and
 accept only TCP `127.0.0.1` and database `capsule_storage_test`. Use a disposable
 MySQL 8.4 instance; the tests create namespace-scoped fixtures and intentionally
 corrupt their own rows to exercise fail-closed behavior. Without that variable,
-MySQL tests skip. SQLite tests need no external server and always run against a
-temporary file. Unit tests use testify `assert` and `require`.
+MySQL tests skip. The SQLite and JSONL backends need no external server and always
+run against a temporary file. Unit tests use testify `assert` and `require`.
 
 Application-specific, one-off migration rehearsal tools are deliberately outside
 this repository and are not part of its distribution.
