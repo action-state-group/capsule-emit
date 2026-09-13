@@ -287,7 +287,7 @@ func (s *Store) Purge(ctx context.Context, id string) error {
 // rewrite copies every line of the file to a temp file, replacing the line for
 // targetID with the marshaled replacement, then renames the temp file over the
 // original and rebuilds the in-memory index.
-func (s *Store) rewrite(targetID string, replacement artifact.Record) error {
+func (s *Store) rewrite(targetID string, replacement artifact.Record) (err error) {
 	src, err := os.Open(s.path)
 	if err != nil {
 		return err
@@ -301,10 +301,14 @@ func (s *Store) rewrite(targetID string, replacement artifact.Record) error {
 	}
 	tmpPath := tmp.Name()
 
-	ok := false
+	// A single cleanup closes the temp file and removes it unless the rewrite
+	// commits via a successful rename, in place of a manual close on every
+	// error return. A second close after the commit path is a harmless no-op.
+	committed := false
 	defer func() {
-		if !ok {
-			os.Remove(tmpPath)
+		if !committed {
+			_ = tmp.Close()
+			_ = os.Remove(tmpPath)
 		}
 	}()
 
@@ -313,11 +317,9 @@ func (s *Store) rewrite(targetID string, replacement artifact.Record) error {
 	// A stat/chmod failure aborts rather than silently narrowing the store.
 	info, err := src.Stat()
 	if err != nil {
-		_ = tmp.Close()
 		return err
 	}
-	if err := tmp.Chmod(info.Mode().Perm()); err != nil {
-		_ = tmp.Close()
+	if err = tmp.Chmod(info.Mode().Perm()); err != nil {
 		return err
 	}
 
@@ -339,23 +341,18 @@ func (s *Store) rewrite(targetID string, replacement artifact.Record) error {
 		var outLine []byte
 		if peek.CapsuleID == targetID {
 			found = true
-			outLine, err = jsonv2.Marshal(replacement)
-			if err != nil {
-				_ = tmp.Close()
+			if outLine, err = jsonv2.Marshal(replacement); err != nil {
 				return err
 			}
 		} else {
 			// Copy the original line bytes verbatim.
-			outLine = make([]byte, len(line))
-			copy(outLine, line)
+			outLine = append([]byte(nil), line...)
 		}
 
 		if _, err = w.Write(outLine); err != nil {
-			_ = tmp.Close()
 			return err
 		}
 		if err = w.WriteByte('\n'); err != nil {
-			_ = tmp.Close()
 			return err
 		}
 		if peek.CapsuleID != "" {
@@ -364,15 +361,12 @@ func (s *Store) rewrite(targetID string, replacement artifact.Record) error {
 		offset += int64(len(outLine)) + 1
 	}
 	if err = sc.Err(); err != nil {
-		_ = tmp.Close()
 		return err
 	}
 	if !found {
-		_ = tmp.Close()
 		return fmt.Errorf("%w: target line vanished during rewrite", artifact.ErrCorrupt)
 	}
 	if err = w.Flush(); err != nil {
-		_ = tmp.Close()
 		return err
 	}
 	if err = tmp.Close(); err != nil {
@@ -382,6 +376,6 @@ func (s *Store) rewrite(targetID string, replacement artifact.Record) error {
 		return err
 	}
 	s.index = newIndex
-	ok = true
+	committed = true
 	return nil
 }
