@@ -91,7 +91,16 @@ from .verify_canonicalization import (
     verify_canonicalization_id,
 )
 
-__version__ = "0.7.0"
+# Single source of truth is pyproject.toml's ``version`` (what the wheel and PyPI
+# report). The literal used to be hand-bumped here and drifted: the released 0.8.1
+# wheel still said "0.7.0". Read it from the installed distribution instead.
+try:
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _dist_version
+
+    __version__ = _dist_version("capsule-emit")
+except PackageNotFoundError:  # running from a source tree that was never installed
+    __version__ = "0.0.0+unknown"
 
 
 def emit(*_args: Any, **_kwargs: Any) -> NoReturn:
