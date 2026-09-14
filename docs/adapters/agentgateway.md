@@ -162,3 +162,106 @@ The demo drives the ExtMcp gRPC service with the same `CheckRequest`/`CheckRespo
 ## Integration surface
 
 capsule-emit implements the `agentgateway.dev.ext_mcp.ExtMcp` gRPC service, defined in agentgateway's `ext_mcp.proto`. The Python stubs (`capsule_emit/adapters/ext_mcp_pb2.py`) are committed to the repo and require only `grpcio>=1.60` at runtime.
+
+## Running it against a real gateway (executed 2026-09-14)
+
+Everything below was executed on macOS arm64 against the released `agentgateway` v1.5.0
+binary, this package at 0.8.1, and `@modelcontextprotocol/server-everything` started by the
+gateway over stdio. The full transcript is in the engagement record; the parts that matter:
+
+**The config that ran.** Two things are easy to get wrong and both are here on purpose:
+`jwtAuth` is required for `jwt.sub` to resolve — without it the gateway drops the `metadata`
+expression silently and the record reports `subject` in `absent` — and `authorization` is
+named in `requestHeaders.disallowed` so the caller's credential never reaches the processor.
+The issuer, audience, and `pub-key` file are agentgateway's own sample JWT setup
+(`manifests/jwt/` in their repository; the matching token is `example2.key`, `sub: test-user`).
+
+```yaml
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+gateways:
+  default:
+    port: 3000
+routes:
+- policies:
+    jwtAuth:
+      mode: strict
+      issuer: agentgateway.dev
+      audiences: [test.agentgateway.dev]
+      jwks:
+        # Relative to the folder the binary runs from, not the config file
+        file: ./manifests/jwt/pub-key
+    mcpGuardrails:
+      processors:
+      - kind: remote
+        host: "localhost:50051"
+        failureMode: failOpen
+        methods:
+          tools/call: full
+        metadata:
+          backendAuth.subject: jwt.sub
+        requestHeaders:
+          disallowed:
+          - authorization
+  backends:
+  - mcp:
+      targets:
+      - name: everything
+        stdio:
+          cmd: npx
+          args: ["@modelcontextprotocol/server-everything"]
+```
+
+**What the gateway and the processor did.** `jwtAuth` in `strict` mode returns `401` to a
+request with no bearer token; with `example2.key` the MCP handshake completes (`202` on
+`notifications/initialized`), `tools/call echo` returns `Echo: hello` unchanged, and one
+record lands in `./ledger.jsonl`.
+
+```console
+$ agent-action-capsule verify --store ./ledger.jsonl
+Store-level verification of 1 capsule(s) in ./ledger.jsonl:
+  [0] ok: True
+  capsule_id (recomputed): 89501d1ab4595a33cbd51f8607092682dea1314580dbe7c94990dcbad0f66cc5
+  derived: effect_mode=dispatched_unconfirmed attestation_mode=self_attested ledger_mode=standalone
+  findings:
+    - [info] (check 8) unknown_registry_value: effect.type='echo' is not a seeded effect.type value; informational, not rejected (§12)
+```
+
+**What the record says about authority.** The validated subject arrived on both hooks and is
+reported from the `response` phase; the three ID-JAG references are `absent` because
+agentgateway does not expose them to CEL yet (tracked in agentgateway#3042); nothing was
+`redacted`, i.e. no `metadata` expression resolved to token material.
+
+```json
+{
+  "schema": "capsule-emit/agentgateway-audit/1",
+  "issue": "agentgateway/agentgateway#3042",
+  "fields": {
+    "subject": {
+      "value": "test-user",
+      "key": "backendAuth.subject",
+      "phase": "response"
+    }
+  },
+  "grants": [],
+  "absent": [
+    "idjag_aud",
+    "idjag_jti",
+    "resource_token"
+  ],
+  "redacted": [],
+  "metadata_keys": {
+    "request": [
+      "backendAuth.subject"
+    ],
+    "response": [
+      "backendAuth.subject"
+    ]
+  }
+}
+```
+
+**Tamper.** Changing one field of the sealed record (`action_id`) and re-running `verify`
+returns `ok: False` with `capsule_id_mismatch`, exit 1. Note the scope: this is
+self-attested, unwitnessed, and `ledger_mode=standalone` — verify proves the entries
+presented are internally consistent and each signature matches its `key_id`; it does not
+prove who sealed them or when, and a holder could re-seal the ledger under a fresh key.
