@@ -374,7 +374,9 @@ def audit_server(tmp_path):
 
 
 def _authority(ledger):
-    rec = read_ledger(ledger)[0]
+    # The outcome capsule (both hook phases) is the last record; the planned
+    # capsule sealed at CheckRequest (request phase only) precedes it.
+    rec = read_ledger(ledger)[-1]
     return rec["model_attestation"]["compute_attestation"]["ext.agentgateway.authority"]
 
 
@@ -433,7 +435,7 @@ def test_sealed_authority_block_verifies_and_is_tamper_evident(audit_server):
     ))
     resp(ext_mcp_pb2.McpResponse(method="tools/call", service_names=["b"], mcp_response=b'{"ok":true}'))
 
-    rec = read_ledger(ledger)[0]
+    rec = read_ledger(ledger)[-1]
     assert verify_capsule(rec).ok, [f.detail for f in verify_capsule(rec).findings]
 
     tampered = copy.deepcopy(rec)
@@ -459,9 +461,10 @@ def test_float_tool_argument_still_seals_over_grpc(audit_server):
         method="tools/call", service_names=["b"], mcp_response=b'{"scaled":1.5}',
     ))
     records = read_ledger(ledger)
-    assert len(records) == 1, "a float tool argument must not silently drop the capsule"
+    assert len(records) == 2, "a float tool argument must not silently drop the capsules"
     from capsule_emit.verification import verify_capsule
-    assert verify_capsule(records[0]).ok
+    for rec in records:
+        assert verify_capsule(rec).ok
 
 
 def test_headers_on_the_wire_are_never_read_into_the_capsule(audit_server):
@@ -478,7 +481,7 @@ def test_headers_on_the_wire_are_never_read_into_the_capsule(audit_server):
         headers=[ext_mcp_pb2.McpHeader(key="authorization", value=secret.encode())],
     ))
     resp(ext_mcp_pb2.McpResponse(method="tools/call", service_names=["b"], mcp_response=b'{}'))
-    assert secret not in json.dumps(read_ledger(ledger)[0])
+    assert secret not in json.dumps(read_ledger(ledger))
 
 
 def test_servicer_honours_a_custom_key_map_over_grpc(tmp_path):
@@ -510,5 +513,5 @@ def test_servicer_honours_a_custom_key_map_over_grpc(tmp_path):
     finally:
         ch.close()
         srv.stop(grace=0)
-    a = read_ledger(ledger)[0]["model_attestation"]["compute_attestation"]["ext.agentgateway.authority"]
+    a = read_ledger(ledger)[-1]["model_attestation"]["compute_attestation"]["ext.agentgateway.authority"]
     assert a["grants"] == [{"jti": "jag-9"}]

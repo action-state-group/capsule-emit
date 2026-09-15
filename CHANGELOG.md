@@ -6,6 +6,34 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed — agentgateway adapter: a refused `tools/call` left no record and shifted every later pairing by one
+
+**What changed.** The `ExtMcp` servicer sealed one capsule per `tools/call`, at
+`CheckResponse`, by popping a FIFO of `CheckRequest` params. agentgateway runs guardrail
+processors in order and the first `Reject` short-circuits the request phase — the response
+phase never runs for that call — so a call refused by a processor listed *after*
+capsule-emit produced no capsule, its FIFO entry went stale, and the next response was
+sealed under the refused call's arguments: a verifying, false record, and every later
+record in the session off by one. Reproduced against agentgateway v1.5.0.
+
+The adapter now seals a **planned** capsule at `CheckRequest` and an **outcome** capsule
+at `CheckResponse` chained to it (`effect.status="confirmed"`, or `verdict="errored"` /
+`effect.status="failed"` for a JSON-RPC error or `isError: true` result — previously every
+result sealed as `executed`). A call with no response leaves its planned capsule as the
+record. Pairing is asserted only when unambiguous: stale plans expire after
+`CAPSULE_AG_PENDING_TTL` seconds (default 120); with more than one plan pending the outcome
+is sealed unchained with `compute_attestation["ext.agentgateway.pairing"]` naming the
+candidate planned ids, never a guess. `McpRequest.service_names` is sealed as
+`ext.agentgateway.backends` so records join the gateway's access log. `serve()` /
+`CapsuleEmitServicer` gain `pending_ttl=`.
+
+**Migration.** Consumers counting one record per call now see two (`effect.status`
+`planned` then `confirmed`/`failed`); the outcome record carries both digests and the
+authority block from both hooks, the planned record the request-phase block only.
+
+See `tests/test_agentgateway.py`, `docs/adapters/agentgateway.md` (pairing design note +
+the executed refused-call run).
+
 ### Deprecated — `EmitResult.anchored` / `.anchor_status` (O16 follow-up 2, [o16-fu-2-deprecate-anchored-fields-repr])
 
 **What changed.** `EmitResult.anchored` / `.anchor_status` report only the legacy,

@@ -19,10 +19,10 @@ produce it.
 ```
 LLM agent
   ↓ MCP tools/call
-agentgateway  ──→  CheckRequest  →  capsule-emit (input captured)
+agentgateway  ──→  CheckRequest  →  capsule-emit (planned capsule sealed)
   ↓ upstream MCP server
   ↑ response
-agentgateway  ──→  CheckResponse →  capsule-emit (capsule sealed)
+agentgateway  ──→  CheckResponse →  capsule-emit (confirmed/failed capsule sealed, chained)
   ↑ LLM agent
 ```
 
