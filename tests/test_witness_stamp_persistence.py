@@ -346,10 +346,18 @@ def test_stamp_entry_is_a_leaf_covered_by_the_next_checkpoint(tmp_path, stub_ts,
     # (appended after second_cp.mmr_size was fixed, so it is NOT one of the
     # leaves second_cp itself covers) -- filter to the first checkpoint's
     # stamp specifically, by its digest.
+    # The second checkpoint's stamp is appended by the background witness
+    # thread *after* `witness._states[key].prev` flips to second_cp, so it
+    # can land a few ms after the assertion above passes -- wait for it the
+    # same way the first stamp is waited for, or this races (seen in CI).
+    def _stamps():
+        return [
+            e for e in ledger.read_ledger_entries(ledger_path) if e.get("kind") == ledger.CHECKPOINT_STAMP_KIND
+        ]
+
+    assert _wait_for(lambda: len(_stamps()) >= 2), "expected the first checkpoint's stamp plus the second's own"
     mmr = witness._states[key].mmr
-    stamp_entries = [
-        e for e in ledger.read_ledger_entries(ledger_path) if e.get("kind") == ledger.CHECKPOINT_STAMP_KIND
-    ]
+    stamp_entries = _stamps()
     assert len(stamp_entries) == 2, "expected the first checkpoint's stamp plus the second's own"
     first_stamp = next(e for e in stamp_entries if e["capsule_id"] == first_cp.entry_digest())
     stamp_digest = bytes.fromhex(first_stamp["capsule_id"])
