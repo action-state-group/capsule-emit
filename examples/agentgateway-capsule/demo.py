@@ -8,7 +8,7 @@ for every MCP tools/call.  No real agentgateway binary is needed; the gRPC
 calls ARE the integration.
 
 What it proves:
-  1. tools/call (consequential) → capsule sealed, ok=True
+  1. tools/call (consequential) → planned + confirmed capsules sealed, chained, ok=True
   2. tools/call tampered → verify fails (ok=False)
   3. tools/list (read-only) → NO capsule (0 records added)
 
@@ -126,7 +126,7 @@ def main():
         print("  ledger unchanged (0 capsules). ✓")
 
         # ── Step 2: consequential calls (tools/call) ──────────────────────────
-        print("\n[step 2] tools/call submit_order (consequential) → capsule sealed")
+        print("\n[step 2] tools/call submit_order (consequential) → planned + confirmed capsules")
         _tools_call(
             check_request, check_response,
             tool_name="submit_order",
@@ -134,10 +134,14 @@ def main():
             tool_result={"status": "dispatched", "confirmation_ref": "CONF-7777"},
         )
         records = read_ledger(ledger)
-        assert len(records) == 1, f"expected 1 capsule, got {len(records)}"
-        print(f"  capsule_id: {records[0]['capsule_id'][:20]}…")
+        assert len(records) == 2, f"expected planned + confirmed, got {len(records)}"
+        planned, confirmed = records
+        assert confirmed["chain"]["parent_capsule_id"] == planned["capsule_id"]
+        print(f"  planned:   {planned['capsule_id'][:20]}…  effect.status={planned['effect']['status']}")
+        print(f"  confirmed: {confirmed['capsule_id'][:20]}…  effect.status={confirmed['effect']['status']}"
+              f"  confirms={confirmed['chain']['parent_capsule_id'][:20]}…")
 
-        print("\n[step 3] tools/call get_price (second call) → second capsule")
+        print("\n[step 3] tools/call get_price (second call) → second planned + confirmed pair")
         _tools_call(
             check_request, check_response,
             tool_name="get_price",
@@ -145,16 +149,32 @@ def main():
             tool_result={"unit_price_usd": "42.00", "currency": "USD"},
         )
         records = read_ledger(ledger)
-        assert len(records) == 2, f"expected 2 capsules, got {len(records)}"
+        assert len(records) == 4, f"expected 4 capsules, got {len(records)}"
 
-        # ── Step 3: Inspect ledger ────────────────────────────────────────────
+        # ── Step 3b: a call the gateway refused before it ran ─────────────────
+        # A guardrail processor listed before capsule-emit that rejects the call
+        # short-circuits the request phase: CheckRequest fires, CheckResponse
+        # never does. The planned capsule is the record of the attempt.
+        print("\n[step 3b] tools/call delete_ledger refused upstream → planned capsule only")
+        check_request(ext_mcp_pb2.McpRequest(
+            method="tools/call",
+            service_names=["demo-backend"],
+            mcp_request=json.dumps({"name": "delete_ledger", "arguments": {"confirm": True}}).encode(),
+        ))
+        records = read_ledger(ledger)
+        assert len(records) == 5, f"expected 5 capsules, got {len(records)}"
+        assert records[-1]["effect"]["status"] == "planned"
+        print(f"  planned:   {records[-1]['capsule_id'][:20]}…  (no outcome — the refusal is visible)")
+
+        # ── Step 4: Inspect ledger ────────────────────────────────────────────
         print(f"\n[step 4] Ledger: {len(records)} capsule(s) sealed")
         for r in records:
             cid = r.get("capsule_id", "?")[:16]
             action = r.get("action_id", "?").split("/")[0]
             verdict_cls = r.get("disposition", {}).get("verdict_class", "?")
+            status = r.get("effect", {}).get("status", "?")
             runtime = r.get("model_attestation", {}).get("compute_attestation", {}).get("runtime", "?")
-            print(f"  {cid}… {action} [{verdict_cls}] runtime={runtime}")
+            print(f"  {cid}… {action} [{verdict_cls}] effect={status} runtime={runtime}")
 
         # ── Step 4: Verify all capsules ───────────────────────────────────────
         print("\n[step 5] Verify all capsules (offline — no network needed)")
@@ -171,7 +191,7 @@ def main():
 
         # ── Step 5: Tamper one byte → verify must fail ────────────────────────
         print("\n[step 6] Tamper test: flip one byte in output digest → verify fails")
-        raw = records[0]  # first tools/call capsule
+        raw = records[1]  # first confirmed outcome capsule (carries the output digest)
         import copy
         tampered = copy.deepcopy(raw)
         ca = tampered.get("model_attestation", {}).get("compute_attestation", {})
