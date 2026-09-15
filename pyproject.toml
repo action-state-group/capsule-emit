@@ -80,6 +80,9 @@ dapr-agents = ["dapr-agents>=1.0"]
 msft-agent-framework = ["agent-framework-core>=1.16.0,<2"]
 agent-framework = ["agent-framework-core>=1.16.0,<2"]
 litellm = ["litellm>=1.99.0"]
+# Verified against inspect_ai 0.3.263 (EvalSample.events / ModelEvent.call
+# shape read by capsule_emit.adapters.inspect_ai).
+inspect-ai = ["inspect-ai>=0.3.263"]
 checkpoint = ["scitt-cose>=0.2.0"]
 
 [project.scripts]
