@@ -65,7 +65,7 @@ curl -s "$SERVICE_URL/.well-known/agent-card.json" | jq '.supportedInterfaces[0]
 ```
 
 ## Notes
-- **Submit exactly once.** The server seals with `emit(anchor=False)` and anchors
+- **Submit exactly once.** The server seals with `seal(anchor=False)` and anchors
   in the single `POST /v1/digest`. Submitting the same new `capsule_id` twice can
   double-append it on the anchor (one statement at two CT leaves) — see the
   anchor-side atomic-dedup fix. One submission → one leaf.

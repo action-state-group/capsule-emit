@@ -308,17 +308,17 @@ curl -s "http://localhost:8042/ledger?limit=5" | jq .
 ## Using capsule-emit directly (no server)
 
 If the agent can run Python and import packages directly, skip the HTTP server
-and call `capsule_emit.emit()` from within the agent:
+and call `capsule_emit.seal()` from within the agent:
 
 ```python
 import capsule_emit
 
 # MAY — seal at dispatch
-may = capsule_emit.emit(
+may = capsule_emit.seal(
+    {"invoice_id": "INV-001", "amount": 4200.00},
     action="pay_invoice",
     operator="acme-corp",
     developer="billing-agent@v1",
-    agent_input={"invoice_id": "INV-001", "amount": 4200.00},
     verdict="executed",
     effect={"type": "pay_invoice", "status": "dispatched"},
 )
@@ -327,7 +327,8 @@ may_id = may.capsule_id
 # … external payment call runs …
 
 # DID — seal on confirmed outcome
-did = capsule_emit.emit(
+did = capsule_emit.seal(
+    None,
     action="pay_invoice",
     operator="acme-corp",
     developer="billing-agent@v1",
@@ -340,11 +341,11 @@ did = capsule_emit.emit(
 # REFUSAL — seal when the agent declines to act
 # Use effect status="planned": records the intended effect.type without dispatching.
 # "planned" → effect_mode="not_applicable", which is required for verdict="blocked" (§5.4.2).
-refusal = capsule_emit.emit(
+refusal = capsule_emit.seal(
+    {"invoice_id": "INV-002", "amount": 99000.00},
     action="pay_invoice",
     operator="acme-corp",
     developer="billing-agent@v1",
-    agent_input={"invoice_id": "INV-002", "amount": 99000.00},
     verdict="blocked",
     effect={"type": "pay_invoice", "status": "planned"},
 )
@@ -557,9 +558,10 @@ def seal(req: SealRequest):
     try:
         # For blocked verdicts, effect_status must be "planned" (§5.4.2).
         eff_status = "planned" if req.verdict == "blocked" else req.effect_status
-        r = capsule_emit.emit(
+        r = capsule_emit.seal(
+            req.input,
             action=req.action, operator=req.operator, developer=req.developer,
-            agent_input=req.input, agent_output=req.output, verdict=req.verdict,
+            agent_output=req.output, verdict=req.verdict,
             effect={"type": req.action, "status": eff_status},
             confirms=req.confirms, anchor=(not _NO_ANCHOR), ledger=req.ledger,
         )
