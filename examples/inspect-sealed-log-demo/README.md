@@ -5,8 +5,32 @@ A worked example of sealing an [Inspect](https://github.com/UKGovernmentBEIS/ins
 with a public witness, and building two disclosure bundles — one with every
 sample's payload disclosed, one with a single sample's payload withheld.
 
-Everything here runs offline against a self-authored, four-question eval —
-see [What this is (and isn't)](#what-this-is-and-isnt) below.
+**Before anything else, three things this demo is NOT:**
+
+1. **No real inference.** The eval's model calls are Inspect's built-in
+   `mockllm/model` provider — deterministic mock output derived from the
+   question text, not a real model. No API key, no network call to any
+   inference endpoint.
+2. **Post-hoc sealing, not contemporaneous capture.** `seal_eval_log` reads a
+   *finished* `.eval` log after Inspect has already produced it; it was never
+   attached to Inspect's solver loop while the eval ran. The checkpoint
+   establishes **integrity and existence from the moment of sealing** — not
+   contemporaneous capture at the harness boundary while each model call
+   happened. A "seal as it fires," attached-at-the-boundary mechanism is a
+   different, real thing, and is the filed follow-up
+   `[evaluator-inspect-live-hook-and-real-eval]` — a next step, not built here.
+3. **One witness, ours.** The checkpoint below was registered with a single
+   witness, `witness.agentactioncapsule.org`, operated by the same party that
+   publishes the Agent Action Capsule spec. Its receipt grades `witnessed`
+   (`capsule_emit`'s ladder is two rungs, `self-attested` / `witnessed` — see
+   `checkpoint_receipt.json`; there is no higher "countersigned" or
+   third-party-adjudicated tier here, and none is claimed). Whether one
+   witness operated by the spec's publisher is independent enough for your
+   purposes is for you to judge — this README doesn't assert an answer.
+
+Everything here runs offline except that one witness registration — see
+[What this does NOT establish](#what-this-does-not-establish) for the fuller
+list.
 
 ## What this shows
 
@@ -132,21 +156,6 @@ log from self-attested to third-party-checkable, but it is not yet the
 multi-witness tier that lets a verifier cross-check independent operators
 against each other (see `docs/checkpoint.md` in `capsule-emit`).
 
-## `CSOAI-ORG/inspect-receipts` (issue #5377)
-
-The task that produced this example asked us to check whether
-`CSOAI-ORG/inspect-receipts` is a real, maintained project and, if so, to
-consume its receipt as an input here. We could not find it: neither a
-`CSOAI-ORG` GitHub organization nor a repository named `inspect-receipts`
-resolves via the GitHub API (checked 2026-09-15, including case-variant
-org-name guesses and a search inside `UKGovernmentBEIS/inspect_ai`'s own
-issues for a receipts-related thread). We are not citing it as an input
-here, and are not able to confirm or deny that it exists elsewhere under a
-different name. If it turns out to exist, the relationship this example
-describes still holds: we would be the layer above signing, not a
-competitor — a per-record Ed25519 receipt on individual entries and a
-checkpoint over the whole log answer different questions and compose.
-
 ## A finding from testing this, not something this example claims
 
 Cross-checking these bundles against the local `scitt-cose` viewer's
@@ -164,15 +173,32 @@ confirmed independently that the committed digest matches
 same payload — the capsule is correct; the viewer's recompute function is
 not recursive. The flat (single-level) `agent_output` field in this same
 bundle recomputes correctly, which is how the tamper check above was
-confirmed via that harness. This is flagged for `scitt-cose` maintainers to
-evaluate; it is not fixed in this change (different repo, out of scope
-here).
+confirmed via that harness. This was flagged for `scitt-cose` maintainers
+and is now [scitt-cose #47](https://github.com/action-state-group/scitt-cose/pull/47)
+(open, not yet merged/deployed as of this writing) — not fixed in this
+change (different repo, out of scope here).
 
 ## Verifying in a browser
 
-This is a manual step — load `permalinks.json`'s two URLs in a browser at
-`https://verify.agentactioncapsule.org`, no account required, nothing sent
-to any server (the record travels in the URL fragment only):
+**Do NOT use the deployed page (`verify.agentactioncapsule.org`) for this
+demo's bundles until [scitt-cose #47](https://github.com/action-state-group/scitt-cose/pull/47)
+is merged and deployed.** The deployed viewer's digest recompute doesn't
+recurse into nested payloads (see the finding above), and `bundle_disclosed`'s
+`agent_input` field nests a `request` object — so the deployed page will
+render a **false `MISMATCH`** on an otherwise-correct, untampered record.
+Run the viewer locally from the `#47` branch instead:
+
+```bash
+git clone https://github.com/action-state-group/scitt-cose
+cd scitt-cose && git fetch origin pull/47/head:pr-47 && git checkout pr-47
+pip install -e ".[serve]"
+uvicorn hosted_profiles.hosted:make_asgi_app --factory --port 8080
+```
+
+Then swap `https://verify.agentactioncapsule.org` for `http://localhost:8080`
+at the start of each permalink below (the URL fragment after `#` is unchanged
+either way — it never leaves the browser). Everything below assumes that
+local viewer, not the deployed one:
 
 1. Open the `bundle_disclosed_url` link. Every record should show a
    recomputed digest matching its committed one.
