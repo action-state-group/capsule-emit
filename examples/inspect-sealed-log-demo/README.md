@@ -21,12 +21,21 @@ sample's payload disclosed, one with a single sample's payload withheld.
    `[evaluator-inspect-live-hook-and-real-eval]` — a next step, not built here.
 3. **One witness, ours.** The checkpoint below was registered with a single
    witness, `witness.agentactioncapsule.org`, operated by the same party that
-   publishes the Agent Action Capsule spec. Its receipt grades `witnessed`
-   (`capsule_emit`'s ladder is two rungs, `self-attested` / `witnessed` — see
-   `checkpoint_receipt.json`; there is no higher "countersigned" or
-   third-party-adjudicated tier here, and none is claimed). Whether one
-   witness operated by the spec's publisher is independent enough for your
-   purposes is for you to judge — this README doesn't assert an answer.
+   publishes the Agent Action Capsule spec. Two separate things are true, and
+   this README does not blur them: the **client state** is `witnessed`
+   (`capsule_emit`'s two-rung ladder, `self-attested` / `witnessed` — meaning
+   only that at least one receipt exists, never a claim about what that
+   receipt checked). The **receipt's own grade** — what the witness itself
+   verified, per its COSE header — is a separate, per-receipt fact; this
+   checkpoint's receipt (`checkpoint_receipt.json`) carries no explicit grade
+   label, so it is read at the floor every receipt provides:
+   existence-and-time (this entry existed, at this position, by the time the
+   witness signed). It is **not** described as consistency-verified here —
+   that word applies only when a receipt's header actually says so, and this
+   one doesn't. There is no higher "countersigned" or third-party-adjudicated
+   tier here either, and none is claimed. Whether one witness operated by the
+   spec's publisher is independent enough for your purposes is for you to
+   judge — this README doesn't assert an answer.
 
 Everything here runs offline except that one witness registration — see
 [What this does NOT establish](#what-this-does-not-establish) for the fuller
