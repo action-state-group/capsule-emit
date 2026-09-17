@@ -34,8 +34,8 @@ outside your control — so it can.
 3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. A record carrying no signature at all is not failed by default — `capsule-emit verify` counts such
-   records in a one-line summary after the tally, and `--require-signature` fails
-   them (`INVALID`, exit 1) for ledgers whose producer always signs ([#185](https://github.com/action-state-group/capsule-emit/issues/185)); the one check outside it is
+   records in a one-line summary after the tally, and, from the next release, `--require-signature`
+   fails them (`INVALID`, exit 1) for ledgers whose producer always signs ([#185](https://github.com/action-state-group/capsule-emit/issues/185)); the one check outside it is
    the ledger's checkpoint against the transparency service.
 
 ## The 10-minute proof
@@ -89,8 +89,8 @@ not personal data.
   service is outside it, and that is what backs the anti-re-seal property above.
   Never quote a green `capsule-emit verify` as witness verification, and never
   read a valid signature as a name: it proves the key in the record signed it,
-  not who holds the key — a ledger re-signed under a fresh key passes it, so does one with the signatures stripped, unless you pass
-  `--require-signature`.
+  not who holds the key — a ledger re-signed under a fresh key passes it, so does one with the signatures stripped, unless you pass `--require-signature`
+  (next release).
 - It is **not** observability, tracing, or a dashboard, and it carries no score,
   ranking, or reputation — it's the record and the math over it. (If you found this via
   an "observability integrations" listing: this sits *next to* your traces as the
