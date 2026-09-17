@@ -1,12 +1,148 @@
-# Goose extension
+# Goose extension — `MCPCapsuleEmitter` inside your Goose MCP server
 
-[Goose](https://github.com/aaif-goose/goose) is Block's open-source AI coding
-agent (a founding AAIF project alongside MCP and AGENTS.md).
+Goose's session log tells *you* what your extension did. A capsule turns each
+tool call Goose makes to your extension into a record built for **someone who
+doesn't already trust you** — your customer, their CISO, an auditor, the other
+side of a deal — including the call an approval gate in your server refused.
+
+That's the difference between a log and a record. A log is for you. A record is
+for the person who has to believe you. Logs answer "what happened?" for the
+team that owns the log; they don't answer "can a stranger confirm this months
+later?", because the party that ran the agent also holds and can rewrite the
+log. A capsule is content-addressed and checkable against the capsule format
+([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
+IETF Internet-Draft, not a WG document) by anyone holding the file. Altering a
+record's content changes its id; the external checkpoint, below, pins the ids
+as of the last accepted checkpoint — for everyone, the key holder included.
+
+## What you get, in three claims
+
+1. **One record per tool call, sealed inside the extension.** Goose extensions
+   are MCP servers, so the wiring is `@server.tool()` outside and
+   `@emitter.tool()` directly on the function: every call Goose makes that *returns* seals a record with the arguments and
+   the return value digested, verdict `executed`,
+   effect `dispatched` — the tool ran; nothing in that record claims the
+   outcome landed — and `runtime="mcp"` stamped. An approval gate in your server that refuses an order is an explicit
+   `emit_capsule(..., verdict="blocked")` with the disposition your server
+   asserts in the record (a self-assertion, not something the math attests), and a later escalation chains to it.
+   Confirming an effect is a second, explicit `seal(..., confirms=...)` from
+   wherever you observe it.
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature proves the key named in the
+   record signed that id — and nothing more until you pin the producer's key
+   through a channel you already trust: the signature and key id sit outside
+   the digest, so a ledger re-signed under a fresh key passes offline `verify`
+   and still matches its checkpoint. What constrains everyone, the key holder
+   included, is the external checkpoint, as of the last accepted one — see
+   [Network behavior](#network-behavior).
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+   recomputes every digest and outcome link and checks every producer signature it
+   finds — no account, no service, no network. It runs the format's reference
+   payload verifier plus the producer-envelope check; a record carrying no
+   signature at all is not failed — and the warning is not printed today ([#185](https://github.com/action-state-group/capsule-emit/issues/185)), and the one check outside it
+   is the ledger's checkpoint against the transparency service — see
+   [Network behavior](#network-behavior).
+
+## The 10-minute proof
+
+The adapter ships a runnable demo — no Goose session, no LLM key, no network
+with `--no-anchor`, the same decorated tools Goose would call, exercised
+directly — every record verified offline:
+
+```shell
+git clone https://github.com/action-state-group/capsule-emit
+cd capsule-emit
+python -m venv .venv && . .venv/bin/activate
+pip install "capsule-emit[mcp]"
+python examples/goose-capsule/demo.py --no-anchor
+```
+
+You'll watch it seal `get_price` and `submit_order` as `executed`, a large order a *simulated* approval gate rejected as `blocked` (the refusal
+is one your server records — a denial Goose makes on its own side never
+reaches the extension), and the escalation to
+a manager that chains to that refusal. Four records, every one `ok=True` on the offline payload verifier (the CLI line adds the
+signature check),
+then a tamper test: flip one byte in an output digest and verify fails. The demo
+seals to a throwaway ledger and checks it for you. Handing the real extension to
+Goose is a `config.yaml` stanza, under [Reference](#reference) below; the
+sealing happens inside your server and never needs Goose's API key.
+
+## Network behavior
+
+By default the emitter runs an async **checkpoint/witness** stream: it
+periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
+content** — to a transparency service, and prints a notice before the first
+attempt. That external commitment is what
+makes a re-seal of the content detectable — by anyone, the key holder
+included — as of the last accepted checkpoint; that comparison is the one check
+outside offline `verify`. A
+checkpoint goes out every 100 entries or 900 seconds by default, from a
+background thread joined at interpreter exit: records sealed since the last
+accepted checkpoint are covered only once the next one lands, dropping records
+from the end of the ledger is invisible to offline `verify` until then, and a
+process killed before exit never posts its pending checkpoint. The detection
+holds given one honest witness — one that checks each checkpoint against the
+last it accepted; multi-witness bundling, which the default does not do for you,
+is what raises the bar against a dishonest witness. For a first local run with
+**zero egress**, set `CAPSULE_WITNESS=off` (the demo does) — with it off, offline `verify`
+proves internal consistency only, and the anti-re-seal property is the part you
+turned off. The `operator` and `developer` you pass to the emitter seal into the hash-chained record permanently — use a
+role/version tag, not personal data. Inputs and outputs are sealed as digests:
+data minimization, not confidentiality — a digest of a low-entropy value can be
+recovered by enumeration.
+
+## What it does *not* do (so you can trust the part it does)
+
+- **Integrity, not completeness.** `verify` establishes that the records you have are internally
+  consistent and, where a signature is present, signed by the key it names. It does **not** prove the tools actually
+  ran, or that every call was recorded — a record nobody wrote leaves no trace.
+  Only tools you decorate seal; what Goose does with its other extensions, or
+  in its own shell, is never sealed here. Closing that is a separate
+  consistency check against an independent log.
+- **Dispatched is not confirmed.** The decorator's record says the tool ran;
+  a confirmed effect is a second record you seal from where you can see it.
+- **No model in the record unless you pass it.** The extension sees the tool
+  boundary, not the model Goose is running; `model=` is explicit.
+- **A tool that raises leaves no record here.** The decorator re-raises the
+  exception unchanged and seals nothing for that call; catch at the call site
+  and `emit_capsule(..., verdict=...)` if you want the failure on the record.
+- **It records; it never changes the call.** The decorator returns what the
+  tool returned and re-raises what it raised. Deny belongs to your gate layer.
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field;
+  the signature catches an altered record only once you know which key to
+  expect. Neither, by itself, stops the holder from re-sealing the entire
+  chain offline — that's what the external witness is for, and why it
+  defaults on.
+- **Kinds of `verify` — don't conflate them.** Two checks live inside
+  `capsule-emit verify` — the digest recompute and the producer signature — and
+  both run offline. Checking the ledger's checkpoint against the transparency
+  service is outside it, and that is what backs the anti-re-seal property above.
+  Never quote a green `capsule-emit verify` as witness verification, and never
+  read a valid signature as a name: it proves the key in the record signed it,
+  not who holds the key — a ledger re-signed under a fresh key passes it, and
+  so does one with the signatures stripped.
+- It is **not** observability, tracing, or a dashboard, and it carries no score,
+  ranking, or reputation — it's the record and the math over it. (If you found
+  this via an "integrations" listing: this sits *next to* your traces as the
+  evidence layer, it doesn't replace them.)
+
+---
+
+## Reference
+
+[Goose](https://github.com/aaif-goose/goose) is an open-source AI coding
+agent, originally built by Block and now an AAIF project (a founding one,
+alongside MCP and AGENTS.md).
 **Goose extensions are MCP servers** — every Goose tool is an MCP tool — so the
 hardened `MCPCapsuleEmitter` you already know is the foundation of this extension.
 No new glue is needed.
 
-There are two integration patterns.  They compose freely.
+There are two integration patterns. They compose once
+[capsule-emit#184](https://github.com/action-state-group/capsule-emit/issues/184)
+ports the companion server to mcp 2.x; until then Pattern B needs its own
+environment (uvx/pipx, pinned below).
 
 ---
 
@@ -16,10 +152,10 @@ Add `@emitter.tool()` to your Python MCP server and every call Goose makes to
 that tool is automatically sealed into a verifiable capsule.
 
 ```python
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer   # mcp < 2: from mcp.server.fastmcp import FastMCP
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 
-server  = FastMCP("po-agent")
+server  = MCPServer("po-agent")   # FastMCP("po-agent") on mcp < 2
 emitter = MCPCapsuleEmitter(
     operator="acme-co",
     developer="goose-agent@v1",
@@ -54,20 +190,10 @@ extensions:
     cmd: python3
     args: ["/path/to/your/server.py"]
     timeout: 30
-    envs:
-      CAPSULE_OPERATOR: "acme-co"
-      CAPSULE_DEVELOPER: "goose-agent@v1"
 ```
 
-### Or with uvx
-
-```yaml
-extensions:
-  po_agent:
-    type: stdio
-    cmd: uvx
-    args: ["--from", "capsule-emit[mcp]", "capsule-emit-server"]
-```
+(`operator` / `developer` are constructor arguments of `MCPCapsuleEmitter`; the
+emitter reads no environment variables.)
 
 ---
 
@@ -101,17 +227,29 @@ Tools exposed:
 | `capsule_verify(capsule_id, ledger)` | Verify a capsule by ID or prefix |
 | `capsule_ledger(ledger, limit)` | Summarise the ledger (most-recent rows) |
 
-Requires: `pip install "capsule-emit[mcp]"`
+Or with uvx, pinned the same way:
+
+```yaml
+extensions:
+  capsule_emit:
+    type: stdio
+    cmd: uvx
+    args: ["--from", "capsule-emit[mcp]", "--with", "mcp<2", "capsule-emit-server"]
+```
+
+Requires: `pip install "capsule-emit[mcp]" "mcp<2"` — the companion server still
+imports the mcp 1.x `FastMCP`; the port to mcp 2.x's `MCPServer` is tracked in
+[capsule-emit#184](https://github.com/action-state-group/capsule-emit/issues/184).
 
 ---
 
 ## Add it yourself
 
 ```python
-from mcp.server.fastmcp import FastMCP                      # 1
+from mcp.server.mcpserver import MCPServer   # 1  (mcp < 2: from mcp.server.fastmcp import FastMCP)
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter    # 2
 
-server  = FastMCP("my-agent")                              # 3
+server  = MCPServer("my-agent")                            # 3
 emitter = MCPCapsuleEmitter(
     operator="acme-co", developer="my-agent@v1",           # 4
 )
@@ -137,39 +275,11 @@ All existing tools get sealed with two extra lines (5 + 6).
 ## Verify after a Goose session
 
 ```bash
-agent-action-capsule verify --store ledger.jsonl
+capsule-emit verify --store ledger.jsonl
 ```
 
-Or per-capsule:
-
-```bash
-agent-action-capsule verify --store ledger.jsonl --id <capsule_id_prefix>
-```
-
-## Run the demo
-
-```bash
-pip install "capsule-emit[dev]"
-python examples/goose-capsule/demo.py --no-anchor
-```
-
-Output (abridged):
-
-```
-[step 4] Ledger: 3 capsule(s) sealed
-  23ace1c61d4dce12… get_price [executed] runtime=mcp
-  c2508f13214c38a0… submit_order [executed] runtime=mcp
-  02a3673e32b9be9e… submit_order [executed] runtime=mcp
-
-[step 5] Verify all capsules (offline — no network needed)
-  23ace1c61d4dce12… ok=True  ✓
-  c2508f13214c38a0… ok=True  ✓
-  02a3673e32b9be9e… ok=True  ✓
-
-[step 6] Tamper test: flip one byte in output digest → verify fails
-  verify result:     ok=False  findings: ['recomputed … != carried …']
-  Tamper detected — ok=False as expected. ✓
-```
+Pass an absolute `ledger=` to the emitter: the default `ledger.jsonl` lands in
+whatever directory Goose spawned the extension from.
 
 ## Connect real Goose (step-by-step)
 
@@ -188,7 +298,7 @@ ANTHROPIC_API_KEY=<key> goose run \
   -t "call submit_order with vendor=Frobozz, amount=1240.19, po_number=PO-7777"
 
 # 4. Verify the capsule offline
-agent-action-capsule verify --store ledger.jsonl
+capsule-emit verify --store ledger.jsonl
 ```
 
 Goose v1.39.0 (aarch64-apple-darwin) installs as a prebuilt binary — no Rust
@@ -196,11 +306,10 @@ toolchain required.
 
 ## Issues-first contributions: the Verification-stage evidence comment
 
-Goose's contribution lifecycle (CONTRIBUTING.md, since 2026-07-30) ends at a
+Goose's contribution lifecycle (CONTRIBUTING.md, at time of writing) ends at a
 **Verification** stage — a human confirms the implementation works — and its PR
 rules require explaining "how the issue's verification plan was carried out."
-When the implementer is an agent sealing its work with this adapter, that
-explanation can be records instead of prose:
+When the implementer is an agent sealing its work with this adapter, that explanation can carry the records alongside the prose:
 
 ```bash
 # during In progress: the agent's tool calls seal into ledger.jsonl as usual

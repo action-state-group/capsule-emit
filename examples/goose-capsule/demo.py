@@ -66,6 +66,8 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+os.environ.setdefault("CAPSULE_WITNESS", "off")  # zero egress for the demo; see docs "Network behavior"
+
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from scitt_cose import verify_receipt
@@ -280,7 +282,7 @@ with tempfile.TemporaryDirectory() as _tmp:
         runtime="mcp",
         prior_capsule_id=order1_id,
         relation=None,
-        extra_compute={"approver_id": "priya@acme-co.com"},
+        extra_compute={"approver_id": "approver-role:procurement-lead"},
     )
     decide1_id = decide1.capsule_id
     assert decide1.capsule["disposition"]["verdict_class"] == "blocked"
@@ -288,7 +290,7 @@ with tempfile.TemporaryDirectory() as _tmp:
     assert decide1.capsule["chain"]["parent_capsule_id"] == order1_id
     print(f"  capsule_id  : {decide1_id}")
     print(f"  verdict     : {decide1.capsule['disposition']['verdict_class']}")
-    print("  approver    : human (priya@acme-co.com)")
+    print("  approver    : human (approver-role:procurement-lead)")
     print(f"  reason      : {approval_outcome['reason']}")
     print(f"  chained to  : {order1_id}")
 
