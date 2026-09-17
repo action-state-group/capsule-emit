@@ -49,9 +49,12 @@ Verify inclusion on the public log (after anchoring):
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
+
+os.environ.setdefault("CAPSULE_WITNESS", "off")  # zero egress for the demo; see docs "Network behavior"
 from pathlib import Path
 
 from capsule_emit import ledger_view, read_ledger
