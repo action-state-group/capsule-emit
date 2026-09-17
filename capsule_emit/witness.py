@@ -84,9 +84,9 @@ works with nothing configured even though capsule-level signing now always
 runs -- they merely resolve to the same key by default now, instead of two
 unrelated ones.
 
-**Off switch.** ``emit(..., witness=False)`` or the ``CAPSULE_WITNESS=off``
-env var (checked only when the ``witness`` kwarg is left at its default,
-``None`` -- an explicit ``True``/``False`` always wins).
+**Off switch.** ``witness=False`` (on ``seal()``/``received()``) or the
+``CAPSULE_WITNESS=off`` env var (checked only when the ``witness`` kwarg is
+left at its default, ``None`` -- an explicit ``True``/``False`` always wins).
 
 **Multiple witnesses.** ``witness_url=`` (and ``CAPSULE_WITNESS_URL``) accept
 either a single endpoint or several -- a list, or a comma-separated string
@@ -431,7 +431,7 @@ def _print_first_use_notice_once(urls: list[str], *, stub: bool = False) -> None
             "is due, a signed checkpoint of your log (its size, a root hash, and a "
             f"timestamp -- never your capsule content) will be POSTed to {endpoints} "
             "at its /checkpoints route for independent countersigning. Disable with "
-            "emit(..., witness=False) or CAPSULE_WITNESS=off. "
+            "witness=False or CAPSULE_WITNESS=off. "
             "(This notice prints once per process, before any checkpoint goes out.)",
             file=sys.stderr,
         )

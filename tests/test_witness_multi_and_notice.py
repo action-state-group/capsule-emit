@@ -327,6 +327,6 @@ def test_first_use_notice_exact_text_snapshot(tmp_path, stub_ts_single, capsys):
         "is due, a signed checkpoint of your log (its size, a root hash, and a "
         f"timestamp -- never your capsule content) will be POSTed to {ts_url} "
         "at its /checkpoints route for independent countersigning. Disable with "
-        "emit(..., witness=False) or CAPSULE_WITNESS=off. "
+        "witness=False or CAPSULE_WITNESS=off. "
         "(This notice prints once per process, before any checkpoint goes out.)"
     )
