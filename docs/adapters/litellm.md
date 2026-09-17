@@ -1,4 +1,150 @@
-# LiteLLM
+# LiteLLM adapter — `LiteLLMCapsuleListener`
+
+Your LiteLLM proxy's logging callbacks tell *you* what it served. A capsule
+turns each LLM call the proxy serves into a record built for **someone who
+doesn't already trust you** — your customer, their CISO, an auditor, the other
+side of a deal — including the calls upstream failed, and with the record
+committing to what your redaction produced, not to the raw prompt.
+
+That's the difference between a log and a record. A log is for you. A record is
+for the person who has to believe you. Logs answer "what happened?" for the
+team that owns the log; they don't answer "can a stranger confirm this months
+later?", because the party that ran the proxy also holds and can rewrite the
+log. A capsule is content-addressed and checkable against the capsule format
+([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
+IETF Internet-Draft, not a WG document) by anyone holding the file. Altering a
+record's content changes its id; the external checkpoint, below, pins the ids
+as of the last accepted checkpoint — for everyone, the key holder included.
+
+## What you get, in three claims
+
+1. **The request and its outcome are both in the record — sealed after the
+   call, and the record says so.** On the proxy's success path
+   (`async_log_success_event`) the listener seals a `planned` record for the
+   request and chains `confirmed` to it; on the proxy's failure path
+   (`async_post_call_failure_hook`) it chains `failed`, with the prompt
+   withheld and the reason stamped. LiteLLM, as of the pinned release, dispatches no observation-only pre-call
+   hook, so the request record is *derived from the completed call's log
+   record, not witnessed before execution* — every capsule stamps
+   `observation_mode="post_hoc_event"` and the request half carries
+   `request_record_provenance` saying exactly that. The digest commits to the prompt *after* every registered
+   `async_logging_hook` has run (the pinned release's ordering), so a redaction
+   callback ahead of this one is what the record commits to — see
+   [Redaction](#redaction-we-digest-what-your-redaction-produced).
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature proves the key named in the
+   record signed that id — and nothing more until you pin the producer's key
+   through a channel you already trust: the signature and key id sit outside
+   the digest, so a ledger re-signed under a fresh key passes offline `verify`
+   and still matches its checkpoint. What constrains everyone, the key holder
+   included, is the external checkpoint, as of the last accepted one — see
+   [Network behavior](#network-behavior).
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+   recomputes every digest and outcome link and checks every producer signature it
+   finds — no account, no service, no network. It runs the format's reference
+   payload verifier plus the producer-envelope check; a record carrying no
+   signature at all is not failed — and the warning is not printed today ([#185](https://github.com/action-state-group/capsule-emit/issues/185)), and the one check outside it
+   is the ledger's checkpoint against the transparency service — see
+   [Network behavior](#network-behavior).
+
+## The 10-minute proof
+
+The adapter ships a runnable demo — no LLM key, no network, witness off, anchor pointed at a local stub, the listener loaded through
+`initialize_callbacks_on_proxy` (the same path a `config.yaml` callback line
+takes), two real `litellm.acompletion` calls on `mock_response`, LiteLLM's own
+keyless test path (every layer under the wire is the real SDK), plus one
+failure driven directly at the proxy's failure-hook seam — every record
+verified offline:
+
+```shell
+git clone https://github.com/action-state-group/capsule-emit
+cd capsule-emit
+python3 -m venv .venv && . .venv/bin/activate   # Python 3.11 or newer
+pip install "capsule-emit[litellm]"
+python examples/litellm-listener/demo.py
+```
+
+(Python 3.11 or newer: the released `litellm` wheel imports `typing.NotRequired`
+— see [Version](#version).)
+
+You'll watch it seal `planned → confirmed` for a plain completion; `planned →
+confirmed` for a call behind a redaction callback, where the digest commits to
+the *redacted* prompt; and `planned → failed` for an upstream 503, driven directly into the
+proxy's failure hook (the demo calls `async_post_call_failure_hook` itself),
+with the prompt withheld and the hook returning `None`, never rewriting the
+client's error. Six records, every one `PASS` on the offline payload verifier (the CLI line adds the
+signature check), then a `capsule-emit evidence` render — and no prompt text ever
+left the process. The demo seals to a throwaway ledger and checks it for you. In
+your own proxy the wiring is one `config.yaml` line —
+`callbacks: ["capsule_emit.adapters.litellm_listener.proxy_handler_instance"]`
+— plus two environment variables, under [Reference](#reference) below.
+
+## Network behavior
+
+By default the listener runs an async **checkpoint/witness** stream: it
+periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
+content** — to a transparency service, and prints a notice before the first
+attempt. That external commitment is what
+makes a re-seal of the content detectable — by anyone, the key holder
+included — as of the last accepted checkpoint; that comparison is the one check
+outside offline `verify`. A
+checkpoint goes out every 100 entries or 900 seconds by default, from a
+background thread joined at interpreter exit: records sealed since the last
+accepted checkpoint are covered only once the next one lands, dropping records
+from the end of the ledger is invisible to offline `verify` until then, and a
+process killed before exit never posts its pending checkpoint. The detection
+holds given one honest witness — one that checks each checkpoint against the
+last it accepted; multi-witness bundling, which the default does not do for you,
+is what raises the bar against a dishonest witness. For a first local run with
+**zero egress**, set `CAPSULE_WITNESS=off` (the demo does) — with it off,
+offline `verify` proves internal consistency only, and the anti-re-seal
+property is the part you turned off. `CAPSULE_EMIT_OPERATOR` and
+`CAPSULE_EMIT_DEVELOPER` seal into the hash-chained record permanently — use a
+role/version tag, not personal data. Prompts and responses are sealed as
+digests: data minimization, not confidentiality — a digest of a low-entropy
+value can be recovered by enumeration.
+
+## What it does *not* do (so you can trust the part it does)
+
+- **Integrity, not completeness.** `verify` establishes that the records you have are internally
+  consistent and, where a signature is present, signed by the key it names. It does **not** prove the calls
+  were served as recorded, or that every call was recorded — a record nobody
+  wrote leaves no trace. The listener seals what the proxy's two hooks hand it:
+  a failure on the pure SDK path (`litellm.completion` with no proxy) surfaces
+  through a hook this adapter does not implement and seals nothing — see
+  [Coverage gap, stated](#coverage-gap-stated). Closing that is a separate
+  consistency check against an independent log.
+- **No pre-execution commitment.** The `planned` record is written from the
+  completed call's log record; it asserts no execution and carries no timing
+  claim. The capsule format carves `planned` as "asserts no execution"; the
+  `post_hoc_event` and `request_record_provenance` markers are capsule-emit's
+  own, layered on that carve so the record names how it was made — see
+  [What is and is not claimed](#what-is-and-is-not-claimed).
+- **It records; it never changes what a caller sees.** The failure hook always
+  returns `None`; the deny-capable `async_pre_call_hook` is deliberately not
+  implemented. Deny belongs to your gate layer.
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field;
+  the signature catches an altered record only once you know which key to
+  expect. Neither, by itself, stops the holder from re-sealing the entire chain offline — that's what the external witness is for, and why it
+  defaults on.
+- **Kinds of `verify` — don't conflate them.** Two checks live inside
+  `capsule-emit verify` — the digest recompute and the producer signature — and
+  both run offline. Checking the ledger's checkpoint against the transparency
+  service is outside it, and that is what backs the anti-re-seal property above.
+  Never quote a green `capsule-emit verify` as witness verification, and never
+  read a valid signature as a name: it proves the key in the record signed it,
+  not who holds the key — a ledger re-signed under a fresh key passes it, and
+  so does one with the signatures stripped.
+- It is **not** observability, logging, or a dashboard, and it carries no score,
+  ranking, or reputation — it's the record and the math over it. (If you found
+  this via a "logging" or "callbacks" listing: this sits *next to* your proxy's
+  logging as the evidence layer, it doesn't replace it.)
+
+---
+
+## Reference
 
 `capsule-emit[litellm]` ships `LiteLLMCapsuleListener` — a `CustomLogger` that
 seals a planned → outcome chain around every LLM call a LiteLLM proxy serves.
@@ -209,27 +355,18 @@ core = LiteLLMListenerCore(operator="acme-co", developer="gateway@v1")
 core.on_success_core({"model": "gpt-4o-mini", "call_type": "acompletion"}, {"id": "r1"})
 ```
 
-## Quickstart
-
-```bash
-pip install "capsule-emit[litellm]"
-python examples/litellm-listener/demo.py
-```
-
-The demo is hermetic — a stub SCITT TS, `litellm`'s own `mock_response` path, no
-network and no LLM key — and it loads the listener through
-`initialize_callbacks_on_proxy`, the real config path, rather than by importing
-it directly.
-
 ## Version
 
 Verified against the released `litellm==1.99.0` wheel; the `[litellm]` extra pins
-`litellm>=1.99.0`.
+`litellm>=1.99.0`. The 10-minute proof above was re-run on **1.101.0** with the
+released `capsule-emit` 0.8.1 wheel.
 
 **That wheel declares `Requires-Python: >=3.10,<3.15` but imports
 `typing.NotRequired`, which is 3.11+.** On CPython 3.10 a plain `import litellm`
 raises `ImportError: cannot import name 'NotRequired' from 'typing'` — before any
 capsule-emit code runs. capsule-emit's own floor is 3.9 and is unchanged; this
 adapter simply needs 3.11+ in practice, and its litellm-backed tests skip below
-that. Reported here as an observation about the released artifact, not as a
-capsule-emit limitation.
+that. Reported here as an observation about the released artifact (still true of
+1.101.0), not as a capsule-emit limitation; tracked upstream at
+[BerriAI/litellm#38076](https://github.com/BerriAI/litellm/issues/38076) and
+[#38892](https://github.com/BerriAI/litellm/issues/38892).

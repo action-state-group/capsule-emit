@@ -51,6 +51,8 @@ import sys
 import tempfile
 import threading
 
+os.environ.setdefault("CAPSULE_WITNESS", "off")  # zero egress for the demo; see docs "Network behavior"
+
 os.environ.setdefault("LITELLM_LOG", "ERROR")
 
 from capsule_emit.verification import verify_capsule as verify  # noqa: E402
