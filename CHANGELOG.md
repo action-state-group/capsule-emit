@@ -18,6 +18,13 @@ All notable changes to `capsule-emit` are documented here. The format follows
   no producer signature: `N record(s) carry no producer signature (producer_signature_unclaimed)`.
   Fully signed ledgers print exactly what they did before.
 
+### Fixed — companion MCP server on mcp 2.x (#184)
+
+- `capsule_emit/server.py` imports `MCPServer` on mcp >= 2 (renamed from `FastMCP`) and
+  `FastMCP` below; the constructor call already passed `instructions` by keyword, so nothing
+  else changes. A stdio smoke test drives `python -m capsule_emit.server` with the SDK's own
+  client under whichever mcp major is installed.
+
 ## 0.8.2
 
 ### Fixed — agentgateway adapter: a refused `tools/call` left no record and shifted every later pairing by one
