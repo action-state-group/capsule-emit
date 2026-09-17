@@ -55,7 +55,7 @@ agno = ["agno>=3.0"]
 strands = ["strands-agents>=1.54.0,<2"]
 # Verified against openai-agents 0.22.0 (see docs/adapters/openai-agents.md).
 openai-agents = ["openai-agents>=0.22"]
-llamaindex = ["llama-index-core>=0.14,<0.15"]
+llamaindex = ["llama-index-core>=0.14,<0.15", "llama-index-workflows>=2.14,<2.24"]  # 2.24.0 (2026-09-16) keys a WeakKeyDictionary by the Workflow instance; FunctionAgent is unhashable -> TypeError on run()
 # Pinned to the release the rail-decision contract was read and tested against
 # (RailOutcome/RailDecision, actions/rail_outcome.py:50-92; LLMRails.register_action,
 # llmrails.py:1735). Upper bound is tight on purpose: nemoguardrails is 0.x, so a
