@@ -1,4 +1,174 @@
-# Dapr Agents adapter
+# Dapr Agents adapter — `DaprAgentsCapsuleEmitter`
+
+Your Dapr Workflow history tells *you* what your agent did, after the run. A
+capsule turns each tool call and each human approval into a record built for
+**someone who doesn't already trust you** — your customer, their CISO, an
+auditor, the other side of a deal — sealed live at the decision point, including
+the approval a human refused.
+
+That's the difference between a log and a record. A log is for you. A record is
+for the person who has to believe you. Logs answer "what happened?" for the
+team that owns the log; they don't answer "can a stranger confirm this months
+later?", because the party that ran the agent also holds and can rewrite the
+log. A capsule is content-addressed and checkable against the capsule format
+([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
+IETF Internet-Draft, not a WG document) by anyone holding the file. Altering a
+record's content changes its id; the external checkpoint, below, pins the ids
+as of the last accepted checkpoint — for everyone, the key holder included.
+
+## What you get, in three claims
+
+1. **One record per tool call and one per human decision, sealed as they
+   happen.** `@emitter.tool("check_invoice")` on the tool seals an `fyi` record
+   per invocation with the arguments and the return value digested — the
+   adapter observes the tool boundary, not the model that chose it, and says
+   so. `emitter.record_hitl(...)`, called only after the approval resolves — after
+   `ctx.wait_for_external_event()` in a raw workflow, or after the decision
+   arrives through `raise_approval_event` with the 1.0.x hook system's
+   `RequireApproval` — seals a `decide` record with a real
+   disposition — `human_disposed`, the approver id your auth layer supplied,
+   the actual decision — chained to the tool record it gates. Every record
+   carries the `dapr_agents` extension block (agent, tool, workflow instance,
+   app id) so it joins the workflow's own history. Calling `record_hitl` before
+   the human acts would seal a false record; the page says so twice.
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature proves the key named in the
+   record signed that id — and nothing more until you pin the producer's key
+   through a channel you already trust: the signature and key id sit outside
+   the digest, so a ledger re-signed under a fresh key passes offline `verify`
+   and still matches its checkpoint. What constrains everyone, the key holder
+   included, is the external checkpoint, as of the last accepted one — see
+   [Network behavior](#network-behavior).
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+   recomputes every digest and outcome link and checks every producer signature it
+   finds — no account, no service, no network. It runs the format's reference
+   payload verifier plus the producer-envelope check; a record carrying no
+   signature at all is not failed — and the warning is not printed today ([#185](https://github.com/action-state-group/capsule-emit/issues/185)), and the one check outside it
+   is the ledger's checkpoint against the transparency service — see
+   [Network behavior](#network-behavior).
+
+## The 10-minute proof
+
+No Dapr sidecar and no workflow runtime: the adapter imports nothing from
+`dapr_agents`, so the proof is the wiring run as-is — a decorated tool call, then a stand-in for a resolved rejection event
+recorded against it (no human acts in the proof — in your workflow this call
+follows `ctx.wait_for_external_event()`, never precedes it), then the CLI
+verifier:
+
+```python
+import os, pathlib, subprocess, sys, tempfile
+
+os.environ.setdefault("CAPSULE_WITNESS", "off")  # zero egress for the proof
+from capsule_emit.adapters.dapr_agents import DaprAgentsCapsuleEmitter
+
+ledger = pathlib.Path(tempfile.mkdtemp()) / "ledger.jsonl"
+emitter = DaprAgentsCapsuleEmitter(
+    operator="acme-co", developer="invoice-agent@v1",
+    agent_name="invoice-checker", app_id="invoice-app",
+    workflow_instance_id="wf-demo", ledger=str(ledger), anchor=False,
+)
+
+@emitter.tool("check_invoice")
+def check_invoice(invoice_id: str, amount: str) -> dict:
+    return {"invoice_id": invoice_id, "ok": True}
+
+check_invoice("INV-001", "1240.00")                  # fyi: the tool boundary
+emitter.record_hitl(                                 # decide: a stand-in for the
+    "approve_payment", approver_id="approver-role:ap-lead",  # resolved approval event
+    decision="reject",
+    tool_request={"invoice_id": "INV-001", "amount": "1240.00"},
+    outcome={"decision": "reject"},
+    prior_capsule_id=emitter.last.capsule_id,          # chained to the fyi
+)
+
+print(subprocess.run([sys.executable, "-m", "capsule_emit.cli", "verify",
+                      "--store", str(ledger)], capture_output=True, text=True).stdout)
+```
+
+```
+  VALID
+  VALID
+
+2/2 VALID
+```
+
+Two records — `fyi` with effect `dispatched`, `decide` with effect left
+`planned` (gated, not dispatched) and chained to it — each `VALID` under the digest recompute and its producer signature. `pip install
+"capsule-emit[dapr-agents]"` is the only dependency; the proof imports
+capsule-emit alone, never `dapr_agents`. In your workflow the wiring is the decorator per tool and one
+`record_hitl` per approval gate, under [Reference](#reference) below.
+
+## Network behavior
+
+By default the emitter runs an async **checkpoint/witness** stream: it
+periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
+content** — to a transparency service, and prints a notice before the first
+attempt. That external commitment is what
+makes a re-seal of the content detectable — by anyone, the key holder
+included — as of the last accepted checkpoint; that comparison is the one check
+outside offline `verify`. A
+checkpoint goes out every 100 entries or 900 seconds by default, from a
+background thread joined at interpreter exit: records sealed since the last
+accepted checkpoint are covered only once the next one lands, dropping records
+from the end of the ledger is invisible to offline `verify` until then, and a
+process killed before exit never posts its pending checkpoint. The detection
+holds given one honest witness — one that checks each checkpoint against the
+last it accepted; multi-witness bundling, which the default does not do for you,
+is what raises the bar against a dishonest witness. For a first local run with
+**zero egress**, set `CAPSULE_WITNESS=off` (the proof above does) — with it
+off, offline `verify` proves internal consistency only, and the anti-re-seal
+property is the part you turned off. The `operator`, `developer`, `agent_name` and `app_id` you pass to the
+emitter — and the `approver_id` you pass to `record_hitl`, stored raw — seal
+into the hash-chained record permanently; use a role/version tag, not personal
+data. Inputs and outputs are sealed as digests:
+data minimization, not confidentiality — a digest of a low-entropy value can be
+recovered by enumeration.
+
+## What it does *not* do (so you can trust the part it does)
+
+- **Integrity, not completeness.** `verify` establishes that the records you have are internally
+  consistent and, where a signature is present, signed by the key it names. It does **not** prove the tools actually
+  ran, or that every call was recorded — a record nobody wrote leaves no trace.
+  Only decorated tools seal, and a replayed Dapr activity seals again — see
+  [Limitations](#limitations). Closing that is a separate consistency check
+  against an independent log.
+- **It sees the tool boundary, not the decision.** Tool records are `fyi`
+  because the model's choice is not visible at this seam; the `decide` record
+  exists only for a human decision your workflow actually received.
+- **Approver identity and workflow id are yours to supply.** The hook
+  context carries neither; Dapr's own approval event (1.0.6) carries at most an
+  optional, unvalidated approver JWT — resolve it to an opaque subject id in
+  your auth layer before passing `approver_id`, which seals raw. The adapter
+  never guesses — see [Limitations](#limitations).
+- **Only Python-defined tools carry the decorator.** Tools sourced from MCP or
+  OpenAPI get no `fyi` record from this adapter; the `before_tool_call` hook is
+  the seam that sees them — see [Limitations](#limitations).
+- **It records; it never changes the call.** The decorator returns what the
+  tool returned; `record_hitl` seals what the human decided. Deny belongs to
+  your gate layer.
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field;
+  the signature catches an altered record only once you know which key to
+  expect. Neither, by itself, stops the holder from re-sealing the entire
+  chain offline — that's what the external witness is for, and why it
+  defaults on.
+- **Kinds of `verify` — don't conflate them.** Two checks live inside
+  `capsule-emit verify` — the digest recompute and the producer signature — and
+  both run offline. Checking the ledger's checkpoint against the transparency
+  service is outside it, and that is what backs the anti-re-seal property above.
+  Never quote a green `capsule-emit verify` as witness verification, and never
+  read a valid signature as a name: it proves the key in the record signed it,
+  not who holds the key — a ledger re-signed under a fresh key passes it, and
+  so does one with the signatures stripped.
+- It is **not** observability, tracing, or a dashboard, and it carries no score,
+  ranking, or reputation — it's the record and the math over it. (If you found
+  this via an "integrations" listing: this sits *next to* your logs as the
+  evidence layer, it doesn't replace them.)
+
+---
+
+## Reference
 
 `DaprAgentsCapsuleEmitter` records capsules at the agent's live decision points
 — not post-hoc from history.  It owns two seam points in a Dapr Agents workflow:
@@ -38,7 +208,7 @@ agent called; the LLM's upstream decision is not visible at this seam.
 ```python
 @emitter.tool("check_invoice")
 def check_invoice(invoice_id: str, amount: str) -> dict:
-    ...                    # your tool logic unchanged
+    return {"invoice_id": invoice_id, "ok": True}   # your tool logic unchanged
 ```
 
 Works with both `def` and `async def` functions.  Emit errors are warned and
@@ -55,8 +225,10 @@ outcome:
 
 ```python
 # Inside your Dapr Workflow definition:
-approval_event = ctx.wait_for_external_event("approval_event")
-ctx.yield_()
+# approval_event = ctx.wait_for_external_event("approval_event")
+# ctx.yield_()
+approval_event = {"approved_by": "approver-role:ap-lead", "decision": "reject"}   # what the event resolved to
+prior_check_capsule_id = None
 
 # Extract approver and decision from the event payload:
 approver_id = approval_event.get("approved_by")   # from YOUR auth layer
@@ -146,9 +318,9 @@ Re-verified 2026-07-30 against `dapr-agents==1.0.5` (see drift note below):
   Must still be supplied at construction or per-call.
 - **L3 HITL approver identity — STILL TRUE, confirmed in the native flow
   too.** Dapr Agents' own new `ApprovalResponseEvent` (sent to
-  `DurableAgent.raise_approval_event()`) carries `approved: bool` and
-  `reason`, but no approver-identity field — the framework's own native
-  approval schema has the same gap this adapter already worked around.
+  `DurableAgent.raise_approval_event()`) carries `approved: bool` and `reason`, and no *resolved* approver identity —
+  1.0.6 adds an optional `approver_token` (a raw JWT the framework passes through
+  unvalidated); resolving it to a subject id is still your auth layer's job.
 - **L4 Replay idempotency** — unchanged; Dapr Workflow may replay activities,
   wrapped tools fire again on replay, emitting duplicate capsules.
 - **L5 App ID auto-discovery — STILL TRUE**, confirmed absent from the new
@@ -157,7 +329,8 @@ Re-verified 2026-07-30 against `dapr-agents==1.0.5` (see drift note below):
 ### Drift note (2026-07-30 rerun)
 
 - **Version-naming correction:** there is no `dapr-agents` release numbered
-  1.18 — latest on PyPI is **1.0.5** (checked against GitHub releases too).
+  1.18 — latest on PyPI at that rerun was **1.0.5** (checked against GitHub releases
+  too); the proof above ran on 1.0.6.
   `dapr-agents==1.0.5` transitively pins the Dapr *core* SDK (`dapr` package)
   at **1.18.3** — that is almost certainly the source of any "Dapr Agents
   1.18" label; the two version numbers belong to different packages.
