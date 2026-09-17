@@ -27,8 +27,9 @@ outside your control — so it can.
    re-seal the whole chain, is caught by the external anchor (see [Network
    behavior](#network-behavior)), not by the local check.
 3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
-   recomputes the whole chain — no account, no service, no network. That is the
-   chain/structure check; the producer-signature check is a separate step.
+   recomputes every digest and outcome link *and* checks the producer signature on
+   every record — no account, no service, no network. The one check outside it is
+   the ledger's checkpoint against the transparency service.
 
 ## The 10-minute proof
 
@@ -58,7 +59,7 @@ commitment is what stops the holder from silently rewriting the past — it's wh
 claim #2 hold against the person who produced the ledger. Wiring is one listener
 instantiated before `crew.kickoff()` (see below); for a first local run with **zero
 egress**, set `CAPSULE_WITNESS=off` — with it off, offline `verify` proves internal
-consistency only, and the anti-re-seal guarantee is the part you turned off. `operator`
+consistency only, and the anti-re-seal property is the part you turned off. `operator`
 and `developer` seal into the hash-chained record permanently — use a role/version tag,
 not personal data.
 
@@ -74,12 +75,13 @@ not personal data.
   *sealed* record by anyone who isn't the ledger holder. It does **not**, by itself,
   stop the holder from re-sealing the entire chain offline — that's what the external
   anchor/witness is for, and why it defaults on.
-- **Kinds of `verify` — don't conflate them.** The chain/structure check
-  (`capsule-emit verify`) is separate from the producer-signature check, and both are
-  separate again from checking the log's checkpoint against the transparency service —
-  that last one is what actually backs the anti-re-seal guarantee above. A green
-  `capsule-emit verify` is only the chain check; never quote it as signature or witness
-  verification.
+- **Kinds of `verify` — don't conflate them.** Two checks live inside
+  `capsule-emit verify` — the digest recompute and the producer signature — and
+  both run offline. Checking the ledger's checkpoint against the transparency
+  service is outside it, and that is what backs the anti-re-seal property above.
+  Never quote a green `capsule-emit verify` as witness verification, and never
+  read a valid signature as a name: it proves the key in the record signed it,
+  not who holds the key.
 - It is **not** observability, tracing, or a dashboard, and it carries no score,
   ranking, or reputation — it's the record and the math over it. (If you found this via
   an "observability integrations" listing: this sits *next to* your traces as the
