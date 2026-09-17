@@ -42,7 +42,9 @@ as of the last accepted checkpoint — for everyone, the key holder included.
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. It runs the format's reference
    payload verifier plus the producer-envelope check; a record carrying no
-   signature at all is not failed — and the warning is not printed today ([#185](https://github.com/action-state-group/capsule-emit/issues/185)), and the one check outside it
+   signature at all is not failed by default — `capsule-emit verify` counts such
+   records in a one-line summary after the tally, and `--require-signature` fails
+   them (`INVALID`, exit 1) for ledgers whose producer always signs ([#185](https://github.com/action-state-group/capsule-emit/issues/185)), and the one check outside it
    is the ledger's checkpoint against the transparency service — see
    [Network behavior](#network-behavior).
 
@@ -128,8 +130,8 @@ role/version tag, not personal data.
   service is outside it, and that is what backs the anti-re-seal property above.
   Never quote a green `capsule-emit verify` as witness verification, and never
   read a valid signature as a name: it proves the key in the record signed it,
-  not who holds the key — a ledger re-signed under a fresh key passes it, and
-  so does one with the signatures stripped.
+  not who holds the key — a ledger re-signed under a fresh key passes it, so does one with the signatures stripped, unless you pass
+  `--require-signature`.
 - It is **not** observability, tracing, or a dashboard, and it carries no score,
   ranking, or reputation — it's the record and the math over it. (If you found
   this via an "observability integrations" listing: this sits *next to* your

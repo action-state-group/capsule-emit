@@ -31,7 +31,9 @@ trace. A capsule is content-addressed and independently checkable, so it can.
    [Network behavior](#network-behavior).
 3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
    recomputes every digest and outcome link and checks every producer signature it
-   finds — no account, no service, no network. A record carrying no signature at all is not failed — and the warning is not printed today ([#185](https://github.com/action-state-group/capsule-emit/issues/185)); the one check outside it is
+   finds — no account, no service, no network. A record carrying no signature at all is not failed by default — `capsule-emit verify` counts such
+   records in a one-line summary after the tally, and `--require-signature` fails
+   them (`INVALID`, exit 1) for ledgers whose producer always signs ([#185](https://github.com/action-state-group/capsule-emit/issues/185)); the one check outside it is
    the ledger's checkpoint against the transparency service; the Python API for
    each check is under [Verification](#verification).
 
