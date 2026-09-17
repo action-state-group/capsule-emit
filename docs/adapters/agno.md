@@ -1,4 +1,141 @@
-# Agno
+# Agno adapter — `AgnoCapsuleListener`
+
+Your Agno agent's tool hooks tell *you* what it did. A capsule turns each tool
+call into a record built for **someone who doesn't already trust you** — your
+customer, their CISO, an auditor, the other side of a deal — including the calls
+that raised.
+
+That's the difference between a log and a record. A log is for you. A record is
+for the person who has to believe you. Traces answer "what happened?" for the
+team that owns the trace; they don't answer "can a stranger confirm this months
+later?", because the party that ran the agent also holds and can rewrite the
+trace. A capsule is content-addressed and checkable against the capsule format
+([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
+IETF Internet-Draft, not a WG document) by anyone holding the file. The
+producer signature catches whoever alters a record without the producer's key;
+the key holder is constrained by the external checkpoint, below.
+
+## What you get, in three claims
+
+1. **The commitment and its outcome are both in the record — including the
+   calls that raised.** The hook seals a `planned` record *before* the tool
+   runs and chains the outcome to it: a clean return seals `confirmed`; a tool
+   that raises seals `failed` and re-raises the same exception unchanged. That
+   attests the outcome observed at the hook boundary, not the state of the
+   world — a raise on the response path after a side effect landed is still
+   `failed`. Because Agno hooks are middleware — the hook wraps the call and
+   holds the planned id as a local variable — the chain link is structural,
+   with no pairing table to get wrong under concurrency. An outcome whose own
+   `planned` seal failed is written unchained and marked `unchained_reason` —
+   not evidence of a commitment.
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature binds the record to the key
+   named in it: anyone without that key is caught by arithmetic, not policy —
+   and it names a key, not a person, until you bind that key to the producer
+   through a channel you already trust. The one party neither catches is the
+   key holder, who could re-seal the whole ledger — the external checkpoint is
+   what makes that detectable, as of the last accepted checkpoint — see
+   [Network behavior](#network-behavior).
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+   recomputes every digest and outcome link *and* checks the producer signature on every
+   record — no account, no service, no network. It runs the format's reference
+   payload verifier plus the producer-envelope check; the one check outside it
+   is the ledger's checkpoint against the transparency service — see
+   [Network behavior](#network-behavior).
+
+Because Agno can serve a repeat call from its tool cache — the hook still runs,
+the tool body doesn't — the listener never claims a fresh execution it can't
+see. When an identical `(tool, arguments)` call was already confirmed by this
+listener, the repeat's record carries `agno_replay_of` pointing at the earlier
+confirmed capsule: *an identical call was already confirmed; Agno may have
+served this one from cache.* A pointer for the reader, not an observation of the cache — and the
+"identical" judgment is the listener's own, from a fingerprint it keeps in a
+bounded in-memory table; it is not something a reader recomputes from the ledger.
+
+## The 10-minute proof
+
+The adapter ships a runnable demo — witness off, anchor pointed at a local stub
+(no external network), real Agno `FunctionCall.execute()` tool calls, one that
+succeeds, one that raises, and one served from Agno's cache, every record
+verified offline:
+
+```shell
+git clone https://github.com/action-state-group/capsule-emit
+cd capsule-emit
+python -m venv .venv && . .venv/bin/activate
+pip install "capsule-emit[agno]"
+python examples/agno-listener/demo.py
+```
+
+You'll watch it seal `planned → confirmed` for `get_price`, `planned → failed`
+for `submit_order` (sealed as evidence, then the `RuntimeError` propagates as
+Agno would raise it), and `planned → confirmed` marked `replay-of` for the
+cached repeat — the demo's own counter shows the tool body ran once for two
+`get_price` calls; the record shows only that an identical call was already
+confirmed. Every record `PASS` on offline verify, then a fail-closed
+`capsule-emit evidence` render. The demo seals to a throwaway ledger and checks
+it for you. In your own agent the wiring is one line —
+`Agent(..., tool_hooks=[listener.hook])` for `run`, `tool_hooks=[listener.async_hook]`
+for `arun` (Agno's hooks are direction-specific: the wrong one records nothing and
+only logs a warning) — with the hook contract and options
+under [Reference](#reference) below.
+
+## Network behavior
+
+By default the listener runs an async **checkpoint/witness** stream: it
+periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
+content** — to a transparency service, and prints a notice before the first
+attempt. That external commitment is what
+makes a re-seal by the key holder detectable, as of the last accepted
+checkpoint — and that comparison is the one check outside offline `verify`. A
+checkpoint goes out every 100 entries or 900 seconds by default, from a
+background thread joined at interpreter exit: records sealed since the last
+accepted checkpoint are covered only once the next one lands, dropping records
+from the end of the ledger is invisible to offline `verify` until then, and a
+process killed before exit never posts its pending checkpoint. The detection
+holds given one honest witness — one that checks each checkpoint against the
+last it accepted; multi-witness bundling, which the default does not do for you,
+is what raises the bar against a dishonest witness. For a first local run with **zero egress**, set
+`CAPSULE_WITNESS=off` — with it off, offline `verify` proves internal
+consistency only, and the anti-re-seal property is the part you
+turned off.
+`operator` and `developer` seal into the hash-chained record permanently — use a
+role/version tag, not personal data.
+
+## What it does *not* do (so you can trust the part it does)
+
+- **Integrity, not completeness.** `verify` establishes that the records you have are internally
+  consistent and signed by the key they name. It does **not** prove the tools actually
+  ran, or that every call was recorded — a record nobody wrote leaves no trace.
+  The listener only seals calls that pass through Agno's tool-hook chain; a
+  raw HTTP request an agent makes on the side is never sealed, a hook
+  registered on the sync path never sees calls driven through `arun`/`aexecute`
+  (register `listener.async_hook` for those), and a call that stops before the
+  hook chain — a `requires_confirmation` tool the user rejects, an
+  `external_execution` tool the app runs itself — leaves no record here. Closing that is a separate
+  consistency check against an independent log.
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field, and
+  the producer signature catches anyone who alters a record without the
+  producer's key. Neither, by itself, stops the key holder from re-sealing the
+  entire chain offline — that's what the external witness is for, and why it
+  defaults on.
+- **Kinds of `verify` — don't conflate them.** Two checks live inside
+  `capsule-emit verify` — the digest recompute and the producer signature — and
+  both run offline. Checking the ledger's checkpoint against the transparency
+  service is outside it, and that is what backs the anti-re-seal property above.
+  Never quote a green `capsule-emit verify` as witness verification, and never
+  read a valid signature as a name: it proves the key in the record signed it,
+  not who holds the key.
+- It is **not** observability, tracing, or a dashboard, and it carries no score,
+  ranking, or reputation — it's the record and the math over it. (If you found
+  this via an "observability integrations" listing: this sits *next to* your
+  traces as the evidence layer, it doesn't replace them.)
+
+---
+
+## Reference
 
 `capsule-emit[agno]` ships `AgnoCapsuleListener` — a tool hook that seals a
 planned → outcome chain around every tool call an agno agent makes.
@@ -8,7 +145,7 @@ from agno.agent import Agent
 from capsule_emit.adapters.agno_listener import AgnoCapsuleListener
 
 listener = AgnoCapsuleListener(operator="acme-co", developer="my-agent@v1")
-agent = Agent(model=..., tools=[...], tool_hooks=[listener.hook])
+agent = Agent(model=None, tools=[], tool_hooks=[listener.hook])  # your model and tools here
 ```
 
 `tool_hooks` is accepted on `Agent`, on `Team`, and on the `@tool` decorator, so
@@ -95,10 +232,41 @@ links over what the listener recorded. `verify()` checks structure and
 consistency: it proves the record's integrity, not that the tools executed, and
 not that a third party has countersigned anything. Capsules are self-attested
 (`assurance.attestation_mode = "self_attested"`) unless a stronger mode is
-configured. When anchoring is enabled without `anchor_wait`, a row reports that
-a statement was **submitted** to the transparency service — a confirmed
-registration is a separate outcome, and `anchor_wait` is what makes
-`EmitResult.anchored` reflect one. None of this replaces review.
+configured. The checkpoint/witness stream reports its own outcome on
+`EmitResult.witness_outcome` (`checkpoint_queued` until a checkpoint is
+actually countersigned); a queued checkpoint is not a confirmed registration.
+None of this replaces review.
+
+### Checking the producer signature
+
+Each record's `signature` field is a hex-encoded COSE_Sign1 envelope over the
+capsule id. Authenticate it with the spec package's verifier:
+
+```python
+import os, tempfile
+os.environ.setdefault("CAPSULE_WITNESS", "off")   # see Network behavior
+from capsule_emit import read_ledger
+from capsule_emit.adapters.agno_listener import AgnoCapsuleListener
+from agent_action_capsule.producer_envelope import verify_producer_envelope
+
+ledger = os.path.join(tempfile.mkdtemp(), "ledger.jsonl")
+listener = AgnoCapsuleListener(operator="acme-co", developer="my-agent@v1", ledger=ledger, anchor=False)
+# the framework-free core takes any callable as the continuation — one planned + one confirmed record
+listener.core.wrap_call("get_price", lambda **kw: {"sku": kw["sku"], "px": "12.00"}, {"sku": "SKU-9"})
+records = read_ledger(ledger)
+
+for record in records:
+    envelope = bytes.fromhex(record["signature"])
+    sig = verify_producer_envelope(record["capsule_id"], envelope)
+    print(f"  {record['effect']['status']:9s} signature_ok={sig.ok}")
+```
+
+A tampered envelope fails with `envelope_signature_invalid`; an envelope
+replayed onto a different capsule fails with `envelope_payload_mismatch`. On
+success the result carries the raw Ed25519 public key that signed the record —
+whether that key is authorized for the stated operator is caller policy.
+`verify_capsule` proves the content is what the identifier commits to and the
+chain is consistent; `verify_producer_envelope` proves who sealed it.
 
 ## Configuration
 
@@ -118,20 +286,10 @@ call_next, arguments)` takes a plain callable as the continuation. The full
 behavior is exercised without agno installed; the tests that drive real agno
 `FunctionCall.execute()` / `.aexecute()` are `importorskip`'d.
 
-## Quickstart
-
-```bash
-pip install "capsule-emit[agno]"
-python examples/agno-listener/demo.py
-```
-
-Hermetic — no LLM key, no live services. It drives real agno tool calls
-(success, failure, and a cache hit), then ends with an offline `verify()` over
-every capsule and a `capsule-emit evidence` render.
-
 ## Version
 
 The hook contract above was read from the released agno wheel, not from docs:
-the `[agno]` extra pins `agno>=3.0.0`, and `3.0.0` is the version the
-continuation binding, the hook-raises-fails-the-tool behavior, and the
-cache-hit replay behavior were each verified against.
+the `[agno]` extra pins `agno>=3.0.0`; the continuation binding, the
+hook-raises-fails-the-tool behavior, and the cache-hit replay behavior were
+verified against `3.0.0`, and the 10-minute proof above was re-run on
+`3.0.10` with the released `capsule-emit` 0.8.1 wheel.

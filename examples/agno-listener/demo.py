@@ -45,6 +45,8 @@ import sys
 import tempfile
 import threading
 
+os.environ.setdefault("CAPSULE_WITNESS", "off")  # zero egress for the demo; see docs "Network behavior"
+
 from capsule_emit.verification import verify_capsule as verify
 
 # ---------------------------------------------------------------------------
