@@ -1,4 +1,137 @@
-# LlamaIndex
+# LlamaIndex adapter — `LlamaIndexCapsuleListener`
+
+Your LlamaIndex instrumentation tells *you* what your agent did. A capsule turns
+each tool call into a record built for **someone who doesn't already trust
+you** — your customer, their CISO, an auditor, the other side of a deal —
+including the calls that raised and the tool the model invented.
+
+That's the difference between a log and a record. A log is for you. A record is
+for the person who has to believe you. Traces answer "what happened?" for the
+team that owns the trace; they don't answer "can a stranger confirm this months
+later?", because the party that ran the agent also holds and can rewrite the
+trace. A capsule is content-addressed and checkable against the capsule format
+([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
+IETF Internet-Draft, not a WG document) by anyone holding the file. The
+producer signature catches whoever alters a record without the producer's key;
+the key holder is constrained by the external checkpoint, below.
+
+## What you get, in three claims
+
+1. **The commitment and its outcome are both in the record — including the
+   calls that raised.** The agent's `call_tool` step is a span; entering it
+   seals a `planned` record, and its exit chains the outcome: a clean
+   `ToolOutput` seals `confirmed`; `is_error`, a raise, or a tool the model
+   named that does not exist seals `failed` (the outcome observed at the span
+   boundary, not the state of the world). Pairing is by span id, which enter,
+   exit and drop share by construction — stronger than the model-supplied
+   `tool_id`, and correct when the agent fans a turn's tool calls out
+   concurrently.
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature binds the record to the key
+   named in it: anyone without that key is caught by arithmetic, not policy —
+   and it names a key, not a person, until you bind that key to the producer
+   through a channel you already trust. The one party neither catches is the
+   key holder, who could re-seal the whole ledger — the external checkpoint is
+   what makes that detectable, as of the last accepted checkpoint — see
+   [Network behavior](#network-behavior).
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+   recomputes every digest and outcome link *and* checks the producer signature on every
+   record — no account, no service, no network. It runs the format's reference
+   payload verifier plus the producer-envelope check; the one check outside it
+   is the ledger's checkpoint against the transparency service — see
+   [Network behavior](#network-behavior).
+
+## The 10-minute proof
+
+The adapter ships a runnable demo — no LLM key, witness off, legacy anchoring pointed at a hermetic local stub,
+four real `FunctionAgent` runs driven by a scripted `FunctionCallingLLM`, so the
+agent workflow, the tool executor, the concurrent fan-out and the
+instrumentation dispatcher are the real thing: parallel tool calls, a raising
+tool, a tool the model invented, and a `return_direct` tool — every record
+verified offline:
+
+```shell
+git clone https://github.com/action-state-group/capsule-emit
+cd capsule-emit
+python -m venv .venv && . .venv/bin/activate
+pip install "capsule-emit[llamaindex]" "llama-index-workflows<2.24"
+python examples/llamaindex-listener/demo.py
+```
+
+The second pin is temporary: on `llama-index-workflows` 2.24.0 (2026-09-16)
+`agent.run()` raises `TypeError: unhashable type: 'FunctionAgent'` before any
+tool runs, with or without this listener installed; on 2.23.x the demo is clean.
+The `[llamaindex]` extra carries the same pin from the next release, and
+[capsule-emit#182](https://github.com/action-state-group/capsule-emit/issues/182)
+tracks lifting it.
+
+You'll watch it seal `planned → confirmed` for `get_price` and `get_stock`
+running concurrently, `planned → failed` for the `submit_order` that raises and
+for the tool the model named that does not exist, and `planned → confirmed` for
+the `return_direct` tool. Ten records, every one `PASS` on offline verify, then
+a fail-closed `capsule-emit evidence` render. The demo seals to a throwaway
+ledger and checks it for you. In your own app the wiring is one line —
+`LlamaIndexCapsuleListener(operator=..., developer=...).install()` — with the
+span contract and options under [Reference](#reference) below.
+
+## Network behavior
+
+By default the listener runs an async **checkpoint/witness** stream: it
+periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
+content** — to a transparency service, and prints a notice before the first
+attempt. That external commitment is what
+makes a re-seal by the key holder detectable, as of the last accepted
+checkpoint — and that comparison is the one check outside offline `verify`. A
+checkpoint goes out every 100 entries or 900 seconds by default, from a
+background thread joined at interpreter exit: records sealed since the last
+accepted checkpoint are covered only once the next one lands, dropping records
+from the end of the ledger is invisible to offline `verify` until then, and a
+process killed before exit never posts its pending checkpoint. The detection
+holds given one honest witness — one that checks each checkpoint against the
+last it accepted; multi-witness bundling, which the default does not do for you,
+is what raises the bar against a dishonest witness. For a first local run with
+**zero egress**, set `CAPSULE_WITNESS=off` — with it off, offline `verify`
+proves internal consistency only, and the anti-re-seal property is the part you
+turned off. The `operator` and `developer` you pass to the listener seal
+into the hash-chained record permanently — use a role/version tag, not personal
+data. Inputs and outputs are sealed as digests: data minimization, not
+confidentiality — a digest of a low-entropy value can be recovered by
+enumeration.
+
+## What it does *not* do (so you can trust the part it does)
+
+- **Integrity, not completeness.** `verify` establishes that the records you have are internally
+  consistent and signed by the key they name. It does **not** prove the tools actually
+  ran, or that every call was recorded — a record nobody wrote leaves no trace.
+  The listener only seals the agent's `call_tool` span; a raw HTTP request an
+  agent makes on the side is never sealed, and a `FunctionTool` called directly
+  outside an agent workflow is not a `call_tool` span. Closing that is a
+  separate consistency check against an independent log.
+- **It records; it never changes the call.** The span handler holds live
+  references to the step's arguments and this listener never mutates them —
+  see [Observation only](#observation-only). Deny belongs to your gate layer.
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field, and
+  the producer signature catches anyone who alters a record without the
+  producer's key. Neither, by itself, stops the key holder from re-sealing the
+  entire chain offline — that's what the external witness is for, and why it
+  defaults on.
+- **Kinds of `verify` — don't conflate them.** Two checks live inside
+  `capsule-emit verify` — the digest recompute and the producer signature — and
+  both run offline. Checking the ledger's checkpoint against the transparency
+  service is outside it, and that is what backs the anti-re-seal property above.
+  Never quote a green `capsule-emit verify` as witness verification, and never
+  read a valid signature as a name: it proves the key in the record signed it,
+  not who holds the key.
+- It is **not** observability, tracing, or a dashboard, and it carries no score,
+  ranking, or reputation — it's the record and the math over it. (If you found
+  this via an "observability integrations" listing: this sits *next to* your
+  traces as the evidence layer, it doesn't replace them.)
+
+---
+
+## Reference
 
 `capsule-emit[llamaindex]` ships `LlamaIndexCapsuleListener` — a span listener
 that seals a planned → outcome chain around every tool call a LlamaIndex agent
@@ -11,8 +144,7 @@ from capsule_emit.adapters.llamaindex_listener import LlamaIndexCapsuleListener
 listener = LlamaIndexCapsuleListener(operator="acme-co", developer="my-agent@v1")
 listener.install()
 
-agent = FunctionAgent(tools=[...], llm=...)
-await agent.run("...")
+# agent = FunctionAgent(tools=[...], llm=...); await agent.run("...")   # your tools and model here
 ```
 
 `install()` registers on LlamaIndex's process-wide instrumentation dispatcher, so
@@ -191,23 +323,14 @@ Sealing logic lives in `LlamaIndexListenerCore`, whose `on_span_enter` /
 is exercised with llama-index import-blocked; the tests that drive a real
 `FunctionAgent` are `importorskip`'d.
 
-## Quickstart
-
-```bash
-pip install "capsule-emit[llamaindex]"
-python examples/llamaindex-listener/demo.py
-```
-
-Hermetic — no LLM key, no live services. It drives four real `FunctionAgent`
-runs (parallel tool calls, a raising tool, a tool the model invented, and a
-`return_direct` tool) against a scripted model, then ends with an offline
-`verify()` over every capsule and a `capsule-emit evidence` render.
-
 ## Version
 
 Every contract above was read from the released wheels, not from docs: the
 `[llamaindex]` extra pins `llama-index-core>=0.14,<0.15`, and `0.14.24` (with
 `llama-index-instrumentation==0.6.0` and `llama-index-workflows==2.23.3`) is the
-version each claim was verified against. The upper pin is deliberately tight —
+version each claim was verified against; the 10-minute proof above was re-run on
+`llama-index-core` 0.14.24 with the released `capsule-emit` 0.8.1 wheel and
+`llama-index-workflows` 2.23.x — 2.24.0 breaks `FunctionAgent.run()` (see the
+proof's pin), which is why the extra now pins below it. The upper pin is deliberately tight —
 the shape-based detection would very likely survive a wider range, but "likely"
 is not a version we have run.
