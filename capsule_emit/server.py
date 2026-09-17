@@ -67,7 +67,10 @@ from __future__ import annotations
 import json
 import os
 
-from mcp.server.fastmcp import FastMCP
+try:  # mcp >= 2 renamed FastMCP to MCPServer
+    from mcp.server.mcpserver import MCPServer as FastMCP
+except ImportError:  # mcp < 2
+    from mcp.server.fastmcp import FastMCP
 
 from capsule_emit import read_ledger, seal
 
