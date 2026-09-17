@@ -1,4 +1,148 @@
-# Microsoft Agent Framework
+# Microsoft Agent Framework adapter — `capsule_middleware`
+
+Your Agent Framework middleware and OpenTelemetry spans tell *you* what your
+agent did. A capsule turns each agent run and each tool call into a record built
+for **someone who doesn't already trust you** — your customer, their CISO, an
+auditor, the other side of a deal — including the calls that raised and the
+calls another middleware refused.
+
+That's the difference between a log and a record. A log is for you. A record is
+for the person who has to believe you. Traces answer "what happened?" for the
+team that owns the trace; they don't answer "can a stranger confirm this months
+later?", because the party that ran the agent also holds and can rewrite the
+trace. A capsule is content-addressed and checkable against the capsule format
+([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
+IETF Internet-Draft, not a WG document) by anyone holding the file. Altering a
+record's content changes its id; the external checkpoint, below, pins the ids
+as of the last accepted checkpoint — for everyone, the key holder included.
+
+## What you get, in three claims
+
+1. **The commitment and its outcome are both in the record — for the run and
+   for each tool call — including the calls that raised and the calls another
+   middleware refused.** Two middleware objects ride the framework's own
+   `Agent(..., middleware=[...])` surface: `CapsuleRunMiddleware` on the agent
+   seam, `CapsuleFunctionMiddleware` on the function seam. Each seals a
+   `planned` record before `call_next()` and chains the outcome after it: a
+   clean return seals `confirmed`; a raise seals `failed` and is re-raised
+   unchanged (the outcome observed at the middleware boundary, not the state of
+   the world); a `MiddlewareTermination` or `MiddlewareFailure` raised by a
+   middleware *downstream* seals `blocked` with the effect left `planned` and
+   `agent_framework_effect_unobservable: true` — this seam cannot tell whether
+   the refusal landed before or after the body ran, so it under-claims. The
+   tool call's records sit inside the run's, and each tool record carries the
+   model the run middleware saw.
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature proves the key named in the
+   record signed that id — and nothing more until you pin the producer's key
+   through a channel you already trust: the signature and key id sit outside
+   the digest, so a ledger re-signed under a fresh key passes offline `verify`
+   and still matches its checkpoint. What constrains everyone, the key holder
+   included, is the external checkpoint, as of the last accepted one — see
+   [Network behavior](#network-behavior).
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+   recomputes every digest and outcome link and checks every producer signature it
+   finds — no account, no service, no network. It runs the format's reference
+   payload verifier plus the producer-envelope check; a record carrying no
+   signature at all is not failed — and the warning is not printed today ([#185](https://github.com/action-state-group/capsule-emit/issues/185)), and the one check outside it
+   is the ledger's checkpoint against the transparency service — see
+   [Network behavior](#network-behavior).
+
+## The 10-minute proof
+
+The adapter ships a runnable demo — no LLM key, no live service, witness off, anchor pointed at a local stub, four real `Agent` runs over a
+scripted `BaseChatClient` composed with the framework's own
+`FunctionInvocationLayer` and `ChatMiddlewareLayer`, so the run loop, the
+function-calling loop and both middleware pipelines are the real thing — every
+record verified offline:
+
+```shell
+git clone https://github.com/action-state-group/capsule-emit
+cd capsule-emit
+python -m venv .venv && . .venv/bin/activate
+pip install "capsule-emit[msft-agent-framework]"
+python examples/msft-agent-framework/demo.py
+```
+
+You'll watch it seal a run pair plus two tool pairs, each `planned → confirmed`
+and chained to its own commitment, for `get_price` and `get_stock` in one turn;
+`planned → failed` for the `submit_order` that raises; `planned → blocked` for
+the order a second middleware denied with `MiddlewareFailure` (the refusal on
+record, marked as somebody else's); and `planned → blocked` with the effect
+marked unobservable for the same deny raised as `MiddlewareTermination`.
+Eighteen records, every one `PASS` on the offline payload verifier (the CLI line adds the
+signature check), then a fail-closed
+`capsule-emit evidence` render. The demo seals to a throwaway ledger and checks
+it for you. In your own agent the wiring is one keyword —
+`Agent(..., middleware=capsule_middleware(operator=..., developer=...))` — with
+the two seams, ordering and options under [Reference](#reference) below.
+
+## Network behavior
+
+By default the middleware runs an async **checkpoint/witness** stream: it
+periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
+content** — to a transparency service, and prints a notice before the first
+attempt. That external commitment is what
+makes a re-seal of the content detectable — by anyone, the key holder
+included — as of the last accepted checkpoint; that comparison is the one check
+outside offline `verify`. A
+checkpoint goes out every 100 entries or 900 seconds by default, from a
+background thread joined at interpreter exit: records sealed since the last
+accepted checkpoint are covered only once the next one lands, dropping records
+from the end of the ledger is invisible to offline `verify` until then, and a
+process killed before exit never posts its pending checkpoint. The detection
+holds given one honest witness — one that checks each checkpoint against the
+last it accepted; multi-witness bundling, which the default does not do for you,
+is what raises the bar against a dishonest witness. For a first local run with
+**zero egress**, set `CAPSULE_WITNESS=off` (the demo does) — with it off,
+offline `verify` proves internal consistency only, and the anti-re-seal
+property is the part you turned off. The `operator` and `developer` you pass to
+`capsule_middleware` seal into the hash-chained record permanently — use a
+role/version tag, not personal data. Inputs and outputs are sealed as digests:
+data minimization, not confidentiality — a digest of a low-entropy value can be
+recovered by enumeration.
+
+## What it does *not* do (so you can trust the part it does)
+
+- **Integrity, not completeness.** `verify` establishes that the records you have are internally
+  consistent and, where a signature is present, signed by the key it names. It does **not** prove the tools actually
+  ran, or that every call was recorded — a record nobody wrote leaves no trace.
+  The middleware only seals what passes through its position in the pipeline:
+  a guard placed *before* it denies a call it never sees, and a raw HTTP
+  request an agent makes on the side is never sealed — see
+  [Ordering is yours to get right](#ordering-is-yours-to-get-right). Closing
+  that is a separate consistency check against an independent log.
+- **A refusal's effect is a floor, not a measurement.** A downstream
+  `MiddlewareTermination` can arrive before or after the tool body ran, and
+  this seam cannot tell which — so the record says `planned`, never
+  `dispatched` — see [What this seam honestly cannot see](#what-this-seam-honestly-cannot-see).
+- **It records; it never changes the call.** The seam is in path — a middleware
+  here *could* substitute `context.result`, edit the tool list or raise — and
+  this one never does; every capsule says so (`observation_mode="in_path_wrapper"`)
+  — see [Observation only](#observation-only). Deny belongs to your gate layer.
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field;
+  the signature catches an altered record only once you know which key to
+  expect. Neither, by itself, stops the holder from re-sealing the entire chain offline — that's what the external witness is for, and why it
+  defaults on.
+- **Kinds of `verify` — don't conflate them.** Two checks live inside
+  `capsule-emit verify` — the digest recompute and the producer signature — and
+  both run offline. Checking the ledger's checkpoint against the transparency
+  service is outside it, and that is what backs the anti-re-seal property above.
+  Never quote a green `capsule-emit verify` as witness verification, and never
+  read a valid signature as a name: it proves the key in the record signed it,
+  not who holds the key — a ledger re-signed under a fresh key passes it, and
+  so does one with the signatures stripped.
+- It is **not** observability, tracing, or a dashboard, and it carries no score,
+  ranking, or reputation — it's the record and the math over it. (If you found
+  this via an "integrations" or "observability" listing: this sits *next to*
+  the framework's OpenTelemetry traces as the evidence layer, it doesn't replace
+  them — see [Relationship to the framework's OpenTelemetry support](#relationship-to-the-frameworks-opentelemetry-support).)
+
+---
+
+## Reference
 
 `capsule-emit[msft-agent-framework]` ships two middleware objects that seal a
 planned → outcome chain around every **agent run** and every **tool call** a
@@ -14,7 +158,8 @@ pip install "capsule-emit[msft-agent-framework]"
 ```
 
 Pinned to `agent-framework-core>=1.16.0,<2`. Every line reference in this page was
-verified against the released **1.16.0** wheel, not the GitHub tree.
+verified against the released **1.16.0** wheel, not the GitHub tree. The 10-minute proof above was
+re-run on **1.18.0** with the released `capsule-emit` 0.8.1 wheel.
 
 ## Register
 
@@ -22,12 +167,13 @@ verified against the released **1.16.0** wheel, not the GitHub tree.
 from agent_framework import Agent
 from capsule_emit.adapters.msft_agent_framework import capsule_middleware
 
-agent = Agent(
-    chat_client,
-    "you are a procurement assistant",
-    tools=[get_price, submit_order],
-    middleware=capsule_middleware(operator="acme-co", developer="my-agent@v1"),
-)
+# agent = Agent(
+#     chat_client,                       # your provider client
+#     "you are a procurement assistant",
+#     tools=[get_price, submit_order],
+#     middleware=capsule_middleware(operator="acme-co", developer="my-agent@v1"),
+# )
+middleware = capsule_middleware(operator="acme-co", developer="my-agent@v1")
 ```
 
 `capsule_middleware()` returns two objects over one shared core:
@@ -38,10 +184,11 @@ The framework's own `categorize_middleware` routes each to its own pipeline by
 Per-run instead of per-agent works the same way:
 
 ```python
-response = await agent.run(prompt, middleware=capsule_middleware(operator="acme-co", developer="a@v1"))
+middleware = capsule_middleware(operator="acme-co", developer="a@v1")
+# response = await agent.run(prompt, middleware=middleware)
 ```
 
-## What you get
+## The moments
 
 | Moment | Capsule |
 |---|---|
@@ -260,7 +407,10 @@ capsule middleware denies a call the capsule middleware never sees — and there
 records. Put the capsule middleware first if you want its refusals on the record:
 
 ```python
-middleware=[*capsule_middleware(operator="acme-co", developer="a@v1"), my_policy_gate]
+def my_policy_gate(context, call_next):   # your own gate, class- or function-style
+    return call_next()
+
+middleware = [*capsule_middleware(operator="acme-co", developer="a@v1"), my_policy_gate]
 ```
 
 ## Model attribution
