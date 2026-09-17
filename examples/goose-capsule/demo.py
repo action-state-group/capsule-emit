@@ -74,7 +74,27 @@ from scitt_cose import verify_receipt
 
 from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
-from capsule_emit.verification import verify_capsule as verify
+from capsule_emit.signing import verify_store_signed
+
+
+def _verify_against_ledger(ledger, capsule_id: str):
+    """Composed digest+signature verify, with the full ledger as store
+    context (needed for cross-record checks like chain-parent lookup —
+    verifying a single capsule in isolation would false-fail those)."""
+    records = read_ledger(ledger)
+    for record, result in zip(records, verify_store_signed(records)):
+        if record.get("capsule_id") == capsule_id:
+            return result
+    raise KeyError(capsule_id)
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 # The demo anchors live by default (CAPSULE_ANCHOR="true" here, unlike the
 # shipped extension's off-by-default in server.py) — --no-anchor still wins.
@@ -132,17 +152,17 @@ def _section(title: str) -> None:
     print(f"\n─── {title} " + "─" * max(0, 66 - len(title)))
 
 
-def _seal_and_anchor(label: str, capsule_id: str, capsule: dict, log_pem: bytes) -> dict:
+def _seal_and_anchor(label: str, capsule_id: str, capsule: dict, log_pem: bytes, ledger) -> dict:
     """Anchor one capsule synchronously and verify every layer.
 
     Returns a record dict with leaf_index/tree_size/audit_path for the
     transcript and permalink construction.
     """
-    vr = verify(capsule)
+    vr = _verify_against_ledger(ledger, capsule_id)
     print(f"  [{label}] capsule_id  : {capsule_id}")
     print(f"  [{label}] action_type : {capsule['action_type']}")
     print(f"  [{label}] verdict     : {capsule['disposition']['verdict_class']}")
-    print(f"  [{label}] verify().ok : {vr.ok}")
+    print(f"  [{label}] verify()    : {_tristate(vr)}")
     assert vr.ok
 
     reg = _anchor_sync(capsule_id)
@@ -337,16 +357,16 @@ with tempfile.TemporaryDirectory() as _tmp:
 
     print("\n[step 6] Verify all capsules (offline — no network needed)")
     all_ok = True
-    for r in records:
-        vr = verify(r)
+    for r, vr in zip(records, verify_store_signed(records)):
         cid = r.get("capsule_id", "?")[:16]
-        status = "ok=True  ✓" if vr.ok else f"ok=False ✗ {[f.detail for f in vr.findings]}"
+        label = _tristate(vr)
+        status = f"{label}  ✓" if vr.ok else f"{label} ✗ {[f.detail for f in vr.findings]}"
         print(f"  {cid}… {status}")
         if not vr.ok:
             all_ok = False
 
-    assert all_ok, "expected all capsules to verify ok=True"
-    print("\n  All capsules verified ok=True.")
+    assert all_ok, "expected all capsules to verify VALID"
+    print("\n  All capsules verified VALID.")
 
     # ── 6. Tamper test — one byte change must break verification ──────────
 
@@ -358,12 +378,14 @@ with tempfile.TemporaryDirectory() as _tmp:
     if output_digest:
         flipped = output_digest[:-1] + ("0" if output_digest[-1] != "0" else "1")
         tampered["model_attestation"]["compute_attestation"]["agent_output_digest"] = flipped
-        vr_bad = verify(tampered)
+        tampered_store = list(records)
+        tampered_store[1] = tampered
+        vr_bad = verify_store_signed(tampered_store)[1]
         print(f"  original  digest:  …{output_digest[-8:]}")
         print(f"  tampered  digest:  …{flipped[-8:]}")
-        print(f"  verify result:     ok={vr_bad.ok}  findings: {[f.detail for f in vr_bad.findings]}")
-        assert not vr_bad.ok, "tampered capsule must not verify ok=True"
-        print("  Tamper detected — ok=False as expected. ✓")
+        print(f"  verify result:     {_tristate(vr_bad)}  findings: {[f.detail for f in vr_bad.findings]}")
+        assert not vr_bad.ok, "tampered capsule must not verify VALID"
+        print("  Tamper detected — INVALID as expected. ✓")
     else:
         print("  (no output_digest found — skipping tamper test)")
 
@@ -374,13 +396,13 @@ with tempfile.TemporaryDirectory() as _tmp:
         _section("Step 8 — live anchor the 3-capsule chain")
         log_pem = _log_pubkey_pem()
         chain_records.append(
-            _seal_and_anchor("1 write_order/submit_order", order1_id, order1.capsule, log_pem)
+            _seal_and_anchor("1 write_order/submit_order", order1_id, order1.capsule, log_pem, ledger)
         )
         chain_records.append(
-            _seal_and_anchor("2 decide/approve_large_order(REJECTED)", decide1_id, decide1.capsule, log_pem)
+            _seal_and_anchor("2 decide/approve_large_order(REJECTED)", decide1_id, decide1.capsule, log_pem, ledger)
         )
         chain_records.append(
-            _seal_and_anchor("3 fyi/escalate_to_manager", escalate1_id, escalate1.capsule, log_pem)
+            _seal_and_anchor("3 fyi/escalate_to_manager", escalate1_id, escalate1.capsule, log_pem, ledger)
         )
         assert all(r["verify_ok"] and r["receipt_ok"] for r in chain_records)
 

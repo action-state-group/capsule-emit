@@ -42,7 +42,16 @@ import tempfile
 import threading
 from datetime import datetime, timezone
 
-from capsule_emit.verification import verify_capsule as verify
+from capsule_emit.signing import verify_store_signed
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 # ---------------------------------------------------------------------------
 # 1. Hermetic stub SCITT TS (mirrors tests/test_anchor_honesty.py)
@@ -186,17 +195,16 @@ def run(ledger: pathlib.Path, anchor_url: str) -> None:
 
 def verify_ledger(ledger: pathlib.Path) -> bool:
     rows = [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
-    print(f"{'action':34} {'effect':10} {'verdict':9} {'chained':8} {'verify()'}")
+    caps = [row["capsule"] if "capsule" in row else row for row in rows]
+    print(f"{'action':34} {'effect':10} {'verdict':9} {'chained':8} {'verify_store_signed()'}")
     print("-" * 75)
     all_ok = True
-    for row in rows:
-        cap = row["capsule"] if "capsule" in row else row
-        result = verify(cap)
+    for cap, result in zip(caps, verify_store_signed(caps)):
         all_ok &= result.ok
         effect = (cap.get("effect") or {}).get("status", "-")
         verdict = (cap.get("disposition") or {}).get("verdict_class", "-")
         chained = "yes" if cap.get("chain") else "-"
-        print(f"{cap['action_id'][:34]:34} {effect:10} {verdict:9} {chained:8} {'OK' if result.ok else 'FAIL'}")
+        print(f"{cap['action_id'][:34]:34} {effect:10} {verdict:9} {chained:8} {_tristate(result)}")
     print("-" * 75)
     print(f"{len(rows)} capsules, verify: {'ALL OK' if all_ok else 'FAILURES'}")
     return all_ok

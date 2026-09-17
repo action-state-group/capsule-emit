@@ -59,7 +59,21 @@ from pathlib import Path
 
 from capsule_emit import ledger_view, read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
-from capsule_emit.verification import verify_capsule as verify
+from capsule_emit.signing import verify_store_signed
+
+
+def verify(capsule: dict):
+    """Composed digest+signature verify for a single capsule."""
+    return verify_store_signed([capsule])[0]
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 LEDGER_PATH = Path(tempfile.mkdtemp()) / "mcp_capsule_ledger.jsonl"
 
@@ -221,7 +235,7 @@ def run_demo(anchor: bool) -> int:
     if not vr.ok:
         print(f"  FAIL — {vr.findings}", file=sys.stderr)
         return 1
-    print("  ✓ verify(capsule).ok — tamper any byte and this fails\n")
+    print(f"  ✓ verify(capsule) = {_tristate(vr)} — tamper any byte and this fails\n")
 
     # -----------------------------------------------------------------------
     # Step 5 — CLI verify (what an auditor runs offline from the bytes)
@@ -252,7 +266,7 @@ def run_demo(anchor: bool) -> int:
 
     records = read_ledger(LEDGER_PATH)
     assert len(records) == 4, f"expected 4 ledger rows, got {len(records)}"
-    assert all(verify(r).ok for r in records), "one or more ledger rows failed verify"
+    assert all(v.ok for v in verify_store_signed(records)), "one or more ledger rows failed verify"
     assert compute.get("runtime") == "mcp", "runtime='mcp' not set in compute_attestation"
 
     chain_digests = [

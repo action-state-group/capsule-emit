@@ -26,7 +26,16 @@ from capsule_emit.approval import list_pending, seal_approval
 from capsule_emit.constraints.apache import AmountUnderCap, VendorKnown
 from capsule_emit.gate import gate_and_emit
 from capsule_emit.ledger import view_chains
-from capsule_emit.verification import verify_capsule as verify
+from capsule_emit.signing import verify_store_signed
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 # ---------------------------------------------------------------------------
 # Setup — temp ledger, no network
@@ -162,15 +171,14 @@ print("✓ blocked capsule no longer in list_pending() after approval")
 print("\nStep 5 — verify both capsules")
 print("-" * 64)
 
-v_blocked = verify(blocked_capsule)
-v_approval = verify(approval_capsule)
+v_blocked, v_approval = verify_store_signed([blocked_capsule, approval_capsule])
 
-print(f"blocked capsule verify  : {v_blocked.ok}")
-print(f"approval capsule verify : {v_approval.ok}")
+print(f"blocked capsule verify  : {_tristate(v_blocked)}")
+print(f"approval capsule verify : {_tristate(v_approval)}")
 
 assert v_blocked.ok, f"Blocked capsule failed verify: {v_blocked}"
 assert v_approval.ok, f"Approval capsule failed verify: {v_approval}"
-print("✓ both capsules verify ok=True")
+print("✓ both capsules verify VALID")
 
 # ---------------------------------------------------------------------------
 # Step 6: full lineage

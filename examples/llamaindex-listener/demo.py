@@ -49,7 +49,16 @@ import tempfile
 import threading
 from typing import Any
 
-from capsule_emit.verification import verify_capsule as verify
+from capsule_emit.signing import verify_store_signed
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 # ---------------------------------------------------------------------------
 # 1. Hermetic stub SCITT TS (mirrors tests/test_anchor_honesty.py)
@@ -283,8 +292,7 @@ def main() -> int:
         caps = [json.loads(line) for line in ledger.read_text().splitlines()]
         print(f"sealed {len(caps)} capsules:")
         ok = True
-        for cap in caps:
-            v = verify(cap)
+        for cap, v in zip(caps, verify_store_signed(caps)):
             ok &= v.ok
             status = cap.get("effect", {}).get("status", "-")
             verdict = cap.get("disposition", {}).get("verdict_class", "-")
@@ -294,7 +302,7 @@ def main() -> int:
             if compute.get("llamaindex_return_direct"):
                 marks = " return-direct"
             print(
-                f"  {'PASS' if v.ok else 'FAIL'}  {cap['action_id'][:34]:36s}"
+                f"  {_tristate(v):17s}  {cap['action_id'][:34]:36s}"
                 f" {status:9s} {verdict:9s} {chained}  {cap['capsule_id'][:12]}…{marks}"
             )
         print(f"\n[step 4] Ledger: {len(caps)} capsule(s) sealed")

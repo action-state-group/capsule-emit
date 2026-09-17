@@ -51,7 +51,28 @@ from cryptography.hazmat.primitives.serialization import (
 from scitt_cose import verify_receipt
 
 from capsule_emit.adapters.dapr_agents import DaprAgentsCapsuleEmitter
-from capsule_emit.verification import verify_capsule as verify
+from capsule_emit.ledger import read_ledger
+from capsule_emit.signing import verify_store_signed
+
+
+def _verify_against_ledger(ledger: pathlib.Path, capsule_id: str):
+    """Composed digest+signature verify, with the full ledger as store
+    context (needed for cross-record checks like chain-parent lookup —
+    verifying a single capsule in isolation would false-fail those)."""
+    records = read_ledger(ledger)
+    for record, result in zip(records, verify_store_signed(records)):
+        if record.get("capsule_id") == capsule_id:
+            return result
+    raise KeyError(capsule_id)
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 ANCHOR = os.environ.get("AAC_ANCHOR_URL", "https://anchor.agentactioncapsule.org").rstrip("/")
 
@@ -99,14 +120,14 @@ def _section(title: str) -> None:
     print(f"\n─── {title} " + "─" * max(0, 66 - len(title)))
 
 
-def _seal_and_anchor(label: str, capsule_id: str, capsule: dict, log_pem: bytes) -> dict:
+def _seal_and_anchor(label: str, capsule_id: str, capsule: dict, log_pem: bytes, ledger: pathlib.Path) -> dict:
     """Anchor one capsule synchronously and verify every layer. Returns a
     record dict suitable for the report (leaf_index, tree_size, permalink data)."""
-    vr = verify(capsule)
+    vr = _verify_against_ledger(ledger, capsule_id)
     print(f"  [{label}] capsule_id  : {capsule_id}")
     print(f"  [{label}] action_type : {capsule['action_type']}")
     print(f"  [{label}] verdict     : {capsule['disposition']['verdict_class']}")
-    print(f"  [{label}] verify().ok : {vr.ok}")
+    print(f"  [{label}] verify()    : {_tristate(vr)}")
     assert vr.ok
 
     reg = _anchor_sync(capsule_id)
@@ -183,7 +204,7 @@ def run_demo() -> dict:
         )
         fyi1 = emitter.last
         fyi1_id = fyi1.capsule_id
-        records.append(_seal_and_anchor("1 fyi/check_invoice", fyi1_id, fyi1.capsule, log_pem))
+        records.append(_seal_and_anchor("1 fyi/check_invoice", fyi1_id, fyi1.capsule, log_pem, ledger))
 
         # ── Capsule 2: decide (HITL DENIAL) ──────────────────────────────
         _section("Step 2 — seal decide capsule (HITL approval: REJECTED)")
@@ -209,7 +230,7 @@ def run_demo() -> dict:
         assert decide_cap["disposition"]["verdict_class"] == "blocked"
         assert decide_cap["effect"]["status"] == "planned"
         assert decide_cap["chain"]["parent_capsule_id"] == fyi1_id
-        records.append(_seal_and_anchor("2 decide/approve_payment(REJECTED)", decide_id, decide_cap, log_pem))
+        records.append(_seal_and_anchor("2 decide/approve_payment(REJECTED)", decide_id, decide_cap, log_pem, ledger))
         print(f"  [2] chained to  : {decide_cap['chain']['parent_capsule_id']}")
 
         # ── Capsule 3: fyi (escalation, chained past the denial) ─────────
@@ -230,7 +251,7 @@ def run_demo() -> dict:
         fyi3 = emitter.last
         fyi3_id = fyi3.capsule_id
         assert fyi3.capsule["chain"]["parent_capsule_id"] == decide_id
-        records.append(_seal_and_anchor("3 fyi/escalate_to_manager", fyi3_id, fyi3.capsule, log_pem))
+        records.append(_seal_and_anchor("3 fyi/escalate_to_manager", fyi3_id, fyi3.capsule, log_pem, ledger))
         print(f"  [3] chained to  : {fyi3.capsule['chain']['parent_capsule_id']}")
 
         # ── Summary ──────────────────────────────────────────────────────
