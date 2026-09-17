@@ -11,9 +11,9 @@ team that owns the trace; they don't answer "can a stranger confirm this months
 later?", because the party that ran the agent also holds and can rewrite the
 trace. A capsule is content-addressed and checkable against the capsule format
 ([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
-IETF Internet-Draft, not a WG document) by anyone holding the file. The
-producer signature catches whoever alters a record without the producer's key;
-the key holder is constrained by the external checkpoint, below.
+IETF Internet-Draft, not a WG document) by anyone holding the file. Altering a
+record's content changes its id; the external checkpoint, below, pins the ids
+as of the last accepted checkpoint — for everyone, the key holder included.
 
 ## What you get, in three claims
 
@@ -31,17 +31,18 @@ the key holder is constrained by the external checkpoint, below.
 2. **Each record is addressed by the digest of its own canonical content, and
    signed.** The digest is self-consistency: anyone holding the file recomputes
    it, so a changed field changes the id and the link from the outcome to its
-   record stops resolving. The producer signature binds the record to the key
-   named in it: anyone without that key is caught by arithmetic, not policy —
-   and it names a key, not a person, until you bind that key to the producer
-   through a channel you already trust. The one party neither catches is the
-   key holder, who could re-seal the whole ledger — the external checkpoint is
-   what makes that detectable, as of the last accepted checkpoint — see
+   record stops resolving. The producer signature proves the key named in the
+   record signed that id — and nothing more until you pin the producer's key
+   through a channel you already trust: the signature and key id sit outside
+   the digest, so a ledger re-signed under a fresh key passes offline `verify`
+   and still matches its checkpoint. What constrains everyone, the key holder
+   included, is the external checkpoint, as of the last accepted one — see
    [Network behavior](#network-behavior).
 3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
-   recomputes every digest and outcome link *and* checks the producer signature on every
-   record — no account, no service, no network. It runs the format's reference
-   payload verifier plus the producer-envelope check; the one check outside it
+   recomputes every digest and outcome link and checks every producer signature it
+   finds — no account, no service, no network. It runs the format's reference
+   payload verifier plus the producer-envelope check; a record carrying no
+   signature at all is not failed — and the warning is not printed today ([#185](https://github.com/action-state-group/capsule-emit/issues/185)), and the one check outside it
    is the ledger's checkpoint against the transparency service — see
    [Network behavior](#network-behavior).
 
@@ -88,8 +89,9 @@ By default the listener runs an async **checkpoint/witness** stream: it
 periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
 content** — to a transparency service, and prints a notice before the first
 attempt. That external commitment is what
-makes a re-seal by the key holder detectable, as of the last accepted
-checkpoint — and that comparison is the one check outside offline `verify`. A
+makes a re-seal of the content detectable — by anyone, the key holder
+included — as of the last accepted checkpoint; that comparison is the one check
+outside offline `verify`. A
 checkpoint goes out every 100 entries or 900 seconds by default, from a
 background thread joined at interpreter exit: records sealed since the last
 accepted checkpoint are covered only once the next one lands, dropping records
@@ -107,7 +109,7 @@ role/version tag, not personal data.
 ## What it does *not* do (so you can trust the part it does)
 
 - **Integrity, not completeness.** `verify` establishes that the records you have are internally
-  consistent and signed by the key they name. It does **not** prove the tools actually
+  consistent and, where a signature is present, signed by the key it names. It does **not** prove the tools actually
   ran, or that every call was recorded — a record nobody wrote leaves no trace.
   The listener only seals calls that pass through Agno's tool-hook chain; a
   raw HTTP request an agent makes on the side is never sealed, a hook
@@ -116,10 +118,9 @@ role/version tag, not personal data.
   hook chain — a `requires_confirmation` tool the user rejects, an
   `external_execution` tool the app runs itself — leaves no record here. Closing that is a separate
   consistency check against an independent log.
-- **Tamper-evidence, not tamper-proof.** The digest catches an altered field, and
-  the producer signature catches anyone who alters a record without the
-  producer's key. Neither, by itself, stops the key holder from re-sealing the
-  entire chain offline — that's what the external witness is for, and why it
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field;
+  the signature catches an altered record only once you know which key to
+  expect. Neither, by itself, stops the holder from re-sealing the entire chain offline — that's what the external witness is for, and why it
   defaults on.
 - **Kinds of `verify` — don't conflate them.** Two checks live inside
   `capsule-emit verify` — the digest recompute and the producer signature — and
@@ -127,7 +128,8 @@ role/version tag, not personal data.
   service is outside it, and that is what backs the anti-re-seal property above.
   Never quote a green `capsule-emit verify` as witness verification, and never
   read a valid signature as a name: it proves the key in the record signed it,
-  not who holds the key.
+  not who holds the key — a ledger re-signed under a fresh key passes it, and
+  so does one with the signatures stripped.
 - It is **not** observability, tracing, or a dashboard, and it carries no score,
   ranking, or reputation — it's the record and the math over it. (If you found
   this via an "observability integrations" listing: this sits *next to* your

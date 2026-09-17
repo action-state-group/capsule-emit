@@ -22,16 +22,16 @@ trace. A capsule is content-addressed and independently checkable, so it can.
 2. **Each record is addressed by the digest of its own canonical content, and
    signed.** The digest is self-consistency: anyone holding the file recomputes
    it, so a changed field changes the id and the link from the outcome to its
-   record stops resolving. The producer signature binds the record to the key
-   named in it: anyone without that key is caught by arithmetic, not policy —
-   and it names a key, not a person, until you bind that key to the producer
-   through a channel you already trust. The one party neither catches is the
-   key holder, who could re-seal the whole ledger — the external checkpoint is
-   what makes that detectable, as of the last accepted checkpoint — see
+   record stops resolving. The producer signature proves the key named in the
+   record signed that id — and nothing more until you pin the producer's key
+   through a channel you already trust: the signature and key id sit outside
+   the digest, so a ledger re-signed under a fresh key passes offline `verify`
+   and still matches its checkpoint. What constrains everyone, the key holder
+   included, is the external checkpoint, as of the last accepted one — see
    [Network behavior](#network-behavior).
 3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
-   recomputes every digest and outcome link *and* checks the producer signature on
-   every record — no account, no service, no network. The one check outside it is
+   recomputes every digest and outcome link and checks every producer signature it
+   finds — no account, no service, no network. A record carrying no signature at all is not failed — and the warning is not printed today ([#185](https://github.com/action-state-group/capsule-emit/issues/185)); the one check outside it is
    the ledger's checkpoint against the transparency service; the Python API for
    each check is under [Verification](#verification).
 
