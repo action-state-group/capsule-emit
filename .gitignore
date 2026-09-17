@@ -10,3 +10,4 @@ build/
 !docs/tutorials/fixtures/**/ledger.jsonl
 # ledger lock files carry a PID/hostname and are never deliverables
 *.jsonl.lock
+*.signing_key.pem
