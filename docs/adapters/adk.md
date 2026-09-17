@@ -1,5 +1,140 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-# Google ADK adapter
+# Google ADK adapter — `ADKCapsuleEmitter`
+
+Your ADK agent's callbacks and event stream tell *you* what it did. A capsule
+turns each tool call that passes the callback or the event tap into a record
+built for **someone who doesn't already trust you** — your customer, their
+CISO, an auditor, the other side of a deal — including the calls a policy
+refused.
+
+That's the difference between a log and a record. A log is for you. A record is
+for the person who has to believe you. Traces answer "what happened?" for the
+team that owns the trace; they don't answer "can a stranger confirm this months
+later?", because the party that ran the agent also holds and can rewrite the
+trace. A capsule is content-addressed and checkable against the capsule format
+([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
+IETF Internet-Draft, not a WG document) by anyone holding the file. The
+producer signature catches whoever alters a record without the producer's key;
+the key holder is constrained by the external checkpoint, below.
+
+## What you get, in three claims
+
+1. **One record per completed call, and one per refusal you route through
+   the adapter.** The adapter seals one `executed` capsule per completed tool
+   call on either observation surface — `after_tool_callback` in-path, or the
+   tap over the `Runner` event stream — and each capsule says which surface
+   observed it (`observation_mode`: `in_path` or `event_stream`). Wrap your
+   policy in `emitter.guard(...)` and a declined call seals a `blocked` capsule
+   *and* returns ADK's short-circuit, so the tool never runs and the refusal is
+   in the record, not just your logs. A tool that raises never reaches the after-callback; wire ADK's
+   `on_tool_error_callback` to `emit_errored` and return `None` from it (a
+   recovery dict makes ADK run the after-callback too, and you get a second record
+   for the same attempt) — the record it seals carries verdict `executed`, the
+   error as output and no effect: it says the attempt raised, not that nothing
+   happened.
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature binds the record to the key
+   named in it: anyone without that key is caught by arithmetic, not policy —
+   and it names a key, not a person, until you bind that key to the producer
+   through a channel you already trust. The one party neither catches is the
+   key holder, who could re-seal the whole ledger — the external checkpoint is
+   what makes that detectable, as of the last accepted checkpoint — see
+   [Network behavior](#network-behavior).
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+   recomputes every digest *and* checks the producer signature on every
+   record — no account, no service, no network. It runs the format's reference
+   payload verifier plus the producer-envelope check; the one check outside it
+   is the ledger's checkpoint against the transparency service — see
+   [Network behavior](#network-behavior).
+
+## The 10-minute proof
+
+The adapter ships a runnable demo — no LLM key, no live service, real ADK
+objects: a `FunctionTool` through the tool callbacks, a policy guard that
+declines an over-limit order, a raise routed through the `on_tool_error_callback` shape, and real
+`Event` objects fed through the event-stream tap out of order the way a
+`ParallelAgent` interleaves them — every record verified offline:
+
+```shell
+git clone https://github.com/action-state-group/capsule-emit
+cd capsule-emit
+python -m venv .venv && . .venv/bin/activate
+pip install "capsule-emit[adk]"
+python examples/adk-capsule/demo.py
+```
+
+You'll watch it seal `executed` for a read-only `get_price` with no effect
+asserted, `executed` with `effect: dispatched` for a `write_order` whose effect
+you declared once at construction, `blocked` for the order the guard refused
+(and the `{'error': 'blocked by …'}` ADK receives instead of running it),
+`executed` with the error as recorded output for the raise, and two
+`event_stream` records paired by function-call id despite the responses
+arriving in the wrong order. Every record `PASS` on offline verify, then a
+fail-closed `capsule-emit evidence` render. The demo seals to a throwaway
+ledger and checks it for you; the wiring for your own agent is under
+[Path 1](#path-1--tool-callbacks) and [Path 2](#path-2--event-stream-tap) below.
+
+## Network behavior
+
+By default the emitter runs an async **checkpoint/witness** stream: it
+periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
+content** — to a transparency service, and prints a notice before the first
+attempt. That external commitment is what
+makes a re-seal by the key holder detectable, as of the last accepted
+checkpoint — and that comparison is the one check outside offline `verify`. A
+checkpoint goes out every 100 entries or 900 seconds by default, from a
+background thread joined at interpreter exit: records sealed since the last
+accepted checkpoint are covered only once the next one lands, dropping records
+from the end of the ledger is invisible to offline `verify` until then, and a
+process killed before exit never posts its pending checkpoint. The detection
+holds given one honest witness — one that checks each checkpoint against the
+last it accepted; multi-witness bundling, which the default does not do for you,
+is what raises the bar against a dishonest witness. For a first local run with **zero egress**, set
+`CAPSULE_WITNESS=off` (the demo does) — with it off, offline `verify` proves
+internal consistency only, and the anti-re-seal property is the part you
+turned off. `operator` and `developer` seal into the record permanently — use
+a role/version tag, not personal data. What the adapter takes from `tool_context` is under
+[What is and isn't recorded](#what-is-and-isnt-recorded).
+
+## What it does *not* do (so you can trust the part it does)
+
+- **Integrity, not completeness.** `verify` establishes that the records you have are internally
+  consistent and signed by the key they name. It does **not** prove the tools actually ran, or
+  that every call was recorded — a record nobody wrote leaves no trace. The
+  emitter seals what passes its callbacks or its event tap; a raw HTTP request
+  an agent makes on the side is never sealed, and a tool that raises on the
+  callback path is sealed only if `on_tool_error_callback` or your `except` calls
+  `emit_errored`. Closing that is a
+  separate consistency check against an independent log.
+- **One record per call, not a planned/outcome pair.** Unlike adapters that
+  see a call before it runs, ADK hands this one a completed call, so it seals
+  the outcome, not a prior commitment; a refusal is a `blocked` record from the
+  guard. Refusals and errors are yours to route, never inferred — see
+  [Refusals](#refusals--blocked--denied) and [Errored tool calls](#errored-tool-calls);
+  effects are declared per tool name, never inferred — see
+  [Effects for consequential tools](#effects-for-consequential-tools).
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field, and
+  the producer signature catches anyone who alters a record without the
+  producer's key. Neither, by itself, stops the key holder from re-sealing the
+  entire ledger offline — that's what the external witness is for, and why it
+  defaults on.
+- **Kinds of `verify` — don't conflate them.** Two checks live inside
+  `capsule-emit verify` — the digest recompute and the producer signature — and
+  both run offline. Checking the ledger's checkpoint against the transparency
+  service is outside it, and that is what backs the anti-re-seal property above.
+  Never quote a green `capsule-emit verify` as witness verification, and never
+  read a valid signature as a name: it proves the key in the record signed it,
+  not who holds the key.
+- It is **not** observability, tracing, or a dashboard, and it carries no
+  score, ranking, or reputation — it's the record and the math over it. (If you
+  found this via an "integrations" listing: this sits *next to* your traces as
+  the evidence layer, it doesn't replace them.)
+
+---
+
+## Reference
 
 `ADKCapsuleEmitter` records one Agent Action Capsule per completed tool call in a
 [Google ADK](https://google.github.io/adk-docs/) agent. It covers **both** ways ADK
@@ -8,12 +143,13 @@ callback-only shim silently emits nothing for the (common) apps that consume the
 event stream and never register callbacks.
 
 ```bash
-pip install capsule-emit google-adk
+pip install "capsule-emit[adk]"
 ```
 
-Developed and verified against `google-adk` 2.3.x on a production deployment. Event
-parsing is version-tolerant (accessor methods, else `content.parts`) to absorb ADK's
-cross-version drift.
+Developed and verified against `google-adk` 2.3.x on a production deployment; the
+10-minute proof above was re-run on `google-adk` 2.9.1 with the released
+`capsule-emit` 0.8.1 wheel. Event parsing is version-tolerant (accessor methods,
+else `content.parts`) to absorb ADK's cross-version drift.
 
 ## Path 1 — tool callbacks
 
@@ -22,6 +158,14 @@ Pass the emitter's bound callbacks to the agent:
 ```python
 from google.adk.agents import LlmAgent
 from capsule_emit.adapters.adk import ADKCapsuleEmitter
+
+def write_order(vendor: str, total_usd: str) -> dict:
+    """Place a purchase order."""
+    return {"po": "PO-7777"}
+
+def lookup_vendor(name: str) -> dict:
+    """Look a vendor up (read-only)."""
+    return {"vendor": name}
 
 emitter = ADKCapsuleEmitter(
     operator="acme-co",                       # accountable tenant
@@ -46,16 +190,20 @@ It returns `None` and never alters the tool response.
 For apps that consume the `Runner` event stream and register no callbacks:
 
 ```python
-async for event in runner.run_async(user_id=uid, session_id=sid, new_message=msg):
-    emitter.tap_event(event)     # emits a capsule per completed tool call
-    ...                          # your own event handling continues
+async def handle(runner, uid, sid, msg):
+    async for event in runner.run_async(user_id=uid, session_id=sid, new_message=msg):
+        emitter.tap_event(event)     # emits a capsule per completed tool call
+        ...                          # your own event handling continues
 ```
 
 Or drain a whole stream (sync or async):
 
 ```python
-await emitter.tap_stream(runner.run_async(...))   # async stream
-emitter.tap_stream(runner.run(...))               # sync stream
+async def drain_async(runner, **kw):
+    await emitter.tap_stream(runner.run_async(**kw))   # async stream
+
+def drain_sync(runner, **kw):
+    emitter.tap_stream(runner.run(**kw))               # sync stream
 ```
 
 `tap_event` pairs function-call parts (args) with function-response parts (result)
@@ -88,7 +236,12 @@ library stays enforcement-neutral — the policy is always yours). The one-liner
 so the tool does not run:
 
 ```python
-agent = LlmAgent(..., before_tool_callback=emitter.guard(policy.allows))
+class policy:
+    @staticmethod
+    def allows(tool_name: str, args: dict) -> bool:   # your policy, not the library's
+        return not (tool_name == "write_order" and float(args.get("total_usd", 0)) > 1000)
+
+before = emitter.guard(policy.allows)   # pass as LlmAgent(..., before_tool_callback=before)
 # guard(pred) calls pred(tool_name, args): truthy -> run; falsy -> seal blocked + block
 ```
 
@@ -107,15 +260,28 @@ A `blocked` / `denied` capsule is the auditor-grade evidence that a gate worked.
 ## Errored tool calls
 
 ADK's `after_tool_callback` fires only after a tool **returns**, so a tool that
-*raises* produces no capsule on the callback path. Seal the failed attempt from your
-own `except` block:
+*raises* produces no capsule on the callback path. ADK does give you the moment:
+wire `on_tool_error_callback` (signature `(tool, args, tool_context, error)`) to
+`emit_errored`, and return `None` from it — if the error callback returns a
+recovery dict, ADK treats the call as succeeded and the after-callback would
+seal a second, `executed` record for the same attempt:
 
 ```python
-try:
-    result = tool(**args)
-except Exception as exc:
-    emitter.emit_errored(tool, args, exc, tool_context)
-    raise
+on_error = lambda tool, args, tool_context, error: emitter.emit_errored(tool, args, error, tool_context)
+# LlmAgent(..., after_tool_callback=emitter.after_tool_callback, on_tool_error_callback=on_error)
+```
+
+Or seal the failed attempt from your own `except` block:
+
+```python
+tool, args, tool_context = write_order, {"vendor": "Frobozz", "total_usd": "5.00"}, None
+
+def call_and_seal():
+    try:
+        return tool(**args)
+    except Exception as exc:
+        emitter.emit_errored(tool, args, exc, tool_context)
+        raise
 ```
 
 The capsule is `executed` (the attempt happened) with the exception recorded as
@@ -123,9 +289,8 @@ output, and **no effect** — a raise must not claim a consequential effect disp
 On the event-stream path, an error-shaped `function_response` is sealed like any
 other output automatically.
 
-Two caveats: on the callback path this is a **manual opt-in** — ADK has no
-"tool raised" callback, so a tool you never wrap in `try/except` leaves its raise
-uncaptured. And an errored capsule still carries verdict `executed` (the attempt is
+Wire neither `on_tool_error_callback` nor an `except` and a raise leaves no
+record. An errored capsule still carries verdict `executed` (the attempt is
 real); an auditor distinguishes it by the error-shaped output, not by the verdict.
 
 ## Emit-error policy
@@ -190,5 +355,10 @@ record layer's health.
 
 ## Verify
 
-Every capsule this adapter emits verifies against the reference verifier — same as
-any other producer. See the repository quickstart for `verify`.
+`capsule-emit verify --store <ledger>.jsonl` runs the format's reference payload
+verifier (every `capsule_id` recomputed from its canonical content) plus the
+producer-envelope check (a COSE_Sign1 signature over that id under the key the
+record names), offline. A green result means each record is internally
+consistent and signed by the key it names — not that the key belongs to a
+particular producer, and not that the ledger's checkpoint was accepted by the
+transparency service; those are the two checks outside it.
