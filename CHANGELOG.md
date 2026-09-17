@@ -49,6 +49,25 @@ fields themselves are unchanged and still populated on every `EmitResult`.
 
 See `tests/test_logged_leaf_repr.py`.
 
+### Changed — dependencies
+
+- `[llamaindex]` extra pins `llama-index-workflows>=2.14,<2.24`. 2.24.0 (2026-09-16)
+  makes `FunctionAgent.run()` raise `TypeError: unhashable type: 'FunctionAgent'` before
+  any tool runs, with or without the listener installed; 2.23.x is clean. #182 tracks
+  lifting the pin.
+
+### Changed — docs
+
+- `docs/adapters/{agno,adk,strands,llamaindex}.md` now open with what the record is for
+  (log vs. record, three claims, a 10-minute proof, network behavior, what it does not do)
+  and carry the previous material under Reference; each proof re-run on the released 0.8.1
+  wheel. New hermetic `examples/adk-capsule/demo.py`.
+- All six adapter pages state what `capsule-emit verify` checks correctly: the payload
+  verifier *and* the producer-envelope signature (`verify_store_signed`, since 0.6.0); the
+  checkpoint comparison against the transparency service is the one check outside it. The
+  signature is described as binding a record to a key, not naming a producer; the default
+  witness cadence and the unwitnessed tail are stated.
+
 ## 0.8.1
 
 ### Added — `seal(..., references=...)`: draft-04 §5.5.5 cross-record citations (#166, [emit-references-seal-plumbing])
