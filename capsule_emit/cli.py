@@ -128,6 +128,12 @@ def _build_parser() -> argparse.ArgumentParser:
     # verify
     verify_p = sub.add_parser("verify", help="verify capsules")
     verify_p.add_argument("--store", dest="store_path", metavar="PATH", help="JSONL ledger to verify")
+    verify_p.add_argument(
+        "--require-signature",
+        action="store_true",
+        help="treat a record with no producer signature (producer_signature_unclaimed)  — for ledgers whose producer always signs."
+        "as INVALID instead of a non-gating warning",
+    )
 
     # status
     status_p = sub.add_parser(
@@ -349,7 +355,7 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     if not records:
         print(f"verify: {path} — empty or not found")
         return 1
-    results = verify_store_signed(records)
+    results = verify_store_signed(records, require_signature=args.require_signature)
     ok_count = sum(1 for r in results if r.ok)
     fail_count = len(results) - ok_count
     for r in results:
@@ -361,6 +367,17 @@ def _cmd_verify(args: argparse.Namespace) -> int:
         ]
         print(f"  {status}  {findings[0] if findings else ''}")
     print(f"\n{ok_count}/{len(results)} VALID" + (f"  — {fail_count} INVALID" if fail_count else ""))
+    unclaimed_count = sum(
+        1
+        for r in results
+        for f in r.findings
+        if f.code == "producer_signature_unclaimed" and f.severity == "warning"
+    )
+    if unclaimed_count:
+        print(
+            f"{unclaimed_count} record(s) carry no producer signature "
+            "(producer_signature_unclaimed)"
+        )
     return 0 if fail_count == 0 else 1
 
 

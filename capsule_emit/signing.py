@@ -485,7 +485,7 @@ def verify_capsule_signature(capsule: dict) -> bool:
     return verdict is AuthorshipVerdict.AUTHORED
 
 
-def verify_store_signed(records: list[dict]) -> list:
+def verify_store_signed(records: list[dict], *, require_signature: bool = False) -> list:
     """``agent_action_capsule.verify_store(records)``, plus the producer
     signature check that verifier deliberately never performs.
 
@@ -522,6 +522,17 @@ def verify_store_signed(records: list[dict]) -> list:
     inventing a new one. Only a claimed-and-failing signature
     (``producer_signature_invalid``, ``severity="error"``) gates ``ok``, the
     same as before.
+
+    ``require_signature=True`` (capsule-emit#185) promotes
+    ``producer_signature_unclaimed`` itself to ``severity="error"`` -- for
+    ledgers whose producer always signs, an attacker who strips the
+    ``signature``/``key_id`` envelope after tampering (recomputing
+    ``capsule_id`` over the stripped content) should not get a quiet pass
+    just because :func:`verify_capsule_signature_tristate` cannot
+    distinguish "never signed" from "signature removed". This is opt-in,
+    not the default: an honestly-unclaimed :func:`capsule_emit.surface.log`
+    entry is a legitimate, expected shape for a mixed ledger, and demoting
+    it to fatal by default would break that case.
     """
     from agent_action_capsule import Finding
 
@@ -547,7 +558,7 @@ def verify_store_signed(records: list[dict]) -> list:
                         f"capsule_id={cid}: no producer signature present -- "
                         "log-verified, authorship not claimed"
                     ),
-                    severity="warning",
+                    severity="error" if require_signature else "warning",
                 )
             )
         result.ok = not any(f.severity == "error" for f in result.findings)

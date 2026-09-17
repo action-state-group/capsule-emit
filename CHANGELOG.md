@@ -4,6 +4,20 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Added — `capsule-emit verify --require-signature` (#185)
+
+- `verify_store_signed(records, *, require_signature=False)` gains the keyword: when true, a
+  record that carries no producer envelope (`producer_signature_unclaimed`) is a failing
+  finding — INVALID, exit 1 — for ledgers whose producer always signs. Default unchanged.
+
+### Changed — `verify` names unsigned records (#185)
+
+- After the `N/M VALID` tally, `capsule-emit verify` prints one line when any record carries
+  no producer signature: `N record(s) carry no producer signature (producer_signature_unclaimed)`.
+  Fully signed ledgers print exactly what they did before.
+
 ## 0.8.2
 
 ### Fixed — agentgateway adapter: a refused `tools/call` left no record and shifted every later pairing by one
