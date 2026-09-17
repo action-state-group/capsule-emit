@@ -19,15 +19,21 @@ trace. A capsule is content-addressed and independently checkable, so it can.
    record (*"proposed, did not happen"*); a guard that *returns* a denial seals
    `confirmed` with the denial in the recorded output. Either way the decision is
    in the record, not just your logs.
-2. **Each record is addressed by the digest of its own bytes.** Change one byte
-   and the id changes and the chain link stops resolving — so anyone *other than
-   the ledger's holder* is caught by arithmetic, not policy. The holder, who
-   could re-seal the whole chain, is caught by the external anchor — see
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature binds the record to the key
+   named in it: anyone without that key is caught by arithmetic, not policy —
+   and it names a key, not a person, until you bind that key to the producer
+   through a channel you already trust. The one party neither catches is the
+   key holder, who could re-seal the whole ledger — the external checkpoint is
+   what makes that detectable, as of the last accepted checkpoint — see
    [Network behavior](#network-behavior).
 3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
-   recomputes the whole chain — no account, no service, no network. That is the
-   chain/structure check; the separate producer-signature check is under
-   [Verification](#verification).
+   recomputes every digest and outcome link *and* checks the producer signature on
+   every record — no account, no service, no network. The one check outside it is
+   the ledger's checkpoint against the transparency service; the Python API for
+   each check is under [Verification](#verification).
 
 ## The 10-minute proof
 
