@@ -1,6 +1,169 @@
-# agentgateway extension
+# agentgateway extension — `CapsuleEmitServicer` (ExtMcp processor)
 
-The hardened `CapsuleEmitServicer` you already know is the foundation of this extension. agentgateway (the 4th AAIF project) is a high-performance Rust proxy for MCP, A2A, LLM, REST, and gRPC traffic. Its native `mcpGuardrails` hook lets an external Python gRPC service inspect or audit every MCP call before it reaches the upstream server — this is where capsule-emit plugs in.
+Your gateway's access log tells *you* what passed through. A capsule turns
+each `tools/call` agentgateway routes into a record built for **someone who
+doesn't already trust you** — your customer, their CISO, an auditor, the other
+side of a deal — including the call a guardrail refused upstream and the call
+the backend answered with an error.
+
+That's the difference between a log and a record. A log is for you. A record is
+for the person who has to believe you. Logs answer "what happened?" for the
+team that owns the log; they don't answer "can a stranger confirm this months
+later?", because the party that ran the gateway also holds and can rewrite the
+log. A capsule is content-addressed and checkable against the capsule format
+([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
+IETF Internet-Draft, not a WG document) by anyone holding the file. Altering a
+record's content changes its id; the external checkpoint, below, pins the ids
+as of the last accepted checkpoint — for everyone, the key holder included.
+
+## What you get, in three claims
+
+1. **The commitment and its outcome are both in the record — and a pairing is
+   asserted only when it is unambiguous.** The processor rides agentgateway's
+   `mcpGuardrails` seam as a remote ExtMcp gRPC service: `CheckRequest` seals a
+   `planned` record the moment the gateway shows it the call — before any later
+   processor, the upstream server, or the transport gets a say — and
+   `CheckResponse` chains the outcome: a normal result seals `confirmed`; a
+   JSON-RPC error or `isError: true` seals `failed` (the outcome at the gateway
+   boundary, not the state of the world). A call that never gets a response —
+   refused by a processor listed after this one, dropped upstream, gateway
+   restarted — leaves its `planned` record as the evidence of the attempt. The
+   proto carries no per-call id, so pairing is by order and only *asserted* when
+   one plan is pending (`ext.agentgateway.pairing = paired`); a stale plan expires after `CAPSULE_AG_PENDING_TTL` seconds (keep it above
+   your slowest tool call: a response arriving after its own plan expired, with
+   one newer plan pending, would be paired to the wrong plan), and with more
+   than one pending the outcome is sealed unchained as `unresolved` naming the candidate
+   plans and the backends the gateway routed to — a guessed pairing would be a
+   false record; an unresolved one is a true one. Only `tools/call` reaches the
+   processor (the `methods` allow-list); every read-only MCP method bypasses it.
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature proves the key named in the
+   record signed that id — and nothing more until you pin the producer's key
+   through a channel you already trust: the signature and key id sit outside
+   the digest, so a ledger re-signed under a fresh key passes offline `verify`
+   and still matches its checkpoint. What constrains everyone, the key holder
+   included, is the external checkpoint, as of the last accepted one — see
+   [Network behavior](#network-behavior).
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+   recomputes every digest and outcome link and checks every producer signature it
+   finds — no account, no service, no network. It runs the format's reference
+   payload verifier plus the producer-envelope check; a record carrying no
+   signature at all is not failed by default — `capsule-emit verify` counts such
+   records in a one-line summary after the tally, and, from the next release, `--require-signature`
+   fails them (`INVALID`, exit 1) for ledgers whose producer always signs ([#185](https://github.com/action-state-group/capsule-emit/issues/185)), and the one check outside it
+   is the ledger's checkpoint against the transparency service — see
+   [Network behavior](#network-behavior).
+
+## The 10-minute proof
+
+The extension ships a runnable demo — no gateway binary, no Rust toolchain, no
+network with the witness off: it drives the ExtMcp gRPC service with the same
+`CheckRequest`/`CheckResponse` sequence agentgateway sends for every
+`tools/call`, so the protocol boundary is the real thing — every record
+verified offline:
+
+```shell
+git clone https://github.com/action-state-group/capsule-emit
+cd capsule-emit
+python -m venv .venv && . .venv/bin/activate
+pip install "capsule-emit[agentgateway]"
+CAPSULE_WITNESS=off python examples/agentgateway-capsule/demo.py
+```
+
+You'll watch `tools/list` seal nothing, `submit_order` and `get_price` each
+seal `planned → confirmed` chained pairs, and a `delete_ledger` the upstream
+refused leave a `planned` record with no outcome — the refusal visible, never
+mispaired. Five records, every one `ok=True` on the offline payload verifier
+(the CLI line adds the signature check), then a tamper test: flip one byte in
+an output digest and verify fails. The demo seals to a throwaway ledger and
+checks it for you. The same behavior was re-executed against the released
+agentgateway **v1.5.0** binary on this package at **0.8.2** — a refused call,
+both processor orderings, the pending-plan TTL, and two overlapping HTTP
+sessions — with every ledger `VALID` under `capsule-emit verify`; the configs
+and what each case sealed are under
+[Running it against a real gateway](#running-it-against-a-real-gateway).
+In your own deployment the wiring is one processor entry under `mcpGuardrails`
+plus three environment variables, under [Reference](#reference) below.
+
+## Network behavior
+
+By default the processor runs an async **checkpoint/witness** stream: it
+periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
+content** — to a transparency service, and prints a notice before the first
+attempt. That external commitment is what
+makes a re-seal of the content detectable — by anyone, the key holder
+included — as of the last accepted checkpoint; that comparison is the one check
+outside offline `verify`. A
+checkpoint goes out every 100 entries or 900 seconds by default, from a
+background thread joined at interpreter exit: records sealed since the last
+accepted checkpoint are covered only once the next one lands, dropping records
+from the end of the ledger is invisible to offline `verify` until then, and a
+process killed before exit never posts its pending checkpoint. The detection
+holds given one honest witness — one that checks each checkpoint against the
+last it accepted; multi-witness bundling, which the default does not do for you,
+is what raises the bar against a dishonest witness. For a first local run with
+**zero egress**, set `CAPSULE_WITNESS=off` — with it off, offline `verify`
+proves internal consistency only, and the anti-re-seal property is the part you
+turned off. `CAPSULE_OPERATOR` and `CAPSULE_DEVELOPER` seal into the
+hash-chained record permanently — use a role/version tag, not personal data — and so does the `subject` you map from `jwt.sub` through `metadata`, which in
+most identity providers is a stable personal identifier: it seals permanently
+with no erasure path, so map a pseudonymous claim if your provider issues one. Tool
+arguments and results are sealed as digests: data minimization, not
+confidentiality — a digest of a low-entropy value can be recovered by
+enumeration. The caller's `authorization` header never reaches the processor
+when you list it under `requestHeaders.disallowed`, as the reference config
+does.
+
+## What it does *not* do (so you can trust the part it does)
+
+- **Integrity, not completeness.** `verify` establishes that the records you have are internally
+  consistent and, where a signature is present, signed by the key it names. It does **not** prove the tools actually
+  ran, or that every call was recorded — a record nobody wrote leaves no trace.
+  The processor sees only the methods you list (today `tools/call`) and only
+  from its position in the processor order: a refusal by a processor listed
+  *before* it never reaches it — see [Pairing design note](#pairing-design-note).
+  Closing that is a separate consistency check against the gateway's own
+  access log, which is what `ext.agentgateway.backends` is sealed for.
+- **Pairing is by order, and it says so.** Two overlapping sessions yield
+  `unresolved` and `unmatched` outcomes with the candidates named, never a
+  false chain; pairing resumes when the overlap ends. A per-call identifier in
+  the proto would make them paired.
+- **Provenance assumes the caller is the gateway; nothing on the wire proves
+  it.** The service listens plaintext on all interfaces by default
+  (`add_insecure_port`), so anyone who can reach the port can seal records with
+  any `subject`. Bind it to the gateway's network and put it behind network
+  policy or mTLS before you show the ledger to a stranger.
+- **It records; it never refuses.** The processor answers every check with
+  `Pass`; deny belongs to the guardrail you list next to it (`failureMode`
+  decides what happens when *this* service is unreachable).
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field;
+  the signature catches an altered record only once you know which key to
+  expect. Neither, by itself, stops the holder from re-sealing the entire
+  chain offline — that's what the external witness is for, and why it
+  defaults on.
+- **Kinds of `verify` — don't conflate them.** Two checks live inside
+  `capsule-emit verify` — the digest recompute and the producer signature — and
+  both run offline. Checking the ledger's checkpoint against the transparency
+  service is outside it, and that is what backs the anti-re-seal property above.
+  Never quote a green `capsule-emit verify` as witness verification, and never
+  read a valid signature as a name: it proves the key in the record signed it,
+  not who holds the key — a ledger re-signed under a fresh key passes it, and
+  so does one with the signatures stripped, unless you pass `--require-signature`
+  (next release).
+- It is **not** observability, tracing, or a dashboard, and it carries no score,
+  ranking, or reputation — it's the record and the math over it. (If you found
+  this via agentgateway's integrations or observability guides: this sits *next
+  to* the gateway's OpenTelemetry traces and access log as the evidence layer,
+  it doesn't replace them.)
+
+---
+
+## Reference
+
+`CapsuleEmitServicer` is the foundation of this extension. agentgateway (an AAIF —
+Agentic AI Foundation — project) is a high-performance Rust proxy for MCP, A2A, LLM, REST, and gRPC traffic. Its native `mcpGuardrails` hook lets an external Python gRPC service inspect or audit every MCP call before it reaches the upstream server — this is where capsule-emit plugs in.
 
 ## How it works
 
@@ -16,12 +179,12 @@ agentgateway (Rust proxy, port 3000)
 ```
 
 **Two records per call.** The planned capsule is sealed the moment the gateway shows the
-call to this processor — before any other processor, the upstream server, or the transport
+call to this processor — before any later processor, the upstream server, or the transport
 gets a say. The outcome capsule is sealed from the response: `effect.status="confirmed"`
 for a normal result, `verdict="errored"` / `effect.status="failed"` when the result is a
 JSON-RPC error or carries `isError: true`; either way it `confirms`-chains to the planned
 capsule. A call that never produces a response — rejected by a guardrail processor listed
-before this one, an upstream transport error, a gateway restart — leaves its planned capsule
+after this one, an upstream transport error, a gateway restart — leaves its planned capsule
 as the record of the attempt instead of nothing. Same shape as the LangChain listener.
 
 **Consequential vs. read-only filter** is handled at the gateway config layer: only `tools/call` is listed in `methods`, so `tools/list`, `resources/read`, and every other read-only MCP method bypass the hook entirely — they never reach capsule-emit.
@@ -91,7 +254,7 @@ Every `tools/call` routed through agentgateway now seals a planned capsule and a
 ## Verify a session
 
 ```sh
-agent-action-capsule verify --store /var/log/capsules.jsonl
+capsule-emit verify --store /var/log/capsules.jsonl
 ```
 
 Or inspect the last 10 capsules:
@@ -144,60 +307,6 @@ a per-call identifier in the proto would make them paired.
 
 > Add the capsule-emit agentgateway extension to our mcpGuardrails config so every tools/call is sealed as an Agent Action Capsule.
 
-## Run the demo
-
-```sh
-pip install "capsule-emit[agentgateway,dev]"
-python examples/agentgateway-capsule/demo.py
-```
-
-Expected output:
-
-```
-============================================================
-agentgateway capsule demo — gRPC → sealed capsule → verify
-============================================================
-
-[step 1] tools/list (read-only) — capsule must NOT be sealed
-  ledger unchanged (0 capsules). ✓
-
-[step 2] tools/call submit_order (consequential) → planned + confirmed capsules
-  planned:   bff6e52286e87449c6bb…  effect.status=planned
-  confirmed: ad985620d916e21d7c8e…  effect.status=confirmed  confirms=bff6e52286e87449c6bb…
-
-[step 3] tools/call get_price (second call) → second planned + confirmed pair
-
-[step 3b] tools/call delete_ledger refused upstream → planned capsule only
-  planned:   c7b57b2639e16eeb62b6…  (no outcome — the refusal is visible)
-
-[step 4] Ledger: 5 capsule(s) sealed
-  bff6e52286e87449… submit_order [executed] effect=planned runtime=agentgateway
-  ad985620d916e21d… submit_order [executed] effect=confirmed runtime=agentgateway
-  494a6a9fc9b21eea… get_price [executed] effect=planned runtime=agentgateway
-  7f3c0dbc4555999b… get_price [executed] effect=confirmed runtime=agentgateway
-  c7b57b2639e16eeb… delete_ledger [executed] effect=planned runtime=agentgateway
-
-[step 5] Verify all capsules (offline — no network needed)
-  bff6e52286e87449… ok=True  ✓
-  ad985620d916e21d… ok=True  ✓
-  494a6a9fc9b21eea… ok=True  ✓
-  7f3c0dbc4555999b… ok=True  ✓
-  c7b57b2639e16eeb… ok=True  ✓
-  All capsules verified ok=True.
-
-[step 6] Tamper test: flip one byte in output digest → verify fails
-  original digest: …3b1201ab
-  tampered digest: …3b1201a0
-  verify result:   ok=False  findings: [… 'recomputed … != carried …']
-  Tamper detected — ok=False as expected. ✓
-
-Demo complete.
-  Verified at: protocol boundary (direct gRPC to ExtMcp service)
-  Same call sequence agentgateway uses for every tools/call.
-```
-
-The demo drives the ExtMcp gRPC service with the same `CheckRequest`/`CheckResponse` sequence agentgateway uses internally — no agentgateway binary or Rust toolchain required to verify the integration.
-
 ## failureMode options
 
 | Mode | Behavior when capsule-emit is unreachable |
@@ -209,7 +318,24 @@ The demo drives the ExtMcp gRPC service with the same `CheckRequest`/`CheckRespo
 
 capsule-emit implements the `agentgateway.dev.ext_mcp.ExtMcp` gRPC service, defined in agentgateway's `ext_mcp.proto`. The Python stubs (`capsule_emit/adapters/ext_mcp_pb2.py`) are committed to the repo and require only `grpcio>=1.60` at runtime.
 
-## Running it against a real gateway (executed 2026-09-14)
+## Running it against a real gateway
+
+_Executed 2026-09-14 on 0.8.1; re-executed 2026-09-17 on the released 0.8.2._
+
+**Re-execution on the released 0.8.2 wheel (2026-09-17, macOS arm64, agentgateway v1.5.0,
+`@modelcontextprotocol/server-everything`, their `manifests/jwt` sample key, `CAPSULE_WITNESS=off`).**
+Four cases, each ledger `VALID` under `capsule-emit verify`:
+
+| case | what was sealed |
+|---|---|
+| recorder listed first; `echo hello` → `echo forbidden` (denied by a second processor) → `echo world` → `no_such_tool` | 7 records: hello planned/confirmed paired; the refused call as `planned` only; the next response sealed `unresolved` (depth 2, both candidates named); `no_such_tool` planned then `errored`/`failed`, chained |
+| recorder listed last, same calls | 4 records: two paired pairs; the refusal never reaches the recorder |
+| recorder first, `CAPSULE_AG_PENDING_TTL=5`, refuse then wait 7 s | 5 records: the orphan expired ("never received a response within 5s; its planned capsule stands as the record"); `echo world` paired to its own plan |
+| two overlapping HTTP sessions | 6 records: `unresolved` (depth 2) and `unmatched` (depth 0) outcomes with candidates and backends sealed, then the next call paired |
+
+`backends=['everything']` and `subject=test-user` on every record. The 2026-09-14 run below was
+on 0.8.1, whose adapter sealed one record per call at the response; its JWT and `metadata`
+findings are unchanged by the adapter fix.
 
 Everything below was executed on macOS arm64 against the released `agentgateway` v1.5.0
 binary, this package at 0.8.1, and `@modelcontextprotocol/server-everything` started by the
