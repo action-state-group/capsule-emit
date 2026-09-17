@@ -62,11 +62,21 @@ See `tests/test_logged_leaf_repr.py`.
   (log vs. record, three claims, a 10-minute proof, network behavior, what it does not do)
   and carry the previous material under Reference; each proof re-run on the released 0.8.1
   wheel. New hermetic `examples/adk-capsule/demo.py`.
-- All six adapter pages state what `capsule-emit verify` checks correctly: the payload
-  verifier *and* the producer-envelope signature (`verify_store_signed`, since 0.6.0); the
+- `docs/adapters/{openai-agents,msft-agent-framework,litellm,mcp,goose,hermes,dapr_agents}.md`
+  converted the same way; hermes and dapr_agents carry inline proofs the docs gate executes.
+- All thirteen adapter pages state what `capsule-emit verify` establishes, verified on the
+  released wheel: the payload verifier plus every producer signature present
+  (`verify_store_signed`, since 0.6.0); a record with no envelope prints VALID (#185); the
   checkpoint comparison against the transparency service is the one check outside it. The
-  signature is described as binding a record to a key, not naming a producer; the default
+  signature and key id sit outside the digest, so the signature proves the key named in the
+  record signed that id and nothing more until the key is pinned out of band; the default
   witness cadence and the unwitnessed tail are stated.
+- `docs/adapters/hermes.md`: the Notes said `after_tool` seals no effect block by default; it
+  seals `dispatched`. Corrected.
+- `docs/adapters/goose.md` and `examples/goose-capsule/server.py` use mcp 2.x `MCPServer`
+  (FastMCP on mcp < 2); the companion server needs `mcp<2` until #184 ports it.
+- `examples/{litellm-listener,mcp-capsule,goose-capsule}/demo.py` set `CAPSULE_WITNESS=off`
+  themselves, as the agno/strands demos do.
 
 ## 0.8.1
 
