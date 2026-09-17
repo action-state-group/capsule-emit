@@ -1,4 +1,140 @@
-# Strands Agents
+# Strands Agents adapter — `StrandsCapsuleListener`
+
+Your Strands hooks tell *you* what your agent did. A capsule turns each tool
+call into a record built for **someone who doesn't already trust you** — your
+customer, their CISO, an auditor, the other side of a deal — including the
+calls that raised and the calls a hook cancelled.
+
+That's the difference between a log and a record. A log is for you. A record is
+for the person who has to believe you. Traces answer "what happened?" for the
+team that owns the trace; they don't answer "can a stranger confirm this months
+later?", because the party that ran the agent also holds and can rewrite the
+trace. A capsule is content-addressed and checkable against the capsule format
+([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
+IETF Internet-Draft, not a WG document) by anyone holding the file. The
+producer signature catches whoever alters a record without the producer's key;
+the key holder is constrained by the external checkpoint, below.
+
+## What you get, in three claims
+
+1. **The commitment and its outcome are both in the record — including the
+   calls that raised and the calls a hook cancelled.** `BeforeToolCallEvent`
+   seals a `planned` record; `AfterToolCallEvent` chains the outcome to it: a
+   clean `ToolResult` seals `confirmed`; an error result or a raise seals
+   `failed` (the outcome observed at the hook boundary, not the state of the
+   world); and when another hook set `cancel_tool` on the before-event, the
+   record seals `blocked` with the effect left `planned` — the SDK does not
+   invoke a cancelled tool, and this listener, which never sets `cancel_tool`,
+   attests that the cancellation was someone else's. Pairing is by the SDK's
+   own `toolUseId`, so it stays correct under the default
+   `ConcurrentToolExecutor`, where every tool call in a turn is its own asyncio
+   task and events interleave freely.
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature binds the record to the key
+   named in it: anyone without that key is caught by arithmetic, not policy —
+   and it names a key, not a person, until you bind that key to the producer
+   through a channel you already trust. The one party neither catches is the
+   key holder, who could re-seal the whole ledger — the external checkpoint is
+   what makes that detectable, as of the last accepted checkpoint — see
+   [Network behavior](#network-behavior).
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+   recomputes every digest and outcome link *and* checks the producer signature on every
+   record — no account, no service, no network. It runs the format's reference
+   payload verifier plus the producer-envelope check; the one check outside it
+   is the ledger's checkpoint against the transparency service — see
+   [Network behavior](#network-behavior).
+
+One thing Strands adds: a hook can set `AfterToolCallEvent.retry` and the
+executor re-runs the call under the *same* `toolUseId`. From the second attempt
+on, the record carries `strands_attempt` and `strands_retry_of` (the previous
+attempt's planned capsule), so two attempts never read as two independent calls.
+
+## The 10-minute proof
+
+The adapter ships a runnable demo — no LLM key, no live service, witness off,
+four real `strands.Agent` runs against a scripted `strands.models.Model`
+subclass, so the event loop, the concurrent executor and the hook registry are
+the real thing: two concurrent tool calls, a raising tool, a call cancelled in
+path by a different hook, and a hook-forced retry — every record verified
+offline:
+
+```shell
+git clone https://github.com/action-state-group/capsule-emit
+cd capsule-emit
+python -m venv .venv && . .venv/bin/activate
+pip install "capsule-emit[strands]"
+python examples/strands-listener/demo.py
+```
+
+You'll watch it seal `planned → confirmed` for `get_price` and `get_stock`
+running concurrently, `planned → failed` for the `submit_order` that raises,
+`planned → blocked` marked `cancelled-by-another-hook` for the order a second
+hook refused (the tool never ran), and two chained pairs for the retried
+`get_price` with the second marked `attempt-2-of` the first. Twelve records,
+every one `PASS` on offline verify, then a fail-closed `capsule-emit evidence`
+render. The demo seals to a throwaway ledger and checks it for you; the one-line
+wiring for your own agent is under [Reference](#reference) below.
+
+## Network behavior
+
+By default the listener runs an async **checkpoint/witness** stream: it
+periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
+content** — to a transparency service, and prints a notice before the first
+attempt. That external commitment is what
+makes a re-seal by the key holder detectable, as of the last accepted
+checkpoint — and that comparison is the one check outside offline `verify`. A
+checkpoint goes out every 100 entries or 900 seconds by default, from a
+background thread joined at interpreter exit: records sealed since the last
+accepted checkpoint are covered only once the next one lands, dropping records
+from the end of the ledger is invisible to offline `verify` until then, and a
+process killed before exit never posts its pending checkpoint. The detection
+holds given one honest witness — one that checks each checkpoint against the
+last it accepted; multi-witness bundling, which the default does not do for you,
+is what raises the bar against a dishonest witness. For a first local run with **zero egress**, set
+`CAPSULE_WITNESS=off` — with it off, offline `verify` proves internal
+consistency only, and the anti-re-seal property is the part you
+turned off.
+The `operator` and `developer` you pass to the listener seal into the
+hash-chained record permanently — use a role/version tag, not personal data.
+Inputs and outputs are sealed as digests: data minimization, not
+confidentiality — a digest of a low-entropy value can be recovered by
+enumeration.
+
+## What it does *not* do (so you can trust the part it does)
+
+- **Integrity, not completeness.** `verify` establishes that the records you have are internally
+  consistent and signed by the key they name. It does **not** prove the tools actually
+  ran, or that every call was recorded — a record nobody wrote leaves no trace.
+  The listener only seals calls that raise `BeforeToolCallEvent` /
+  `AfterToolCallEvent`; a raw HTTP request an agent makes on the side is never
+  sealed, and model calls and multi-agent node events are deliberately not
+  subscribed. Closing that is a separate consistency check against an
+  independent log.
+- **It records refusals; it never makes them.** `cancel_tool` is writable and
+  this listener never writes it — see
+  [Observation only](#observation-only-and-why-that-is-a-choice).
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field, and
+  the producer signature catches anyone who alters a record without the
+  producer's key. Neither, by itself, stops the key holder from re-sealing the
+  entire chain offline — that's what the external witness is for, and why it
+  defaults on.
+- **Kinds of `verify` — don't conflate them.** Two checks live inside
+  `capsule-emit verify` — the digest recompute and the producer signature — and
+  both run offline. Checking the ledger's checkpoint against the transparency
+  service is outside it, and that is what backs the anti-re-seal property above.
+  Never quote a green `capsule-emit verify` as witness verification, and never
+  read a valid signature as a name: it proves the key in the record signed it,
+  not who holds the key.
+- It is **not** observability, tracing, or a dashboard, and it carries no score,
+  ranking, or reputation — it's the record and the math over it. (If you found
+  this via a catalog or "integrations" listing: this sits *next to* your traces
+  as the evidence layer, it doesn't replace them.)
+
+---
+
+## Reference
 
 `capsule-emit[strands]` ships `StrandsCapsuleListener` — a `HookProvider` that
 seals a planned → outcome chain around every tool call a Strands agent makes.
@@ -8,7 +144,7 @@ from strands import Agent
 from capsule_emit.adapters.strands_listener import StrandsCapsuleListener
 
 listener = StrandsCapsuleListener(operator="acme-co", developer="my-agent@v1")
-agent = Agent(model=..., tools=[...], hooks=[listener])
+agent = Agent(model=None, tools=[], hooks=[listener])  # your model and tools here
 ```
 
 `hooks=[...]` is a public `Agent` constructor kwarg (`strands/agent/agent.py`
@@ -168,22 +304,9 @@ Sealing logic lives in `StrandsListenerCore`, whose `on_before_tool_call(event)`
 exercised without strands installed; the tests that drive a real `strands.Agent`
 are `importorskip`'d.
 
-## Quickstart
-
-```bash
-pip install "capsule-emit[strands]"
-python examples/strands-listener/demo.py
-```
-
-Hermetic — no LLM key, no live services. It drives four real `strands.Agent` runs
-against a scripted `strands.models.Model` (the SDK's own test-fixture pattern), so
-the event loop, the concurrent tool executor and the hook registry are all the real
-thing: two concurrent tool calls, a raising tool, a call cancelled in path by a
-different hook, and a hook-forced retry. It then ends with an offline `verify`
-over every capsule and a `capsule-emit evidence` render.
-
 ## Version
 
 The hook contract above was read from the released wheel, not from docs: the
 `[strands]` extra pins `strands-agents>=1.54.0,<2`. The API surface described
-here was verified against `strands-agents` 1.54.0 and holds on the current 1.55.x.
+here was verified against `strands-agents` 1.54.0; the 10-minute proof above was
+re-run on 1.56.0 with the released `capsule-emit` 0.8.1 wheel.
