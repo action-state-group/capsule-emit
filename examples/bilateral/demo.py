@@ -171,14 +171,22 @@ def main(argv: list[str] | None = None) -> int:
     # ── Verify ────────────────────────────────────────────────────────────────
     print("\n[6] Class-1 verify — both capsules")
     from capsule_emit.ledger import read_ledger
-    from capsule_emit.verification import verify_capsule as verify
+    from capsule_emit.signing import verify_store_signed
 
+    def _tristate(result) -> str:
+        """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+        if not result.ok:
+            return "INVALID"
+        if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+            return "UNSIGNED(warning)"
+        return "VALID"
+
+    records = read_ledger(ledger)
     all_ok = True
-    for r in read_ledger(ledger):
-        vr = verify(r)
+    for r, vr in zip(records, verify_store_signed(records)):
         org = r.get("operator", "?")
         role = (r.get("model_attestation") or {}).get("compute_attestation", {}).get("role", "—")
-        status = "ok" if vr.ok else "FAIL"
+        status = _tristate(vr)
         print(f"    [{org}/{role}] {r.get('capsule_id', '')[:20]}...  {status}")
         if not vr.ok:
             all_ok = False

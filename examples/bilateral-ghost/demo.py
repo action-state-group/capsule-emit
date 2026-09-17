@@ -50,7 +50,16 @@ from capsule_emit import read_ledger
 from capsule_emit.bilateral import seal_ghost
 from capsule_emit.gate import run_gate
 from capsule_emit.ledger import append_to_ledger
-from capsule_emit.verification import verify_capsule as verify
+from capsule_emit.signing import verify_store_signed
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 _SEP = "=" * 64
 
@@ -294,15 +303,15 @@ def seal_dj_blocked(
 def _verify_ledger(ledger: Path) -> bool:
     records = read_ledger(ledger)
     all_ok = True
-    for r in records:
-        vr = verify(r)
+    for r, vr in zip(records, verify_store_signed(records)):
         cid = r.get("capsule_id", "?")[:20]
         org = r.get("operator", "?")
         vc = r.get("disposition", {}).get("verdict_class", "?")
         compute = (r.get("model_attestation") or {}).get("compute_attestation", {})
         role = compute.get("role", "?")
         asym = compute.get("asymmetry")
-        status_str = "ok=True" if vr.ok else f"ok=False  findings={[f.detail for f in vr.findings]}"
+        label = _tristate(vr)
+        status_str = label if vr.ok else f"{label}  findings={[f.detail for f in vr.findings]}"
         suffix = f"  asymmetry={asym}" if asym else ""
         print(f"  [{org}/{role}] {cid}...  verdict={vc}  {status_str}{suffix}")
         if not vr.ok:

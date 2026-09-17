@@ -38,7 +38,16 @@ import grpc
 from capsule_emit import read_ledger
 from capsule_emit.adapters import ext_mcp_pb2
 from capsule_emit.adapters.agentgateway import CapsuleEmitServicer, _make_server
-from capsule_emit.verification import verify_capsule as verify
+from capsule_emit.signing import verify_store_signed
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 
 def _free_port() -> int:
@@ -179,15 +188,15 @@ def main():
         # ── Step 4: Verify all capsules ───────────────────────────────────────
         print("\n[step 5] Verify all capsules (offline — no network needed)")
         all_ok = True
-        for r in records:
-            vr = verify(r)
+        for r, vr in zip(records, verify_store_signed(records)):
             cid = r.get("capsule_id", "?")[:16]
-            status = "ok=True  ✓" if vr.ok else f"ok=False ✗ {[f.detail for f in vr.findings]}"
+            label = _tristate(vr)
+            status = f"{label}  ✓" if vr.ok else f"{label} ✗ {[f.detail for f in vr.findings]}"
             print(f"  {cid}… {status}")
             if not vr.ok:
                 all_ok = False
-        assert all_ok, "expected all capsules ok=True"
-        print("  All capsules verified ok=True.")
+        assert all_ok, "expected all capsules VALID"
+        print("  All capsules verified VALID.")
 
         # ── Step 5: Tamper one byte → verify must fail ────────────────────────
         print("\n[step 6] Tamper test: flip one byte in output digest → verify fails")
@@ -199,12 +208,14 @@ def main():
         if output_digest:
             flipped = output_digest[:-1] + ("0" if output_digest[-1] != "0" else "1")
             tampered["model_attestation"]["compute_attestation"]["agent_output_digest"] = flipped
-            vr_bad = verify(tampered)
+            tampered_store = list(records)
+            tampered_store[1] = tampered
+            vr_bad = verify_store_signed(tampered_store)[1]
             print(f"  original digest: …{output_digest[-8:]}")
             print(f"  tampered digest: …{flipped[-8:]}")
-            print(f"  verify result:   ok={vr_bad.ok}  findings: {[f.detail for f in vr_bad.findings]}")
-            assert not vr_bad.ok, "tampered capsule must not verify ok=True"
-            print("  Tamper detected — ok=False as expected. ✓")
+            print(f"  verify result:   {_tristate(vr_bad)}  findings: {[f.detail for f in vr_bad.findings]}")
+            assert not vr_bad.ok, "tampered capsule must not verify VALID"
+            print("  Tamper detected — INVALID as expected. ✓")
 
         channel.close()
         server.stop(grace=0)

@@ -41,7 +41,16 @@ from google.adk.tools import FunctionTool  # noqa: E402
 from google.genai import types  # noqa: E402
 
 from capsule_emit.adapters.adk import ADKCapsuleEmitter  # noqa: E402
-from capsule_emit.verification import verify_capsule as verify  # noqa: E402
+from capsule_emit.signing import verify_store_signed  # noqa: E402
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 
 def get_price(sku: str) -> dict:
@@ -124,14 +133,14 @@ def main() -> int:
 
         caps = [json.loads(line) for line in ledger.read_text().splitlines()]
         print(f"\nsealed {len(caps)} capsules:")
+        results = verify_store_signed(caps)
         ok = True
-        for cap in caps:
-            v = verify(cap)
+        for cap, v in zip(caps, results):
             ok &= v.ok
             compute = cap.get("model_attestation", {}).get("compute_attestation", {})
             effect = (cap.get("effect") or {}).get("status", "-")
             print(
-                f"  {'PASS' if v.ok else 'FAIL'}  {cap['action_id'][:30]:32s} "
+                f"  {_tristate(v):17s}  {cap['action_id'][:30]:32s} "
                 f"{cap['disposition']['verdict_class']:9s} effect={effect:11s} "
                 f"observed={compute.get('observation_mode', '-'):13s} {cap['capsule_id'][:12]}…"
             )

@@ -20,7 +20,21 @@ import tempfile
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 from capsule_emit.constraints.apache import AmountUnderCap, VendorKnown
 from capsule_emit.gate import GateBlockedError, gate_and_emit
-from capsule_emit.verification import verify_capsule as verify
+from capsule_emit.signing import verify_store_signed
+
+
+def verify(capsule: dict):
+    """Composed digest+signature verify for a single capsule."""
+    return verify_store_signed([capsule])[0]
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 # ---------------------------------------------------------------------------
 # Shared emitter (anchor=False — no network call in the demo)
@@ -75,7 +89,7 @@ assert len(gate_checks_1) == 2
 
 v1 = verify(capsule_1)
 assert v1.ok, f"Capsule did not verify: {v1}"
-print(f"verify     : {v1.ok} (ok)")
+print(f"verify     : {_tristate(v1)}")
 
 # ---------------------------------------------------------------------------
 # Case 2: Blocked with callback
@@ -134,7 +148,7 @@ assert not all(c["passed"] for c in gate_checks_2), "Not all checks should pass"
 
 v2 = verify(capsule_2)
 assert v2.ok, f"Blocked capsule did not verify: {v2}"
-print(f"verify     : {v2.ok} (ok)")
+print(f"verify     : {_tristate(v2)}")
 
 # ---------------------------------------------------------------------------
 # MCP section: @emitter.tool(constraints=[...])
@@ -167,8 +181,9 @@ print(f"gate_checks: {json.dumps(mcp_ca['gate_checks'], indent=2)}")
 
 assert "gate_checks" in mcp_ca
 assert all(c["passed"] for c in mcp_ca["gate_checks"])
-assert verify(mcp_emitter.last.capsule).ok
-print("verify: ok")
+v_mcp = verify(mcp_emitter.last.capsule)
+assert v_mcp.ok
+print(f"verify: {_tristate(v_mcp)}")
 
 print()
 print("=" * 60)
@@ -200,7 +215,7 @@ assert mcp_block_emitter.last is not None
 assert mcp_block_emitter.last.capsule["disposition"]["verdict_class"] == "blocked"
 assert len(mcp_block_calls) == 1
 print(f"on_block fired: action={mcp_block_calls[0][0]!r}")
-print(f"verify: {verify(mcp_block_emitter.last.capsule).ok} (ok)")
+print(f"verify: {_tristate(verify(mcp_block_emitter.last.capsule))}")
 
 print()
 print("=" * 60)

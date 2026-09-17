@@ -55,7 +55,16 @@ os.environ.setdefault("CAPSULE_WITNESS", "off")  # zero egress for the demo; see
 
 os.environ.setdefault("LITELLM_LOG", "ERROR")
 
-from capsule_emit.verification import verify_capsule as verify  # noqa: E402
+from capsule_emit.signing import verify_store_signed  # noqa: E402
+
+
+def _tristate(result) -> str:
+    """VALID / INVALID / UNSIGNED(warning) — digest+signature, not payload alone."""
+    if not result.ok:
+        return "INVALID"
+    if any(f.code == "producer_signature_unclaimed" for f in result.findings):
+        return "UNSIGNED(warning)"
+    return "VALID"
 
 DOTTED = "capsule_emit.adapters.litellm_listener.proxy_handler_instance"
 
@@ -236,8 +245,7 @@ def main() -> int:
         print(f"sealed {len(caps)} capsules:")
         ok = True
         digests = {}
-        for cap in caps:
-            v = verify(cap)
+        for cap, v in zip(caps, verify_store_signed(caps)):
             ok &= v.ok
             status = cap.get("effect", {}).get("status", "-")
             chained = "chained" if (cap.get("chain") or {}).get("parent_capsule_id") else "  --  "
@@ -250,7 +258,7 @@ def main() -> int:
             if compute.get("agent_input_digest"):
                 digests.setdefault(compute["agent_input_digest"], []).append(status)
             print(
-                f"  {'PASS' if v.ok else 'FAIL'}  {cap['action_id'][:32]:34s}"
+                f"  {_tristate(v):17s}  {cap['action_id'][:32]:34s}"
                 f" {status:9s} {chained}  {cap['capsule_id'][:12]}…{note}"
             )
 
