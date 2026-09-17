@@ -21,14 +21,19 @@ outside your control — so it can.
    (*"proposed, did not happen"*). If a guard instead *returns* a denial,
    `ToolUsageFinishedEvent` fires and it seals `confirmed` with the denial in the
    recorded output. Either way the decision is in the record, not just your logs.
-2. **Each record is addressed by the digest of its canonical form.** Change the
-   content and the id changes and the chain link stops resolving — so anyone *other than the
-   ledger's holder* is caught by arithmetic, not policy. The holder, who could
-   re-seal the whole chain, is caught by the external anchor (see [Network
-   behavior](#network-behavior)), not by the local check.
+2. **Each record is addressed by the digest of its own canonical content, and
+   signed.** The digest is self-consistency: anyone holding the file recomputes
+   it, so a changed field changes the id and the link from the outcome to its
+   record stops resolving. The producer signature proves the key named in the
+   record signed that id — and nothing more until you pin the producer's key
+   through a channel you already trust: the signature and key id sit outside
+   the digest, so a ledger re-signed under a fresh key passes offline `verify`
+   and still matches its checkpoint. What constrains everyone, the key holder
+   included, is the external checkpoint, as of the last accepted one — see
+   [Network behavior](#network-behavior).
 3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
-   recomputes every digest and outcome link *and* checks the producer signature on
-   every record — no account, no service, no network. The one check outside it is
+   recomputes every digest and outcome link and checks every producer signature it
+   finds — no account, no service, no network. A record carrying no signature at all is not failed — and the warning is not printed today ([#185](https://github.com/action-state-group/capsule-emit/issues/185)); the one check outside it is
    the ledger's checkpoint against the transparency service.
 
 ## The 10-minute proof
@@ -71,17 +76,19 @@ not personal data.
   seals calls that go through CrewAI's tool bus; a direct MCP-client call or a raw HTTP
   request an agent makes on the side is never sealed. Closing that is a separate
   consistency check against an independent log.
-- **Tamper-evidence, not tamper-proof.** The content-addressing catches any change to a
-  *sealed* record by anyone who isn't the ledger holder. It does **not**, by itself,
-  stop the holder from re-sealing the entire chain offline — that's what the external
-  anchor/witness is for, and why it defaults on.
+- **Tamper-evidence, not tamper-proof.** The digest catches an altered field;
+  the signature catches an altered record only once you know which key to
+  expect. Neither, by itself, stops the holder from re-sealing the entire
+  chain offline — that's what the external witness is for, and why it
+  defaults on.
 - **Kinds of `verify` — don't conflate them.** Two checks live inside
   `capsule-emit verify` — the digest recompute and the producer signature — and
   both run offline. Checking the ledger's checkpoint against the transparency
   service is outside it, and that is what backs the anti-re-seal property above.
   Never quote a green `capsule-emit verify` as witness verification, and never
   read a valid signature as a name: it proves the key in the record signed it,
-  not who holds the key.
+  not who holds the key — a ledger re-signed under a fresh key passes it, and
+  so does one with the signatures stripped.
 - It is **not** observability, tracing, or a dashboard, and it carries no score,
   ranking, or reputation — it's the record and the math over it. (If you found this via
   an "observability integrations" listing: this sits *next to* your traces as the
