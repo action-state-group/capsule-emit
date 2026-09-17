@@ -52,8 +52,11 @@ def _ca(result) -> dict:
 
 
 def test_server_module_importable():
-    """capsule_emit.server imports without error and creates an FastMCP instance."""
-    from mcp.server.fastmcp import FastMCP
+    """capsule_emit.server imports without error and creates a server instance."""
+    try:  # mcp >= 2 renamed FastMCP to MCPServer
+        from mcp.server.mcpserver import MCPServer as FastMCP
+    except ImportError:  # mcp < 2
+        from mcp.server.fastmcp import FastMCP
 
     assert isinstance(_server_module.mcp, FastMCP)
 
