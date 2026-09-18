@@ -64,8 +64,7 @@ python examples/goose-capsule/demo.py --no-anchor
 You'll watch it seal `get_price` and `submit_order` as `executed`, a large order a *simulated* approval gate rejected as `blocked` (the refusal
 is one your server records — a denial Goose makes on its own side never
 reaches the extension), and the escalation to
-a manager that chains to that refusal. Four records, every one `ok=True` on the offline payload verifier (the CLI line adds the
-signature check),
+a manager that chains to that refusal. Four records, every one `VALID` under the offline composed check (digest recompute and producer signature),
 then a tamper test: flip one byte in an output digest and verify fails. The demo
 seals to a throwaway ledger and checks it for you. Handing the real extension to
 Goose is a `config.yaml` stanza, under [Reference](#reference) below; the

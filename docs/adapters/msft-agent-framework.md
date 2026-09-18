@@ -74,8 +74,7 @@ and chained to its own commitment, for `get_price` and `get_stock` in one turn;
 the order a second middleware denied with `MiddlewareFailure` (the refusal on
 record, marked as somebody else's); and `planned → blocked` with the effect
 marked unobservable for the same deny raised as `MiddlewareTermination`.
-Eighteen records, every one `PASS` on the offline payload verifier (the CLI line adds the
-signature check), then a fail-closed
+Eighteen records, every one `VALID` under the offline composed check (digest recompute and producer signature), then a fail-closed
 `capsule-emit evidence` render. The demo seals to a throwaway ledger and checks
 it for you. In your own agent the wiring is one keyword —
 `Agent(..., middleware=capsule_middleware(operator=..., developer=...))` — with

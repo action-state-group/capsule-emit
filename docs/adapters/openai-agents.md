@@ -74,8 +74,7 @@ seen by the processor, where `span.error` is authoritative; `planned →
 confirmed` for the *same* raising tool seen by the hooks, with `verdict_note`
 saying it records a return, not a success; and a run with sensitive data off,
 where the payload is absent and recorded as absent (`payload_withheld: true`),
-never passed off as empty. Ten records, every one `PASS` on the offline payload verifier (the CLI line adds the
-signature check),
+never passed off as empty. Ten records, every one `VALID` under the offline composed check (digest recompute and producer signature),
 then a fail-closed `capsule-emit evidence` render. The demo seals to a
 throwaway ledger and checks it for you. In your own app the wiring is one line
 per surface — `set_trace_processors([OpenAIAgentsCapsuleProcessor(operator=..., developer=...)])`

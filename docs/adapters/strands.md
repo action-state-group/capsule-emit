@@ -76,8 +76,7 @@ running concurrently, `planned → failed` for the `submit_order` that raises,
 `planned → blocked` marked `cancelled-by-another-hook` for the order a second
 hook refused (the tool never ran), and two chained pairs for the retried
 `get_price` with the second marked `attempt-2-of` the first. Twelve records,
-every one `PASS` on the offline payload verifier (the CLI line adds the
-signature check), then a fail-closed `capsule-emit evidence`
+every one `VALID` under the offline composed check (digest recompute and producer signature), then a fail-closed `capsule-emit evidence`
 render. The demo seals to a throwaway ledger and checks it for you; the one-line
 wiring for your own agent is under [Reference](#reference) below.
 
