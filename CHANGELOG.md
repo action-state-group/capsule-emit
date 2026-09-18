@@ -25,6 +25,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
   else changes. A stdio smoke test drives `python -m capsule_emit.server` with the SDK's own
   client under whichever mcp major is installed.
 
+### Changed — example demos verify with the composed check (#185 follow-up)
+
+- Every `examples/*/demo.py` now verifies through `capsule_emit.signing.verify_store_signed`
+  and prints a tristate per record — `VALID` / `INVALID` / `UNSIGNED(warning)` — instead of the
+  payload verifier's boolean. Records built with `agent_action_capsule.emit()` directly (two
+  interop demos) now show `UNSIGNED` instead of an indistinguishable `PASS`. Chained capsules are
+  verified against the full ledger, never a one-element list (a singleton store produced a false
+  `chain_parent_missing` on three demos during the change).
+
 ## 0.8.2
 
 ### Fixed — agentgateway adapter: a refused `tools/call` left no record and shifted every later pairing by one
