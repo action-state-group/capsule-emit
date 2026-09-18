@@ -72,8 +72,7 @@ You'll watch it decorate a tool and seal a record per call, capture the tool
 manifest so each record carries `ext.mcp.toolset_digest`, then swap a tool's
 description after the fact and watch the digest change land as a boundary
 between adjacent records (the tool-description-swap attack described in published MCP security
-guidance). Every record passes the offline payload verifier, and the demo prints the
-`capsule-emit verify --store` line that adds the signature check. In your own
+guidance). Every record is `VALID` under the offline composed check (digest recompute and producer signature), and the demo prints the `capsule-emit verify --store` line to run yourself. In your own
 server the wiring is one constructor and one decorator per consequential tool,
 under [Reference](#reference) below.
 

@@ -77,7 +77,7 @@ for `submit_order` (sealed as evidence, then the `RuntimeError` propagates as
 Agno would raise it), and `planned → confirmed` marked `replay-of` for the
 cached repeat — the demo's own counter shows the tool body ran once for two
 `get_price` calls; the record shows only that an identical call was already
-confirmed. Every record `PASS` on offline verify, then a fail-closed
+confirmed. Every record `VALID` under the offline composed check (digest recompute and producer signature), then a fail-closed
 `capsule-emit evidence` render. The demo seals to a throwaway ledger and checks
 it for you. In your own agent the wiring is one line —
 `Agent(..., tool_hooks=[listener.hook])` for `run`, `tool_hooks=[listener.async_hook]`

@@ -73,8 +73,7 @@ tracks lifting it.
 You'll watch it seal `planned → confirmed` for `get_price` and `get_stock`
 running concurrently, `planned → failed` for the `submit_order` that raises and
 for the tool the model named that does not exist, and `planned → confirmed` for
-the `return_direct` tool. Ten records, every one `PASS` on the offline payload verifier (the CLI line adds the
-signature check), then
+the `return_direct` tool. Ten records, every one `VALID` under the offline composed check (digest recompute and producer signature), then
 a fail-closed `capsule-emit evidence` render. The demo seals to a throwaway
 ledger and checks it for you. In your own app the wiring is one line —
 `LlamaIndexCapsuleListener(operator=..., developer=...).install()` — with the

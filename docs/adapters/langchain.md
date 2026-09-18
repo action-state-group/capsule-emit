@@ -52,8 +52,7 @@ python examples/langchain-listener/demo.py
 ```
 
 You'll watch it seal `planned → confirmed` for the call that works and
-`planned → failed` for the one that raises, each record `PASS` on offline
-verify, and a fail-closed `capsule-emit evidence` render. The demo seals to a
+`planned → failed` for the one that raises, each record `VALID` under the offline composed check (digest recompute and producer signature), and a fail-closed `capsule-emit evidence` render. The demo seals to a
 throwaway ledger and checks it for you; the step-by-step version of that code —
 and how to keep a ledger of your own — is under [Example](#example) below.
 

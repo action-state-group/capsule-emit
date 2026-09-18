@@ -74,7 +74,7 @@ you declared once at construction, `blocked` for the order the guard refused
 (and the `{'error': 'blocked by …'}` ADK receives instead of running it),
 `executed` with the error as recorded output for the raise, and two
 `event_stream` records paired by function-call id despite the responses
-arriving in the wrong order. Every record `PASS` on offline verify, then a
+arriving in the wrong order. Every record `VALID` under the offline composed check (digest recompute and producer signature), then a
 fail-closed `capsule-emit evidence` render. The demo seals to a throwaway
 ledger and checks it for you; the wiring for your own agent is under
 [Path 1](#path-1--tool-callbacks) and [Path 2](#path-2--event-stream-tap) below.

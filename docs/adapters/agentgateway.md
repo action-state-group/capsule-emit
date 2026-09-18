@@ -75,8 +75,7 @@ CAPSULE_WITNESS=off python examples/agentgateway-capsule/demo.py
 You'll watch `tools/list` seal nothing, `submit_order` and `get_price` each
 seal `planned → confirmed` chained pairs, and a `delete_ledger` the upstream
 refused leave a `planned` record with no outcome — the refusal visible, never
-mispaired. Five records, every one `ok=True` on the offline payload verifier
-(the CLI line adds the signature check), then a tamper test: flip one byte in
+mispaired. Five records, every one `VALID` under the offline composed check (digest recompute and producer signature), then a tamper test: flip one byte in
 an output digest and verify fails. The demo seals to a throwaway ledger and
 checks it for you. The same behavior was re-executed against the released
 agentgateway **v1.5.0** binary on this package at **0.8.2** — a refused call,

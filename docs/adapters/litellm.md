@@ -76,8 +76,7 @@ confirmed` for a call behind a redaction callback, where the digest commits to
 the *redacted* prompt; and `planned → failed` for an upstream 503, driven directly into the
 proxy's failure hook (the demo calls `async_post_call_failure_hook` itself),
 with the prompt withheld and the hook returning `None`, never rewriting the
-client's error. Six records, every one `PASS` on the offline payload verifier (the CLI line adds the
-signature check), then a `capsule-emit evidence` render — and no prompt text ever
+client's error. Six records, every one `VALID` under the offline composed check (digest recompute and producer signature), then a `capsule-emit evidence` render — and no prompt text ever
 left the process. The demo seals to a throwaway ledger and checks it for you. In
 your own proxy the wiring is one `config.yaml` line —
 `callbacks: ["capsule_emit.adapters.litellm_listener.proxy_handler_instance"]`
