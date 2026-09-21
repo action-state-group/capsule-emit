@@ -115,7 +115,12 @@ value can be recovered by enumeration.
   wrote leaves no trace. The listener seals what the proxy's two hooks hand it:
   a failure on the pure SDK path (`litellm.completion` with no proxy) surfaces
   through a hook this adapter does not implement and seals nothing — see
-  [Coverage gap, stated](#coverage-gap-stated). Closing that is a separate
+  [Coverage gap, stated](#coverage-gap-stated). A stream the client abandons
+  mid-response reaches the success hook as a *partial* response that litellm
+  bills as a success and marks `client_disconnected`; the listener seals that
+  record `dispatched`, never `confirmed`, and stamps
+  `response_completeness: partial` — a truncated stream is never recorded as a
+  completed one. Closing the rest is a separate
   consistency check against an independent log.
 - **No pre-execution commitment.** The `planned` record is written from the
   completed call's log record; it asserts no execution and carries no timing
@@ -342,6 +347,26 @@ failures surface through `async_log_failure_event` instead, which this adapter
 does **not** implement — so an SDK-only failure seals no capsule at all. That is
 a deliberate scope boundary, not a check that passed. If you need SDK-side
 failures recorded, that is a one-method addition and should be asked for.
+
+A **client disconnect mid-stream** is a third case. litellm's stream generator
+gets `GeneratorExit`/`CancelledError`, so neither hook fires by name; litellm
+then assembles a partial response from the chunks that went out and dispatches
+a *success* event for billing, stamped `metadata.client_disconnected = True`
+(error code 499). The listener reads that stamp: the outcome record seals with
+effect status `dispatched` instead of `confirmed`, and `compute_attestation`
+carries `client_disconnected: true` and `response_completeness: partial`, both
+inside the digest. A genuine post-first-token upstream failure is different —
+litellm routes that one to `async_post_call_failure_hook`, and it seals
+`failed` like any other failure.
+
+One trust boundary to know: the stamp is proxy-side metadata that litellm
+seeds from the request body's own `metadata`, so a caller holding a proxy key
+can set `client_disconnected` itself. That can only *understate* its own call
+(record a complete stream as partial), never overstate one; the listener
+trusts litellm's stamp and records what it says. litellm 1.101.0 writes the
+stamp to `model_call_details.metadata` and `litellm_params.metadata`; the
+listener also reads `litellm_params.litellm_metadata` for routes that carry
+request metadata there.
 
 ## Testing without litellm
 

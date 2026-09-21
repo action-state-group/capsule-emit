@@ -144,6 +144,37 @@ WITHHELD_REASON = (
 #: :data:`_PROMPT_FIELDS`.
 _REQUEST_FIELDS = ("model", "call_type", "user", "stream")
 
+def _client_disconnected(kwargs: dict) -> bool:
+    """True when litellm raised this success event for a stream the client abandoned.
+
+    A mid-stream client disconnect throws ``GeneratorExit``/``CancelledError``
+    into the proxy's stream generator, so neither the success nor the failure
+    hook fires by name. litellm then assembles a **partial** response from the
+    chunks that did go out and dispatches a success-shaped event for billing,
+    stamping ``metadata.client_disconnected = True`` (error code 499) on the
+    call details. That event must not seal as a confirmed completion.
+
+    Trust boundary: this is proxy-side metadata, and litellm seeds it from the
+    request body's own ``metadata``, so a caller holding a proxy key can set
+    the flag itself. That can only *understate* its own call — mark a complete
+    stream partial — never overstate one; the listener trusts litellm's stamp
+    and records what it says.
+
+    litellm 1.101.0 stamps ``model_call_details.metadata`` and
+    ``litellm_params.metadata``; ``litellm_params.litellm_metadata`` is read
+    too for routes that carry request metadata under that key.
+    """
+    candidates = [kwargs.get("metadata")]
+    params = kwargs.get("litellm_params")
+    if isinstance(params, dict):
+        candidates.append(params.get("metadata"))
+        candidates.append(params.get("litellm_metadata"))
+    return any(
+        isinstance(meta, dict) and meta.get("client_disconnected") is True
+        for meta in candidates
+    )
+
+
 #: litellm carries the same prompt under more than one key: ``messages`` for chat,
 #: ``input`` for embeddings/older shapes, ``prompt`` for text completion. Its own
 #: ``perform_redaction`` clears all three, but a *custom* ``async_logging_hook``
@@ -363,6 +394,13 @@ class LiteLLMListenerCore(CapsuleEmitterBase):
         ``kwargs`` is litellm's ``model_call_details`` **after** every registered
         callback's ``async_logging_hook`` has run, so the payload sealed here is
         the operator's redacted view.
+
+        When litellm marks the call ``client_disconnected`` (a stream the client
+        abandoned, billed as a success over a partial response) the outcome
+        record seals with effect status ``dispatched`` instead of ``confirmed``
+        and stamps ``client_disconnected`` / ``response_completeness: partial``
+        into ``compute_attestation`` — a truncated stream is never recorded as a
+        completed one.
         """
         kwargs = kwargs if isinstance(kwargs, dict) else {}
         model = kwargs.get("model")
@@ -388,10 +426,14 @@ class LiteLLMListenerCore(CapsuleEmitterBase):
                 response["choices"] = _truncate(response["choices"], self._max_payload_chars)
         else:
             response = _truncate(response, self._max_payload_chars)
+        # A client that left mid-stream gets a success-shaped event over a
+        # partial response (see _client_disconnected). Seal it as dispatched,
+        # never confirmed, and say why in the digest-committed compute block.
+        disconnected = _client_disconnected(kwargs)
         self._seal(
             action=f"litellm.{call_type}",
             tool_output=response,
-            effect={"type": "llm_call", "status": "confirmed"},
+            effect={"type": "llm_call", "status": "dispatched" if disconnected else "confirmed"},
             prior_capsule_id=parent_id,
             action_type="fyi",
             runtime="litellm",
@@ -399,6 +441,8 @@ class LiteLLMListenerCore(CapsuleEmitterBase):
             extra_compute=self._compute(
                 litellm_call_id=call_id,
                 unchained_reason=self._unchained(parent_id),
+                client_disconnected=True if disconnected else None,
+                response_completeness="partial" if disconnected else None,
             ),
         )
 
