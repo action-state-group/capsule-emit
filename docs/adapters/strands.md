@@ -112,7 +112,11 @@ enumeration.
   consistent and, where a signature is present, signed by the key it names. It does **not** prove the tools actually
   ran, or that every call was recorded — a record nobody wrote leaves no trace.
   The listener only seals calls that raise `BeforeToolCallEvent` /
-  `AfterToolCallEvent`; a raw HTTP request an agent makes on the side is never
+  `AfterToolCallEvent`, and those fire on each `Agent`'s own hook registry —
+  a `Graph` or `Swarm` has a registry of its own, but it only ever receives
+  multi-agent lifecycle events, never tool calls, so attach the listener to
+  every node or member agent's `hooks=[...]` (confirmed on strands-agents
+  1.56.0). A raw HTTP request an agent makes on the side is never
   sealed, and model calls and multi-agent node events are deliberately not
   subscribed. Closing that is a separate consistency check against an
   independent log.
