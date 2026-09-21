@@ -15,12 +15,18 @@ Canonicalization FOLLOWS ``format_version`` — it is not a single global
 default. ``agent_action_capsule.emit()`` builds only ``format_version``
 ``"4"`` (draft-04) and REQUIRES ``canonicalization_id="jcs"`` (§5.1); since
 the core path always delegates to that ``emit()``, this constant is pinned
-to ``"jcs"``. The vintage ``format_version`` ``"2"`` profile
-(``"jcs-n"``, JCS + absent-field normalization) is a *separate* value —
-``capsule_emit.canonicalization.VINTAGE_CANONICALIZATION_ID`` — used only by
-the format-2 vintage path (``capsule_emit/holds/capsules.py``, which builds
-an ``agent_action_capsule.Capsule`` directly and MUST NOT declare
-``canonicalization_id`` at all per §5.1). Do not repoint this constant to
+to ``"jcs"``. ``capsule_emit/holds/capsules.py`` builds an
+``agent_action_capsule.Capsule`` directly rather than going through
+``emit()``, but is bound by the same §5.1 rule (enforced by
+``agent_action_capsule.parse.Capsule.__post_init__`` and
+``compute_capsule_id``, which both reject anything other than
+``format_version="4"`` + ``canonicalization_id="jcs"``) and imports this
+constant rather than repeating the literal. The withdrawn vintage
+``format_version`` ``"2"`` profile (``"jcs-n"``, JCS + absent-field
+normalization, chain excluded) — ``capsule_emit.canonicalization
+.VINTAGE_CANONICALIZATION_ID`` — is verify-only: it can no longer be
+produced anywhere in this library, only recognized when verifying records
+minted before the draft-04 reversal below. Do not repoint this constant to
 ``"jcs-n"``, and do not use it as a default for verifying format-2 records.
 
 **draft-04 reversal (2026-08-24, [capsule-cose-sign1]):** the profile default
@@ -63,9 +69,11 @@ from agent_action_capsule.canonical import FloatInDigestError
 #: at the top level of every core-path emitted capsule, inside the signed payload).
 #: Core-path default: ``jcs`` (plain RFC 8785 JCS, excluding only capsule_id —
 #: chain is committed; SHA-256) — REQUIRED by ``agent_action_capsule.emit()``'s
-#: ``format_version`` ``"4"`` (§5.1). The format-2 vintage profile (``jcs-n``,
-#: absent-field normalization, chain excluded) is a separate constant, used
-#: only for verifying pre-reversal records — see
+#: ``format_version`` ``"4"`` (§5.1), and reused as-is by
+#: ``capsule_emit/holds/capsules.py``, the one caller that builds an
+#: ``agent_action_capsule.Capsule`` directly instead of going through
+#: ``emit()``. The format-2 vintage profile (``jcs-n``, absent-field
+#: normalization, chain excluded) is a separate constant, verify-only — see
 #: :data:`capsule_emit.canonicalization.VINTAGE_CANONICALIZATION_ID`.
 #: When the profile revs again: change this constant only — the internal
 #: primitive accepts it as a parameter default, so all call sites (via
