@@ -412,13 +412,23 @@ class TestVintageRule:
         assert result.declared is None
         assert result.resolved == "jcs-n"
 
-        # But full structural verification correctly REJECTS it: §5.1's
-        # "format_version '2' ... MUST NOT declare canonicalization_id" is a
-        # key-presence rule, not a value rule -- an explicit JSON null still
-        # declares the field, even though it digests the same as absent.
+        # But full structural verification correctly REJECTS it. agent_action_capsule's
+        # reference verifier is format-4-only (its canonical.py docstring: "any other
+        # format_version is rejected with unsupported_format_version, and the legacy
+        # absent-field construction has been removed" -- vintage format-2 records are
+        # verified with the frozen legacy-verify/v0.1.0 release, not this reference).
+        # So format_version '2' is rejected outright, before the null-vs-absent
+        # canonicalization_id distinction is ever reached -- unlike canonicalization_id
+        # digest equivalence (checked above), THIS check is format-version-driven, not
+        # value-driven: an absent-field vintage record fails identically.
         store_result = verify_store_signed([explicit_null])[0]
         assert not store_result.ok
-        assert any(f.code == "canonicalization_profile_mismatch" for f in store_result.findings)
+        assert any(f.code == "unsupported_format_version" for f in store_result.findings)
+
+        vintage_absent = dict(vintage)
+        store_result_absent = verify_store_signed([vintage_absent])[0]
+        assert not store_result_absent.ok
+        assert any(f.code == "unsupported_format_version" for f in store_result_absent.findings)
 
 
 # ---------------------------------------------------------------------------
