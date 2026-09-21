@@ -92,10 +92,13 @@ runners if that matters to your ledger.
 """
 from __future__ import annotations
 
+import json
 import logging
 import warnings
 from collections import OrderedDict, deque
 from typing import Any, Callable
+
+from capsule_emit.numbers import canonicalize_for_digest
 
 from ._base import CapsuleEmitterBase
 
@@ -110,6 +113,9 @@ _SAFE_CONTEXT_ATTRS = ("agent_name", "function_call_id", "invocation_id")
 # Bounds for long-lived runners: pending calls awaiting a response, deduped-id
 # history, and retained EmitResults. Oldest is evicted past these caps.
 _MAX_PENDING = 4096
+#: Cap on long-running calls awaiting their outcome (hours or days, so it is a
+#: separate, smaller budget than the sub-second pairing map).
+_MAX_LONG_RUNNING = 1024
 _MAX_RESULTS = 4096
 
 
@@ -128,6 +134,9 @@ class _BoundedSet:
         self._d.move_to_end(key)
         while len(self._d) > self._max:
             self._d.popitem(last=False)
+
+    def discard(self, key: str) -> None:
+        self._d.pop(key, None)
 
 
 def _tool_name(tool: Any) -> str:
@@ -170,6 +179,16 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         max_pending: Cap on in-flight calls awaiting a response and on the deduped-id
             history; oldest is evicted (with a warning) past this. Also feeds the base
             ``max_results`` default so a long-lived tap does not retain results forever.
+        max_long_running: Cap on long-running calls awaiting later responses
+            (default 1024; they can stay open for hours, so this is a separate
+            budget from ``max_pending``). Evicting one drops its dedup entry
+            too, so a late response seals as a plain call rather than
+            vanishing; the log says so.
+        long_running_final: Optional predicate on a long-running call's later
+            response that names the terminal one (e.g.
+            ``lambda r: r.get("status") == "done"``). Without it every later
+            response seals as ``adk_outcome: "update"`` — the adapter does not
+            guess which one is the outcome.
     """
 
     def __init__(
@@ -177,6 +196,8 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         *,
         effects: dict[str, dict[str, Any]] | None = None,
         max_pending: int = _MAX_PENDING,
+        max_long_running: int = _MAX_LONG_RUNNING,
+        long_running_final: Callable[[Any], bool] | None = None,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("max_results", _MAX_RESULTS)
@@ -193,6 +214,17 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         self._pending_by_name: dict[str, deque] = {}
         # ids already sealed — makes wiring both paths idempotent (no double-count).
         self._seen = _BoundedSet(max_pending)
+        # Long-running tools (ADK ``LongRunningFunctionTool``): the first
+        # response is a pending stub; progress updates and the outcome arrive
+        # later under the same function_call_id. ``_lro_ids`` holds ids the
+        # model-call event flagged via ``long_running_tool_ids``;
+        # ``_lro_pending`` maps an id whose pending record is sealed to
+        # (chain head capsule_id, args, canonical stub) so every later response
+        # chains onto the previous record instead of being dropped as a dup.
+        self._lro_ids = _BoundedSet(max_long_running)
+        self._lro_pending: OrderedDict[str, tuple[str, Any, str]] = OrderedDict()
+        self._max_long_running = max_long_running
+        self._long_running_final = long_running_final
 
     def _effect_for(self, name: str) -> dict[str, Any] | None:
         """The declared effect for a tool name (a fresh copy), or None."""
@@ -215,6 +247,99 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
             warnings.warn(msg, RuntimeWarning, stacklevel=3)
             _log.warning(msg, exc_info=exc)
             return False
+
+    # ------------------------------------------------------------------
+    # Long-running tools — pending stub now, real outcome later
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _response_key(response: Any) -> str:
+        """Canonical form of a response, for recognising the pending stub when it echoes."""
+        try:
+            return json.dumps(
+                canonicalize_for_digest(response, field="agent_output"), sort_keys=True, default=str
+            )
+        except Exception:  # noqa: BLE001 — a non-canonical stub just never matches
+            return repr(response)
+
+    def _seal_pending(
+        self, name: str, *, args: Any, response: Any, call_id: str | None, extra: dict[str, Any]
+    ) -> bool:
+        """Seal a long-running tool's *initial* response as a dispatch, not an outcome.
+
+        ADK fires ``after_tool_callback`` (and emits a function-response event)
+        on whatever the tool returned first — for a ``LongRunningFunctionTool``
+        that is a pending placeholder; progress updates and the real result are
+        injected later under the same ``function_call_id``. Sealing that
+        placeholder as a completed call would make it indistinguishable from
+        one. So the record carries digest-committed markers
+        ``adk_long_running: "true"`` / ``adk_outcome: "pending"``; a declared
+        effect keeps its type with status forced to ``dispatched``; an
+        undeclared tool gets no effect block (same as the plain path — the
+        adapter manufactures no world-effect it did not see declared). The
+        verdict stays ``executed`` because the dispatch itself did run.
+        """
+        eff = self._effect_for(name)
+        if eff is not None:
+            eff["status"] = "dispatched"
+        sealed = self._safe_emit(
+            name,
+            tool_input=args,
+            tool_output=response,
+            effect=eff,
+            runtime="adk",
+            extra_compute={**extra, "adk_long_running": "true", "adk_outcome": "pending"},
+        )
+        if sealed and call_id and self.last is not None:
+            self._lro_pending[call_id] = (
+                self.last.capsule_id, args, self._response_key(response)
+            )
+            while len(self._lro_pending) > self._max_long_running:
+                old_id, _ = self._lro_pending.popitem(last=False)
+                self._seen.discard(old_id)
+                _log.warning(
+                    "adk: evicting long-running call %s (cap %d reached); a later "
+                    "response for it will seal as a plain call, not chained to its "
+                    "pending record",
+                    old_id,
+                    self._max_long_running,
+                )
+        return sealed
+
+    def _seal_update(
+        self, name: str, *, call_id: str, response: Any, extra: dict[str, Any]
+    ) -> bool:
+        """Seal a later response of a long-running call, chained to the previous one.
+
+        The adapter cannot tell a progress update from the outcome — ADK injects
+        both as function responses under the same id — so every later response
+        seals as ``adk_outcome: "update"`` unless the caller's
+        ``long_running_final`` predicate says this one is terminal, which stamps
+        ``adk_outcome: "final"`` and closes the chain. The declared effect, when
+        one is configured, rides unchanged; nothing is promoted to ``confirmed``
+        on the adapter's say-so.
+        """
+        head_id, args, _stub = self._lro_pending[call_id]
+        is_final = bool(self._long_running_final and self._long_running_final(response))
+        sealed = self._safe_emit(
+            name,
+            tool_input=args,
+            tool_output=response,
+            effect=self._effect_for(name),
+            prior_capsule_id=head_id,
+            runtime="adk",
+            extra_compute={
+                **extra,
+                "adk_long_running": "true",
+                "adk_outcome": "final" if is_final else "update",
+            },
+        )
+        if sealed and self.last is not None:
+            if is_final:
+                del self._lro_pending[call_id]
+            else:
+                self._lro_pending[call_id] = (self.last.capsule_id, args, _stub)
+        return sealed
 
     # ------------------------------------------------------------------
     # Path 1 — tool callbacks
@@ -240,6 +365,12 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
     ) -> None:
         """ADK after_tool_callback. Emits one ``executed`` capsule per tool call.
 
+        A ``LongRunningFunctionTool`` (``tool.is_long_running``) is sealed as a
+        *pending* dispatch (``adk_outcome: "pending"``; a declared effect's
+        status forced to ``dispatched``) because what reaches this callback is
+        its placeholder, not its result — later responses arrive on the event
+        stream; see :meth:`tap_event`.
+
         Returns None (does not override the tool response). If the call's
         ``function_call_id`` was already sealed (e.g. by the event tap), this is a
         no-op — so wiring both paths does not double-count.
@@ -248,15 +379,23 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         if call_id and call_id in self._seen:
             return None
         name = _tool_name(tool)
-        sealed = self._safe_emit(
-            name,
-            tool_input=args,
-            tool_output=tool_response,
-            effect=self._effect_for(name),
-            runtime="adk",
-            extra_compute={**_compute_from_context(tool_context),
-                           "observation_mode": "in_path"},
-        )
+        extra = {**_compute_from_context(tool_context), "observation_mode": "in_path"}
+        if getattr(tool, "is_long_running", False):
+            # The callback sees the pending placeholder, never the later
+            # responses (ADK injects those as function-response events — tap
+            # the event stream to seal them, chained to this record).
+            sealed = self._seal_pending(
+                name, args=args, response=tool_response, call_id=call_id, extra=extra
+            )
+        else:
+            sealed = self._safe_emit(
+                name,
+                tool_input=args,
+                tool_output=tool_response,
+                effect=self._effect_for(name),
+                runtime="adk",
+                extra_compute=extra,
+            )
         if call_id and sealed:
             self._seen.add(call_id)
         return None
@@ -285,6 +424,8 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         capsule is not necessarily correctly paired); supply stable
         ``function_call_id``s for exact pairing.
         """
+        for flagged in getattr(event, "long_running_tool_ids", None) or ():
+            self._lro_ids.add(str(flagged))
         for name, call_id, args in _function_calls(event):
             if call_id:
                 self._pending[call_id] = (name, args)
@@ -300,6 +441,17 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
                 queue.append(args)
         self._evict_pending()
         for name, call_id, response in _function_responses(event):
+            if call_id and call_id in self._lro_pending:
+                self._pending.pop(call_id, None)
+                if self._response_key(response) == self._lro_pending[call_id][2]:
+                    continue  # the pending placeholder echoed on the stream; already sealed
+                self._seal_update(
+                    name,
+                    call_id=call_id,
+                    response=response,
+                    extra={"observation_mode": "event_stream", "adk_function_call_id": call_id},
+                )
+                continue
             if call_id and call_id in self._seen:
                 self._pending.pop(call_id, None)  # already sealed via another path
                 continue
@@ -315,15 +467,21 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
                 pname = name
                 if queue is not None and not queue:
                     del self._pending_by_name[name]  # don't accumulate empty queues
-            sealed = self._safe_emit(
-                pname,
-                tool_input=pargs,
-                tool_output=response,
-                effect=self._effect_for(pname),
-                runtime="adk",
-                extra_compute={"observation_mode": "event_stream",
-                               **({"adk_function_call_id": call_id} if call_id else {})},
-            )
+            extra = {"observation_mode": "event_stream",
+                     **({"adk_function_call_id": call_id} if call_id else {})}
+            if call_id and call_id in self._lro_ids:
+                sealed = self._seal_pending(
+                    pname, args=pargs, response=response, call_id=call_id, extra=extra
+                )
+            else:
+                sealed = self._safe_emit(
+                    pname,
+                    tool_input=pargs,
+                    tool_output=response,
+                    effect=self._effect_for(pname),
+                    runtime="adk",
+                    extra_compute=extra,
+                )
             if call_id and sealed:
                 self._seen.add(call_id)
 

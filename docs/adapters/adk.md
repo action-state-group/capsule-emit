@@ -118,7 +118,13 @@ a role/version tag, not personal data. What the adapter takes from `tool_context
 - **One record per call, not a planned/outcome pair.** Unlike adapters that
   see a call before it runs, ADK hands this one a completed call, so it seals
   the outcome, not a prior commitment; a refusal is a `blocked` record from the
-  guard. Refusals and errors are yours to route, never inferred — see
+  guard. The exception is a `LongRunningFunctionTool`: what reaches the
+  callback is its *pending* placeholder, so that record seals as a dispatch
+  (`adk_outcome: pending`), and every later response — which ADK injects as
+  function-response events under the same id — seals from the event tap,
+  chained to it, as an `update` unless you name the terminal one. Wire only
+  the callback and nothing after the placeholder is seen — see
+  [Long-running tools](#long-running-tools). Refusals and errors are yours to route, never inferred — see
   [Refusals](#refusals--blocked--denied) and [Errored tool calls](#errored-tool-calls);
   effects are declared per tool name, never inferred — see
   [Effects for consequential tools](#effects-for-consequential-tools).
@@ -359,6 +365,44 @@ record layer's health.
   the call id. Both verify, and dedup is by `function_call_id` (not `capsule_id`), so
   this is a content-addressing note, not a pairing bug — don't assume path-independent
   ids for the same logical call.
+
+### Long-running tools
+
+ADK's `LongRunningFunctionTool` returns first and finishes later: the function
+returns a placeholder (typically `{"status": "pending", ...}`), the framework
+emits that as the function response, and progress updates and the actual
+result arrive in later turns as function-response parts carrying the **same**
+`function_call_id`. `after_tool_callback` fires on the placeholder and never
+on what follows, and ADK's `is_long_running` check runs *after* the callbacks
+— it gates the event build, not the callback — so nothing in the callback
+signature says "pending".
+
+The emitter reads `tool.is_long_running` (callback path) or the model-call
+event's `long_running_tool_ids` (tap path) and seals the placeholder as a
+dispatch: verdict `executed` (the dispatch did run), `adk_long_running:
+"true"` / `adk_outcome: "pending"` in `compute_attestation`, and — only when
+you declared an effect for that tool — the declared type with status forced
+to `dispatched`. An undeclared tool gets no effect block, exactly as on the
+plain path; the adapter does not manufacture a world-effect it was not told
+about.
+
+Every later response under that id seals a further record chained to the
+previous one by `prior_capsule_id`, marked `adk_outcome: "update"`. The
+adapter cannot tell a progress update from the outcome — ADK injects both the
+same way — so it never promotes one to "final" or to a `confirmed` effect on
+its own. Pass `long_running_final=` (a predicate on the response, e.g.
+`lambda r: r.get("status") == "done"`) and the response it names seals as
+`adk_outcome: "final"` and closes the chain; your declared effect rides
+unchanged either way. The placeholder echoed on the event stream is
+recognised by its canonical form and not sealed twice.
+
+Three consequences. A callback-only wiring records the dispatch and nothing
+else — tap the event stream (`tap_event` / `tap_stream`) as well if you need
+what follows. A pending record whose later responses never arrive stays a
+pending record; that is the honest state. And open long-running calls are
+bounded by `max_long_running` (default 1024, separate from `max_pending`);
+evicting one drops its dedup entry too, so a late response seals as a plain,
+unchained call rather than vanishing, and the log says so.
 
 ## Verify
 

@@ -82,6 +82,13 @@ class _PartsEvent:
         self.content = _Content(list(parts))
 
 
+def _ledger(tmp_path):
+    path = tmp_path / "ledger.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
 def _emitter(tmp_path, **kw):
     return ADKCapsuleEmitter(
         operator="acme-co",
@@ -471,3 +478,136 @@ def test_manual_seals_stamp_in_path(tmp_path):
     r = e.emit_errored(_FakeTool("t"), {"x": 1}, ValueError("boom"), _FakeToolContext())
     assert _observation_mode(b.capsule) == "in_path"
     assert _observation_mode(r.capsule) == "in_path"
+
+
+# --------------------------------------------------------------------------
+# Long-running tools — the pending stub is a dispatch; later responses chain
+# --------------------------------------------------------------------------
+
+class _FakeLROTool(_FakeTool):
+    is_long_running = True
+
+
+class _LROEvent(_FakeEvent):
+    def __init__(self, calls=(), responses=(), long_running_tool_ids=None):
+        super().__init__(calls, responses)
+        self.long_running_tool_ids = long_running_tool_ids
+
+
+STUB = {"status": "pending", "op_id": "abc-123"}
+UPDATE = {"status": "running", "op_id": "abc-123", "progress": "50"}
+FINAL = {"status": "done", "op_id": "abc-123", "result": "approved"}
+
+
+def _comp(cap):
+    return cap["model_attestation"]["compute_attestation"]
+
+
+def test_long_running_pending_stub_seals_as_dispatch_without_a_manufactured_effect(tmp_path):
+    e = _emitter(tmp_path)
+    e.after_tool_callback(_FakeLROTool("start_refund"), {"amount": "12.00"}, _FakeToolContext("lro-1"), STUB)
+    cap = e.last.capsule
+    assert cap["disposition"]["verdict_class"] == "executed"
+    assert cap.get("effect") is None  # undeclared tool: no effect on the plain path, none here either
+    assert _comp(cap)["adk_long_running"] == "true"
+    assert _comp(cap)["adk_outcome"] == "pending"
+    assert verify(cap).ok
+
+
+def test_long_running_declared_effect_keeps_its_type_and_is_forced_dispatched(tmp_path):
+    e = _emitter(tmp_path, effects={"start_refund": {"type": "refund", "status": "confirmed"}})
+    e.after_tool_callback(_FakeLROTool("start_refund"), {"amount": "12.00"}, _FakeToolContext("lro-2"), STUB)
+    eff = e.last.capsule["effect"]
+    assert eff["type"] == "refund" and eff["status"] == "dispatched"
+
+
+def test_plain_tool_carries_no_long_running_markers(tmp_path):
+    e = _emitter(tmp_path)
+    e.after_tool_callback(_FakeTool("lookup"), {"q": 1}, _FakeToolContext("plain-1"), {"ok": True})
+    assert "adk_long_running" not in _comp(e.last.capsule) and "adk_outcome" not in _comp(e.last.capsule)
+
+
+def test_long_running_stub_update_final_chain(tmp_path):
+    e = _emitter(tmp_path, long_running_final=lambda r: isinstance(r, dict) and r.get("status") == "done")
+    e.after_tool_callback(_FakeLROTool("start_refund"), {"amount": "12.00"}, _FakeToolContext("lro-3"), STUB)
+    pending = e.last.capsule
+    n = len(_ledger(tmp_path))
+    # the stub echoes on the event stream: already sealed, no second record
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "lro-3", dict(STUB))]))
+    assert len(_ledger(tmp_path)) == n
+    # a progress update: chained, marked update, not promoted
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "lro-3", UPDATE)]))
+    update = _ledger(tmp_path)[-1]
+    assert update["chain"]["parent_capsule_id"] == pending["capsule_id"]
+    assert _comp(update)["adk_outcome"] == "update"
+    assert update.get("effect") is None
+    # the terminal response, named by the caller's predicate: chained to the update
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "lro-3", FINAL)]))
+    final = _ledger(tmp_path)[-1]
+    assert final["chain"]["parent_capsule_id"] == update["capsule_id"]
+    assert _comp(final)["adk_outcome"] == "final"
+    assert len(_ledger(tmp_path)) == n + 2
+    for cap in (pending, update, final):
+        assert verify(cap).ok
+    # after the final the chain is closed: a repeat of the id is a dup again
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "lro-3", FINAL)]))
+    assert len(_ledger(tmp_path)) == n + 2
+
+
+def test_long_running_without_a_predicate_never_claims_final(tmp_path):
+    e = _emitter(tmp_path)
+    e.after_tool_callback(_FakeLROTool("start_refund"), {"amount": "1"}, _FakeToolContext("lro-5"), STUB)
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "lro-5", FINAL)]))
+    cap = _ledger(tmp_path)[-1]
+    assert _comp(cap)["adk_outcome"] == "update"
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "lro-5", {"status": "really done"})]))
+    cap2 = _ledger(tmp_path)[-1]
+    assert cap2["chain"]["parent_capsule_id"] == cap["capsule_id"]
+    assert _comp(cap2)["adk_outcome"] == "update"
+
+
+def test_long_running_declared_effect_rides_unchanged_on_updates(tmp_path):
+    e = _emitter(tmp_path, effects={"start_refund": {"type": "refund", "status": "dispatched"}})
+    e.after_tool_callback(_FakeLROTool("start_refund"), {"amount": "1"}, _FakeToolContext("lro-6"), STUB)
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "lro-6", FINAL)]))
+    eff = _ledger(tmp_path)[-1]["effect"]
+    assert eff["type"] == "refund" and eff["status"] == "dispatched"  # never promoted by the adapter
+
+
+def test_tap_only_long_running_flagged_by_the_model_event(tmp_path):
+    e = _emitter(tmp_path)
+    e.tap_event(_LROEvent(calls=[_FC("start_refund", "lro-4", {"amount": "5.00"})],
+                          long_running_tool_ids={"lro-4"}))
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "lro-4", STUB)]))
+    pending = _ledger(tmp_path)[-1]
+    assert _comp(pending)["adk_outcome"] == "pending"
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "lro-4", FINAL)]))
+    later = _ledger(tmp_path)[-1]
+    assert later["chain"]["parent_capsule_id"] == pending["capsule_id"]
+    assert _comp(later)["adk_outcome"] == "update"
+    assert verify(later).ok
+
+
+def test_tap_only_unflagged_call_is_sealed_as_before(tmp_path):
+    e = _emitter(tmp_path)
+    e.tap_event(_FakeEvent(calls=[_FC("lookup", "p-1", {"q": 1})]))
+    e.tap_event(_FakeEvent(responses=[_FR("lookup", "p-1", {"ok": True})]))
+    cap = _ledger(tmp_path)[-1]
+    assert "adk_outcome" not in _comp(cap)
+    n = len(_ledger(tmp_path))
+    e.tap_event(_FakeEvent(responses=[_FR("lookup", "p-1", {"ok": True})]))
+    assert len(_ledger(tmp_path)) == n  # a repeat of the same id is a dup, not an update
+
+
+def test_long_running_eviction_does_not_swallow_a_late_response(tmp_path, caplog):
+    e = _emitter(tmp_path, max_long_running=1)
+    e.after_tool_callback(_FakeLROTool("a"), {"i": 1}, _FakeToolContext("lro-a"), STUB)
+    with caplog.at_level("WARNING"):
+        e.after_tool_callback(_FakeLROTool("b"), {"i": 2}, _FakeToolContext("lro-b"), STUB)  # evicts lro-a
+    assert "evicting long-running call lro-a" in caplog.text
+    n = len(_ledger(tmp_path))
+    e.tap_event(_FakeEvent(responses=[_FR("a", "lro-a", FINAL)]))
+    cap = _ledger(tmp_path)[-1]
+    assert len(_ledger(tmp_path)) == n + 1  # sealed, not dropped as a dup
+    assert "adk_outcome" not in _comp(cap)  # as a plain, unchained call — exactly what the log said
+    assert cap.get("chain", {}).get("parent_capsule_id") is None
