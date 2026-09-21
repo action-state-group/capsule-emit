@@ -43,6 +43,7 @@ from agent_action_capsule import (
     compute_capsule_id,
 )
 
+from ..numbers import CANONICALIZATION_ID
 from .action import Action
 from .errors import FLOAT_IN_HOLD_AMOUNT, NON_INTEGER_HOLD_AMOUNT, HoldError
 
@@ -59,8 +60,8 @@ __all__ = [
     "build_hold_decision_capsule",
 ]
 
-_SPEC_VERSION = "draft-mih-scitt-agent-action-capsule-02"
-_FORMAT_VERSION = "2"
+_SPEC_VERSION = "draft-mih-scitt-agent-action-capsule-04"
+_FORMAT_VERSION = "4"
 
 ALLOW = "allow"
 DENY = "deny"
@@ -133,6 +134,7 @@ def _build(
     capsule_obj = Capsule(
         spec_version=_SPEC_VERSION,
         format_version=_FORMAT_VERSION,
+        canonicalization_id=CANONICALIZATION_ID,
         action_id=hold_action.resolved_action_id(),
         action_type="decide",
         operator=hold_action.operator,

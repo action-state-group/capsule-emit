@@ -20,6 +20,22 @@ All notable changes to `capsule-emit` are documented here. The format follows
   value-driven. No production code changed; `capsule-emit`'s own producers already build only
   `format_version "4"` (confirmed: the one non-`emit()` producer path,
   `capsule_emit/holds/capsules.py`, is migrated separately in [capsule-emit-fixture-format-version-4]).
+### Fixed — hold-lifecycle capsules now build at `format_version` `"4"` ([capsule-emit-fixture-format-version-4])
+
+- `capsule_emit/holds/capsules.py` hardcoded `format_version="2"` and never declared
+  `canonicalization_id`, following the pre-reversal vintage profile. `agent_action_capsule`'s
+  strict producer path (`Capsule.__post_init__`, `compute_capsule_id`) has since made format-2
+  verify-only — it now unconditionally rejects producing anything but `format_version="4"` +
+  `canonicalization_id="jcs"` — so every `HoldEngine.evaluate_and_reserve()`/release/expire/
+  reconcile call raised `InvariantError: unsupported format_version '2'; expected '4' (§5.1)`.
+  `hold.reserve`/`hold.release`/`hold.expire`/`hold.reconcile`/refusal capsules now build via
+  `agent_action_capsule.Capsule` with `format_version="4"`, `spec_version=
+  "draft-mih-scitt-agent-action-capsule-04"`, and `canonicalization_id="jcs"` (reusing
+  `capsule_emit.numbers.CANONICALIZATION_ID`, the same constant the core `emit()` path pins to),
+  matching every other capsule this library produces. `capsule_id` for hold capsules changes as
+  a result; this is a wire-format fix, not a new digest scheme — old format-2 ledger records
+  remain verify-only and unaffected. No test fixtures existed on disk for this path; the builder
+  itself was the "fixture."
 
 ### Added — `capsule-emit verify --require-signature` (#185)
 
