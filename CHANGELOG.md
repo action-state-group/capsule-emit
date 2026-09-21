@@ -6,6 +6,20 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed — LiteLLM: a stream the client abandoned no longer seals as a confirmed completion (#198)
+
+- litellm bills a mid-stream client disconnect as a *success* event over a partial response
+  (`metadata.client_disconnected = True`, error code 499; neither hook fires by name — the
+  proxy's `_bill_partial_streamed_spend_on_disconnect` assembles the chunks that went out and
+  dispatches success logging). `LiteLLMListenerCore.on_success_core` sealed that event exactly
+  like a natural end-of-stream: effect `confirmed`, indistinguishable from a full completion.
+  It now reads the stamp (on `model_call_details.metadata` or `litellm_params.metadata`) and
+  seals the outcome with effect status `dispatched`, stamping `client_disconnected: true` and
+  `response_completeness: partial` into `compute_attestation` (digest-committed). Completed
+  streams are unchanged. The stamp is proxy-side metadata seeded from the request body, so a
+  proxy-key holder can understate its own call as partial, never overstate one — stated on the
+  page. Found by the adapter-coverage recon on litellm 1.101.0.
+
 ### Fixed — vintage structural-rejection test tracks upstream's format-4-only verifier ([capsule-emit-vintage-format-test])
 
 - `tests/test_canonicalization_id_emitter.py::TestVintageRule::test_explicit_null_is_the_signed_vintage_shape`

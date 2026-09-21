@@ -717,3 +717,72 @@ def test_async_log_pre_api_call_is_a_dead_hook_in_this_release(tmp_path):
         "litellm now dispatches async_log_pre_api_call — revisit "
         "REQUEST_PROVENANCE and consider sealing a real planned capsule"
     )
+
+
+# ---------------------------------------------------------------------------
+# Client disconnect mid-stream: a success-shaped event over a partial response
+# ---------------------------------------------------------------------------
+
+
+def _disconnect_kwargs(where="metadata"):
+    kw = _kwargs(stream=True)
+    stamp = {"client_disconnected": True,
+             "error_information": {"error_code": "499", "error_class": "ClientDisconnected"}}
+    if where == "metadata":
+        kw["metadata"] = stamp
+    elif where == "litellm_metadata":
+        kw["litellm_params"]["litellm_metadata"] = stamp
+    else:
+        kw["litellm_params"]["metadata"] = stamp
+    return kw
+
+
+def test_disconnected_stream_seals_dispatched_not_confirmed(tmp_path):
+    core = _core(tmp_path)
+    core.on_success_core(_disconnect_kwargs(), RESPONSE)
+    outcome = _ledger(tmp_path)[-1]
+    assert outcome["effect"]["status"] == "dispatched"
+    assert outcome["disposition"]["verdict_class"] == "executed"
+    comp = _compute(outcome)
+    assert comp["client_disconnected"] is True
+    assert comp["response_completeness"] == "partial"
+    assert comp["litellm_call_id"] == "call-abc-123"
+
+
+def test_disconnect_flag_under_litellm_params_metadata_is_honored(tmp_path):
+    core = _core(tmp_path)
+    core.on_success_core(_disconnect_kwargs(where="litellm_params"), RESPONSE)
+    outcome = _ledger(tmp_path)[-1]
+    assert outcome["effect"]["status"] == "dispatched"
+    assert _compute(outcome)["response_completeness"] == "partial"
+
+
+def test_completed_stream_still_seals_confirmed_without_partial_markers(tmp_path):
+    core = _core(tmp_path)
+    core.on_success_core(_kwargs(stream=True, metadata={"client_disconnected": False}), RESPONSE)
+    outcome = _ledger(tmp_path)[-1]
+    assert outcome["effect"]["status"] == "confirmed"
+    comp = _compute(outcome)
+    assert "client_disconnected" not in comp
+    assert "response_completeness" not in comp
+
+
+def test_disconnected_outcome_verifies_and_chains(tmp_path):
+    from capsule_emit.verification import verify_capsule
+    core = _core(tmp_path)
+    core.on_success_core(_disconnect_kwargs(), RESPONSE)
+    planned, outcome = _ledger(tmp_path)[-2:]
+    assert verify_capsule(outcome).ok
+    assert outcome["chain"]["parent_capsule_id"] == planned["capsule_id"]
+
+
+def test_disconnect_flag_under_litellm_metadata_is_honored(tmp_path):
+    core = _core(tmp_path)
+    core.on_success_core(_disconnect_kwargs(where="litellm_metadata"), RESPONSE)
+    assert _ledger(tmp_path)[-1]["effect"]["status"] == "dispatched"
+
+
+def test_disconnect_flag_must_be_literally_true(tmp_path):
+    core = _core(tmp_path)
+    core.on_success_core(_kwargs(metadata={"client_disconnected": "yes"}), RESPONSE)
+    assert _ledger(tmp_path)[-1]["effect"]["status"] == "confirmed"
