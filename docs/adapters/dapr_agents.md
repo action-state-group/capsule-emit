@@ -142,7 +142,9 @@ recovered by enumeration.
 - **Approver identity and workflow id are yours to supply.** The hook
   context carries neither; Dapr's own approval event (1.0.6) carries at most an
   optional, unvalidated approver JWT — resolve it to an opaque subject id in
-  your auth layer before passing `approver_id`, which seals raw. The adapter
+  your auth layer before passing `approver_id`, which seals raw. The workflow
+  id is the `instance_id` you hand to `raise_approval_event` — pass the same
+  value to `record_approval_response`. The adapter
   never guesses — see [Limitations](#limitations).
 - **Only Python-defined tools carry the decorator.** Tools sourced from MCP or
   OpenAPI get no `fyi` record from this adapter; the `before_tool_call` hook is
@@ -220,10 +222,46 @@ logged, never propagated — the tool always returns normally.
 LLM that decided to call it.  Recording the call as "fyi" is honest; the
 upstream decision capsule (if any) lives in the model layer, not here.
 
-### Surface 2 — HITL approval gates (`emitter.record_hitl()`)
+### Surface 2 — HITL approval gates
 
-After `ctx.wait_for_external_event()` resolves — and only then — record the
-outcome:
+Dapr Agents ≥ 1.0.x has a native approval flow: a `before_tool_call` hook
+returns `RequireApproval`; the runtime publishes an `ApprovalRequiredEvent`
+(`approval_request_id`, `instance_id`, `step_name`, `tool_call_id`,
+`tool_arguments`) and suspends the workflow; a human decides; your approval
+service — a Slack bot, a dashboard, a CLI — delivers the answer with
+`DurableAgent.raise_approval_event(instance_id, approval_request_id, approved,
+reason, approver_token)`. **That call is the seam.** It is the only point where
+a real decision exists, so the record is written right next to it, with the
+same arguments — never from inside the hook, where nothing has been decided:
+
+```python
+# In your approval service, after the human has acted:
+def deliver_decision(agent, *, instance_id, approval_request_id, approved, reason, approver_token):
+    approver_id = resolve_subject(approver_token)   # YOUR auth layer; dapr-agents does not validate the token
+    emitter.record_approval_response(
+        "delete_invoice",                           # the gated step_name
+        instance_id=instance_id,
+        approval_request_id=approval_request_id,
+        approved=approved,
+        reason=reason,
+        approver_id=approver_id,
+        tool_request={"invoice_id": "INV-001"},     # ApprovalRequiredEvent.tool_arguments, if you keep them
+        tool_call_id="call_abc123",
+    )
+    agent.raise_approval_event(instance_id, approval_request_id, approved, reason, approver_token)
+```
+
+This seals `action_type="decide"` — `executed` on approval, `blocked` on
+rejection — with `human_disposed=True`, the real `decision`, and
+`workflow_instance_id`, `approval_request_id`, `tool_call_id`, `approver_id`
+in the `dapr_agents` extension. The hook context (`ToolHookContext`: `step_name`,
+`step_kind`, `source`, `payload`, `tool_call_id`) carries neither the workflow
+id nor an approver, which is why both come from the `raise_approval_event`
+call and your auth layer, not from the hook.
+
+For any other gate — a hand-rolled `ctx.wait_for_external_event()` — the
+lower-level `record_hitl()` takes the decision directly. After the event
+resolves, and only then:
 
 ```python
 # Inside your Dapr Workflow definition:
@@ -314,6 +352,9 @@ Re-verified 2026-07-30 against `dapr-agents==1.0.5` (see drift note below):
   left for a dedicated task. Note: `after_tool_call` is documented by Dapr
   as "reserved API surface... not yet dispatched by the agent runtime" in
   1.0.5, so only `before_tool_call` is currently usable for a real hook.
+  **The HITL record is wired to this native flow**: `record_approval_response`
+  takes `raise_approval_event`'s own arguments — see
+  [Surface 2](#surface-2--hitl-approval-gates).
 - **L2 Workflow ID inside tools — STILL TRUE.** `ToolHookContext` /
   `HookContext` (the new hook system) carry `step_name`, `step_kind`,
   `source`, `payload`, `tool_call_id` — no `instance_id` or workflow field.
@@ -322,7 +363,11 @@ Re-verified 2026-07-30 against `dapr-agents==1.0.5` (see drift note below):
   too.** Dapr Agents' own new `ApprovalResponseEvent` (sent to
   `DurableAgent.raise_approval_event()`) carries `approved: bool` and `reason`, and no *resolved* approver identity —
   1.0.6 adds an optional `approver_token` (a raw JWT the framework passes through
-  unvalidated); resolving it to a subject id is still your auth layer's job.
+  unvalidated); its `approver_subject` field is populated only by a
+  caller-supplied plugin and is `None` as dapr-agents builds it, and
+  `raise_approval_event` has no subject parameter at all. Resolving the token
+  to a subject id is your auth layer's job; `record_approval_response`
+  requires the result as `approver_id` and never derives one.
 - **L4 Replay idempotency** — unchanged; Dapr Workflow may replay activities,
   wrapped tools fire again on replay, emitting duplicate capsules.
 - **L5 App ID auto-discovery — STILL TRUE**, confirmed absent from the new

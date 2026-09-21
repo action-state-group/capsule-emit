@@ -6,6 +6,22 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added — Dapr Agents: `record_approval_response`, the HITL record on the native approval flow (#200)
+
+- `DaprAgentsCapsuleEmitter.record_hitl` was documented against a hand-rolled
+  `ctx.wait_for_external_event()` gate and was not wired to Dapr Agents' idiomatic path —
+  `Hooks(before_tool_call=...)` returning `RequireApproval`, an `ApprovalRequiredEvent`, and the
+  human's answer delivered by `DurableAgent.raise_approval_event(instance_id,
+  approval_request_id, approved, reason, approver_token)`. `record_approval_response` takes that
+  call's own arguments (plus a caller-verified `approver_id` and optional `tool_call_id` /
+  `tool_request`), seals the `decide` record (`executed` / `blocked`), and stamps
+  `workflow_instance_id`, `approval_request_id`, `tool_call_id`, `approver_id` into the
+  `dapr_agents` extension; `record_hitl` and `_dapr_ext` accept the two new correlation ids. The
+  module's limitations (L1/L3) now state what the hook context and `ApprovalResponseEvent`
+  actually carry (no workflow id, no verified approver; `approver_subject` is plugin-populated
+  and `None` as built) and where the record therefore goes: next to `raise_approval_event`,
+  never inside the hook. Found by the adapter-coverage recon on dapr-agents 1.0.6.
+
 ### Fixed — ADK: a `LongRunningFunctionTool`'s pending placeholder no longer seals as a completed call (#199)
 
 - ADK fires `after_tool_callback` (and emits a function-response event) on whatever a tool returns
