@@ -127,9 +127,8 @@ def test_range_proof_round_trips(log_source):
     from_seq, to_seq = 2, 5
     proof = mmr.range_proof(from_seq, to_seq)
     root = mmr.root_at(proof.size)
-    from_digest = mmr.body_digest(from_seq)
-    to_digest = mmr.body_digest(to_seq)
-    assert verify_range(root, from_seq, to_seq, from_digest, to_digest, proof)
+    body_digests = [mmr.body_digest(seq) for seq in range(from_seq, to_seq + 1)]
+    assert verify_range(root, from_seq, to_seq, body_digests, proof)
 
 
 def test_range_proof_rejects_tampered_boundary_digest(log_source):
@@ -141,13 +140,14 @@ def test_range_proof_rejects_tampered_boundary_digest(log_source):
     from_seq, to_seq = 1, 4
     proof = mmr.range_proof(from_seq, to_seq)
     root = mmr.root_at(proof.size)
-    from_digest = mmr.body_digest(from_seq)
-    to_digest = mmr.body_digest(to_seq)
-    assert verify_range(root, from_seq, to_seq, from_digest, to_digest, proof)
+    body_digests = [mmr.body_digest(seq) for seq in range(from_seq, to_seq + 1)]
+    assert verify_range(root, from_seq, to_seq, body_digests, proof)
 
-    tampered = bytearray(to_digest)
-    tampered[0] ^= 0xFF
-    assert not verify_range(root, from_seq, to_seq, from_digest, bytes(tampered), proof)
+    tampered = list(body_digests)
+    tampered_last = bytearray(tampered[-1])
+    tampered_last[0] ^= 0xFF
+    tampered[-1] = bytes(tampered_last)
+    assert not verify_range(root, from_seq, to_seq, tampered, proof)
 
 
 # -- stability across appends: the whole point of an MMR ---------------------
@@ -202,10 +202,9 @@ def test_range_proof_stability_across_appends(log_source):
 
     old_range = mmr.range_proof(2, 5)
     old_size = old_range.size
-    from_digest = mmr.body_digest(2)
-    to_digest = mmr.body_digest(5)
+    body_digests = [mmr.body_digest(seq) for seq in range(2, 6)]
     root_at_old_size = core.root_from_peaks(mmr.peak_hashes_at(old_size))
-    assert verify_range(root_at_old_size, 2, 5, from_digest, to_digest, old_range)
+    assert verify_range(root_at_old_size, 2, 5, body_digests, old_range)
 
     for i in range(7, 10):
         mmr.append(synthetic_capsule(i), consequential=False)
@@ -213,7 +212,7 @@ def test_range_proof_stability_across_appends(log_source):
     new_size = mmr.size()
     new_root = mmr.root()
 
-    assert verify_range(root_at_old_size, 2, 5, from_digest, to_digest, old_range)
+    assert verify_range(root_at_old_size, 2, 5, body_digests, old_range)
 
     bridge = mmr.consistency_proof(old_size, new_size)
     assert core.verify_consistency(root_at_old_size, old_size, new_root, new_size, bridge)
