@@ -39,10 +39,17 @@ THIS adapter = per-action records captured LIVE at each decision point as the
    one capsule with action_type="fyi": the adapter observes what the agent
    called; the LLM's upstream decision is not visible at this layer.
 
-2. emitter.record_hitl() — call after ctx.wait_for_external_event() resolves
-   to record the HITL outcome.  Emits action_type="decide" with a REAL
-   disposition block (actual approver id, actual accept/reject outcome).
-   NEVER fabricate a disposition — only call this after the human has acted.
+2. emitter.record_approval_response() — the native hook flow.  A
+   Hooks(before_tool_call=...) callback returns RequireApproval; the runtime
+   publishes ApprovalRequiredEvent and suspends; the human's answer is delivered
+   by DurableAgent.raise_approval_event(instance_id, approval_request_id,
+   approved, reason, approver_token).  Call record_approval_response() right
+   next to that call, with the same arguments — that is the only point where a
+   real decision exists.  Never from inside the hook.
+   emitter.record_hitl() is the lower-level form for any other gate (e.g. a
+   hand-rolled ctx.wait_for_external_event()).  Both emit action_type="decide"
+   with a REAL disposition block (actual approver id, actual accept/reject
+   outcome).  NEVER fabricate a disposition — only call after the human acted.
 
 ─── Namespaced payload extension ────────────────────────────────────────────
 Every capsule from this adapter carries a "dapr_agents" block in
@@ -55,10 +62,15 @@ The following assumptions were made against the v1.0 documented API.  Each is
 a question for Dapr Agents maintainers before treating this adapter as verified
 against a live sidecar:
 
-L1. Before/after tool callback surface: No stable before/after hook was found
-    in the v1.0 docs at the agent level.  This adapter wraps at function
-    definition time.  If Dapr Agents exposes an equivalent callback (e.g.
-    agent middleware or lifecycle hooks), consider switching to that surface.
+L1. Before/after tool callback surface: dapr-agents >= 1.0.5 ships
+    dapr_agents.hooks (Hooks / ToolHookContext / RequireApproval / Deny ...),
+    registered via DurableAgent(hooks=Hooks(...)).  This adapter still wraps
+    tools at definition time for the fyi record (only Python-defined tools;
+    MCP/OpenAPI-sourced tools are seen by the hook seam, not by the decorator).
+    The HITL decide record IS wired to the native flow — see
+    record_approval_response() above.  Dapr's own docs called after_tool_call
+    "reserved API surface... not yet dispatched" at 1.0.5; the 1.0.6 pass that
+    verified the approval flow did not re-check that hook.
 
 L2. Workflow instance ID inside a tool: The workflow instance ID is a Dapr
     Workflow concept.  It is NOT documented as available inside a synchronous
@@ -66,10 +78,16 @@ L2. Workflow instance ID inside a tool: The workflow instance ID is a Dapr
     per-call.  If the Python SDK exposes a context carrier inside tool
     execution (e.g. via contextvars), the emitter could auto-capture it.
 
-L3. HITL approver identity: ctx.wait_for_external_event() returns the raw
-    event payload.  The authenticated identity of the approver is NOT part of
-    the standardised payload schema.  Callers must supply approver_id from
-    their own auth layer (e.g. from the HTTP handler that raised the event).
+L3. HITL approver identity: neither the hook context (ToolHookContext:
+    step_name, step_kind, source, payload, tool_call_id) nor the native
+    ApprovalResponseEvent carries a verified approver — raise_approval_event()
+    takes an optional raw approver_token that dapr-agents passes through
+    unvalidated, and approver_subject is populated only by a caller-supplied
+    plugin (always None as built by dapr-agents itself).  Callers must resolve
+    the token in their own auth layer and pass the result as approver_id.
+    The workflow instance id likewise lives on the workflow context
+    (ctx.instance_id) / the raise_approval_event() call, not on the hook
+    context.
 
 L4. Workflow replay / activity idempotency: Dapr Workflow may replay activity
     functions on failure.  A wrapped tool firing on replay emits a duplicate
@@ -161,6 +179,8 @@ class DaprAgentsCapsuleEmitter(CapsuleEmitterBase):
         workflow_instance_id: str | None = None,
         app_id: str | None = None,
         approver_id: str | None = None,
+        approval_request_id: str | None = None,
+        tool_call_id: str | None = None,
     ) -> dict[str, Any] | None:
         ext: dict[str, str] = {}
         name = agent_name or self._agent_name
@@ -175,6 +195,10 @@ class DaprAgentsCapsuleEmitter(CapsuleEmitterBase):
             ext["app_id"] = str(aid)
         if approver_id:
             ext["approver_id"] = str(approver_id)
+        if approval_request_id:
+            ext["approval_request_id"] = str(approval_request_id)
+        if tool_call_id:
+            ext["tool_call_id"] = str(tool_call_id)
         return {"dapr_agents": ext}
 
     def tool(
@@ -273,8 +297,16 @@ class DaprAgentsCapsuleEmitter(CapsuleEmitterBase):
         agent_name: str | None = None,
         app_id: str | None = None,
         prior_capsule_id: str | None = None,
+        approval_request_id: str | None = None,
+        tool_call_id: str | None = None,
     ) -> EmitResult:
         """Record a HITL (Human-In-The-Loop) decision as a decide capsule.
+
+        This is the low-level form (any approval mechanism, including a hand-rolled
+        ``ctx.wait_for_external_event`` gate). For Dapr Agents' native hook flow —
+        ``Hooks(before_tool_call=...)`` returning ``RequireApproval``, answered by
+        ``DurableAgent.raise_approval_event(...)`` — use :meth:`record_approval_response`,
+        which takes that call's own arguments.
 
         Call this AFTER ctx.wait_for_external_event() resolves — only once the
         human has actually approved or rejected.  Never call with fabricated
@@ -299,6 +331,10 @@ class DaprAgentsCapsuleEmitter(CapsuleEmitterBase):
             app_id: App-id override for this capsule.
             prior_capsule_id: Optional capsule_id of the preceding tool-call
                 fyi capsule to chain this decide capsule to it.
+            approval_request_id: Dapr Agents' ``approval_request_id`` for the
+                gate this decision answers (optional; sealed in the extension).
+            tool_call_id: The LLM-assigned ``tool_call_id`` of the gated call
+                (optional; sealed in the extension).
 
         Returns:
             EmitResult with .capsule_id and .anchored.
@@ -321,6 +357,8 @@ class DaprAgentsCapsuleEmitter(CapsuleEmitterBase):
             workflow_instance_id=workflow_instance_id,
             app_id=app_id,
             approver_id=approver_id,
+            approval_request_id=approval_request_id,
+            tool_call_id=tool_call_id,
         )
 
         return self.emit_capsule(
@@ -336,4 +374,77 @@ class DaprAgentsCapsuleEmitter(CapsuleEmitterBase):
             runtime="dapr_agents",
             extra_compute=extra,
             prior_capsule_id=prior_capsule_id,
+        )
+
+    def record_approval_response(
+        self,
+        action: str,
+        *,
+        instance_id: str,
+        approval_request_id: str,
+        approved: bool,
+        approver_id: str,
+        reason: str | None = None,
+        tool_request: Any = None,
+        tool_call_id: str | None = None,
+        agent_name: str | None = None,
+        app_id: str | None = None,
+        prior_capsule_id: str | None = None,
+    ) -> EmitResult:
+        """Record a decision delivered through Dapr Agents' native approval flow.
+
+        The idiomatic HITL path in dapr-agents >= 1.0.5 (verified on 1.0.6) is: a ``before_tool_call``
+        hook returns ``RequireApproval``; the runtime publishes an
+        ``ApprovalRequiredEvent`` (``approval_request_id``, ``instance_id``,
+        ``step_name``, ``tool_call_id``, ``tool_arguments``) and suspends; the human
+        answers and your approval service calls
+        ``DurableAgent.raise_approval_event(instance_id, approval_request_id,
+        approved, reason, approver_token)``. **That call is the seam** — the only
+        point where a real decision exists — so call this method right next to it,
+        with the same arguments, *after* the human has acted. Never from inside the
+        hook: at ``before_tool_call`` time no decision has been made.
+
+        The hook context (``ToolHookContext``) carries no workflow id and no
+        approver identity; both come from elsewhere. ``instance_id`` is the same
+        value you pass to ``raise_approval_event``. ``approver_id`` must be an
+        identity **your** auth layer has verified — dapr-agents passes
+        ``approver_token`` through unvalidated and its ``approver_subject`` is only
+        populated by a caller-supplied plugin — so resolve the token to a subject
+        before calling; this method never derives one.
+
+        Args:
+            action: Action name for the capsule (e.g. the gated tool's ``step_name``).
+            instance_id: The Dapr Workflow instance the decision resumes.
+            approval_request_id: The gate's id from ``ApprovalRequiredEvent``.
+            approved: The human's actual decision (``True`` → ``accept``,
+                ``False`` → ``reject``).
+            approver_id: The verified approver identity (see above).
+            reason: The human's stated reason, if any (digest-committed as outcome).
+            tool_request: The gated call's arguments (``ApprovalRequiredEvent.tool_arguments``),
+                if you want them committed.
+            tool_call_id: The gated call's ``tool_call_id``.
+            agent_name / app_id / prior_capsule_id: as :meth:`record_hitl`.
+
+        Note on effect status (inherited from :meth:`record_hitl`): approval
+        seals effect status ``dispatched``, rejection seals ``planned`` with
+        verdict ``blocked``. ``capsule_emit.approval.list_pending`` treats a
+        ``blocked``/``planned`` record as awaiting resolution, so a definitive
+        human "no" still shows as pending there until a resolving record
+        follows; the disposition block itself is unambiguous.
+        """
+        outcome: dict[str, Any] = {"approved": bool(approved)}
+        if reason is not None:
+            outcome["reason"] = str(reason)
+        return self.record_hitl(
+            action,
+            approver_id=approver_id,
+            decision="accept" if approved else "reject",
+            tool_request=tool_request,
+            outcome=outcome,
+            workflow_instance_id=instance_id,
+            agent_name=agent_name,
+            app_id=app_id,
+            prior_capsule_id=prior_capsule_id,
+            approval_request_id=approval_request_id,
+            tool_call_id=tool_call_id,
         )

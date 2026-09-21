@@ -408,3 +408,80 @@ def test_record_hitl_workflow_id_override(tmp_path):
     )
     ext = r.capsule["model_attestation"]["compute_attestation"]["dapr_agents"]
     assert ext["workflow_instance_id"] == "override-wf"
+
+
+# ---------------------------------------------------------------------------
+# 5.  record_approval_response — the native Hooks / RequireApproval /
+#     raise_approval_event flow
+# ---------------------------------------------------------------------------
+
+
+def test_approval_response_approved_seals_decide_executed_with_ids(tmp_path):
+    e = _emitter(tmp_path)
+    r = e.record_approval_response(
+        "delete_invoice",
+        instance_id="wf-9f2",
+        approval_request_id="apr-001",
+        approved=True,
+        approver_id="approver-subject:alice",
+        reason="matches PO",
+        tool_request={"invoice_id": "INV-001"},
+        tool_call_id="call_abc123",
+    )
+    cap = r.capsule
+    assert cap["action_type"] == "decide"
+    assert cap["disposition"]["verdict_class"] == "executed"
+    assert cap["disposition"]["human_disposed"] is True
+    assert cap["disposition"]["decision"] == "accept"
+    ext = _ca(e)["dapr_agents"]
+    assert ext["workflow_instance_id"] == "wf-9f2"
+    assert ext["approval_request_id"] == "apr-001"
+    assert ext["tool_call_id"] == "call_abc123"
+    assert ext["approver_id"] == "approver-subject:alice"
+    assert verify(cap).ok
+
+
+def test_approval_response_rejected_seals_decide_blocked(tmp_path):
+    e = _emitter(tmp_path)
+    r = e.record_approval_response(
+        "delete_invoice",
+        instance_id="wf-9f2",
+        approval_request_id="apr-002",
+        approved=False,
+        approver_id="approver-subject:bob",
+    )
+    cap = r.capsule
+    assert cap["disposition"]["verdict_class"] == "blocked"
+    assert cap["disposition"]["decision"] == "reject"
+    assert verify(cap).ok
+
+
+def test_approval_response_instance_id_overrides_emitter_default(tmp_path):
+    e = _emitter(tmp_path, workflow_instance_id="wf-default")
+    e.record_approval_response(
+        "t", instance_id="wf-from-call", approval_request_id="apr-3", approved=True, approver_id="a"
+    )
+    assert _ca(e)["dapr_agents"]["workflow_instance_id"] == "wf-from-call"
+
+
+def test_approval_response_requires_a_verified_approver(tmp_path):
+    e = _emitter(tmp_path)
+    with pytest.raises(TypeError):
+        e.record_approval_response("t", instance_id="wf", approval_request_id="apr", approved=True)  # type: ignore[call-arg]
+
+
+def test_approval_response_chains_to_prior_fyi(tmp_path):
+    e = _emitter(tmp_path)
+
+    @e.tool("check_invoice")
+    def check_invoice(invoice_id: str) -> dict:
+        return {"ok": True}
+
+    check_invoice("INV-1")
+    fyi_id = e.last.capsule_id
+    r = e.record_approval_response(
+        "check_invoice", instance_id="wf", approval_request_id="apr", approved=True,
+        approver_id="a", prior_capsule_id=fyi_id,
+    )
+    assert r.capsule["chain"]["parent_capsule_id"] == fyi_id
+    assert verify(r.capsule).ok
