@@ -255,6 +255,22 @@ break a demo; an empty one reads as a broken artifact, which is why only that on
   remain verify-only and unaffected. No test fixtures existed on disk for this path; the builder
   itself was the "fixture."
 
+### Changed — evidence-request refusal reasons aligned to `draft-mih-agent-evidence-request-00`
+
+- `evidence_request.answer()`'s "I hold nothing for this subject" refusal now emits
+  `reason="no_such_subject"` (the ratified IANA-style registry token), not `no_such_record`.
+  This repo had modeled that case as the registry's `recorded_absence`, which is wrong:
+  `recorded_absence` names the *requester's own* record that no answer arrived by a deadline,
+  never something a synchronous, always-signed responder like this one produces.
+  `REASON_NO_SUCH_RECORD` stays importable for one release as a deprecated alias name;
+  `LEGACY_REFUSAL_REASON_ALIASES` / `normalize_refusal_reason()` let a caller that reads a
+  peer's refusal keep recognizing the old spelling during a mixed-version rollout.
+- Added refusal reason `derivation_unsupported`: a request naming any `derivation` is now
+  refused with this reason rather than silently answered as a plain bundle — this responder
+  supports no derivation itself (a caller that supports one, e.g. capsule-emit-mesh's
+  `served_summary/1`, intercepts before calling `answer()`).
+- `request_malformed` and `coverage_unsatisfiable` were already the registry's spellings; unchanged.
+
 ### Added — `capsule-emit verify --require-signature` (#185)
 
 - `verify_store_signed(records, *, require_signature=False)` gains the keyword: when true, a
