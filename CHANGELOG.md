@@ -6,6 +6,29 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed — ADK: a `LongRunningFunctionTool`'s pending placeholder no longer seals as a completed call (#199)
+
+- ADK fires `after_tool_callback` (and emits a function-response event) on whatever a tool returns
+  first; for a `LongRunningFunctionTool` that is a pending stub, and progress updates plus the
+  real result are injected later under the same `function_call_id`. The framework's
+  `is_long_running` check runs *after* the callbacks (it skips the event build, not the callback)
+  and the callback signature carries no pending flag — so `ADKCapsuleEmitter.after_tool_callback`
+  sealed the stub with the default `verdict="executed"`, indistinguishable from a finished call,
+  and the dedup set then dropped every later response as a duplicate id. Now: the placeholder
+  seals as a dispatch (`adk_long_running: "true"`, `adk_outcome: "pending"`, digest-committed; a
+  declared effect keeps its type with status forced to `dispatched`; an undeclared tool gets no
+  effect block, as on the plain path), keyed on `tool.is_long_running` from the callback or the
+  model-call event's `long_running_tool_ids` from the tap. Each later response on the event
+  stream seals a further record chained to the previous one as `adk_outcome: "update"`; the new
+  `long_running_final=` predicate names the terminal one (`adk_outcome: "final"`, chain closed) —
+  the adapter never promotes a response to final or to a `confirmed` effect on its own. The
+  placeholder echoed on the stream is recognised by canonical form and not sealed twice. Open
+  long-running calls are bounded by the new `max_long_running` (default 1024, separate from
+  `max_pending`); eviction drops the dedup entry too, so a late response seals as a plain
+  unchained call rather than vanishing. Plain tools are unchanged. Found by the adapter-coverage
+  recon on google-adk 2.9.1; the update/final split and the effect asymmetry were caught by the
+  seance before merge.
+
 ### Fixed — LiteLLM: a stream the client abandoned no longer seals as a confirmed completion (#198)
 
 - litellm bills a mid-stream client disconnect as a *success* event over a partial response
