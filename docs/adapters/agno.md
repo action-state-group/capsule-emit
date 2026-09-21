@@ -113,7 +113,11 @@ role/version tag, not personal data.
 - **Integrity, not completeness.** `verify` establishes that the records you have are internally
   consistent and, where a signature is present, signed by the key it names. It does **not** prove the tools actually
   ran, or that every call was recorded — a record nobody wrote leaves no trace.
-  The listener only seals calls that pass through Agno's tool-hook chain; a
+  The listener only seals calls that pass through Agno's tool-hook chain —
+  which `MCPTools` tools do traverse: a toolkit's functions get the agent's
+  `tool_hooks` assigned exactly as `@tool` callables do, and both run through
+  the one `FunctionCall.execute`/`aexecute` path (confirmed on agno 3.0.10;
+  MCP entrypoints are coroutines, so it is the async hook that fires). A
   raw HTTP request an agent makes on the side is never sealed, a hook
   registered on the sync path never sees calls driven through `arun`/`aexecute`
   (register `listener.async_hook` for those), and a call that stops before the

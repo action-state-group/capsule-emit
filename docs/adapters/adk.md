@@ -107,7 +107,10 @@ a role/version tag, not personal data. What the adapter takes from `tool_context
 - **Integrity, not completeness.** `verify` establishes that the records you have are internally
   consistent and, where a signature is present, signed by the key it names. It does **not** prove the tools actually ran, or
   that every call was recorded — a record nobody wrote leaves no trace. The
-  emitter seals what passes its callbacks or its event tap; a raw HTTP request
+  emitter seals what passes its callbacks or its event tap — and every
+  `BaseTool` passes them: `MCPToolset` tools, `AgentTool`, and A2A's
+  agent-as-tool wrapper all resolve to the one `_call_tool_async` site where
+  `after_tool_callback` fires (confirmed on google-adk 2.9.1). A raw HTTP request
   an agent makes on the side is never sealed, and a tool that raises on the
   callback path is sealed only if `on_tool_error_callback` or your `except` calls
   `emit_errored`. Closing that is a

@@ -117,7 +117,10 @@ recovered by enumeration.
   consistent and, where a signature is present, signed by the key it names. It does **not** prove the tools actually
   ran, or that every call was recorded — a record nobody wrote leaves no trace.
   The processor seals the SDK's function-tool spans; the hooks see what the
-  SDK routes through `on_tool_start`/`on_tool_end`. Hosted tools — web search,
+  SDK routes through `on_tool_start`/`on_tool_end`. A *local* MCP server's
+  tools are wrapped as ordinary `FunctionTool`s before the run loop sees them,
+  so they reach both surfaces like a `@function_tool` does (confirmed on
+  openai-agents 0.22.2). Hosted tools — web search,
   file search, code interpreter, hosted MCP — run on the provider's side and
   reach neither surface, and a raw HTTP request an agent makes on the side is
   never sealed. Closing that is a separate
