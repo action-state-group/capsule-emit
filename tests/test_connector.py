@@ -125,12 +125,22 @@ def test_mcp_emitter_is_a_connector_port(tmp_path):
     assert emitter.boundary_class == BoundaryClass.DECORATOR.value
 
 
-def test_mcp_emitter_classify_matches_shared_rule(tmp_path):
+@pytest.mark.parametrize(
+    "event",
+    [
+        ConnectorEvent(name="get_weather", mcp_read_only_hint=True),
+        ConnectorEvent(name="book_flight", mcp_read_only_hint=False),
+        ConnectorEvent(name="wipe", mcp_destructive_hint=True, mcp_read_only_hint=True),
+        ConnectorEvent(name="mystery"),
+        ConnectorEvent(name="fetch", http_method="GET"),
+        ConnectorEvent(name="mutate", http_method="POST"),
+    ],
+)
+def test_mcp_emitter_classify_matches_shared_rule(tmp_path, event):
     from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 
     emitter = MCPCapsuleEmitter(operator="acme", developer="agent@v1", ledger=tmp_path / "l.jsonl")
-    event = ConnectorEvent(name="get_weather", mcp_read_only_hint=True)
-    assert emitter.classify(event) is classify_signal_1(event) is Classification.OBSERVATION
+    assert emitter.classify(event) is classify_signal_1(event)
 
 
 def test_mcp_emitter_capture_seals_an_authored_event(tmp_path):
