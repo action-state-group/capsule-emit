@@ -138,6 +138,17 @@ received()`) that two adapters (`adapters.mcp.MCPCapsuleEmitter`,
 `adapters.langchain_listener.LangChainListenerCore`) now implement
 explicitly.
 
+The reference implementation of *this subsection* — the OTel-span row
+translation (`db.operation.name`, `messaging.operation.type`, `rpc.method`)
+— is `capsule_emit.otel.signal.classify_span_signal_1`. It does not
+re-implement the priority order or the fail-safe default: it translates a
+span's attributes into the same `ConnectorEvent` shape above
+(`http_method` when `http.request.method` is present, else
+`commit_step_present`) and calls `classify_signal_1` directly, so the rule
+lives in exactly one place. See `docs/extensions/otel-correlation.md` for
+the full OTel processor this feeds (digest-only `org.agentactioncapsule.otel`
+correlation block, draft-palanisamy-scitt-aac-otel-00).
+
 ---
 
 ## Signal 2 — is the data sensitive?

@@ -84,6 +84,10 @@ litellm = ["litellm>=1.99.0"]
 # shape read by capsule_emit.adapters.inspect_ai).
 inspect-ai = ["inspect-ai>=0.3.263"]
 checkpoint = ["scitt-cose>=0.2.0"]
+# capsule_emit.otel.CapsuleOTelSpanExporter only -- the rest of capsule_emit.otel
+# (allow-list, span classification, SpanFacts, process_span_facts) has no
+# OpenTelemetry dependency at all; see that module's docstring.
+otel = ["opentelemetry-sdk>=1.20"]
 
 [project.scripts]
 capsule-emit = "capsule_emit.cli:main"
