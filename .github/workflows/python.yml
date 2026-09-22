@@ -32,7 +32,7 @@ jobs:
           "git+https://github.com/action-state-group/capsule-ledger.git"
 
       - name: install capsule-emit
-        run: pip install -e ".[dev,agentgateway,langchain,agno]"
+        run: pip install -e ".[dev,agentgateway,langchain,agno,otel]"
 
       - name: ruff
         run: python -m ruff check .
