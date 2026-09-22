@@ -32,7 +32,7 @@ jobs:
           "git+https://github.com/action-state-group/capsule-ledger.git"
 
       - name: install capsule-emit
-        run: pip install -e ".[dev,agentgateway,langchain,agno]"
+        run: pip install -e ".[dev,agentgateway,langchain,agno,otel]"
 
       - name: pin agent-action-capsule to the -05 wire (from source; no PyPI release carries -05 yet)
         # agent-action-capsule main at the -05 wire bump (#126, with its
