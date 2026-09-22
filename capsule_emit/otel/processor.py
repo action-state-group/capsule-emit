@@ -51,7 +51,13 @@ from ..connector import Classification
 from ..core import EmitResult
 from .allowlist import DEFAULT_SEMCONV_SOURCE
 from .attributes import SpanAttributeValue
-from .block import OTEL_BLOCK_KEY, OUTCOME_CONTEXT_KEY, build_otel_block, build_outcome_context_block
+from .block import (
+    OTEL_BLOCK_KEY,
+    OUTCOME_CONTEXT_KEY,
+    _sha256_hex,
+    build_otel_block,
+    build_outcome_context_block,
+)
 from .signal import classify_span_signal_1
 
 __all__ = [
@@ -131,11 +137,25 @@ def process_span_facts(
     itself fails -- a broken ledger or anchor endpoint must not crash the
     host application's OTel export path, the same contract every other
     capsule-emit adapter makes.
+
+    **The span name never reaches ``action_id``/``effect.type`` in clear
+    unless *clear_trace_context* says so.** A §7b cold review caught this:
+    an earlier version of this function passed the raw span name straight
+    through as the emitter's ``action`` (and therefore into the sealed
+    capsule's ``action_id`` and ``effect.type``, both plain, undigested
+    fields) regardless of *clear_trace_context* -- while the SAME name was
+    correctly gated inside ``otel_block["span_name"]``. That is exactly the
+    "clear-safe, conditional ... never user-derived" span name the draft
+    itself warns about (many real OTel instrumentations DO put dynamic data
+    in a span name, e.g. an HTTP client span named with an unrendered
+    route). ``action_label`` below applies the identical gate everywhere the
+    name could leave the process.
     """
     name = facts.name or "unknown"
     classification = classify_span_signal_1(name, facts.attributes or {})
     if classification is not Classification.EFFECT:
         return None
+    action_label = name if clear_trace_context else _sha256_hex(name)
 
     try:
         otel_block = build_otel_block(
@@ -163,10 +183,10 @@ def process_span_facts(
     status = "failed" if facts.status_is_error else "confirmed"
     try:
         return emitter.emit_capsule(
-            name,
+            action_label,
             {"span_name": name},
             {"status": "ERROR" if facts.status_is_error else "OK"},
-            effect={"type": name, "status": status},
+            effect={"type": action_label, "status": status},
             runtime="otel",
             action_type="fyi",
             extra_compute=extra_compute,

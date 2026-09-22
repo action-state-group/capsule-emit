@@ -15,7 +15,9 @@ All notable changes to `capsule-emit` are documented here. The format follows
   spans as digest-only `org.agentactioncapsule.otel` correlation blocks per
   draft-palanisamy-scitt-aac-otel-00 — allow-list default-deny, trace/span identifiers digested
   by default (`clear_trace_context=True` opts in per the draft's own privacy-assessment
-  requirement), never-enters content (prompt/completion, tool args/results, session/end-user
+  requirement) — including the span name everywhere it could otherwise leave the process
+  (`otel_block["span_name"]` AND the sealed capsule's own `action_id`/`effect.type`, gated by
+  the same flag), never-enters content (prompt/completion, tool args/results, session/end-user
   identifiers) never read at all. See `docs/extensions/otel-correlation.md`.
 - The reverse-join span attribute (`aac.capsule_id`, provisional) is set reliably via
   `capsule_emit.otel.stamp_reverse_join(span, capsule_id)` for application code that seals

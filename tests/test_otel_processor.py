@@ -67,6 +67,21 @@ def test_never_enters_semconv_keys_are_absent_from_the_allowlist():
     assert SEMCONV_ATTRS.keys().isdisjoint(NEVER_ENTERS_SEMCONV)
 
 
+def test_never_enters_semconv_prefix_family_has_no_matching_allowlist_key():
+    """The exact-key disjointness test above says nothing about the PREFIX
+    family (gen_ai.prompt.variable.*/enduser.*/user.*, allowlist.py's
+    NEVER_ENTERS_SEMCONV_PREFIXES) -- a future SEMCONV_ATTRS entry like
+    "user.email" would pass the exact-set check above while still being a
+    never-enters row under its prefix form. §7b cold review flagged this
+    exact gap."""
+    from capsule_emit.otel.allowlist import NEVER_ENTERS_SEMCONV_PREFIXES
+
+    for key in SEMCONV_ATTRS:
+        assert not key.startswith(NEVER_ENTERS_SEMCONV_PREFIXES), (
+            f"{key!r} is allow-listed but matches a never-enters prefix"
+        )
+
+
 def test_resource_attrs_never_include_the_drafts_should_omit_identifiers():
     for identifier in ("service.instance.id", "host.name", "host.id", "container.id"):
         assert identifier not in RESOURCE_ATTRS
@@ -83,11 +98,14 @@ def test_db_select_is_observation():
     assert event is Classification.OBSERVATION
 
 
-def test_db_insert_is_effect_even_nested_under_a_get_parent():
-    """Worked example 4 -- classification reads THIS span's own attributes
-    only; the caller never passes a parent's http.request.method in, so
-    there is nothing here that could leak the parent's GET into the child's
-    classification."""
+def test_db_insert_is_effect_regardless_of_any_ancestor_span():
+    """Worked example 4's point, exercised at the unit level:
+    ``classify_span_signal_1`` takes one span's own name+attributes and
+    nothing else -- no parent parameter exists on this function -- so an
+    INSERT span classifies EFFECT purely from its own attributes. This test
+    does not construct an actual parent/child span pair (nothing here could
+    -- the function has no way to see one); it documents that the isolation
+    worked example 4 relies on is structural, not merely behavioral."""
     child = classify_span_signal_1("insert_row", {"db.operation.name": "INSERT"})
     assert child is Classification.EFFECT
 
@@ -126,10 +144,15 @@ def test_rpc_method_ambiguous_name_falls_to_fail_safe():
     assert classify_span_signal_1("r", {"rpc.method": "Frobnicate"}) is Classification.EFFECT
 
 
-def test_span_kind_client_alone_no_attributes_is_fail_safe_effect():
-    """R4: the mutant this guards is a future change that treats a bare
-    CLIENT span as evidence of a read. Flip commit_step_present's caller to
-    default False instead of None and this test goes red."""
+def test_no_recognized_attribute_present_is_fail_safe_effect():
+    """The taxonomy doc's "span kind CLIENT alone, no attribute above
+    present" row -- ``classify_span_signal_1`` does not read span kind at
+    all (it has no parameter for it); an empty attributes dict is the
+    closest this function's own inputs get to that row, and is the actual
+    case this test exercises. R4: the mutant this guards is a future change
+    that treats a bare/unrecognized span as evidence of a read. Flip
+    commit_step_present's caller to default False instead of None and this
+    test goes red."""
     assert classify_span_signal_1("mystery", {}) is Classification.EFFECT
 
 
@@ -270,15 +293,47 @@ def test_outcome_context_only_tags_allowlisted_keys_and_always_digests():
     assert "ignored" not in json.dumps(result)
 
 
-def test_outcome_context_never_appears_inside_the_otel_block_itself():
-    """The draft's own privacy rule: 'no field of org.agentactioncapsule.otel
-    MAY carry ... OpenTelemetry baggage entries' -- unconditionally. This is
-    why OUTCOME_CONTEXT_KEY is a sibling compute_attestation key, never
-    nested under OTEL_BLOCK_KEY; assert the separation directly."""
+def test_outcome_context_key_shape_is_structurally_separate_from_the_block():
+    """build_otel_block has no baggage parameter at all -- it cannot receive
+    baggage content even by caller error -- so the key-name assertions here
+    are a structural sanity check, not proof of non-contamination on the
+    real merge path. See
+    test_outcome_context_never_appears_inside_the_real_otel_block below for
+    that proof, exercised through process_span_facts (the actual place the
+    two blocks are merged into one compute_attestation dict)."""
     otel_block = build_otel_block("op", trace_id=TRACE_ID, span_id=SPAN_ID)
     assert "outcome_context" not in otel_block
     assert OUTCOME_CONTEXT_KEY != OTEL_BLOCK_KEY
     assert not OUTCOME_CONTEXT_KEY.startswith(OTEL_BLOCK_KEY)
+
+
+def test_outcome_context_never_appears_inside_the_real_otel_block(tmp_path):
+    """The draft's own privacy rule, proven on the REAL merge path
+    (process_span_facts assembling extra_compute from both
+    build_otel_block and build_outcome_context_block): a baggage value
+    tagged into ext.otel.outcome_context must never also show up inside
+    org.agentactioncapsule.otel, the block the draft forbids baggage from
+    entering at all."""
+    ledger = tmp_path / "l.jsonl"
+    baggage_value = "MARKER-VALUE-THAT-MUST-STAY-OUT-OF-THE-OTEL-BLOCK"
+    facts = _facts(baggage={"exchange.state": baggage_value})
+    result = process_span_facts(
+        facts,
+        operator="acme",
+        developer="agent@v1",
+        ledger=str(ledger),
+        outcome_context_baggage_keys=frozenset({"exchange.state"}),
+    )
+    compute_attestation = result.capsule["model_attestation"]["compute_attestation"]
+    # Proves the fixture is actually populated (not a vacuous pass on an
+    # empty structure): the tagged digest DOES appear, in the sibling key.
+    assert compute_attestation[OUTCOME_CONTEXT_KEY] == {
+        "exchange.state": hashlib.sha256(baggage_value.encode()).hexdigest()
+    }
+    otel_block_json = json.dumps(compute_attestation[OTEL_BLOCK_KEY])
+    assert "outcome_context" not in otel_block_json
+    assert baggage_value not in otel_block_json
+    assert hashlib.sha256(baggage_value.encode()).hexdigest() not in otel_block_json
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +375,38 @@ def test_effect_span_is_sealed_with_the_otel_block(tmp_path):
     assert otel_block["trace_id"] == hashlib.sha256(TRACE_ID.encode()).hexdigest()
     assert result.capsule["effect"]["status"] == "confirmed"
     assert verify_capsule(result.capsule).ok
+
+
+def test_REGRESSION_span_name_never_reaches_action_id_or_effect_type_in_clear(tmp_path):
+    """§7b cold review finding: an earlier version passed the raw span name
+    straight through as action_id/effect.type -- both plain, undigested
+    fields -- regardless of clear_trace_context, while the identical name
+    was correctly gated inside otel_block["span_name"]. This is exactly the
+    draft's "clear-safe, conditional ... never user-derived" span-name
+    warning: real OTel instrumentations do put dynamic data in span names
+    (e.g. an unrendered HTTP route). Fixed in processor.py's action_label;
+    this pins the fix."""
+    ledger = tmp_path / "l.jsonl"
+    sensitive_name = "process_order_for_jane.doe@example.com"
+    facts = _facts(name=sensitive_name)
+    result = process_span_facts(facts, operator="acme", developer="agent@v1", ledger=str(ledger))
+    assert "jane.doe" not in result.capsule["action_id"]
+    assert "jane.doe" not in result.capsule["effect"]["type"]
+    assert "jane.doe" not in ledger.read_bytes().decode()
+
+    digested = hashlib.sha256(sensitive_name.encode()).hexdigest()
+    assert result.capsule["effect"]["type"] == digested
+
+    # Opt-in: clear_trace_context=True is the explicit escape hatch, and the
+    # name legitimately appears there -- proves this isn't just "the name
+    # never appears," it's "the name is gated by the same flag everywhere."
+    ledger2 = tmp_path / "l2.jsonl"
+    facts2 = _facts(name=sensitive_name)
+    result2 = process_span_facts(
+        facts2, operator="acme", developer="agent@v1", ledger=str(ledger2), clear_trace_context=True
+    )
+    assert result2.capsule["effect"]["type"] == sensitive_name
+    assert sensitive_name in result2.capsule["action_id"]
 
 
 def test_error_status_span_seals_failed_effect(tmp_path):
