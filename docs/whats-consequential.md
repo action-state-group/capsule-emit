@@ -63,6 +63,81 @@ silently exempt a call.
   boundary. A tool whose name says read but whose effect is a write is a
   mislabeled command.
 
+### Effect, formally
+
+**An event is an effect when it crosses a system boundary carrying a
+write.** "Boundary" here is deliberately broad — a network call, a disk
+write, a database transaction, a queue publish — and "carrying a write" is
+what the signals above already detect (a mutating HTTP verb, MCP
+`readOnlyHint=false`/absent, a commit step). Two consequences follow
+directly from stating it this way:
+
+- **The boundary need not be remote.** A local database write observed as a
+  command (an unsafe HTTP verb, `readOnlyHint` absent or false) is exactly
+  as much an effect as a remote POST — Signal 1's rows never required the
+  write to leave the machine, only to leave the caller's own state
+  unchanged-or-not.
+- **A boundary crossing with no write is still an observation**, however
+  far it travels. A `GET` to a service three hops away is a query at every
+  hop.
+
+### Reading Signal 1 off an OpenTelemetry span
+
+A runtime is frequently OTel-instrumented before it is MCP- or HTTP-shaped
+at the point an adapter observes it — an internal RPC, a database call, a
+queue publish. The same command/query split reads directly off the span's
+OpenTelemetry Semantic Convention attributes:
+
+| Span attribute | Command (seal) | Query (no capsule) |
+|---|---|---|
+| `http.request.method` | POST, PUT, PATCH, DELETE | GET, HEAD, OPTIONS |
+| `db.operation.name` (database semantic conventions) | INSERT, UPDATE, DELETE, MERGE | SELECT |
+| `messaging.operation.type` (messaging semantic conventions) | create, send, settle | receive, process (with no downstream write span) |
+| `rpc.method` naming a known-mutating verb | e.g. `CreateOrder`, `DeleteUser` | e.g. `GetOrder`, `ListUsers` |
+| Span kind `CLIENT` alone, no attribute above present | — | not evidence of a read either way — falls to the fail-safe below |
+
+The same fail-safe applies here as for a raw HTTP call or an MCP hint: none
+of the attributes above present, or present but ambiguous (an `rpc.method`
+name that does not read unambiguously as a verb), classifies as
+consequential, not as a read. A span carries strictly more structure than
+raw HTTP or a bare MCP call, but it is still a *hint* — an internal service
+can mislabel a span exactly as an MCP server can omit `readOnlyHint`.
+
+### Worked examples
+
+1. **MCP tool, `readOnlyHint` present.** `get_weather` annotated
+   `{"readOnlyHint": true}` → classified `OBSERVATION`. Not sealed unless
+   the resource is also tagged sensitive (Signal 2, below).
+2. **MCP tool, no annotations at all.** A third-party server that ships no
+   `readOnlyHint`/`destructiveHint` on any tool → every call to it →
+   `EFFECT` (no signal present, fail-safe default), even a tool plainly
+   named `list_something`. The fix is upstream — the server should ship the
+   annotation — not a local override that guesses on the server's behalf.
+3. **OTel span, `db.operation.name = "SELECT"`.** → `OBSERVATION`.
+4. **OTel span, `db.operation.name = "INSERT"`, nested under a parent span
+   whose `http.request.method = "GET"`.** The signal on the span that
+   actually performs the write governs, not its ancestor: classify
+   per-span, not per-request. The parent `GET` span is a separate, and
+   correctly `OBSERVATION`, event — this is the "query tool that triggers a
+   downstream command" grey area above, restated for nested spans instead
+   of nested tool calls.
+5. **HTTP `POST /search`.** Named like a query, verbed like a command — the
+   HTTP-method signal is unambiguous here and wins → `EFFECT`. A handler
+   that turns out to be read-only server-side does not change the
+   classification: Signal 1 reads the runtime's declared contract, not the
+   handler's implementation.
+
+The reference implementation of this section is
+`capsule_emit.connector.classify_signal_1` — `ConnectorEvent` carries
+exactly the fields this page enumerates (`mcp_destructive_hint`,
+`mcp_read_only_hint`, `http_method`, `commit_step_present`), evaluated in
+the same priority order, with the same fail-safe default. See
+`capsule_emit.connector.ConnectorPort` for the adapter contract
+(`classify(event) -> observation | effect`, `capture(event) -> seal() |
+received()`) that two adapters (`adapters.mcp.MCPCapsuleEmitter`,
+`adapters.langchain_listener.LangChainListenerCore`) now implement
+explicitly.
+
 ---
 
 ## Signal 2 — is the data sensitive?
@@ -152,3 +227,8 @@ The two-signal rule borrows established vocabulary rather than coining new terms
 - **Auditable access to sensitive data** — **HIPAA Security Rule, 45 C.F.R.
   §164.312(b)** (audit controls) and **PCI DSS** logging requirements. The
   basis for Signal 2 keying on data classification rather than operation type.
+
+- **Semantic Conventions** — the **OpenTelemetry** project's HTTP, Database,
+  and Messaging semantic conventions. The span-attribute signals Signal 1
+  reads when a runtime is OTel-instrumented rather than framed as raw HTTP
+  or MCP — see "Reading Signal 1 off an OpenTelemetry span" above.

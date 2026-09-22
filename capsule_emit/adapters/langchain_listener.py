@@ -61,6 +61,9 @@ import warnings
 from collections import OrderedDict
 from typing import Any
 
+from ..connector import BoundaryClass, Classification, ConnectorEvent, classify_signal_1
+from ..core import EmitResult
+from ..surface import received
 from ._base import CapsuleEmitterBase
 
 __all__ = ["LangChainCapsuleListener", "LangChainListenerCore"]
@@ -264,6 +267,54 @@ class LangChainListenerCore(CapsuleEmitterBase):
             runtime="langchain",
         )
 
+    # -- capsule_emit.connector.ConnectorPort conformance -------------------
+
+    #: A passive tap on LangChain's own callback stream — sees every tool
+    #: call the framework runs, not only the ones a developer chose to wrap
+    #: — the "listener" case named by ``capsule_emit.connector.BoundaryClass``.
+    boundary_class: str = BoundaryClass.LISTENER.value
+
+    def classify(self, event: ConnectorEvent) -> Classification:
+        """Signal 1 only (:func:`capsule_emit.connector.classify_signal_1`).
+
+        LangChain's callback stream carries no resource-classification tag,
+        so — same as the MCP decorator adapter — this listener can never
+        evaluate Signal 2 itself; see ``docs/whats-consequential.md``'s
+        layering table.
+        """
+        return classify_signal_1(event)
+
+    def capture(self, event: ConnectorEvent) -> EmitResult:
+        """:class:`~capsule_emit.connector.ConnectorPort`'s explicit capture
+        path: one already-resolved event, sealed directly — not the
+        planned/confirmed pairing ``on_tool_start_core``/``on_tool_end_core``
+        build from a LangChain ``run_id`` (there is none here, by design: a
+        discovery scan or a replayed event has no in-flight LangChain run to
+        pair against). ``event.foreign`` carries in via ``received()``;
+        everything else seals through the same :meth:`emit_capsule` the
+        callback path uses, with ``effect.status="confirmed"`` since the
+        event is, by construction, already complete.
+        """
+        if event.foreign:
+            return received(
+                event.foreign_bytes,
+                type=event.foreign_type,
+                operator=self._operator,
+                developer=self._developer,
+                ledger=self._ledger,
+                anchor=self._anchor,
+                anchor_url=self._anchor_url,
+                anchor_wait=self._anchor_wait,
+            )
+        return self.emit_capsule(
+            event.name,
+            event.tool_input,
+            event.tool_output,
+            effect={"type": event.name, "status": "confirmed"},
+            action_type="fyi",
+            runtime="langchain",
+        )
+
 
 try:
     from langchain_core.callbacks import BaseCallbackHandler as _Base
@@ -356,3 +407,18 @@ class LangChainCapsuleListener(_Base):  # type: ignore[valid-type,misc]
         **kw: Any,
     ) -> None:
         self.core.on_chain_lifecycle_core("failed", error, run_id, parent_run_id)
+
+    # -- capsule_emit.connector.ConnectorPort conformance --------------------
+    # Pure delegation: all sealing logic (and ConnectorPort conformance) lives
+    # on self.core (LangChainListenerCore, module docstring) -- this shell
+    # only binds it to BaseCallbackHandler.
+
+    @property
+    def boundary_class(self) -> str:
+        return self.core.boundary_class
+
+    def classify(self, event: ConnectorEvent) -> Classification:
+        return self.core.classify(event)
+
+    def capture(self, event: ConnectorEvent) -> EmitResult:
+        return self.core.capture(event)

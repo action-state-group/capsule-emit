@@ -118,7 +118,10 @@ from typing import Any, Callable
 
 from agent_action_capsule.canonical import FloatInDigestError, UnsafeIntegerError, jcs, json_digest, normalize
 
+from ..connector import BoundaryClass, Classification, ConnectorEvent, classify_signal_1
+from ..core import EmitResult
 from ..gate import GateBlockedError, run_gate
+from ..surface import received
 from ._base import CapsuleEmitterBase
 
 _log = logging.getLogger(__name__)
@@ -440,6 +443,53 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
             "digest_alg": "SHA-256",
             "manifest_ref": self._toolset_ref,
         }
+
+    # ------------------------------------------------------------------
+    # capsule_emit.connector.ConnectorPort conformance
+    # ------------------------------------------------------------------
+    #: This adapter wraps the call at the actual agent/tool boundary — the
+    #: decorator sees the real call args/return as the MCP call crosses it,
+    #: not a framework's replayed event stream — the "boundary-capture"
+    #: case named by ``capsule_emit.connector.BoundaryClass``.
+    boundary_class: str = BoundaryClass.DECORATOR.value
+
+    def classify(self, event: ConnectorEvent) -> Classification:
+        """Signal 1 only (:func:`capsule_emit.connector.classify_signal_1`).
+
+        This adapter sees the MCP tool boundary, not a resource
+        classification tag, so it can never evaluate Signal 2 itself —
+        ``docs/whats-consequential.md``'s layering table marks Signal 2
+        engine-side only. A caller with engine-side knowledge decides
+        whether to still capture a classified ``OBSERVATION`` by setting
+        ``event.resource_sensitive`` before calling :meth:`capture`.
+        """
+        return classify_signal_1(event)
+
+    def capture(self, event: ConnectorEvent) -> EmitResult:
+        """:class:`~capsule_emit.connector.ConnectorPort`'s explicit,
+        non-decorator capture path: seal (or carry) one already-known event
+        directly, for callers driving this adapter from something other
+        than ``@emitter.tool()`` — a discovery scan, a replay, a scripted
+        call.
+
+        ``event.foreign`` dispatches to ``received()`` (never re-signs a
+        foreign artifact), exactly as ``surface.py``'s dispatch rule
+        requires; otherwise this seals ``event.tool_input``/``tool_output``
+        through the same :meth:`emit_capsule` every ``@tool()``-decorated
+        call uses, so canonicalization and chaining behave identically.
+        """
+        if event.foreign:
+            return received(
+                event.foreign_bytes,
+                type=event.foreign_type,
+                operator=self._operator,
+                developer=self._developer,
+                ledger=self._ledger,
+                anchor=self._anchor,
+                anchor_url=self._anchor_url,
+                anchor_wait=self._anchor_wait,
+            )
+        return self.emit_capsule(event.name, event.tool_input, event.tool_output)
 
     def tool(
         self,
