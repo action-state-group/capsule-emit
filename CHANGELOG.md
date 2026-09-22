@@ -62,6 +62,24 @@ All notable changes to `capsule-emit` are documented here. The format follows
   `approval_request_id` and `tool_call_id`.
 - Docs only. Affects 0.8.3.
 
+### Added — LangGraph coverage, documented and tested (docs only, no code change)
+
+- `LangChainCapsuleListener` already seals every tool call a LangGraph
+  `StateGraph`/`ToolNode` makes — `ToolNode` routes through the same
+  `tool.invoke(call_args, config)` / `tool.ainvoke(call_args, config)` call
+  shape (`langgraph-prebuilt` `tool_node.py:958,1105` at `prebuilt==1.1.0`)
+  and the same chained LangChain callback manager as any other runnable, so
+  no new hook or adapter code was needed. Tested against the released wheel
+  (`capsule-emit==0.8.3`, `langgraph==1.2.12`, `langgraph-prebuilt==1.1.0`,
+  `langchain-core==1.6.4`): a basic tool call, two tool calls in one turn
+  (parallel `ToolNode`, correctly paired by `run_id`), and a raising tool
+  (sealed as `planned → failed`). Documented in a new "LangGraph" section of
+  `docs/adapters/langchain.md`, including what this does *not* see —
+  `interrupt()` raised inside a tool reads as a tool error in the ledger, and
+  resuming a rewound checkpoint re-executes the tool for real and seals a
+  second, correctly independent record rather than a duplicate. New runnable
+  example: `examples/langchain-listener/langgraph_demo.py`.
+
 ### Added — Dapr Agents: `record_approval_response`, the HITL record on the native approval flow (#200)
 
 - `DaprAgentsCapsuleEmitter.record_hitl` was documented against a hand-rolled

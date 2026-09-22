@@ -56,6 +56,159 @@ You'll watch it seal `planned → confirmed` for the call that works and
 throwaway ledger and checks it for you; the step-by-step version of that code —
 and how to keep a ledger of your own — is under [Example](#example) below.
 
+## LangGraph
+
+Does a LangGraph `StateGraph` need a different hook, or does the listener
+above already cover it? Tested against the released wheel, not inferred:
+**already covered, no new hook needed.** LangGraph routes every `ToolNode`
+call through the exact same LangChain callback manager this listener already
+attaches to. This section adds `pip install "langgraph>=1.2,<2" langgraph-prebuilt`
+on top of the `[langchain]` extra — nothing else is LangGraph-specific.
+A runnable version of the proof below ships as
+[`examples/langchain-listener/langgraph_demo.py`](https://github.com/action-state-group/capsule-emit/blob/main/examples/langchain-listener/langgraph_demo.py).
+
+### The call chain
+
+Traced at `langgraph-prebuilt==1.1.0` (tag `prebuilt==1.1.0`, resolved SHA
+`3614e88c58af63f597764218646e85c49952b2da`), against `langgraph==1.2.12` and
+`langchain-core==1.6.4`:
+
+1. The compiled graph (`Pregel`) *is* a `langchain_core.runnables.Runnable` —
+   `libs/langgraph/langgraph/pregel/protocol.py:25`.
+2. `Pregel.invoke` calls `self.stream(input, config, ...)` — the top-level
+   `config` you pass (with `callbacks`) flows into the run loop —
+   `libs/langgraph/langgraph/pregel/main.py:3803`.
+3. `run_with_retry` calls `task.proc.invoke(task.input, config)` —
+   `pregel/_retry.py:585`.
+4. Every graph node, `ToolNode` included, extends `RunnableCallable`
+   (`_internal/_runnable.py:278`), whose `.invoke()` calls
+   `get_callback_manager_for_config(config, self.tags)` then
+   `patch_config(config, callbacks=run_manager.get_child())` — stock LangChain
+   callback propagation, a chained child callback manager —
+   `_runnable.py:400-409`.
+5. `ToolNode._func` / `_afunc` (`tool_node.py:793,828`) build a per-call
+   `config_list` from that child config.
+6. **`response = tool.invoke(call_args, config)`** — `tool_node.py:958`
+   (sync); **`response = await tool.ainvoke(call_args, config)`** —
+   `tool_node.py:1105` (async).
+
+`tool.invoke(call_args, config)` is exactly the call shape
+`LangChainCapsuleListener` already hooks in plain LangChain —
+`config["callbacks"]` still carries the chained callback manager, so
+`on_tool_start` / `on_tool_end` / `on_tool_error` fire identically whether the
+tool was called directly or reached through a compiled graph.
+
+### The wiring
+
+Same as any other LangChain runnable — pass it in `config` on `invoke()`:
+
+```python
+result = graph.invoke(
+    {"messages": [HumanMessage(content="...")]},
+    config={"callbacks": [listener]},
+)
+```
+
+`compile()` itself takes no `callbacks` argument — there's no compile-time
+registration path. If you'd rather not pass `config` on every call, LangChain's
+own `Runnable.with_config` binds default callbacks onto the compiled graph
+once (tested: `graph.compile().with_config(callbacks=[listener])`, then plain
+`.invoke(...)` calls with no `config` kwarg still seal) — that's a LangChain
+mechanism, not a LangGraph one.
+
+### The executed proof
+
+`StateGraph(MessagesState)` with a `chatbot` node (a scripted
+`GenericFakeChatModel`, no API key) emitting a tool call, wired through
+`ToolNode([get_weather])` and `tools_condition`, looping back to `chatbot` for
+the final answer:
+
+```
+[human] "What's the weather in Austin?"
+[ai] tool_calls=[{'name': 'get_weather', 'args': {'city': 'Austin'}, ...}]
+[tool] 'It is sunny and 72F in Austin.'
+[ai] 'It is sunny and 72F in Austin.'
+
+=== ledger file: 4 records sealed ===
+record 1: action_id='chain_started/...'   effect=None (root-run fyi capsule)
+record 2: action_id='get_weather/...'     effect={'status': 'planned', ...}
+record 3: action_id='get_weather/...'     effect={'status': 'confirmed', ...} parent=<record 2's capsule_id> relation=confirms
+record 4: action_id='chain_completed/...' effect=None (root-run fyi capsule)
+```
+
+`capsule-emit verify --store ledger.jsonl --require-signature` → `4/4 VALID`.
+
+**Two tool calls in one turn (parallel `ToolNode`).** A turn where the model
+calls `get_weather` and `get_population` together: `ToolNode`'s default
+executor runs both concurrently, so the two `planned` records land *before*
+either `confirmed` record — and each `confirmed` still chains to its own
+tool's `planned` capsule, not the other one's, because pairing is by
+LangChain's `run_id`, not call order:
+
+```
+record 1: action_id='get_population/...' effect={'status': 'planned', ...}
+record 2: action_id='get_weather/...'    effect={'status': 'planned', ...}
+record 3: action_id='get_population/...' effect={'status': 'confirmed', ...} parent=record 1's capsule_id
+record 4: action_id='get_weather/...'    effect={'status': 'confirmed', ...} parent=record 2's capsule_id
+
+pairing check [get_population]: match=True
+pairing check [get_weather]:    match=True
+```
+
+Both sealed, both correctly paired, `verify_store` all `ok=True`.
+
+**A tool that raises.** `ToolNode`'s default `handle_tool_errors=True` only
+intercepts its own `ToolInvocationError` (bad arguments); a plain exception
+raised from inside the tool body still propagates all the way up through
+`tool.invoke()` — so `on_tool_error` fires and the graph invocation itself
+raises, either way:
+
+```
+[graph raised] ValueError('no such order: Z-000')
+
+record 1: action_id='flaky_lookup/...' verdict_class=executed effect={'status': 'planned', ...}
+record 2: action_id='flaky_lookup/...' verdict_class=errored  effect={'status': 'failed', ...} parent=record 1's capsule_id
+```
+
+`verify_store` all `ok=True` on both records — the failure is sealed as
+evidence, not lost.
+
+### What it does not see
+
+- **Graph-level node events.** Only `ToolNode`-routed calls seal. The
+  `chatbot` node's own execution — the LLM call itself, and any plain
+  (non-tool) node's start/end — is not a tool call and is not sealed by this
+  listener; `include_lifecycle` (default on) gives you one `fyi` capsule for
+  the *whole graph invocation's* root chain start/end/error, not a capsule per
+  node.
+- **`interrupt()`, tested.** `langgraph.types.interrupt()` raises
+  `GraphInterrupt` to pause a run. When called from *inside* a tool body, that
+  exception propagates through `tool.invoke()` exactly like a real error:
+  `on_tool_error` fires and the listener seals `verdict_class="errored"`,
+  `effect.status="failed"` — **a paused-for-approval tool call is
+  indistinguishable in the ledger from a genuinely broken one.** Resuming with
+  `Command(resume=...)` re-enters the tool function from the top — LangGraph
+  checkpoints at the graph-step level, not inside a node — so any code that
+  ran *before* the `interrupt()` call runs again for real. Tested with a side
+  effect counter placed before the `interrupt()` call: the counter reads 1
+  after the first (paused) invoke and 2 after resume, confirming the
+  pre-interrupt code re-executed rather than being skipped. The listener seals
+  a second, correctly independent `planned → confirmed` pair for that second
+  real execution — it does not know or record that the first attempt was
+  "the same call, paused," only that two tool calls with two distinct
+  `run_id`s happened, one of which errored and one of which succeeded.
+- **Checkpointer replay, tested.** Rewinding to a checkpoint taken *before* a
+  tool ran (`app.get_state_history()` then `app.invoke(None, config=<earlier
+  checkpoint>)`, LangGraph's own "time travel") and letting the graph move
+  forward again is a **genuine second execution**, not a replay of a cached
+  result — LangGraph has no result cache at the tool-call level. Tested: a
+  real call counter read 1 after the original run and 2 after rewind+resume;
+  the listener correctly sealed two independent `planned → confirmed` pairs
+  (4 capsules total for one tool), each chained to its own planned capsule,
+  none re-sealed or duplicated. From the listener's perspective, "resume from
+  before the tool ran" and "call the tool again" are the same event, and
+  that's what gets recorded — correctly, since that's what actually happened.
+
 ## How it works
 
 The listener is a standard LangChain
