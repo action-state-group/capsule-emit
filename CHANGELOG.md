@@ -6,6 +6,25 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Removed — the `ledger-io` extra, which no consumer could ever install
+
+- `pip install "capsule-emit[ledger-io]"` **failed for every consumer of every published wheel.**
+  The extra declared `capsule-ledger>=0.0.1`; that package is not on PyPI and never will be — its
+  repository was archived 2026-09-02. A published package cannot point an extra at a git URL, so
+  the extra had to be removed rather than repaired.
+- **CI never noticed because CI is not a consumer:** the test job installs `capsule-ledger` (and
+  `capsule-anchor`) from git before running, so the suite has always been green against an
+  environment nobody outside this repo can assemble. That is the same blind spot that let three
+  demos ship broken (0.8.5) — one layer further down, in the wheel's own metadata.
+- Exactly one function needed it. `ledger_io.local_payload_store()` now raises `ImportError` with
+  the from-source install line instead of failing obscurely — previously a caller on a real ledger
+  directory got a bare `ImportError` from deep inside, and on anything else a silent `None` that
+  surfaced as `TypeError: 'NoneType' object does not support the context manager protocol`. Every
+  other function in `capsule_emit.ledger_io` works without it and always did.
+- **Guard added so this cannot recur:** `clean-room-install` now resolves **every declared extra
+  against PyPI alone**, from the built wheel, with no source installs in the environment. Checked
+  by hand first — 17 of 18 extras were fine; `ledger-io` was the only one.
+
 ### Fixed — the multi-anchor demo's preflight now covers both dependencies, not one
 
 - #214 added a preflight so a reader missing `capsule-anchor` got the real reason instead of a
