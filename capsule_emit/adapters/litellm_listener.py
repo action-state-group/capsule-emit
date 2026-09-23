@@ -154,13 +154,18 @@ def _client_disconnected(kwargs: dict) -> bool:
     stamping ``metadata.client_disconnected = True`` (error code 499) on the
     call details. That event must not seal as a confirmed completion.
 
-    Trust boundary: this is proxy-side metadata, and litellm seeds it from the
-    request body's own ``metadata``, so a caller holding a proxy key can set
-    the flag itself. That can only *understate* its own call — mark a complete
-    stream partial — never overstate one; the listener trusts litellm's stamp
-    and records what it says.
+    Trust boundary: **on the proxy path the flag is server-set only.** litellm
+    carries ``client_disconnected`` in its untrusted-metadata control list and
+    pops it from caller-supplied ``metadata`` and ``litellm_metadata`` before
+    the call runs, so a caller holding a proxy key cannot plant it; the sole
+    writer is the proxy's own disconnect handling, gated on a real disconnect
+    (verified against litellm 1.102.0). On the **pure-SDK** path there is no
+    proxy to strip anything, so the listener reads whatever reaches
+    ``model_call_details`` — there, and only there, a caller can mark its own
+    complete stream partial. Either way that is an understatement of its own
+    call; nothing here lets anyone overstate one.
 
-    litellm 1.101.0 stamps ``model_call_details.metadata`` and
+    litellm stamps ``model_call_details.metadata`` and
     ``litellm_params.metadata``; ``litellm_params.litellm_metadata`` is read
     too for routes that carry request metadata under that key.
     """
