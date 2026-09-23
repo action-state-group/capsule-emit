@@ -33,6 +33,21 @@ All notable changes to `capsule-emit` are documented here. The format follows
   test drove only the callback path, the one wiring where failure (2) cannot appear.
 - Affects 0.8.3, which shipped the original change.
 
+### Fixed — LiteLLM: the documented trust boundary was backwards (desk review of #202)
+
+- The `_client_disconnected` docstring, `docs/adapters/litellm.md` and the #198 changelog entry all
+  said the disconnect stamp is metadata litellm seeds from the request body, so "a caller holding a
+  proxy key can set the flag itself". **On the proxy path that is false.** litellm carries
+  `client_disconnected` in `_UNTRUSTED_METADATA_CONTROL_FIELDS` and pops every such key from
+  caller-supplied `metadata` and `litellm_metadata` in `add_litellm_data_to_request`, before the call
+  runs; the only writer is the proxy's own `_apply_client_disconnect_metadata`, gated on a real
+  disconnect (verified against installed litellm 1.102.0). The caller-settable caveat is true only on
+  the pure-SDK path, where there is no proxy in front to strip anything — which the paragraph never
+  scoped itself to.
+- Wrong in the safe direction: the shipped posture is stronger than the shipped claim. Still a
+  security claim on a partner-facing page, now corrected in all three places. Prose only; no code,
+  no test, no digest change. Affects 0.8.3.
+
 ### Added — Dapr Agents: `record_approval_response`, the HITL record on the native approval flow (#200)
 
 - `DaprAgentsCapsuleEmitter.record_hitl` was documented against a hand-rolled
@@ -82,9 +97,9 @@ All notable changes to `capsule-emit` are documented here. The format follows
   It now reads the stamp (on `model_call_details.metadata` or `litellm_params.metadata`) and
   seals the outcome with effect status `dispatched`, stamping `client_disconnected: true` and
   `response_completeness: partial` into `compute_attestation` (digest-committed). Completed
-  streams are unchanged. The stamp is proxy-side metadata seeded from the request body, so a
-  proxy-key holder can understate its own call as partial, never overstate one — stated on the
-  page. Found by the adapter-coverage recon on litellm 1.101.0.
+  streams are unchanged. Behind the proxy the stamp is server-set only, and on the pure-SDK path a
+  caller can understate its own call as partial but never overstate one — stated on the page. Found
+  by the adapter-coverage recon on litellm 1.101.0.
 
 ### Fixed — vintage structural-rejection test tracks upstream's format-4-only verifier ([capsule-emit-vintage-format-test])
 

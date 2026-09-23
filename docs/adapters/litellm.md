@@ -359,14 +359,20 @@ inside the digest. A genuine post-first-token upstream failure is different —
 litellm routes that one to `async_post_call_failure_hook`, and it seals
 `failed` like any other failure.
 
-One trust boundary to know: the stamp is proxy-side metadata that litellm
-seeds from the request body's own `metadata`, so a caller holding a proxy key
-can set `client_disconnected` itself. That can only *understate* its own call
-(record a complete stream as partial), never overstate one; the listener
-trusts litellm's stamp and records what it says. litellm 1.101.0 writes the
-stamp to `model_call_details.metadata` and `litellm_params.metadata`; the
-listener also reads `litellm_params.litellm_metadata` for routes that carry
-request metadata there.
+One trust boundary to know, and it is stronger than it may look. **Behind the
+proxy the stamp is server-set only.** litellm carries `client_disconnected` in
+its untrusted-metadata control list and strips it from caller-supplied
+`metadata` and `litellm_metadata` before your call runs, so a caller holding a
+proxy key cannot plant it; the only writer is the proxy's own disconnect
+handling, gated on a real disconnect (verified against litellm 1.102.0). On
+the **pure-SDK** path there is no proxy in front to strip anything, so the
+listener reads whatever reaches the call details — there, and only there, a
+caller can mark its own complete stream partial. That is an understatement of
+its own call either way; nothing here lets anyone overstate one. litellm
+writes the stamp to `model_call_details.metadata` and
+`litellm_params.metadata`; the listener also reads
+`litellm_params.litellm_metadata` for routes that carry request metadata
+there.
 
 ## Testing without litellm
 
