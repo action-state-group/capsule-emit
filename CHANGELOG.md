@@ -4,6 +4,33 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Fixed — three shipped demos that could not run for anyone who installed the wheel
+
+Found by box job 57, which ran the whole `examples/` tree against the **released 0.8.4 wheel** from
+PyPI rather than a checkout: 24 of 28 example directories passed, and the failures were in demos
+nobody had re-run since the code around them moved.
+
+- **`multi-anchor-receipt-demo` could not work for any consumer, for two separate reasons.**
+  (1) Its own install line said `pip install capsule-anchor`, and **capsule-anchor is not published
+  on PyPI** (404) — so the service never started and the demo reported "one or both anchors did not
+  start in time", sending the reader after a network problem they did not have. The demo now checks
+  for the import up front and prints the real reason plus a from-source install line; the README
+  says the same. (2) Even with it installed the demo still failed: `capsule-anchor` now **requires
+  `CAPSULE_ANCHOR_PUBLIC_HOST`** (it becomes the `did:web` identity at `/.well-known/did.json`,
+  added with its SSRF hardening) and the demo never set it. It now sets loopback, which is the
+  honest value for two throwaway in-memory instances. Verified end to end: both anchors up, receipts
+  verified, and the partial-reachability scenario reporting `ABSENT` as designed.
+- **`amaury-receipt-pack` crashed with `FloatInDigestError`** — it sealed `47.50` as a raw float into
+  a digest-bearing monetary field, the one thing every adapter page tells readers not to do. Now the
+  decimal string `"47.50"`. The regenerated ledger verifies `4/4 VALID`.
+- **`examples/agno-listener/README.md` was a 0-byte file.** Written, modelled on its siblings, with
+  output captured from a real run and the async-hook nuance MCP tool calls need.
+
+Noted, not fixed here: 13 other example directories have no README at all. A missing README does not
+break a demo; an empty one reads as a broken artifact, which is why only that one was filled.
+
 ## 0.8.4
 
 ### Fixed — ADK: the long-running flag no longer outlives the call it flags (desk review of #203)

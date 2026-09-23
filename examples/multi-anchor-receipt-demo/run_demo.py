@@ -17,7 +17,8 @@ by the same party running the demo.  The mechanism is demonstrated; operator
 independence is not.
 
 Usage:
-    pip install "capsule-emit[dev]" capsule-anchor scitt-cose
+    pip install "capsule-emit[dev]" scitt-cose \
+        "capsule-anchor @ git+https://github.com/action-state-group/capsule-anchor.git"
     python examples/multi-anchor-receipt-demo/run_demo.py
 
     # Run only the partial-reachability scenario:
@@ -59,6 +60,11 @@ def _start_anchor(port: int, name: str) -> subprocess.Popen:
         **os.environ,
         "CAPSULE_ANCHOR_INSECURE_EPHEMERAL_KEY": "1",
         "CAPSULE_ANCHOR_INSECURE_IN_MEMORY": "1",
+        # capsule-anchor refuses to start without a public host — it becomes the
+        # did:web identity published at /.well-known/did.json. The demo runs two
+        # throwaway in-memory instances on loopback, so loopback is the honest
+        # value; a real deployment names the host it is actually served from.
+        "CAPSULE_ANCHOR_PUBLIC_HOST": f"127.0.0.1:{port}",
     }
     return subprocess.Popen(
         [
@@ -389,7 +395,29 @@ def run_partial_demo(ledger: Path) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _preflight() -> None:
+    """Fail with the real reason, not a start-up timeout.
+
+    ``capsule-anchor`` is NOT published on PyPI (checked 2026-09-23: 404), so the
+    install line this demo used to print could never work. Without it the demo
+    would spend 15s waiting for a server that was never going to start and then
+    report "one or both anchors did not start in time", which sends the reader
+    looking for a network problem they do not have.
+    """
+    try:
+        import capsule_anchor  # noqa: F401
+    except ImportError:
+        sys.exit(
+            "ERROR: this demo needs the capsule-anchor service, which is not on PyPI.\n"
+            "Install it from source:\n"
+            "    pip install 'capsule-emit[dev]' scitt-cose \\\n"
+            "        'capsule-anchor @ git+https://github.com/action-state-group/capsule-anchor.git'\n"
+            "(capsule-anchor needs Python >= 3.11.)"
+        )
+
+
 def main() -> None:
+    _preflight()
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
         "--partial", action="store_true",

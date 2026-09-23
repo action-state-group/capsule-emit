@@ -59,7 +59,7 @@ cap1 = seal(
         "vendor": "BioSupplies GmbH",
         "item": "reagent-kit-A90",
         "quantity": 200,
-        "unit_price_eur": 47.50,
+        "unit_price_eur": "47.50",   # a decimal STRING: floats have no JCS form (§5.1)
     },
     action="approve_purchase",
     operator="acme-research",
