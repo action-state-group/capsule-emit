@@ -4,7 +4,7 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## Unreleased
+## 0.8.5 — 2026-09-23
 
 ### Fixed — three shipped demos that could not run for anyone who installed the wheel
 
