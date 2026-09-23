@@ -235,21 +235,32 @@ a real decision exists, so the record is written right next to it, with the
 same arguments — never from inside the hook, where nothing has been decided:
 
 ```python
-# In your approval service, after the human has acted:
-def deliver_decision(agent, *, instance_id, approval_request_id, approved, reason, approver_token):
+# In your approval service, after the human has acted.
+# `gate` is what you kept from the ApprovalRequiredEvent you published.
+def deliver_decision(agent, gate, *, approved, reason, approver_token):
     approver_id = resolve_subject(approver_token)   # YOUR auth layer; dapr-agents does not validate the token
+    # Resume the workflow first: until this returns, the decision has not landed.
+    agent.raise_approval_event(
+        gate.instance_id, gate.approval_request_id, approved, reason, approver_token
+    )
     emitter.record_approval_response(
-        "delete_invoice",                           # the gated step_name
-        instance_id=instance_id,
-        approval_request_id=approval_request_id,
+        gate.step_name,                             # the gated tool
+        instance_id=gate.instance_id,
+        approval_request_id=gate.approval_request_id,
         approved=approved,
         reason=reason,
         approver_id=approver_id,
-        tool_request={"invoice_id": "INV-001"},     # ApprovalRequiredEvent.tool_arguments, if you keep them
-        tool_call_id="call_abc123",
+        tool_request=gate.tool_arguments,           # if you keep them
+        tool_call_id=gate.tool_call_id,             # from the event, never a literal
     )
-    agent.raise_approval_event(instance_id, approval_request_id, approved, reason, approver_token)
 ```
+
+Order matters. `raise_approval_event` is what actually resumes the workflow, and
+it can fail — an unknown instance, an expired gate, a transport error. Sealing
+first would leave a record saying a decision was delivered when it was not, so
+seal after it returns. If the seal itself then fails you are left with the
+resumption recorded nowhere, which is the honest direction to fail in: a missing
+record is a gap you can see, a false one is not.
 
 This seals `action_type="decide"` — `executed` on approval, `blocked` on
 rejection — with `human_disposed=True`, the real `decision`, and
@@ -328,9 +339,27 @@ Every capsule carries a `dapr_agents` block in `compute_attestation`:
 }
 ```
 
-On HITL capsules, `approver_id` is also included.  All values are strings
-per §5.1.  The block is committed to `capsule_id`; receivers that do not
-recognise it MUST ignore it (Class-1 extensibility).
+A HITL capsule carries three more, each present only when you supply it:
+`approver_id` (the subject your auth layer resolved), and — from
+`record_approval_response` — `approval_request_id` and `tool_call_id`, the two
+ids that tie the record back to the gate it answers:
+
+```json
+{
+  "dapr_agents": {
+    "agent_name": "invoice-checker",
+    "tool_name": "delete_invoice",
+    "workflow_instance_id": "wf-9f2",
+    "app_id": "invoice-app",
+    "approver_id": "approver-subject:alice",
+    "approval_request_id": "apr-001",
+    "tool_call_id": "call_abc123"
+  }
+}
+```
+
+All values are strings per §5.1.  The block is committed to `capsule_id`;
+receivers that do not recognise it MUST ignore it (Class-1 extensibility).
 
 ## Limitations
 
