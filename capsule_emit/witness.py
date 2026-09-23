@@ -430,7 +430,7 @@ def _print_first_use_notice_once(urls: list[str], *, stub: bool = False) -> None
             "capsule-emit: witnessing is on for this process -- once a checkpoint "
             "is due, a signed checkpoint of your log (its size, a root hash, and a "
             f"timestamp -- never your capsule content) will be POSTed to {endpoints} "
-            "at its /checkpoints route for independent countersigning. Disable with "
+            "at its /checkpoints route for independent witnessing. Disable with "
             "witness=False or CAPSULE_WITNESS=off. "
             "(This notice prints once per process, before any checkpoint goes out.)",
             file=sys.stderr,

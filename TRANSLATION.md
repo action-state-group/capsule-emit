@@ -43,7 +43,21 @@ The four slots are `who` / `can` / `did` / `audit` (identity / authority-or-mand
 | unsigned entry | "logged, not signed" | log-integrity only: order, completeness, tamper-evidence of the sequence — no authorship | unsigned CLL entry |
 | **self-attested** | "signed by me" | record integrity by the producer's key alone; no third-party confirmation | `attestation_mode=self_attested` |
 | **witnessed** | "an independent log confirmed it existed" | existence + order + completeness checkable **without trusting the producer** | witnessed checkpoint (≥1 valid stamp) |
-| **countersigned** | "someone else vouched" | a non-producer's signed claim citing the record: counterparty or disinterested operator | counterparty / operator countersignature |
+| **self-countersigned** | "I countersigned my own claim" | a countersignature exists, but its signer key is the producer's own — well-formed, never refused, but not independent | `independent: false` |
+| **unresolved-signer** | "someone else signed, can't tell who" | the countersignature's signer key is not the producer's, but the verifier has no directory entry to resolve who that signer is | signer absent from the countersigner directory |
+| **countersigned** | "someone else vouched" | a non-producer's signed claim citing the record, from a signer the verifier can resolve: counterparty or disinterested operator | counterparty / operator countersignature |
+
+**Independence is recomputed from keys, never taken as a trusted label.** A
+countersignature is graded by comparing the signer's key against the
+record's own producer key(s) — a signer that signs its own material always
+resolves as **self-countersigned**, no matter what the countersignature
+itself claims about who signed it. Witnessing and countersigning are
+separate mechanisms on the same ladder: **Witness** is the neutral,
+donatable checkpoint-continuity service (`witness.agentactioncapsule.org`)
+and never establishes that a record's *content* is true; **Countersign** is
+an entity recomputing structural checks over a bundle and signing,
+distinct signer id and key from the producer's. "Attest" never names
+either service — `self-attest` stays producer-side vocabulary.
 
 ## Evidence status (the auditor's working vocabulary)
 
