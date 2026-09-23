@@ -54,6 +54,13 @@ from typing import Any, NoReturn
 
 from .adjudication import contradicted, seal_adjudication
 from .approval import list_pending, seal_approval
+from .connector import (
+    BoundaryClass,
+    Classification,
+    ConnectorEvent,
+    ConnectorPort,
+    classify_signal_1,
+)
 from .core import EmitResult, LogEntry, ReferenceEntry
 from .disclosure import DisclosureError, build_disclosure_envelope
 from .gate import (
@@ -163,6 +170,12 @@ __all__ = [
     "load_manifest",
     "find_manifest",
     "ManifestDeclaration",
+    # Connector (ConnectorPort adapter contract — capsule_emit.connector)
+    "ConnectorPort",
+    "ConnectorEvent",
+    "Classification",
+    "BoundaryClass",
+    "classify_signal_1",
     # Number conversion (RFC 8785 §3.2.2.3) and canonicalization identifier
     "CANONICALIZATION_ID",
     "float_to_str",

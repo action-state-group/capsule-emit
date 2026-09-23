@@ -4,7 +4,7 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## Unreleased
+## 0.8.4
 
 ### Fixed — ADK: the long-running flag no longer outlives the call it flags (desk review of #203)
 
@@ -108,6 +108,10 @@ All notable changes to `capsule-emit` are documented here. The format follows
   OpenTelemetry-span-derived reading of Signal 1, a formal definition of
   "effect" ("crosses a system boundary carrying a write"), and five worked
   examples.
+- `ConnectorPort`, `ConnectorEvent`, `Classification`, `BoundaryClass`, and
+  `classify_signal_1` are now exported at package top level
+  (`from capsule_emit import ConnectorPort`), and the README adapter table
+  notes which adapters conform today.
 
 ### Added — Dapr Agents: `record_approval_response`, the HITL record on the native approval flow (#200)
 
