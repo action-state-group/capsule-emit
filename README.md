@@ -150,16 +150,21 @@ emitter = MCPCapsuleEmitter(operator="acme-co", developer="my-agent@v1")
 def write_order(vendor: str, total: float) -> dict: ...
 ```
 
-| Adapter | What it wraps |
-|---------|---------------|
-| **MCP** | Model Context Protocol tool endpoints — any Python callable, decorator-based |
-| **Google ADK** | Google Agent Development Kit tool calls, one capsule per completed tool invocation |
-| **agentgateway** | Rust proxy for MCP/A2A/LLM traffic; seals all `tools/call` at the gateway chokepoint |
-| **LangChain** | LangChain callback handler; fires on `on_tool_start`/`on_tool_end` automatically |
-| **CrewAI** | Wraps a CrewAI tool object; emits one capsule per call, input and output captured |
-| **Goose** | Block's open-source AI agent; Goose tools are MCP tools, so the MCP adapter applies |
-| **Hermes** | Custom agent loops; call `after_tool(...)` explicitly after any tool finishes |
-| **Dapr** | Dapr actor and service invocation; wraps Dapr tool calls as capsule-emitting steps |
+| Adapter | What it wraps | [`ConnectorPort`](capsule_emit/connector.py) |
+|---------|---------------|:---:|
+| **MCP** | Model Context Protocol tool endpoints — any Python callable, decorator-based | ✅ `decorator` |
+| **Google ADK** | Google Agent Development Kit tool calls, one capsule per completed tool invocation | — |
+| **agentgateway** | Rust proxy for MCP/A2A/LLM traffic; seals all `tools/call` at the gateway chokepoint | — |
+| **LangChain** | LangChain callback handler; fires on `on_tool_start`/`on_tool_end` automatically | ✅ `listener` |
+| **CrewAI** | Wraps a CrewAI tool object; emits one capsule per call, input and output captured | — |
+| **Goose** | Block's open-source AI agent; Goose tools are MCP tools, so the MCP adapter applies | ✅ `decorator` (via MCP) |
+| **Hermes** | Custom agent loops; call `after_tool(...)` explicitly after any tool finishes | — |
+| **Dapr** | Dapr actor and service invocation; wraps Dapr tool calls as capsule-emitting steps | — |
+
+`ConnectorPort` (`capsule_emit.connector`) names the classify/capture contract every adapter
+already implements informally — declared as a `typing.Protocol`, checkable with
+`isinstance(adapter, ConnectorPort)`, opt-in per adapter (see `docs/whats-consequential.md`).
+Two adapters conform today; the rest keep their existing, adapter-specific surface unchanged.
 
 **Each adapter page has a paste-ready prompt for a coding agent** to wire emission into your
 tools: **[docs/adapters/](docs/adapters/)**.
