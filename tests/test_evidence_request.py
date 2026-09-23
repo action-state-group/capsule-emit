@@ -17,6 +17,11 @@ from capsule_emit import seal, witness
 from capsule_emit.adjudication import VERDICT_CORROBORATED, contradicted, seal_adjudication
 from capsule_emit.bundle import bundle as _bundle_fn
 from capsule_emit.evidence_request import (
+    EPISTEMIC_TYPE_ADJUDICATION,
+    EPISTEMIC_TYPE_DERIVED_METRIC,
+    EPISTEMIC_TYPE_PRODUCER_CLAIM,
+    PROFILE_OBLIGATION,
+    PROFILE_OUTCOME,
     REASON_COVERAGE_UNSATISFIABLE,
     REASON_NO_SUCH_RECORD,
     REASON_REQUEST_MALFORMED,
@@ -663,3 +668,180 @@ def test_refusal_carries_signed_shape_not_a_bare_dict(covered_ledger):
     d = result.to_dict()
     assert set(d.keys()) == {"request_digest", "reason", "issued_at", "key_id", "sig"}
     assert d["sig"] and d["key_id"]
+
+
+# ---------------------------------------------------------------------------
+# profile / epistemic_type — additive, non-behavioral
+# ---------------------------------------------------------------------------
+
+
+def _record_request_with(capsule_id: str, **extra) -> bytes:
+    body = {"subject": {"kind": "record", "capsule_id": capsule_id}, "coverage": {}}
+    body.update(extra)
+    return json.dumps(body).encode()
+
+
+def test_parse_request_rejects_unknown_profile():
+    """The mutant this test exists to catch: a typo'd or invented profile
+    value must be request_malformed, never silently accepted."""
+    with pytest.raises(RequestMalformedError):
+        parse_request(
+            json.dumps(
+                {"subject": {"kind": "record", "capsule_id": "ab" * 32}, "profile": "not-a-real-profile"}
+            ).encode()
+        )
+
+
+def test_parse_request_accepts_known_profile():
+    req = parse_request(
+        json.dumps(
+            {"subject": {"kind": "record", "capsule_id": "ab" * 32}, "profile": PROFILE_OBLIGATION}
+        ).encode()
+    )
+    assert req.profile == PROFILE_OBLIGATION
+
+
+def test_parse_request_profile_defaults_to_none():
+    req = parse_request(json.dumps({"subject": {"kind": "record", "capsule_id": "ab" * 32}}).encode())
+    assert req.profile is None
+
+
+def test_answer_artifact_echoes_profile_and_defaults_epistemic_type(covered_ledger):
+    """A plain sealed capsule (not an adjudication) classifies as
+    producer_claim — the mutant this test exists to catch: epistemic_type
+    silently defaulting to something else, or profile not round-tripping."""
+    ledger_path, caps = covered_ledger
+    cid = caps[0]["capsule_id"]
+    result = answer(_record_request_with(cid, profile=PROFILE_OUTCOME), ledger=ledger_path)
+    assert isinstance(result, Artifact)
+    assert result.profile == PROFILE_OUTCOME
+    assert result.epistemic_types == (EPISTEMIC_TYPE_PRODUCER_CLAIM,)
+    assert result.to_dict()["profile"] == PROFILE_OUTCOME
+    assert result.to_dict()["epistemic_types"] == [EPISTEMIC_TYPE_PRODUCER_CLAIM]
+
+
+def test_answer_artifact_omits_profile_key_when_not_requested(covered_ledger):
+    """The mutant this test exists to catch: a profile key appearing on the
+    wire even when the requester never asked about one."""
+    ledger_path, caps = covered_ledger
+    cid = caps[0]["capsule_id"]
+    result = answer(_record_request(cid), ledger=ledger_path)
+    assert isinstance(result, Artifact)
+    assert result.profile is None
+    assert "profile" not in result.to_dict()
+    # epistemic_types is always present -- it is derived, never opt-in.
+    assert "epistemic_types" in result.to_dict()
+
+
+def test_answer_refusal_echoes_profile_when_requested(covered_ledger):
+    ledger_path, _caps = covered_ledger
+    result = answer(_record_request_with("ff" * 32, profile=PROFILE_OBLIGATION), ledger=ledger_path)
+    assert isinstance(result, Refusal)
+    assert result.reason == REASON_NO_SUCH_RECORD
+    assert result.profile == PROFILE_OBLIGATION
+    assert result.to_dict()["profile"] == PROFILE_OBLIGATION
+    assert verify_refusal_offline(result)
+
+
+def test_answer_refusal_omits_profile_key_when_not_requested(covered_ledger):
+    ledger_path, _caps = covered_ledger
+    result = answer(_record_request("ff" * 32), ledger=ledger_path)
+    assert isinstance(result, Refusal)
+    assert result.profile is None
+    assert "profile" not in result.to_dict()
+
+
+def test_malformed_refusal_carries_no_profile(covered_ledger):
+    """A malformed request never gets far enough to have a known profile --
+    the mutant this test exists to catch: parse_request's profile
+    validation running AFTER the malformed short-circuit and crashing, or a
+    stale profile leaking from a prior call."""
+    ledger_path, _caps = covered_ledger
+    result = answer(b"not json {{{", ledger=ledger_path)
+    assert isinstance(result, Refusal)
+    assert result.reason == REASON_REQUEST_MALFORMED
+    assert result.profile is None
+
+
+def test_chain_segment_artifact_classifies_as_derived_metric(tmp_path, monkeypatch):
+    monkeypatch.setenv("CAPSULE_WITNESS", "stub")
+    from capsule_emit import seal, witness
+
+    ledger_path = tmp_path / "ledger.jsonl"
+    seal(None, action="act-0", operator="acme", anchor=False, ledger=ledger_path)
+    assert witness.push(str(ledger_path)) is not None
+
+    request = json.dumps({"subject": {"kind": "chain_segment", "last": 1}}).encode()
+    result = answer(request, ledger=ledger_path)
+    assert isinstance(result, Artifact)
+    assert result.epistemic_types == (EPISTEMIC_TYPE_DERIVED_METRIC,) * len(result.bundles)
+
+
+def test_correlation_classifies_adjudication_bundle_distinctly(tmp_path, monkeypatch):
+    """A correlation answer mixing a plain capsule and an adjudication
+    capsule must classify each bundle independently, aligned by index --
+    the mutant this test exists to catch: one epistemic_type applied to
+    every bundle in a multi-bundle answer regardless of its own content."""
+    monkeypatch.setenv("CAPSULE_WITNESS", "stub")
+    from capsule_emit import seal, witness
+
+    ledger_path = tmp_path / "ledger.jsonl"
+    exchange = seal(
+        None,
+        action="requester_half",
+        operator="acme",
+        anchor=False,
+        ledger=ledger_path,
+        extra_compute={"x-mesh-poc-v1": {"serving_provenance": {"counterparty_ref": "node-owner-y"}}},
+    ).capsule
+    half_a = seal(None, action="serve_a", operator="acme", anchor=False, ledger=ledger_path).capsule
+    half_b = seal(None, action="serve_b", operator="acme", anchor=False, ledger=ledger_path).capsule
+    adjudication = seal_adjudication(
+        half_a["capsule_id"],
+        half_b["capsule_id"],
+        contradicted("node-owner-y"),
+        margin=0.5,
+        margin_tau=0.9,
+        ledger=ledger_path,
+        anchor=False,
+    ).capsule
+    assert witness.push(str(ledger_path)) is not None
+
+    request = json.dumps(
+        {"subject": {"kind": "correlation", "by": "counterparty", "value": "node-owner-y"}, "coverage": {}}
+    ).encode()
+    result = answer(request, ledger=ledger_path)
+    assert isinstance(result, Artifact)
+    by_id = dict(zip((b.capsule_id for b in result.bundles), result.epistemic_types))
+    assert by_id[exchange["capsule_id"]] == EPISTEMIC_TYPE_PRODUCER_CLAIM
+    assert by_id[adjudication["capsule_id"]] == EPISTEMIC_TYPE_ADJUDICATION
+
+
+def test_caller_invariance_holds_with_profile_present(covered_ledger):
+    """Adding profile must not break caller invariance -- two requesters
+    differing only in nonce, both naming the same profile, still get a
+    byte-identical Artifact."""
+    ledger_path, caps = covered_ledger
+    cid = caps[0]["capsule_id"]
+    now = "2026-09-21T00:00:00Z"
+
+    request_a = json.dumps(
+        {
+            "subject": {"kind": "record", "capsule_id": cid},
+            "coverage": {},
+            "profile": PROFILE_OUTCOME,
+            "nonce": "a",
+        }
+    ).encode()
+    request_b = json.dumps(
+        {
+            "subject": {"kind": "record", "capsule_id": cid},
+            "coverage": {},
+            "profile": PROFILE_OUTCOME,
+            "nonce": "b",
+        }
+    ).encode()
+
+    result_a = answer(request_a, ledger=ledger_path, now=now)
+    result_b = answer(request_b, ledger=ledger_path, now=now)
+    assert json.dumps(result_a.to_dict(), sort_keys=True) == json.dumps(result_b.to_dict(), sort_keys=True)

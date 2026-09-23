@@ -255,6 +255,23 @@ break a demo; an empty one reads as a broken artifact, which is why only that on
   remain verify-only and unaffected. No test fixtures existed on disk for this path; the builder
   itself was the "fixture."
 
+### Added — evidence-request `profile` and `Artifact.epistemic_types`
+
+- `evidence_request`'s request map gains an optional `profile` field (one of the seven-value
+  taxonomy: `outcome`/`obligation`/`process`/`quality`/`human_role`/`attribution`/`settlement`),
+  validated when present, purely advisory — same caller-invariance treatment as `nonce`: it
+  never changes which bundles a subject resolves to or whether the answer is an `Artifact` or a
+  `Refusal`. Both answer shapes echo it back (`Artifact.profile` / `Refusal.profile`, `None`
+  when unset) so an answer is self-describing about what it was asked about.
+- Every `Artifact` now also carries `epistemic_types` — one of the eight-value epistemic-type
+  taxonomy per returned bundle, classifying what KIND of claim each bundle is (never whether it
+  is true), derived from content the ledger already carries (an adjudication capsule's
+  `chain.relation`) rather than a new sealed field. No wire/digest change to sealed capsules;
+  both fields are purely additive on the request/response envelope, omitted from the wire when
+  unset (`Refusal.profile`) or always present but new (`Artifact.epistemic_types`) — existing
+  callers who never send `profile` see byte-identical answers save for the new
+  `epistemic_types` key.
+
 ### Added — `capsule-emit verify --require-signature` (#185)
 
 - `verify_store_signed(records, *, require_signature=False)` gains the keyword: when true, a

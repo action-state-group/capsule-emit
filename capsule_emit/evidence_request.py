@@ -2,8 +2,8 @@
 """``answer()`` — the one evidence-request responder (E14).
 
 Cites the *shape* of the local, pre-consent evidence-request draft — a
-request map ``{subject, coverage, derivation?, deadline?, nonce}`` — never
-the draft itself. This module owns the responder's decision logic only; it
+request map ``{subject, coverage, derivation?, deadline?, nonce, profile?}``
+— never the draft itself. This module owns the responder's decision logic only; it
 never invents a new artifact format: a "record" subject dispatches to
 :func:`capsule_emit.bundle.bundle`, a "range" subject resolves the same
 ``id1..id2`` / ``id1,id2,...`` selector syntax :mod:`capsule_emit.disclose`
@@ -77,6 +77,24 @@ supplied a ``deadline`` (licensing the work) AND the responding node opted
 in via ``allow_forced_checkpoint=True``. The node-side opt-in defaults to
 ``False``: an unconfigured door never writes in response to a read, no
 matter what a requester asks for.
+
+**Profile and epistemic type — additive, non-behavioral.** A requester may
+name which evidence :data:`PROFILE`-taxonomy value (``outcome``,
+``obligation``, ``process``, ``quality``, ``human_role``, ``attribution``,
+``settlement``) its request concerns via an optional top-level
+``request.profile`` field. Same caller-invariance rule as ``nonce``:
+``profile`` never changes which bundles a subject resolves to or whether the
+answer is an :class:`Artifact` or a :class:`Refusal` — it is echoed back on
+whichever answer results (``Artifact.profile`` / ``Refusal.profile``, both
+``None`` when the requester named none) purely so the answer is
+self-describing about what it was asked about. Every :class:`Artifact` also
+carries :attr:`Artifact.epistemic_types` — one of the eight
+:data:`EPISTEMIC_TYPES` values per bundle, naming what KIND of claim each
+returned bundle is (never a truth judgment, just a classification) — derived
+from content this ledger already carries (an adjudication capsule's
+``chain.relation``, same signal :func:`capsule_emit.adjudication
+.seal_adjudication` stamps), never a new sealed field. A refusal carries no
+evidence, so it carries no epistemic type.
 """
 from __future__ import annotations
 
@@ -95,6 +113,23 @@ __all__ = [
     "SUBJECT_KINDS",
     "DEFAULT_PAGE_SIZE",
     "MAX_PAGE_SIZE",
+    "PROFILE_OUTCOME",
+    "PROFILE_OBLIGATION",
+    "PROFILE_PROCESS",
+    "PROFILE_QUALITY",
+    "PROFILE_HUMAN_ROLE",
+    "PROFILE_ATTRIBUTION",
+    "PROFILE_SETTLEMENT",
+    "PROFILES",
+    "EPISTEMIC_TYPE_OBSERVED_EVENT",
+    "EPISTEMIC_TYPE_SYSTEM_OF_RECORD_FACT",
+    "EPISTEMIC_TYPE_PRODUCER_CLAIM",
+    "EPISTEMIC_TYPE_HUMAN_REPORT",
+    "EPISTEMIC_TYPE_SEMANTIC_JUDGMENT",
+    "EPISTEMIC_TYPE_DERIVED_METRIC",
+    "EPISTEMIC_TYPE_ADJUDICATION",
+    "EPISTEMIC_TYPE_OBLIGATION_REFERENCE",
+    "EPISTEMIC_TYPES",
     "RequestMalformedError",
     "RequestMap",
     "Artifact",
@@ -112,6 +147,58 @@ REFUSAL_REASONS = frozenset(
 )
 
 SUBJECT_KINDS = frozenset({"record", "range", "chain_segment", "correlation"})
+
+#: The seven-value evidence-profile taxonomy a request's optional ``profile``
+#: field may name. Advisory only (see the module docstring's "Profile and
+#: epistemic type" section) -- this module never branches on it.
+PROFILE_OUTCOME = "outcome"
+PROFILE_OBLIGATION = "obligation"
+PROFILE_PROCESS = "process"
+PROFILE_QUALITY = "quality"
+PROFILE_HUMAN_ROLE = "human_role"
+PROFILE_ATTRIBUTION = "attribution"
+PROFILE_SETTLEMENT = "settlement"
+PROFILES = frozenset(
+    {
+        PROFILE_OUTCOME,
+        PROFILE_OBLIGATION,
+        PROFILE_PROCESS,
+        PROFILE_QUALITY,
+        PROFILE_HUMAN_ROLE,
+        PROFILE_ATTRIBUTION,
+        PROFILE_SETTLEMENT,
+    }
+)
+
+#: The eight-value epistemic-type taxonomy an :class:`Artifact` classifies
+#: each of its bundles into (one entry per bundle, see
+#: :attr:`Artifact.epistemic_types`). This module only ever produces
+#: PRODUCER_CLAIM, ADJUDICATION, or DERIVED_METRIC -- capsule-emit's own
+#: ledger has no structural signal for the other five (e.g. distinguishing a
+#: requester-observed half from a provider-claimed one is
+#: capsule-emit-mesh's finer-grained model, not this repo's); the full set
+#: is named here so a caller validating against "one of the eight" never
+#: has to reach into a second module for the closed set.
+EPISTEMIC_TYPE_OBSERVED_EVENT = "observed_event"
+EPISTEMIC_TYPE_SYSTEM_OF_RECORD_FACT = "system_of_record_fact"
+EPISTEMIC_TYPE_PRODUCER_CLAIM = "producer_claim"
+EPISTEMIC_TYPE_HUMAN_REPORT = "human_report"
+EPISTEMIC_TYPE_SEMANTIC_JUDGMENT = "semantic_judgment"
+EPISTEMIC_TYPE_DERIVED_METRIC = "derived_metric"
+EPISTEMIC_TYPE_ADJUDICATION = "adjudication"
+EPISTEMIC_TYPE_OBLIGATION_REFERENCE = "obligation_reference"
+EPISTEMIC_TYPES = frozenset(
+    {
+        EPISTEMIC_TYPE_OBSERVED_EVENT,
+        EPISTEMIC_TYPE_SYSTEM_OF_RECORD_FACT,
+        EPISTEMIC_TYPE_PRODUCER_CLAIM,
+        EPISTEMIC_TYPE_HUMAN_REPORT,
+        EPISTEMIC_TYPE_SEMANTIC_JUDGMENT,
+        EPISTEMIC_TYPE_DERIVED_METRIC,
+        EPISTEMIC_TYPE_ADJUDICATION,
+        EPISTEMIC_TYPE_OBLIGATION_REFERENCE,
+    }
+)
 
 #: A ``range``/``correlation`` answer never exceeds this many bundles absent
 #: an explicit ``page.size`` — the bound that keeps a full-ledger selector
@@ -157,6 +244,11 @@ class RequestMap:
     ``page`` is ``{token?: str, size?: int}`` — see the module docstring's
     "Caps and paging" note. Only a ``range`` subject reads it; present but
     unused for ``record``/``chain_segment``.
+
+    ``profile`` is one of :data:`PROFILES` or ``None`` — see the module
+    docstring's "Profile and epistemic type" section. Same caller-invariance
+    treatment as ``nonce``: carried through to the answer, never read by
+    :func:`_build_bundles` or anything else that decides what gets returned.
     """
 
     subject: dict
@@ -165,6 +257,7 @@ class RequestMap:
     has_deadline: bool
     nonce: str | None
     page: dict
+    profile: str | None
 
 
 def _require(cond: bool, message: str) -> None:
@@ -207,7 +300,8 @@ def parse_request(request_bytes: bytes) -> RequestMap:
 
     Raises :class:`RequestMalformedError` for anything that is not a JSON
     object shaped like ``{subject, coverage?, derivation?, deadline?,
-    nonce?}`` — unknown fields are ignored, per the draft's shape.
+    nonce?, profile?}`` — unknown fields are ignored, per the draft's shape.
+    ``profile``, when present, must be one of :data:`PROFILES`.
     """
     try:
         data = json.loads(request_bytes)
@@ -258,6 +352,12 @@ def parse_request(request_bytes: bytes) -> RequestMap:
     nonce = data.get("nonce")
     _require(nonce is None or isinstance(nonce, str), "nonce must be a string when present")
 
+    profile = data.get("profile")
+    _require(
+        profile is None or (isinstance(profile, str) and profile in PROFILES),
+        f"profile must be one of {sorted(PROFILES)} when present",
+    )
+
     page = data.get("page") or {}
     _require(isinstance(page, dict), "page must be an object")
     if "token" in page:
@@ -280,6 +380,7 @@ def parse_request(request_bytes: bytes) -> RequestMap:
         has_deadline=data.get("deadline") is not None,
         nonce=nonce,
         page=page,
+        profile=profile,
     )
 
 
@@ -288,21 +389,33 @@ class Artifact:
     """One well-formed answer — one ``Bundle`` for a ``record`` subject, one
     per selected/matched record for a ``range`` or ``correlation`` subject.
     Digests-only, always: this is the SAME object a stranger and a trusted
-    counterparty both receive for the same request."""
+    counterparty both receive for the same request.
+
+    ``profile`` echoes the request's ``profile`` (``None`` if the requester
+    named none) — see the module docstring's "Profile and epistemic type"
+    section. ``epistemic_types`` names one :data:`EPISTEMIC_TYPES` value per
+    entry in ``bundles`` (same length, same order) — what KIND of claim each
+    bundle is, never whether it is true.
+    """
 
     v: int
     subject_kind: str
     bundles: tuple[Any, ...]  # capsule_emit.bundle.Bundle, one or more
     next_page_token: str | None = None
+    profile: str | None = None
+    epistemic_types: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {
             "v": self.v,
             "subject_kind": self.subject_kind,
             "bundles": [b.to_dict() for b in self.bundles],
+            "epistemic_types": list(self.epistemic_types),
         }
         if self.next_page_token is not None:
             d["next_page_token"] = self.next_page_token
+        if self.profile is not None:
+            d["profile"] = self.profile
         return d
 
 
@@ -311,13 +424,23 @@ class Refusal:
     """A signed decline or recorded absence — verifies OFFLINE, never an
     unsigned 404. ``reason == REASON_NO_SUCH_RECORD`` is the wire's
     "recorded_absence"; any other reason is a policy-shaped
-    "signed_refusal" — same object either way."""
+    "signed_refusal" — same object either way.
+
+    ``profile`` echoes the request's ``profile`` (``None`` if the requester
+    named none) — an unsigned convenience field, same as ``request_digest``
+    already implies for ``nonce``: a verifier holding the original request
+    bytes can always recompute ``request_digest`` to cross-check any echoed
+    field, so leaving ``profile`` out of :meth:`signing_body` matches how
+    every other request-only field (e.g. ``nonce``) is already handled — it
+    is not itself re-signed, only the request it came from is.
+    """
 
     request_digest: str
     reason: str
     issued_at: str
     key_id: str
     sig: str
+    profile: str | None = None
 
     def signing_body(self) -> bytes:
         """Canonical bytes the signature covers — same three fields the
@@ -331,13 +454,16 @@ class Refusal:
         ).encode("ascii")
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "request_digest": self.request_digest,
             "reason": self.reason,
             "issued_at": self.issued_at,
             "key_id": self.key_id,
             "sig": self.sig,
         }
+        if self.profile is not None:
+            d["profile"] = self.profile
+        return d
 
 
 def verify_refusal_offline(refusal: Refusal) -> bool:
@@ -365,10 +491,42 @@ def _digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _refuse(request_digest: str, reason: str, *, signer: Any, issued_at: str) -> Refusal:
+def _refuse(
+    request_digest: str, reason: str, *, signer: Any, issued_at: str, profile: str | None = None
+) -> Refusal:
     stub = Refusal(request_digest=request_digest, reason=reason, issued_at=issued_at, key_id="", sig="")
     sig, key_id = signer.sign(stub.signing_body())
-    return Refusal(request_digest=request_digest, reason=reason, issued_at=issued_at, key_id=key_id, sig=sig)
+    return Refusal(
+        request_digest=request_digest,
+        reason=reason,
+        issued_at=issued_at,
+        key_id=key_id,
+        sig=sig,
+        profile=profile,
+    )
+
+
+def _epistemic_type_for_bundle(b: Any) -> str:
+    """Classify one bundle's epistemic type from content this ledger
+    already carries — never a new sealed field (see the module docstring's
+    "Profile and epistemic type" section).
+
+    An adjudication capsule's ``chain.relation`` is ``"adjudicates"`` (the
+    same value :data:`capsule_emit.adjudication.RELATION_ADJUDICATES`
+    defines — duplicated here as a literal rather than imported, the same
+    choice :func:`_entry_names_counterparty_in_adjudication` above already
+    makes for the ``"contradicted:"`` prefix: this module stays a leaf
+    reader of ledger content, never a caller of the sealing module). Every
+    other capsule this ledger seals is this producer's own claim about what
+    it did — :data:`EPISTEMIC_TYPE_PRODUCER_CLAIM` — since a plain ``seal()``
+    capsule carries no structural signal distinguishing a requester-observed
+    half from a provider-claimed one (capsule-emit-mesh's producer/requester
+    split is a finer grain this repo's own ledger does not have).
+    """
+    chain = b.receipt.get("chain") or {}
+    if chain.get("relation") == "adjudicates":
+        return EPISTEMIC_TYPE_ADJUDICATION
+    return EPISTEMIC_TYPE_PRODUCER_CLAIM
 
 
 def _record_exists(entries: list[dict], capsule_id: str) -> bool:
@@ -597,9 +755,14 @@ def answer(
     ``chain_segment`` subject. Returns exactly one of:
 
       * :class:`Artifact` — one or more offline-verifiable ``Bundle``/
-        ``ChainSegment`` objects;
+        ``ChainSegment`` objects, each classified into one of
+        ``EPISTEMIC_TYPES`` (:attr:`Artifact.epistemic_types`);
       * :class:`Refusal` — signed, offline-verifiable, one of
         ``REFUSAL_REASONS``.
+
+    Both echo the request's ``profile`` (see the module docstring's
+    "Profile and epistemic type" section) — ``None`` when the requester
+    named none.
 
     ``signer``/``signing_key_path`` resolve to the SAME producer key
     ``seal()`` uses for this ledger (``capsule_emit.signing.resolve_signer``)
@@ -640,7 +803,7 @@ def answer(
         bundles, reason, next_page_token = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
 
     if bundles is None:
-        return _refuse(request_digest, reason, signer=signer_obj, issued_at=issued_at)
+        return _refuse(request_digest, reason, signer=signer_obj, issued_at=issued_at, profile=req.profile)
 
     expected_pin = req.coverage.get("expected_pin")
     if expected_pin is not None:
@@ -652,7 +815,13 @@ def answer(
             # The requester pinned a checkpoint that does not (or no
             # longer) covers this subject — refuse rather than silently
             # serve under a different anchor than the one asked for.
-            return _refuse(request_digest, REASON_COVERAGE_UNSATISFIABLE, signer=signer_obj, issued_at=issued_at)
+            return _refuse(
+                request_digest,
+                REASON_COVERAGE_UNSATISFIABLE,
+                signer=signer_obj,
+                issued_at=issued_at,
+                profile=req.profile,
+            )
     elif min_freshness is not None:
         max_age = min_freshness["max_age_seconds"]
         stale = any(_checkpoint_age_seconds(b.checkpoint.timestamp, issued_at) > max_age for b in bundles)
@@ -661,9 +830,29 @@ def answer(
                 _witness.push(os.fspath(ledger), signer=signer_obj)
                 bundles, reason, next_page_token = _build_bundles(ledger, req, self_owner_id=signer_obj.key_id)
                 if bundles is None:
-                    return _refuse(request_digest, reason, signer=signer_obj, issued_at=issued_at)
+                    return _refuse(
+                        request_digest, reason, signer=signer_obj, issued_at=issued_at, profile=req.profile
+                    )
                 stale = any(_checkpoint_age_seconds(b.checkpoint.timestamp, issued_at) > max_age for b in bundles)
             if stale:
-                return _refuse(request_digest, REASON_COVERAGE_UNSATISFIABLE, signer=signer_obj, issued_at=issued_at)
+                return _refuse(
+                    request_digest,
+                    REASON_COVERAGE_UNSATISFIABLE,
+                    signer=signer_obj,
+                    issued_at=issued_at,
+                    profile=req.profile,
+                )
 
-    return Artifact(v=1, subject_kind=req.subject["kind"], bundles=bundles, next_page_token=next_page_token)
+    if req.subject["kind"] == "chain_segment":
+        epistemic_types = (EPISTEMIC_TYPE_DERIVED_METRIC,) * len(bundles)
+    else:
+        epistemic_types = tuple(_epistemic_type_for_bundle(b) for b in bundles)
+
+    return Artifact(
+        v=1,
+        subject_kind=req.subject["kind"],
+        bundles=bundles,
+        next_page_token=next_page_token,
+        profile=req.profile,
+        epistemic_types=epistemic_types,
+    )
