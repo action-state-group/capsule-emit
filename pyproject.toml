@@ -63,16 +63,16 @@ llamaindex = ["llama-index-core>=0.14,<0.15", "llama-index-workflows>=2.14,<2.24
 # nemoguardrails declares Requires-Python ">=3.10,<3.14" while capsule-emit supports
 # >=3.9 — without it, `pip install capsule-emit[nemo-guardrails]` hard-fails on 3.9.
 nemo-guardrails = ["nemoguardrails>=0.24.0,<0.25; python_version >= '3.10'"]
-# capsule_emit.ledger_io -- the ledger-backed-verb read/verify seam moved
-# here from capsule-ledger's cli/ledger_io.py ([emit-ledger-io-home];
-# capsule-ledger archived 2026-09-02, stays archived). Only
-# ledger_io.local_payload_store() needs this extra (PayloadStore has no
-# checkpointed-local-log equivalent); every other ledger_io function uses
-# LedgerStore/ScanQuery from `cll.ledger`, already a hard dependency above.
-# capsule-ledger declares Requires-Python ">=3.10"; the marker keeps
-# `pip install capsule-emit[ledger-io]` resolvable (as a no-op) on the 3.9
-# floor this package still supports, same shape as nemo-guardrails above.
-ledger-io = ["capsule-ledger>=0.0.1; python_version >= '3.10'"]
+# NO `ledger-io` extra. It used to declare `capsule-ledger>=0.0.1`, which is
+# NOT on PyPI and never will be -- that repo was archived 2026-09-02 and stays
+# archived -- so `pip install capsule-emit[ledger-io]` failed for every
+# consumer of every published wheel, while CI stayed green because the
+# workflow installs capsule-ledger from git. A published package cannot point
+# an extra at a git URL, so the extra had to go rather than be repaired.
+# Only ledger_io.local_payload_store() ever needed it (PayloadStore has no
+# checkpointed-local-log equivalent); it now raises with the from-source
+# install line instead of failing obscurely. Every other ledger_io function
+# uses LedgerStore/ScanQuery from `cll.ledger`, a hard dependency above.
 dapr-agents = ["dapr-agents>=1.0"]
 # Microsoft Agent Framework. The middleware surface this adapter rides lives entirely in
 # agent-framework-core; the `agent-framework` meta-package pulls provider/Azure extras we

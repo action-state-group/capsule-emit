@@ -21,11 +21,12 @@ and importing the alias's target rather than the archived alias itself is
 the more honest "import").
 
 ``PayloadStore`` has no ``cll`` equivalent -- it stays ``capsule_ledger``'s
-own class, so :func:`local_payload_store` imports it lazily, on call, from
-the optional ``capsule-emit[ledger-io]`` extra. ``capsule-ledger`` requires
-Python >=3.10, so that extra (and only that extra/function) is unusable on
-this package's 3.9 floor; every other function in this module works
-unconditionally.
+own class, so :func:`local_payload_store` imports it lazily, on call. There
+is no ``capsule-emit[ledger-io]`` extra: ``capsule-ledger`` is not on PyPI
+and its repository was archived 2026-09-02, so the extra could never
+resolve for anyone installing a published wheel. That one function now
+raises with a from-source install line; every other function in this module
+works unconditionally.
 
 ``--ledger`` accepts either a real ``LedgerStore`` root (a directory) or a
 plain JSONL fixture file (imported into an ephemeral, throwaway store for
@@ -95,7 +96,19 @@ def local_payload_store(ledger_path: str | os.PathLike) -> PayloadStore | None:
     root = Path(ledger_path)
     if not root.is_dir():
         return None
-    from capsule_ledger.payload_store import PayloadStore
+    try:
+        from capsule_ledger.payload_store import PayloadStore
+    except ImportError as exc:  # pragma: no cover - depends on the environment
+        raise ImportError(
+            "local_payload_store() needs capsule-ledger's PayloadStore, and "
+            "capsule-ledger is not on PyPI (its repository was archived "
+            "2026-09-02). There is no `capsule-emit[ledger-io]` extra for the "
+            "same reason: a published package cannot depend on a git URL. "
+            "Install it from source if you need this one function:\n"
+            "    pip install 'capsule-ledger @ git+https://github.com/"
+            "action-state-group/capsule-ledger.git'\n"
+            "Every other function in capsule_emit.ledger_io works without it."
+        ) from exc
 
     store = PayloadStore(root)
     return store if store.exists else None

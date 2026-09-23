@@ -27,6 +27,31 @@ jobs:
           /tmp/cleanroom/bin/pip install --upgrade pip
           /tmp/cleanroom/bin/pip install dist/*.whl
 
+      - name: every declared extra must resolve from PyPI alone
+        # 2026-09-23: `pip install capsule-emit[ledger-io]` failed for EVERY consumer
+        # of every published wheel — it declared capsule-ledger, which is not on PyPI
+        # and whose repo is archived. CI never noticed, because the test job installs
+        # that package from git first. An extra nobody can install is a broken promise
+        # in the wheel's own metadata, so check each one against PyPI and nothing else.
+        run: |
+          python - <<'PY' > /tmp/extras.txt
+          import tomllib
+          d = tomllib.load(open("pyproject.toml", "rb"))
+          print("\n".join(d["project"].get("optional-dependencies", {})))
+          PY
+          whl=$(ls dist/*.whl)
+          fail=0
+          while read -r e; do
+            [ -z "$e" ] && continue
+            if /tmp/cleanroom/bin/pip install --dry-run -q "${whl}[${e}]" >/dev/null 2>&1; then
+              echo "  ok    [$e]"
+            else
+              echo "  FAILS [$e] — declared in pyproject but not installable from PyPI"
+              fail=1
+            fi
+          done < /tmp/extras.txt
+          exit $fail
+
       - name: from-nothing smoke — first seal() must not crash (guards #123's ModuleNotFoundError)
         env:
           CAPSULE_WITNESS: "off"
