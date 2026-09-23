@@ -48,6 +48,20 @@ All notable changes to `capsule-emit` are documented here. The format follows
   security claim on a partner-facing page, now corrected in all three places. Prose only; no code,
   no test, no digest change. Affects 0.8.3.
 
+### Fixed — Dapr Agents: the approval example seals a literal id, and seals before the resume (desk review of #204)
+
+- `docs/adapters/dapr_agents.md`'s `deliver_decision` example passed `tool_call_id="call_abc123"` as
+  a literal while the surrounding function never received one, so copying it seals that string into
+  every approval record's digest-committed extension. The example now takes the gate object it
+  already had and reads `tool_call_id`, `step_name` and `tool_arguments` off it.
+- The same example sealed the record *before* `raise_approval_event`, the call that actually resumes
+  the workflow. If that call fails, the sealed record claims a decision was delivered when it was
+  not. Order reversed, with a sentence on why that failure direction is the honest one.
+- The `dapr_agents` extension reference still showed the pre-#200 field set and said only
+  "`approver_id` is also included". It now shows a HITL block carrying `approver_id`,
+  `approval_request_id` and `tool_call_id`.
+- Docs only. Affects 0.8.3.
+
 ### Added — Dapr Agents: `record_approval_response`, the HITL record on the native approval flow (#200)
 
 - `DaprAgentsCapsuleEmitter.record_hitl` was documented against a hand-rolled
