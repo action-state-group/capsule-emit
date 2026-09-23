@@ -26,7 +26,7 @@ func TestKnownRegistriesMatchV4Seeds(t *testing.T) {
 			"two_way", "one_way_recoverable", "one_way_consequential", "one_way_terminal",
 		),
 		"effect_attestation": set("gate_executed", "runtime_claimed"),
-		"chain.relation":     set("confirms", "supersedes", "epoch_opens"),
+		"chain.relation":     set("confirms", "supersedes", "epoch_opens", "duplicates"),
 		"citation_purpose":   set("acted_on", "responds_to"),
 	}, knownRegistries())
 }

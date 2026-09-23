@@ -96,6 +96,10 @@ const (
 	ChainConfirms   ChainRelation = "confirms"
 	ChainSupersedes ChainRelation = "supersedes"
 	ChainEpochOpens ChainRelation = "epoch_opens"
+	// ChainDuplicates links a backfilled Capsule to the contemporaneous twin
+	// it duplicates (draft -05 §5.3(bis)); verifiers count the pair once,
+	// the contemporaneous parent governing.
+	ChainDuplicates ChainRelation = "duplicates"
 )
 
 // EffectMode is the effect assurance derived from an Effect.
@@ -134,4 +138,23 @@ const (
 	ProvenanceGate      Provenance = "gate"
 	ProvenanceRuntime   Provenance = "runtime"
 	ProvenanceCollector Provenance = "collector"
+)
+
+// ProvenanceModeValue states whether a Capsule is a contemporaneous
+// observation or a backfilled import (draft -05 §5.3(bis)). A closed
+// enumeration, unlike the registry-backed value types above.
+type ProvenanceModeValue string
+
+const (
+	ProvenanceModeContemporaneous ProvenanceModeValue = "contemporaneous"
+	ProvenanceModeBackfilled      ProvenanceModeValue = "backfilled"
+)
+
+// TimeRung caps the occurrence-time claim a backfilled Capsule may make
+// (draft -05 §5.3(bis)). A closed enumeration.
+type TimeRung string
+
+const (
+	TimeRungSelfAttested TimeRung = "self_attested"
+	TimeRungWitnessed    TimeRung = "witnessed"
 )

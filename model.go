@@ -16,13 +16,29 @@ type Input struct {
 	Domain     Domain
 	Provenance Provenance
 
-	Disposition *Disposition
-	Effect      *Effect
-	Chain       *Chain
-	References  []Reference
-	Model       *Model
-	Compute     *ComputeAttestation
-	compute     *computeAttestation
+	Disposition    *Disposition
+	Effect         *Effect
+	Chain          *Chain
+	References     []Reference
+	Model          *Model
+	Compute        *ComputeAttestation
+	compute        *computeAttestation
+	ProvenanceMode *ProvenanceMode
+}
+
+// ProvenanceMode marks a Capsule as a backfilled import of a pre-existing
+// external event, rather than a contemporaneous observation (draft -05
+// §5.3(bis), a MODE on the ordinary Capsule -- never a distinct record type,
+// and a different key from the unrelated Input.Provenance dedup-rank
+// signal above). Mode "backfilled" REQUIRES the four companion fields;
+// TimeRung is meaningful only when Mode is "backfilled".
+type ProvenanceMode struct {
+	Mode             ProvenanceModeValue
+	SourceRef        *Reference
+	SourceAssertedAt string
+	ImportBatch      string
+	ImportedAt       string
+	TimeRung         TimeRung
 }
 
 // Model identifies the provider and model that performed the recorded work.

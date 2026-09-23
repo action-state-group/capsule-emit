@@ -44,6 +44,9 @@ func Build(input Input) (BuiltPayload, error) {
 	if input.Provenance != "" {
 		payload["provenance"] = string(input.Provenance)
 	}
+	if input.ProvenanceMode != nil {
+		payload["provenance_mode"] = provenanceModeMap(*input.ProvenanceMode)
+	}
 	if input.Disposition != nil {
 		payload["disposition"] = dispositionMap(*input.Disposition)
 	}
@@ -144,6 +147,34 @@ func computeAttestationMap(attestation *ComputeAttestation, binding *computeAtte
 	return result
 }
 
+// provenanceModeMap renders a producer-side ProvenanceMode into the wire
+// shape §5.3(bis) defines: mode plus whichever companion fields are set.
+// Field presence, not zero-value coercion, is what validateProvenanceMode
+// already enforced by the time Build reaches this call.
+func provenanceModeMap(mode ProvenanceMode) map[string]any {
+	result := map[string]any{"mode": string(mode.Mode)}
+	if mode.SourceRef != nil {
+		result["source_ref"] = digestReferenceMap(digestReference{
+			Type:      mode.SourceRef.Type,
+			DigestAlg: mode.SourceRef.DigestAlg,
+			Digest:    mode.SourceRef.Digest,
+		})
+	}
+	if mode.SourceAssertedAt != "" {
+		result["source_asserted_at"] = mode.SourceAssertedAt
+	}
+	if mode.ImportBatch != "" {
+		result["import_batch"] = mode.ImportBatch
+	}
+	if mode.ImportedAt != "" {
+		result["imported_at"] = mode.ImportedAt
+	}
+	if mode.TimeRung != "" {
+		result["time_rung"] = string(mode.TimeRung)
+	}
+	return result
+}
+
 func digestReferenceMap(reference digestReference) map[string]any {
 	result := map[string]any{
 		"type":       reference.Type,
@@ -201,6 +232,53 @@ func validateInput(input Input) error {
 		if input.Chain.Relation == ChainEpochOpens && input.EpochID == "" {
 			return fmt.Errorf("epoch_opens chain requires epoch id")
 		}
+	}
+	if err := validateProvenanceMode(input.ProvenanceMode); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateProvenanceMode enforces §5.3(bis): mode "backfilled" REQUIRES the
+// four companion fields and permits TimeRung; mode "contemporaneous" (the
+// default) permits none of them. This is the same invariant the AAC Python
+// reference's ProvenanceMode dataclass constructor enforces producer-side,
+// ahead of Class 1 verification.
+func validateProvenanceMode(mode *ProvenanceMode) error {
+	if mode == nil {
+		return nil
+	}
+	if mode.Mode != ProvenanceModeContemporaneous && mode.Mode != ProvenanceModeBackfilled {
+		return fmt.Errorf("provenance mode must be %q or %q", ProvenanceModeContemporaneous, ProvenanceModeBackfilled)
+	}
+	if mode.SourceRef != nil && (mode.SourceRef.CitationPurpose != "" || mode.SourceRef.LogCoordinates != nil) {
+		return fmt.Errorf("provenance mode source ref must not carry citation purpose or log coordinates")
+	}
+	companionsPresent := mode.SourceRef != nil || mode.SourceAssertedAt != "" || mode.ImportBatch != "" || mode.ImportedAt != ""
+	if mode.Mode == ProvenanceModeBackfilled {
+		var missing []string
+		if mode.SourceRef == nil {
+			missing = append(missing, "source ref")
+		} else if strings.TrimSpace(mode.SourceRef.Type) == "" || strings.TrimSpace(mode.SourceRef.DigestAlg) == "" || strings.TrimSpace(mode.SourceRef.Digest) == "" {
+			return fmt.Errorf("provenance mode source ref requires type, digest alg, and digest")
+		}
+		if strings.TrimSpace(mode.SourceAssertedAt) == "" {
+			missing = append(missing, "source asserted at")
+		}
+		if strings.TrimSpace(mode.ImportBatch) == "" {
+			missing = append(missing, "import batch")
+		}
+		if strings.TrimSpace(mode.ImportedAt) == "" {
+			missing = append(missing, "imported at")
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("backfilled provenance mode requires %s", strings.Join(missing, ", "))
+		}
+	} else if companionsPresent || mode.TimeRung != "" {
+		return fmt.Errorf("provenance mode source ref, source asserted at, import batch, imported at, and time rung are meaningful only when mode is %q", ProvenanceModeBackfilled)
+	}
+	if mode.TimeRung != "" && mode.TimeRung != TimeRungSelfAttested && mode.TimeRung != TimeRungWitnessed {
+		return fmt.Errorf("provenance mode time rung must be %q or %q", TimeRungSelfAttested, TimeRungWitnessed)
 	}
 	return nil
 }

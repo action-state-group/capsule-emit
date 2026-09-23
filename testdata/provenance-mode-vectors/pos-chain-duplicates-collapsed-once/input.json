@@ -1,0 +1,63 @@
+{
+  "ledger": [
+    {
+      "action_id": "prov-contemporaneous-parent",
+      "action_type": "decide",
+      "assurance": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "standalone"
+      },
+      "canonicalization_id": "jcs",
+      "capsule_id": "ed3cdeca453ee37e40bbeeee0f582f579873fa690a6af2d729578595b287d378",
+      "developer": "agent@v1",
+      "disposition": {
+        "approver": "policy",
+        "decision": "accept",
+        "human_disposed": false,
+        "verdict_class": "executed"
+      },
+      "format_version": "4",
+      "operator": "ACME-CO",
+      "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+      "timestamp": "2026-08-24T00:00:00Z"
+    },
+    {
+      "action_id": "prov-backfilled-duplicate",
+      "action_type": "decide",
+      "assurance": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "chained"
+      },
+      "canonicalization_id": "jcs",
+      "capsule_id": "5d7ee9fe6af6391a0a905b3297316bc483d781098d9ceca4fa697fa591f929dd",
+      "chain": {
+        "parent_capsule_id": "ed3cdeca453ee37e40bbeeee0f582f579873fa690a6af2d729578595b287d378",
+        "relation": "duplicates"
+      },
+      "developer": "agent@v1",
+      "disposition": {
+        "approver": "policy",
+        "decision": "accept",
+        "human_disposed": false,
+        "verdict_class": "executed"
+      },
+      "format_version": "4",
+      "operator": "ACME-CO",
+      "provenance_mode": {
+        "import_batch": "import-2026-09",
+        "imported_at": "2026-09-22T00:00:00Z",
+        "mode": "backfilled",
+        "source_asserted_at": "2026-01-01T00:00:00Z",
+        "source_ref": {
+          "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+          "digest_alg": "SHA-256",
+          "type": "x-external-ledger-entry"
+        }
+      },
+      "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+      "timestamp": "2026-08-24T00:00:00Z"
+    }
+  ]
+}

@@ -33,7 +33,7 @@ func upstreamRepository(t *testing.T) string {
 
 func TestFrozenFormat4CapsuleVectors(t *testing.T) {
 	repository := upstreamRepository(t)
-	root := filepath.Join(repository, "test-vectors")
+	root := filepath.Join(repository, "vectors", "capsule")
 	manifestData, err := os.ReadFile(filepath.Join(root, "vectors.json"))
 	require.NoError(t, err)
 	var manifest vectorManifest
@@ -61,7 +61,7 @@ func TestFrozenFormat4CapsuleVectors(t *testing.T) {
 
 func TestFrozenProducerEnvelopeVectors(t *testing.T) {
 	repository := upstreamRepository(t)
-	root := filepath.Join(repository, "producer-envelope-vectors")
+	root := filepath.Join(repository, "vectors", "producer-envelope")
 	manifestData, err := os.ReadFile(filepath.Join(root, "vectors.json"))
 	require.NoError(t, err)
 	var manifest vectorManifest
@@ -98,7 +98,7 @@ func TestSignMatchesFrozenValidEnvelope(t *testing.T) {
 	}
 	actual, err := signCapsuleID(payload, identity)
 	require.NoError(t, err)
-	expected, err := os.ReadFile(filepath.Join(repository, "producer-envelope-vectors", "valid", "envelope.cose"))
+	expected, err := os.ReadFile(filepath.Join(repository, "vectors", "producer-envelope", "valid", "envelope.cose"))
 	require.NoError(t, err)
 	assert.Equal(t, expected, actual)
 }

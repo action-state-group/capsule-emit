@@ -1,6 +1,7 @@
 package emit
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/action-state-group/agent-action-capsule/go/canonical"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,24 +19,23 @@ func TestBuildCrossRecordReferences(t *testing.T) {
 	built, err := Build(input)
 	require.NoError(t, err)
 	t.Run("python-vector", func(t *testing.T) {
+		// AAC's reorg (#99, "Format-4-only canonical reference") retired the
+		// aggregate go/verify/testdata/references.json in favor of per-case
+		// vectors under vectors/capsule/reference-*. The old file's per-case
+		// "canonical" string was JCS(stored capsule); the replacement is the
+		// same stored capsule as vectors/capsule/reference-external-capsule/
+		// input.json (pretty-printed, unsorted keys, capsule_id included), so
+		// canonicalizing it reproduces the frozen expectation for built.JSON.
 		root := upstreamRepository(t)
-		data, err := os.ReadFile(filepath.Join(root, "go", "verify", "testdata", "references.json"))
+		data, err := os.ReadFile(filepath.Join(root, "vectors", "capsule", "reference-external-capsule", "input.json"))
 		require.NoError(t, err)
-		var vectors struct {
-			Cases []struct {
-				Name      string
-				Canonical string
-			}
-		}
-		require.NoError(t, json.Unmarshal(data, &vectors))
-		expected := ""
-		for _, vector := range vectors.Cases {
-			if vector.Name == "external-capsule" {
-				expected = vector.Canonical
-			}
-		}
-		require.NotEmpty(t, expected)
-		assert.Equal(t, expected, string(built.JSON))
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.UseNumber()
+		var storedCapsule map[string]interface{}
+		require.NoError(t, decoder.Decode(&storedCapsule))
+		expected, err := canonical.JCS(storedCapsule)
+		require.NoError(t, err)
+		assert.Equal(t, string(expected), string(built.JSON))
 	})
 	verified, err := VerifyCapsule(built.JSON)
 	require.NoError(t, err)
