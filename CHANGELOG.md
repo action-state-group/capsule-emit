@@ -6,6 +6,33 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed — ADK: the long-running flag no longer outlives the call it flags (desk review of #203)
+
+- `ADKCapsuleEmitter` kept five pieces of per-call state; `_lro_ids`, the set of ids a model-call
+  event flagged via `long_running_tool_ids`, was the only one nothing ever removed from. It aged on
+  its own FIFO clock, out of step with `_seen` and `_lro_pending`, and two failures followed. **(1)**
+  A flagged id that aged out before its own placeholder arrived fell through to the plain seal:
+  `verdict="executed"`, no `adk_long_running`/`adk_outcome` markers, and a declared effect riding at
+  `status: "confirmed"` — a confirmed world-effect for a dispatch that had not happened — after which
+  the real outcome was dropped as a `_seen` duplicate. That is the #199 failure reintroduced by the
+  change that fixed it. **(2)** `_seal_pending`'s eviction discarded `_seen` but not `_lro_ids`, so
+  under mixed callback+tap wiring (the callback path never writes `_lro_ids`) a late response
+  re-entered `_seal_pending` and sealed a *second* `pending` record with no `tool_input` and no
+  parent, re-opening a chain whose head was orphaned — the opposite of what the eviction log line,
+  the docstring, the page and the changelog all promised.
+- Now the flag is discarded the moment its placeholder seals, discarded alongside the dedup entry on
+  eviction, and discarded when a chain closes on `final`; it is bounded by `max_pending` (the
+  call-to-response window it actually spans) rather than by `max_long_running`. Also fixed in the
+  same pass: `_seal_update` now refreshes FIFO recency, so an actively progressing chain no longer
+  evicts ahead of an idle newer one; and the echoed-placeholder check accepts both shapes a stub can
+  take, since ADK hands the callback a tool's return unchanged but normalizes a non-dict return to
+  `{"result": value}` for the event stream (`_normalize_tool_result` vs `_as_callback_result`,
+  google-adk 2.9.2) — previously a non-dict placeholder never matched its own echo and sealed a
+  spurious extra `update`.
+- Five regression tests, each verified to fail against the unfixed adapter. The pre-existing eviction
+  test drove only the callback path, the one wiring where failure (2) cannot appear.
+- Affects 0.8.3, which shipped the original change.
+
 ### Added — Dapr Agents: `record_approval_response`, the HITL record on the native approval flow (#200)
 
 - `DaprAgentsCapsuleEmitter.record_hitl` was documented against a hand-rolled

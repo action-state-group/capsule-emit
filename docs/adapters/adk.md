@@ -401,8 +401,12 @@ else — tap the event stream (`tap_event` / `tap_stream`) as well if you need
 what follows. A pending record whose later responses never arrive stays a
 pending record; that is the honest state. And open long-running calls are
 bounded by `max_long_running` (default 1024, separate from `max_pending`);
-evicting one drops its dedup entry too, so a late response seals as a plain,
-unchained call rather than vanishing, and the log says so.
+evicting one drops that call's dedup entry *and* its long-running flag, so a
+late response seals as a plain, unchained call rather than vanishing or
+re-opening the chain, and the log says so. The flag a model-call event sets is
+short-lived by design: it is discarded the moment that call's placeholder
+seals, so it lives exactly as long as the call-to-response window and is
+bounded by `max_pending` like the pairing map, not by `max_long_running`.
 
 ## Verify
 
