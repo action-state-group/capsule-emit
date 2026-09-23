@@ -40,7 +40,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from scitt_cose import verify_receipt
+try:
+    from scitt_cose import verify_receipt
+except ImportError:  # keep the guidance in ONE place — see _install_hint()
+    verify_receipt = None
 
 from capsule_emit import seal
 from capsule_emit.verification import verify_capsule as capsule_verify
@@ -395,25 +398,35 @@ def run_partial_demo(ledger: Path) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
-def _preflight() -> None:
-    """Fail with the real reason, not a start-up timeout.
+def _install_hint(missing: str) -> str:
+    return (
+        f"ERROR: this demo needs {missing}, which is not installed.\n"
+        "Install everything it needs:\n"
+        "    pip install 'capsule-emit[dev]' scitt-cose \\\n"
+        "        'capsule-anchor @ git+https://github.com/action-state-group/capsule-anchor.git'\n"
+        "Note: capsule-anchor is NOT on PyPI (404) — it installs from source, and\n"
+        "needs Python >= 3.11."
+    )
 
+
+def _preflight() -> None:
+    """Fail with the real reason, not a start-up timeout or a raw traceback.
+
+    Two dependencies are easy to miss and each used to fail unhelpfully.
     ``capsule-anchor`` is NOT published on PyPI (checked 2026-09-23: 404), so the
-    install line this demo used to print could never work. Without it the demo
-    would spend 15s waiting for a server that was never going to start and then
-    report "one or both anchors did not start in time", which sends the reader
-    looking for a network problem they do not have.
+    install line this demo used to print could never work — and without it the
+    demo spent 15s waiting for a server that was never going to start, then said
+    "one or both anchors did not start in time", sending the reader after a
+    network problem they do not have. ``scitt-cose`` is imported at module load,
+    so missing it produced an ImportError traceback before this function could
+    speak at all; that import is now guarded and reported here instead.
     """
+    if verify_receipt is None:
+        sys.exit(_install_hint("scitt-cose"))
     try:
         import capsule_anchor  # noqa: F401
     except ImportError:
-        sys.exit(
-            "ERROR: this demo needs the capsule-anchor service, which is not on PyPI.\n"
-            "Install it from source:\n"
-            "    pip install 'capsule-emit[dev]' scitt-cose \\\n"
-            "        'capsule-anchor @ git+https://github.com/action-state-group/capsule-anchor.git'\n"
-            "(capsule-anchor needs Python >= 3.11.)"
-        )
+        sys.exit(_install_hint("the capsule-anchor service"))
 
 
 def main() -> None:
