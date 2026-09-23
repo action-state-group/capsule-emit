@@ -305,3 +305,172 @@ def test_shell_real_langchain_tool_error_e2e(tmp_path):
     assert caps[1]["effect"]["status"] == "failed"
     assert caps[1]["disposition"]["verdict_class"] == "errored"
     assert caps[1]["chain"]["parent_capsule_id"] == caps[0]["capsule_id"]
+
+
+# ---------------------------------------------------------------------------
+# LangGraph (only when langgraph is installed) — the listener already covers
+# ToolNode; these guard the three claims the docs section makes about it
+# ---------------------------------------------------------------------------
+
+
+def _langgraph_app(tool_list, tool_calls, final_text):
+    """A minimal compiled StateGraph: chatbot -> ToolNode -> chatbot."""
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+    from langgraph.graph import END, START, MessagesState, StateGraph  # noqa: F401
+    from langgraph.prebuilt import ToolNode, tools_condition
+
+    model = GenericFakeChatModel(
+        messages=iter([AIMessage(content="", tool_calls=tool_calls), AIMessage(content=final_text)])
+    )
+
+    def chatbot(state):
+        return {"messages": [model.invoke(state["messages"])]}
+
+    graph = StateGraph(MessagesState)
+    graph.add_node("chatbot", chatbot)
+    graph.add_node("tools", ToolNode(tool_list))
+    graph.add_edge(START, "chatbot")
+    graph.add_conditional_edges("chatbot", tools_condition)
+    graph.add_edge("tools", "chatbot")
+    return graph.compile()
+
+
+def _langgraph_listener(tmp_path):
+    from capsule_emit.adapters.langchain_listener import LangChainCapsuleListener
+
+    return LangChainCapsuleListener(
+        operator="acme-co",
+        developer="my-agent@v1",
+        ledger=tmp_path / "ledger.jsonl",
+        anchor=False,
+        include_lifecycle=False,   # graph-level chain events are not the subject here
+    )
+
+
+def test_langgraph_parallel_toolnode_seals_both_calls_paired(tmp_path):
+    """Two tool calls in one AI turn: ToolNode runs both, each pairs on its own run_id."""
+    pytest.importorskip("langgraph")
+    lc_tools = pytest.importorskip("langchain_core.tools")
+    from langchain_core.messages import HumanMessage
+
+    @lc_tools.tool
+    def get_price(sku: str) -> str:
+        """Return the price for a SKU."""
+        return f"price for {sku}: 12.00 USD"
+
+    @lc_tools.tool
+    def get_stock(sku: str) -> str:
+        """Return the stock count for a SKU."""
+        return f"stock for {sku}: 41 units"
+
+    listener = _langgraph_listener(tmp_path)
+    app = _langgraph_app(
+        [get_price, get_stock],
+        [
+            {"name": "get_price", "args": {"sku": "SKU-9"}, "id": "call_price", "type": "tool_call"},
+            {"name": "get_stock", "args": {"sku": "SKU-9"}, "id": "call_stock", "type": "tool_call"},
+        ],
+        "SKU-9 is 12.00 USD, 41 in stock.",
+    )
+    app.invoke({"messages": [HumanMessage(content="Price and stock?")]},
+               config={"callbacks": [listener]})
+
+    caps = _ledger(tmp_path)
+    assert len(caps) == 4                      # planned + confirmed, twice
+    by_id = {c["capsule_id"]: c for c in caps}
+    confirmed = [c for c in caps if c["effect"]["status"] == "confirmed"]
+    assert len(confirmed) == 2
+    for c in confirmed:                        # each chains to its OWN planned record
+        parent = by_id[c["chain"]["parent_capsule_id"]]
+        assert parent["effect"]["status"] == "planned"
+        assert parent["action_id"].split("/")[0] == c["action_id"].split("/")[0]
+    assert {c["action_id"].split("/")[0] for c in confirmed} == {"get_price", "get_stock"}
+    assert all(verify(c).ok for c in caps)
+
+
+def test_langgraph_raising_tool_seals_errored_and_chained(tmp_path):
+    """A tool that raises inside ToolNode still seals a chained failure record."""
+    pytest.importorskip("langgraph")
+    lc_tools = pytest.importorskip("langchain_core.tools")
+    from langchain_core.messages import HumanMessage
+
+    @lc_tools.tool
+    def submit_order(po: str) -> str:
+        """Submit a purchase order."""
+        raise RuntimeError("order gateway down")
+
+    listener = _langgraph_listener(tmp_path)
+    app = _langgraph_app(
+        [submit_order],
+        [{"name": "submit_order", "args": {"po": "PO-7"}, "id": "call_order", "type": "tool_call"}],
+        "unreachable",
+    )
+    with pytest.raises(RuntimeError):
+        app.invoke({"messages": [HumanMessage(content="Submit PO-7")]},
+                   config={"callbacks": [listener]})
+
+    caps = _ledger(tmp_path)
+    assert len(caps) == 2
+    assert caps[0]["effect"]["status"] == "planned"
+    assert caps[1]["disposition"]["verdict_class"] == "errored"
+    assert caps[1]["effect"]["status"] == "failed"
+    assert caps[1]["chain"]["parent_capsule_id"] == caps[0]["capsule_id"]
+    assert all(verify(c).ok for c in caps)
+
+
+def test_langgraph_interrupt_inside_a_tool_is_indistinguishable_from_a_failure(tmp_path):
+    """The honesty limit the docs state: a paused call seals like a broken one.
+
+    ``interrupt()`` raises ``GraphInterrupt`` through ``tool.invoke()``, so
+    ``on_tool_error`` fires and the listener seals ``errored``/``failed``. The
+    listener has no way to tell "waiting for a human" from "the tool broke".
+    """
+    pytest.importorskip("langgraph")
+    lc_tools = pytest.importorskip("langchain_core.tools")
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.graph import START, MessagesState, StateGraph
+    from langgraph.prebuilt import ToolNode, tools_condition
+    from langgraph.types import interrupt
+
+    @lc_tools.tool
+    def approve_payment(amount: str) -> str:
+        """Ask a human to approve a payment."""
+        decision = interrupt({"amount": amount})
+        return f"decision: {decision}"
+
+    listener = _langgraph_listener(tmp_path)
+    model = GenericFakeChatModel(
+        messages=iter([
+            AIMessage(content="", tool_calls=[{"name": "approve_payment",
+                                               "args": {"amount": "500.00"},
+                                               "id": "call_appr", "type": "tool_call"}]),
+            AIMessage(content="done"),
+        ])
+    )
+
+    def chatbot(state):
+        return {"messages": [model.invoke(state["messages"])]}
+
+    g = StateGraph(MessagesState)
+    g.add_node("chatbot", chatbot)
+    g.add_node("tools", ToolNode([approve_payment]))
+    g.add_edge(START, "chatbot")
+    g.add_conditional_edges("chatbot", tools_condition)
+    g.add_edge("tools", "chatbot")
+    app = g.compile(checkpointer=MemorySaver())
+
+    config = {"callbacks": [listener], "configurable": {"thread_id": "t1"}}
+    app.invoke({"messages": [HumanMessage(content="Approve 500")]}, config=config)
+
+    caps = _ledger(tmp_path)
+    assert len(caps) == 2
+    assert caps[1]["disposition"]["verdict_class"] == "errored"
+    assert caps[1]["effect"]["status"] == "failed"
+    # nothing in the record says "paused" rather than "broken" — the documented limit
+    comp = caps[1]["model_attestation"]["compute_attestation"]
+    assert not any("interrupt" in str(k).lower() or "interrupt" in str(v).lower()
+                   for k, v in comp.items())
+    assert all(verify(c).ok for c in caps)

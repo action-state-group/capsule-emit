@@ -124,7 +124,7 @@ def run(ledger: pathlib.Path, anchor_url: str) -> None:
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain_core.messages import AIMessage, HumanMessage
     from langchain_core.tools import tool
-    from langgraph.graph import END, START, MessagesState, StateGraph
+    from langgraph.graph import START, MessagesState, StateGraph
     from langgraph.prebuilt import ToolNode, tools_condition
 
     from capsule_emit.adapters.langchain_listener import LangChainCapsuleListener

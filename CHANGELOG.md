@@ -62,7 +62,7 @@ All notable changes to `capsule-emit` are documented here. The format follows
   `approval_request_id` and `tool_call_id`.
 - Docs only. Affects 0.8.3.
 
-### Added — LangGraph coverage, documented and tested (docs only, no code change)
+### Added — LangGraph coverage, documented and tested
 
 - `LangChainCapsuleListener` already seals every tool call a LangGraph
   `StateGraph`/`ToolNode` makes — `ToolNode` routes through the same
@@ -79,6 +79,13 @@ All notable changes to `capsule-emit` are documented here. The format follows
   resuming a rewound checkpoint re-executes the tool for real and seals a
   second, correctly independent record rather than a duplicate. New runnable
   example: `examples/langchain-listener/langgraph_demo.py`.
+
+- Three regression tests guard the claims the new section makes, skipped where `langgraph` is not
+  installed (as in CI): a parallel `ToolNode` turn seals both calls and pairs each to its own
+  `planned` record by `run_id`; a raising tool seals `errored`/`failed`, chained; and an
+  `interrupt()` inside a tool body seals exactly like a broken tool, with nothing in the record
+  marking it as paused — the honesty limit the section states, now pinned by a test rather than by
+  prose alone.
 
 ### Added — Dapr Agents: `record_approval_response`, the HITL record on the native approval flow (#200)
 
