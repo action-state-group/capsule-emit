@@ -4,6 +4,18 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Fixed — the multi-anchor demo's preflight now covers both dependencies, not one
+
+- #214 added a preflight so a reader missing `capsule-anchor` got the real reason instead of a
+  start-up timeout. Testing the shipped 0.8.5 wheel showed it only covered one of the two: the
+  demo imports `scitt_cose` at module load, which fires **before** the preflight can speak, so a
+  reader missing that one still got a raw `ImportError` traceback. That import is now guarded and
+  reported through the same one place, with the same install line. Found by running the demo as a
+  consumer would after cutting 0.8.5, not before — the functional fixes shipped, this is the
+  message.
+
 ## 0.8.5 — 2026-09-23
 
 ### Fixed — three shipped demos that could not run for anyone who installed the wheel
