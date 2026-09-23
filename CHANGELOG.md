@@ -86,6 +86,28 @@ All notable changes to `capsule-emit` are documented here. The format follows
   `interrupt()` inside a tool body seals exactly like a broken tool, with nothing in the record
   marking it as paused — the honesty limit the section states, now pinned by a test rather than by
   prose alone.
+### Added — `ConnectorPort`: the adapter contract named explicitly (`capsule_emit.connector`)
+
+- Fifteen framework adapters each classified observation-vs-effect (the
+  two-signal rule) and captured events into a capsule, informally, in their
+  own way. `capsule_emit.connector.ConnectorPort` is that contract as a
+  `typing.Protocol` — `classify(event) -> observation | effect`,
+  `capture(event) -> seal() | received()`, a declared `boundary_class`
+  (`gateway` / `decorator` / `listener` / `engine`) — checkable with
+  `isinstance(adapter, ConnectorPort)` rather than read off each adapter's
+  source. `classify_signal_1()` implements Signal 1 mechanically off a new
+  `ConnectorEvent`, fail-safe default `EFFECT` when no runtime signal is
+  present.
+- Two adapters conform today, to prove the contract without assuming it onto
+  the other thirteen: `adapters.mcp.MCPCapsuleEmitter` (boundary-capture —
+  wraps the call at the actual MCP tool boundary) and
+  `adapters.langchain_listener.LangChainListenerCore` /
+  `LangChainCapsuleListener` (listener — taps LangChain's own callback
+  stream). Every other adapter's existing surface is unchanged.
+- `docs/whats-consequential.md` extends the two-signal rule with an
+  OpenTelemetry-span-derived reading of Signal 1, a formal definition of
+  "effect" ("crosses a system boundary carrying a write"), and five worked
+  examples.
 
 ### Added — Dapr Agents: `record_approval_response`, the HITL record on the native approval flow (#200)
 
