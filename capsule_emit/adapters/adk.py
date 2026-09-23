@@ -181,9 +181,12 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
             ``max_results`` default so a long-lived tap does not retain results forever.
         max_long_running: Cap on long-running calls awaiting later responses
             (default 1024; they can stay open for hours, so this is a separate
-            budget from ``max_pending``). Evicting one drops its dedup entry
-            too, so a late response seals as a plain call rather than
-            vanishing; the log says so.
+            budget from ``max_pending``). Evicting one drops that call's dedup
+            entry *and* its long-running flag, so a late response seals as a
+            plain call rather than vanishing or re-opening the chain; the log
+            says so. It does not bound the flags a model-call event sets: those
+            are discarded as soon as the matching placeholder seals and are
+            bounded by ``max_pending``.
         long_running_final: Optional predicate on a long-running call's later
             response that names the terminal one (e.g.
             ``lambda r: r.get("status") == "done"``). Without it every later
@@ -217,12 +220,18 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         # Long-running tools (ADK ``LongRunningFunctionTool``): the first
         # response is a pending stub; progress updates and the outcome arrive
         # later under the same function_call_id. ``_lro_ids`` holds ids the
-        # model-call event flagged via ``long_running_tool_ids``;
-        # ``_lro_pending`` maps an id whose pending record is sealed to
-        # (chain head capsule_id, args, canonical stub) so every later response
-        # chains onto the previous record instead of being dropped as a dup.
-        self._lro_ids = _BoundedSet(max_long_running)
-        self._lro_pending: OrderedDict[str, tuple[str, Any, str]] = OrderedDict()
+        # model-call event flagged via ``long_running_tool_ids`` and *only
+        # until that id's placeholder arrives* — it is discarded the moment the
+        # pending record seals, so the flag lives exactly as long as the
+        # call->response window and is bounded by ``max_pending``, the same cap
+        # that bounds ``_pending``. Sizing it by ``max_long_running`` instead
+        # let a flag age out before its own placeholder arrived, which sealed
+        # that placeholder as a completed call. ``_lro_pending`` then maps an id
+        # whose pending record is sealed to (chain head capsule_id, args,
+        # accepted stub keys) so every later response chains onto the previous
+        # record instead of being dropped as a dup.
+        self._lro_ids = _BoundedSet(max_pending)
+        self._lro_pending: OrderedDict[str, tuple[str, Any, tuple[str, ...]]] = OrderedDict()
         self._max_long_running = max_long_running
         self._long_running_final = long_running_final
 
@@ -262,6 +271,22 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         except Exception:  # noqa: BLE001 — a non-canonical stub just never matches
             return repr(response)
 
+    @classmethod
+    def _stub_keys(cls, response: Any) -> tuple[str, ...]:
+        """Every canonical form the pending stub can echo back as.
+
+        ADK hands the *callback* a tool's return value unchanged but normalizes
+        a non-dict return to ``{"result": value}`` before putting it on the
+        event stream (``_normalize_tool_result`` vs ``_as_callback_result``).
+        A placeholder sealed from the callback path therefore echoes on the tap
+        in a different shape than it was stored in, so both are accepted —
+        otherwise the echo seals a spurious extra ``update``.
+        """
+        keys = [cls._response_key(response)]
+        if not isinstance(response, dict):
+            keys.append(cls._response_key({"result": response}))
+        return tuple(keys)
+
     def _seal_pending(
         self, name: str, *, args: Any, response: Any, call_id: str | None, extra: dict[str, Any]
     ) -> bool:
@@ -292,11 +317,16 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         )
         if sealed and call_id and self.last is not None:
             self._lro_pending[call_id] = (
-                self.last.capsule_id, args, self._response_key(response)
+                self.last.capsule_id, args, self._stub_keys(response)
             )
+            # The flag has done its job: this id is tracked by _lro_pending now.
+            # Leaving it in _lro_ids let an evicted id fall back into this method
+            # and seal a second "pending" record with no args and no chain.
+            self._lro_ids.discard(call_id)
             while len(self._lro_pending) > self._max_long_running:
                 old_id, _ = self._lro_pending.popitem(last=False)
                 self._seen.discard(old_id)
+                self._lro_ids.discard(old_id)
                 _log.warning(
                     "adk: evicting long-running call %s (cap %d reached); a later "
                     "response for it will seal as a plain call, not chained to its "
@@ -319,7 +349,7 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         one is configured, rides unchanged; nothing is promoted to ``confirmed``
         on the adapter's say-so.
         """
-        head_id, args, _stub = self._lro_pending[call_id]
+        head_id, args, _stub_keys = self._lro_pending[call_id]
         is_final = bool(self._long_running_final and self._long_running_final(response))
         sealed = self._safe_emit(
             name,
@@ -337,8 +367,12 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         if sealed and self.last is not None:
             if is_final:
                 del self._lro_pending[call_id]
+                self._lro_ids.discard(call_id)
             else:
-                self._lro_pending[call_id] = (self.last.capsule_id, args, _stub)
+                self._lro_pending[call_id] = (self.last.capsule_id, args, _stub_keys)
+                # An actively progressing chain must not evict before an idle
+                # newer one; reassignment alone does not refresh FIFO order.
+                self._lro_pending.move_to_end(call_id)
         return sealed
 
     # ------------------------------------------------------------------
@@ -443,7 +477,7 @@ class ADKCapsuleEmitter(CapsuleEmitterBase):
         for name, call_id, response in _function_responses(event):
             if call_id and call_id in self._lro_pending:
                 self._pending.pop(call_id, None)
-                if self._response_key(response) == self._lro_pending[call_id][2]:
+                if self._response_key(response) in self._lro_pending[call_id][2]:
                     continue  # the pending placeholder echoed on the stream; already sealed
                 self._seal_update(
                     name,

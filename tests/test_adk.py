@@ -611,3 +611,90 @@ def test_long_running_eviction_does_not_swallow_a_late_response(tmp_path, caplog
     assert len(_ledger(tmp_path)) == n + 1  # sealed, not dropped as a dup
     assert "adk_outcome" not in _comp(cap)  # as a plain, unchained call — exactly what the log said
     assert cap.get("chain", {}).get("parent_capsule_id") is None
+
+
+# --------------------------------------------------------------------------
+# Long-running state machine — the flag must not outlive what it flags
+# (regressions from the desk review of #203; both reproduced before the fix)
+# --------------------------------------------------------------------------
+
+
+def test_flag_that_ages_slowly_still_seals_its_placeholder_as_pending(tmp_path):
+    """A flagged id must not age out of the flag set before its own placeholder.
+
+    Before the fix the flag set was sized by ``max_long_running``, so a small
+    cap aged a flag out while its placeholder was still in flight; the
+    placeholder then sealed `executed` with a declared effect riding at
+    `confirmed` and the real outcome was dropped as a dup — #199 all over again.
+    """
+    e = _emitter(tmp_path, max_long_running=2,
+                 effects={"refund": {"type": "refund", "status": "confirmed"}})
+    e.tap_event(_LROEvent(calls=[_FC("refund", "x", {"amt": "9"})], long_running_tool_ids={"x"}))
+    for i in range(4):  # four more flagged calls; the flag for "x" must survive them
+        e.tap_event(_LROEvent(calls=[_FC("refund", f"pad{i}", {})],
+                              long_running_tool_ids={f"pad{i}"}))
+    e.tap_event(_FakeEvent(responses=[_FR("refund", "x", STUB)]))
+    cap = _ledger(tmp_path)[-1]
+    assert _comp(cap)["adk_outcome"] == "pending"
+    assert cap["effect"]["status"] == "dispatched"   # never the declared "confirmed"
+    assert verify(cap).ok
+
+
+def test_eviction_under_mixed_wiring_seals_a_late_response_as_a_plain_call(tmp_path):
+    """Eviction must drop the flag too, or the late response re-opens the chain.
+
+    The callback path fills `_lro_pending`/`_seen` but never the flag set, so a
+    callback-driven eviction used to leave a tap-set flag behind: the late real
+    outcome fell back into the pending branch and sealed a *second* `pending`
+    record with no args, unchained, re-opening an orphaned chain — the opposite
+    of what the eviction log line promises.
+    """
+    e = _emitter(tmp_path, max_long_running=1,
+                 effects={"refund": {"type": "refund", "status": "confirmed"}})
+    e.tap_event(_LROEvent(calls=[_FC("refund", "a", {"amt": "1"})], long_running_tool_ids={"a"}))
+    e.tap_event(_FakeEvent(responses=[_FR("refund", "a", STUB)]))
+    assert _comp(_ledger(tmp_path)[-1])["adk_outcome"] == "pending"
+    # a callback-path long-running call evicts "a" from _lro_pending and _seen
+    e.after_tool_callback(_FakeLROTool("refund"), {"amt": "2"}, _FakeToolContext("b"), STUB)
+    assert "a" not in e._lro_pending and "a" not in e._seen
+    assert "a" not in e._lro_ids            # the flag went with it
+    n = len(_ledger(tmp_path))
+    e.tap_event(_FakeEvent(responses=[_FR("refund", "a", FINAL)]))
+    cap = _ledger(tmp_path)[-1]
+    assert len(_ledger(tmp_path)) == n + 1
+    assert "adk_outcome" not in _comp(cap)   # a plain call, exactly as the log said
+    assert cap.get("chain", {}).get("parent_capsule_id") is None
+    assert "a" not in e._lro_pending         # no chain re-opened
+
+
+def test_flag_is_cleared_when_the_placeholder_seals_and_when_the_chain_closes(tmp_path):
+    e = _emitter(tmp_path, long_running_final=lambda r: isinstance(r, dict) and r.get("status") == "done")
+    e.tap_event(_LROEvent(calls=[_FC("start_refund", "f1", {"a": 1})], long_running_tool_ids={"f1"}))
+    assert "f1" in e._lro_ids
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "f1", STUB)]))
+    assert "f1" not in e._lro_ids and "f1" in e._lro_pending
+    e.tap_event(_FakeEvent(responses=[_FR("start_refund", "f1", FINAL)]))
+    assert "f1" not in e._lro_pending and "f1" not in e._lro_ids
+
+
+def test_update_refreshes_recency_so_an_active_chain_outlives_an_idle_one(tmp_path):
+    e = _emitter(tmp_path, max_long_running=2)
+    for i in ("c1", "c2"):
+        e.tap_event(_LROEvent(calls=[_FC("t", i, {"i": i})], long_running_tool_ids={i}))
+        e.tap_event(_FakeEvent(responses=[_FR("t", i, STUB)]))
+    e.tap_event(_FakeEvent(responses=[_FR("t", "c1", UPDATE)]))   # c1 is the active one
+    e.tap_event(_LROEvent(calls=[_FC("t", "c3", {})], long_running_tool_ids={"c3"}))
+    e.tap_event(_FakeEvent(responses=[_FR("t", "c3", STUB)]))     # forces one eviction
+    assert "c1" in e._lro_pending      # active chain survives
+    assert "c2" not in e._lro_pending  # idle one evicted
+
+
+def test_stub_echo_is_recognised_when_adk_wraps_a_non_dict_placeholder(tmp_path):
+    """ADK hands the callback a raw return but puts {"result": ...} on the stream."""
+    e = _emitter(tmp_path)
+    e.after_tool_callback(_FakeLROTool("poll"), {"q": 1}, _FakeToolContext("w1"), "pending")
+    n = len(_ledger(tmp_path))
+    e.tap_event(_FakeEvent(responses=[_FR("poll", "w1", {"result": "pending"})]))
+    assert len(_ledger(tmp_path)) == n      # the echo is the stub, not an update
+    e.tap_event(_FakeEvent(responses=[_FR("poll", "w1", {"result": "done"})]))
+    assert _comp(_ledger(tmp_path)[-1])["adk_outcome"] == "update"
