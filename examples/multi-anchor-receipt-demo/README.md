@@ -34,8 +34,13 @@ material, governance, and infrastructure.  This demo does not have that.
 ## Usage
 
 ```
-pip install "capsule-emit[dev]" capsule-anchor scitt-cose
+pip install "capsule-emit[dev]" scitt-cose \
+    "capsule-anchor @ git+https://github.com/action-state-group/capsule-anchor.git"
 ```
+
+`capsule-anchor` is **not published on PyPI** — install it from source as above.
+It requires Python >= 3.11. The demo checks for it up front and tells you this
+rather than timing out waiting for a server that cannot start.
 
 **Full run** (both anchors up, then partial-reachability scenario):
 ```
