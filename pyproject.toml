@@ -81,6 +81,10 @@ msft-agent-framework = ["agent-framework-core>=1.16.0,<2"]
 agent-framework = ["agent-framework-core>=1.16.0,<2"]
 litellm = ["litellm>=1.99.0"]
 checkpoint = ["scitt-cose>=0.2.0"]
+# capsule_emit.otel.CapsuleOTelSpanExporter only -- the rest of capsule_emit.otel
+# (allow-list, span classification, SpanFacts, process_span_facts) has no
+# OpenTelemetry dependency at all; see that module's docstring.
+otel = ["opentelemetry-sdk>=1.20"]
 
 [project.scripts]
 capsule-emit = "capsule_emit.cli:main"

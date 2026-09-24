@@ -73,3 +73,41 @@ jobs:
           echo "$OUT" | grep -q "capsule_id_mismatch" && { echo "::error::capsule_id_mismatch on a fresh install"; exit 1; }
           echo "$OUT" | grep -qE "ok: False"          && { echo "::error::a capsule failed verification on a fresh install"; exit 1; }
           echo "clean-room OK: fresh PyPI install can seal() and verify --store"
+
+      - name: OTel dogfood — install the [otel] extra for real and export a live span through it
+        # Unit tests exercise capsule_emit.otel against the editable/source checkout; this
+        # proves the SAME path works from a fresh PyPI-only wheel install of the [otel]
+        # extra, through a REAL opentelemetry-sdk TracerProvider -- not a hand-built
+        # SpanFacts -- the way an actual consumer's app would wire it up.
+        env:
+          CAPSULE_WITNESS: "off"
+        run: |
+          whl=$(ls dist/*.whl)
+          /tmp/cleanroom/bin/pip install "${whl}[otel]"
+          /tmp/cleanroom/bin/python - <<'PY'
+          import tempfile
+
+          from opentelemetry.sdk.trace import TracerProvider
+          from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
+          from capsule_emit import read_ledger
+          from capsule_emit.otel import CapsuleOTelSpanExporter
+
+          ledger = tempfile.mktemp(suffix=".jsonl")
+          exporter = CapsuleOTelSpanExporter(operator="acme", developer="dogfood@v1", ledger=ledger)
+          provider = TracerProvider()
+          provider.add_span_processor(SimpleSpanProcessor(exporter))
+          tracer = provider.get_tracer("capsule-emit-otel-dogfood")
+
+          with tracer.start_as_current_span("write_order") as span:
+              span.set_attribute("http.request.method", "POST")
+              span.set_attribute("gen_ai.provider.name", "local")
+              span.set_attribute("gen_ai.input.messages", "must never reach the ledger")
+          provider.shutdown()
+
+          entries = list(read_ledger(ledger))
+          assert len(entries) == 1, f"expected exactly one sealed capsule, got {entries!r}"
+          raw = open(ledger, "rb").read()
+          assert b"must never reach the ledger" not in raw, "never-enters content leaked into the ledger"
+          print("OTel dogfood OK -> sealed", entries[0]["capsule_id"])
+          PY

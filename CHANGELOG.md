@@ -4,6 +4,34 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Added — OTel processor v0: digest-only `org.agentactioncapsule.otel` correlation (`capsule_emit.otel`)
+
+- `capsule_emit.otel.CapsuleOTelSpanExporter` — an OpenTelemetry Python SDK `SpanExporter`
+  (`pip install "capsule-emit[otel]"`) that classifies every span observation/effect via the
+  taxonomy above (`classify_span_signal_1`, the OTel-span reference implementation
+  `docs/whats-consequential.md` already documented but had no code for), and seals `effect`
+  spans as digest-only `org.agentactioncapsule.otel` correlation blocks per
+  draft-palanisamy-scitt-aac-otel-00 — allow-list default-deny, trace/span identifiers digested
+  by default (`clear_trace_context=True` opts in per the draft's own privacy-assessment
+  requirement) — including the span name everywhere it could otherwise leave the process
+  (`otel_block["span_name"]` AND the sealed capsule's own `action_id`/`effect.type`, gated by
+  the same flag), never-enters content (prompt/completion, tool args/results, session/end-user
+  identifiers) never read at all. See `docs/extensions/otel-correlation.md`.
+- The reverse-join span attribute (`aac.capsule_id`, provisional) is set reliably via
+  `capsule_emit.otel.stamp_reverse_join(span, capsule_id)` for application code that seals
+  inline before its own `span.end()`. `CapsuleOTelSpanExporter` itself does NOT attempt this
+  attribute — an earlier version stamped `get_current_span()` as a "best-effort" fallback, but
+  by export time that span is typically the parent, not the one being joined; a false join is
+  worse than no join, so v0 does not attempt it.
+- Outcome-context tagging (`ext.otel.outcome_context`, a sibling compute_attestation key, never
+  nested inside the OTel block itself per the draft's unconditional "no baggage entries in this
+  block" rule) reads real OpenTelemetry Baggage via `opentelemetry.baggage.get_all()` inside
+  `export()`, tagging only caller-allow-listed keys (`outcome_context_baggage_keys` — empty by
+  default, since no design note naming real keys exists yet; wiring the real keys in once they
+  do is a one-line config change, not a code change).
+
 ## 0.8.6 — 2026-09-23
 
 ### Removed — the `ledger-io` extra, which no consumer could ever install
@@ -144,6 +172,7 @@ break a demo; an empty one reads as a broken artifact, which is why only that on
   `interrupt()` inside a tool body seals exactly like a broken tool, with nothing in the record
   marking it as paused — the honesty limit the section states, now pinned by a test rather than by
   prose alone.
+
 ### Added — `ConnectorPort`: the adapter contract named explicitly (`capsule_emit.connector`)
 
 - Fifteen framework adapters each classified observation-vs-effect (the
