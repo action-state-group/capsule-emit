@@ -4,6 +4,31 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Changed — evidence-request refusal reasons aligned to `draft-mih-agent-evidence-request-00`
+
+- `evidence_request.answer()`'s "I hold nothing for this subject" refusal now emits
+  `reason="no_such_subject"` (the token `draft-mih-agent-evidence-request-00`, an
+  Internet-Draft -00, establishes in its IANA-style registry), not `no_such_record`.
+  This repo had modeled that case as the draft's *recorded absence* outcome, which is
+  wrong on two counts: `recorded_absence` is not a registry token at all — it is one of
+  the draft's three top-level interaction outcomes (artifact, refusal, absence) — and it
+  names the *requester's own* record that no answer arrived by a deadline, never
+  something a synchronous, always-signed responder like this one produces.
+  `REASON_NO_SUCH_RECORD` stays importable for one release as a deprecated alias name;
+  `LEGACY_REFUSAL_REASON_ALIASES` / `normalize_refusal_reason()` let a caller that reads a
+  peer's refusal keep recognizing the old spelling during a mixed-version rollout.
+- Added refusal reason `derivation_unsupported`: a request naming any `derivation` is now
+  refused with this reason rather than silently answered as a plain bundle — this responder
+  supports no derivation itself (a caller that supports one, e.g. capsule-emit-mesh's
+  `served_summary/1`, intercepts before calling `answer()`).
+- `request_malformed` and `coverage_unsatisfiable` were already the draft's spellings;
+  unchanged. `coverage_unsatisfiable` groups with `no_such_subject` as "evidence not
+  found, or not yet committed" per the draft's own status-mapping table — it is not a
+  policy-withheld reason like `derivation_unsupported`, and this repo's docs and
+  docstrings previously miscategorized it as one.
+
 ## 0.8.6 — 2026-09-23
 
 ### Removed — the `ledger-io` extra, which no consumer could ever install
