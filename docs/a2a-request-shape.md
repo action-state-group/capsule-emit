@@ -69,7 +69,7 @@ carries no `id`/`digest`/`range` at all, not empty ones.
   `derivation`. Shape of `artifact` is subject-kind-specific and out of scope for this
   document; it is capsules or capsule digests, never a new payload format.
 - **`refused`** — the producer declines. `reason_class` is a stable, registry-style
-  string (e.g. `not_authorized`, `coverage_unavailable`, `derivation_unsupported`) —
+  string (e.g. `not_authorized`, `coverage_unsatisfiable`, `derivation_unsupported`) —
   never free text alone. The refusal itself SHOULD be sealed as a capsule
   (`refusal.capsule_id`), so "I asked; they refused, for this stated reason" is itself
   evidence a requester can hold.
