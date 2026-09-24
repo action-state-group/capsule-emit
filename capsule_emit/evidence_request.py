@@ -20,26 +20,42 @@ or ``{kind: "chain_segment", last: N}``) dispatches to
 history: the checkpoint chain itself (signed checkpoints, witness receipts,
 one consistency proof per link, per-checkpoint leaf counts by kind), never
 per-record bundles. See that module's docstring for the full shape.
+``chain_segment`` is this repo's own name, not the draft's: the draft's
+Table 2 names six subject forms — ``full_history``, ``checkpoints``,
+``record``, ``range``, ``correlation``, ``exchange``. This module's
+:data:`SUBJECT_KINDS` names four (``record``, ``range``, ``correlation``,
+``chain_segment``); the first three share the draft's names and meanings,
+but ``chain_segment`` has no draft counterpart by that name — it answers
+the same question the draft's ``checkpoints`` form asks (commitments only,
+no records), under a different name. This module implements no
+``full_history`` or ``exchange`` subject kind at all.
 
 Every well-formed request gets exactly one of three answers — never a bare,
 unsigned absence:
 
   * an :class:`Artifact` (one or more offline-verifiable ``Bundle`` s);
-  * a :class:`Refusal` with ``reason`` naming *why* the answer withheld
-    exists (``coverage_unsatisfiable``, ``request_malformed``,
-    ``derivation_unsupported``) — a policy decline;
-  * a :class:`Refusal` with ``reason="no_such_subject"`` — this node
-    genuinely holds nothing for the named subject, not a decline.
+  * a :class:`Refusal` with ``reason="request_malformed"`` or
+    ``reason="derivation_unsupported"`` — a policy-shaped decline: something
+    about the *request itself* this node will not act on;
+  * a :class:`Refusal` with ``reason="no_such_subject"`` or
+    ``reason="coverage_unsatisfiable"`` — this node genuinely holds nothing
+    (yet) for the named subject at the requested coverage, not a decline.
+    The draft's own status-mapping table groups these two together as
+    "evidence not found, or not yet committed", distinct from the
+    policy-withheld group above — grouping ``coverage_unsatisfiable`` with
+    the policy reasons instead would misstate what it means.
 
 All refusal reasons are tokens from the IANA-style registry
-``draft-mih-agent-evidence-request-00`` establishes ({{iana}}); this
-responder emits the subset in :data:`REFUSAL_REASONS`. ``no_such_subject``
-is that registry's own token for "I hold nothing for this subject" — it is
-NOT the registry's ``recorded_absence``, which names a different thing: the
-*requester's own* bookkeeping record that no answer arrived by some
-deadline. This module always answers synchronously and signs what it sends,
-so it never has occasion to produce a ``recorded_absence`` — that token
-belongs to the requester side, not here.
+``draft-mih-agent-evidence-request-00`` establishes; this responder emits
+the subset in :data:`REFUSAL_REASONS`. ``no_such_subject`` is that
+registry's own token for "I hold nothing for this subject" — it is NOT the
+draft's *recorded absence* outcome, which is not a registry token at all:
+it is one of the draft's three top-level interaction outcomes (artifact,
+refusal, absence), never sent as a ``reason`` or any other message field —
+it is the *requester's own* bookkeeping record that no answer arrived by
+some deadline. This module always answers synchronously and signs what it
+sends, so it never produces an absence at all — that outcome belongs to the
+requester side, not here.
 
 Every refusal shape is the SAME signed object — ``{request_digest, reason,
 issued_at, key_id, sig}`` — because the point of a signed ``no_such_subject``
@@ -120,13 +136,12 @@ __all__ = [
 ]
 
 #: Refusal-reason tokens, aligned to the IANA-style registry
-#: ``draft-mih-agent-evidence-request-00`` establishes ({{iana}}). This
-#: responder never checks requester authorization or retention undertakings
-#: (see the module docstring's "Caller invariance by construction"), so it
-#: never has occasion to emit that registry's ``not_authorized``,
-#: ``policy_declined``, ``deadline_unmet``, or ``retention_expired`` —
-#: emitting one of those without the mechanism behind it would be
-#: fabrication, not alignment.
+#: ``draft-mih-agent-evidence-request-00`` establishes. This responder never
+#: checks requester authorization or retention undertakings (see the module
+#: docstring's "Caller invariance by construction"), so it never has
+#: occasion to emit that registry's ``not_authorized``, ``policy_declined``,
+#: ``deadline_unmet``, or ``retention_expired`` — emitting one of those
+#: without the mechanism behind it would be fabrication, not alignment.
 REASON_REQUEST_MALFORMED = "request_malformed"
 REASON_COVERAGE_UNSATISFIABLE = "coverage_unsatisfiable"
 REASON_NO_SUCH_SUBJECT = "no_such_subject"
@@ -142,14 +157,15 @@ REFUSAL_REASONS = frozenset(
 
 #: Deprecated pre-registry spelling this responder emitted for the "I hold
 #: nothing for this subject" case before ``draft-mih-agent-evidence-request-00``
-#: ratified ``no_such_subject`` as the registry token (this repo had
-#: (mis)modeled it as the registry's ``recorded_absence`` — see the module
-#: docstring for why that classification was wrong). Kept as a name so an
-#: existing ``from capsule_emit.evidence_request import REASON_NO_SUCH_RECORD``
-#: does not break for one release; ``answer()`` itself never emits this
-#: value anymore. Removed after that release — see
-#: :data:`LEGACY_REFUSAL_REASON_ALIASES` / :func:`normalize_refusal_reason`
-#: for translating a peer that still emits it on the wire.
+#: established ``no_such_subject`` as the registry token (this repo had
+#: (mis)modeled it as the draft's *recorded absence* outcome — not a registry
+#: token at all — see the module docstring for why that classification was
+#: wrong). Kept as a name so an existing ``from capsule_emit.evidence_request
+#: import REASON_NO_SUCH_RECORD`` does not break for one release;
+#: ``answer()`` itself never emits this value anymore. Removed after that
+#: release — see :data:`LEGACY_REFUSAL_REASON_ALIASES` /
+#: :func:`normalize_refusal_reason` for translating a peer that still emits
+#: it on the wire.
 REASON_NO_SUCH_RECORD = "no_such_record"
 
 #: Pre-registry reason spellings this responder used to emit, mapped to
@@ -356,12 +372,14 @@ class Artifact:
 
 @dataclass(frozen=True)
 class Refusal:
-    """A signed decline or absence — verifies OFFLINE, never an unsigned
-    404. ``reason == REASON_NO_SUCH_SUBJECT`` is this node saying, signed,
-    "I hold nothing for this subject"; any other reason is a policy-shaped
-    decline — same object either way. See the module docstring for why
-    ``no_such_subject`` (not the registry's ``recorded_absence``) is the
-    correct token for this case."""
+    """A signed refusal — verifies OFFLINE, never an unsigned 404.
+    ``reason == REASON_NO_SUCH_SUBJECT`` or ``REASON_COVERAGE_UNSATISFIABLE``
+    is this node saying, signed, "I hold nothing (yet) for this subject at
+    this coverage"; ``request_malformed``/``derivation_unsupported`` are
+    policy-shaped declines about the request itself — same object either
+    way. See the module docstring for why ``no_such_subject`` (not the
+    draft's *recorded absence* outcome, which is not a registry token) is
+    the correct token for the "I hold nothing" case."""
 
     request_digest: str
     reason: str

@@ -142,7 +142,7 @@ def test_answer_record_returns_artifact_matching_bundle(covered_ledger):
     assert result.bundles[0].to_dict() == expected.to_dict()
 
 
-def test_answer_no_such_record_is_no_such_subject(covered_ledger):
+def test_answer_missing_record_is_no_such_subject(covered_ledger):
     ledger_path, _caps = covered_ledger
     result = answer(_record_request("ff" * 32), ledger=ledger_path)
     assert isinstance(result, Refusal)
@@ -703,7 +703,7 @@ def test_answer_without_derivation_is_unaffected(covered_ledger):
 # ---------------------------------------------------------------------------
 
 
-def test_refusal_reasons_match_the_ratified_registry_subset():
+def test_refusal_reasons_match_the_draft_registry_subset():
     assert REFUSAL_REASONS == {
         REASON_REQUEST_MALFORMED,
         REASON_COVERAGE_UNSATISFIABLE,
