@@ -280,10 +280,10 @@ def test_LEAK_MUTANT_never_enters_key_promoted_to_clear_safe_leaks_through_real_
 
 
 def test_outcome_context_empty_allowlist_tags_nothing():
-    """v0's shipped default: no Area 16 design note names real baggage keys
-    yet (see the outbox Needs decision), so the allow-list a deployment has
-    not configured is empty and this returns None regardless of baggage
-    content -- 'do not invent keys' means literally nothing is read."""
+    """v0's shipped default: no design note names the real baggage keys yet,
+    so the allow-list a deployment has not configured is empty and this
+    returns None regardless of baggage content -- 'do not invent keys' means
+    literally nothing is read."""
     result = build_outcome_context_block({"anything": "value"}, allowed_keys=frozenset())
     assert result is None
 

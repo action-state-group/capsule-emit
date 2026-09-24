@@ -103,10 +103,8 @@ allow-listed keys, never invents values.
 
 `outcome_context_baggage_keys` is an explicit, caller-supplied allow-list — **empty by
 default**, so even with baggage flowing correctly, v0 tags nothing until a deployment opts in.
-No design note naming the real baggage keys exists in the workspace as of v0 (the task that
-built this searched `_work/`/`_ops/`/both lane buffers; the only "Area 16" hit found was an
-unrelated reconciliation-states item) — see the outbox `Needs decision` entry filed alongside
-this. Configuring the real keys once they exist is a one-line change:
+No design note naming the real baggage keys exists yet, so v0 does not guess them. Configuring
+the real keys once they exist is a one-line change:
 
 ```python
 CapsuleOTelSpanExporter(

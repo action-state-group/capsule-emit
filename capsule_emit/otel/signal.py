@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Signal 1, read off an OpenTelemetry span — the reference implementation of
 ``docs/whats-consequential.md``'s "Reading Signal 1 off an OpenTelemetry
-span" section, which the taxonomy doc promised and
-[batch3-connector-interface-and-discover] did not itself add (its two
-retrofits were MCP and LangChain; this task's Do line is what OTel needed).
+span" section. The connector taxonomy's earlier Signal 1 work covered MCP
+and LangChain retrofits but not OTel spans; this module fills that gap.
 
 Deliberately does NOT reimplement the priority-order/fail-safe-default rule:
 :data:`capsule_emit.connector.ConnectorEvent` already models ``http_method``
