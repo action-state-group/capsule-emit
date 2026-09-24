@@ -4,10 +4,15 @@
 Covers, in order: the allow-list tables and their leak-mutant (the acceptance
 line's "a mutant that leaks one attribute goes red"), Signal 1 read off a
 span (the taxonomy reference implementation this task adds), the
-``org.agentactioncapsule.otel`` block builder, outcome-context tagging, the
-full ``process_span_facts`` pipeline including the acceptance line's literal
-"zero content bytes" ledger scan, and a real OpenTelemetry SDK
-round-trip through ``CapsuleOTelSpanExporter``.
+``org.agentactioncapsule.otel`` block builder, outcome-context tagging (unit
+level, hand-built facts), the ``process_span_facts`` pipeline,
+``stamp_reverse_join``, and -- gated on ``opentelemetry.sdk.trace`` being
+installed -- real OpenTelemetry SDK round-trips through
+``CapsuleOTelSpanExporter``: sealing, observation-skip, the acceptance
+line's literal "zero content bytes" ledger scan (both prompt AND
+completion, through a real ``TracerProvider``), and outcome-context tagging
+sourced from real ``opentelemetry.baggage`` rather than a hand-built
+``SpanFacts``.
 """
 from __future__ import annotations
 
@@ -424,40 +429,6 @@ def test_malformed_span_ids_warn_and_return_none_never_raise(tmp_path):
     assert result is None
 
 
-def test_ACCEPTANCE_prompt_content_never_reaches_the_ledger_bytes(tmp_path):
-    """The acceptance line, verbatim: 'a real trace with prompt/completion
-    content in span attributes yields records with zero content bytes
-    (asserted by scanning the ledger for any 12-char substring of the
-    prompt)'."""
-    prompt = (
-        "The quarterly revenue figures for the northeast region were significantly "
-        "higher than projected, driven primarily by the enterprise software renewals."
-    )
-    ledger = tmp_path / "l.jsonl"
-    facts = _facts(
-        attributes={
-            "http.request.method": "POST",
-            "gen_ai.input.messages": [{"role": "user", "content": prompt}],
-            "gen_ai.system_instructions": "You are a helpful financial analyst assistant.",
-            "gen_ai.tool.call.arguments": json.dumps({"query": prompt}),
-            "gen_ai.provider.name": "local",  # a clear-safe control: this one SHOULD survive
-        }
-    )
-    result = process_span_facts(facts, operator="acme", developer="agent@v1", ledger=str(ledger))
-    assert result is not None
-
-    raw_ledger_bytes = ledger.read_bytes()
-    for start in range(0, len(prompt) - 12, 4):
-        substring = prompt[start : start + 12]
-        assert substring.encode() not in raw_ledger_bytes, f"leaked prompt substring: {substring!r}"
-    assert b"financial analyst" not in raw_ledger_bytes
-
-    # The control clear-safe field DID survive -- proves the scan above is
-    # actually exercising a populated ledger, not silently passing on an
-    # empty/failed write.
-    assert b"local" in raw_ledger_bytes
-
-
 def test_outcome_context_baggage_key_round_trips_through_a_sealed_capsule(tmp_path):
     ledger = tmp_path / "l.jsonl"
     facts = _facts(baggage={"exchange.state": "MATCHED"})
@@ -543,3 +514,101 @@ def test_exporter_does_not_seal_a_read_only_real_span(tmp_path):
     provider.shutdown()
 
     assert not ledger.exists() or list(read_ledger(ledger)) == []
+
+
+def test_ACCEPTANCE_prompt_and_completion_content_never_reach_the_ledger_bytes(tmp_path):
+    """The acceptance line, verbatim: 'a real trace with prompt/completion
+    content in span attributes yields records with zero content bytes
+    (asserted by scanning the ledger for any 12-char substring of the
+    prompt)'. Run through a REAL TracerProvider/SimpleSpanProcessor/
+    CapsuleOTelSpanExporter round-trip -- not hand-built SpanFacts -- so the
+    scan proves something about the actual export path, and covers BOTH
+    ends of the exchange (gen_ai.input.messages AND gen_ai.output.messages),
+    not just the prompt."""
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
+    prompt = (
+        "The quarterly revenue figures for the northeast region were significantly "
+        "higher than projected, driven primarily by the enterprise software renewals."
+    )
+    completion = (
+        "Based on those figures, the northeast region outperformed its forecast thanks "
+        "to a late surge in enterprise software renewals during the final quarter."
+    )
+    ledger = tmp_path / "l.jsonl"
+    exporter = CapsuleOTelSpanExporter(operator="acme", developer="agent@v1", ledger=str(ledger))
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("capsule-emit-otel-test")
+
+    with tracer.start_as_current_span("chat_completion") as span:
+        span.set_attribute("http.request.method", "POST")
+        span.set_attribute("gen_ai.provider.name", "local")  # clear-safe control: SHOULD survive
+        span.set_attribute("gen_ai.input.messages", json.dumps([{"role": "user", "content": prompt}]))
+        span.set_attribute(
+            "gen_ai.output.messages", json.dumps([{"role": "assistant", "content": completion}])
+        )
+        span.set_attribute("gen_ai.system_instructions", "You are a helpful financial analyst assistant.")
+        span.set_attribute("gen_ai.tool.call.arguments", json.dumps({"query": prompt}))
+
+    provider.shutdown()
+
+    entries = list(read_ledger(ledger))
+    assert len(entries) == 1
+    raw_ledger_bytes = ledger.read_bytes()
+
+    for content in (prompt, completion):
+        # Step 1, not a stride: a strided scan can skip the LAST possible
+        # 12-char window (e.g. range(0, len-12, 4) need not land on
+        # len-12), silently declaring victory without ever checking the
+        # tail of the string. This checks every window, including it.
+        for start in range(0, len(content) - 11):
+            substring = content[start : start + 12]
+            assert substring.encode() not in raw_ledger_bytes, f"leaked content substring: {substring!r}"
+    assert b"financial analyst" not in raw_ledger_bytes
+
+    # The control clear-safe field DID survive -- proves the scan above is
+    # actually exercising a populated ledger, not silently passing on an
+    # empty/failed write.
+    assert b"local" in raw_ledger_bytes
+
+
+def test_REGRESSION_exporter_fills_outcome_context_from_real_baggage(tmp_path):
+    """§7c rework finding: process_span_facts.outcome-context tagging was
+    provably inert on the real export path -- _facts_from_readable_span
+    never populated SpanFacts.baggage, so no deployment could ever have
+    triggered it no matter how outcome_context_baggage_keys was configured.
+    This exercises the actual fix: real `opentelemetry.baggage` attached to
+    a real Context, exported through the real exporter, with no hand-built
+    SpanFacts anywhere in the chain."""
+    from opentelemetry.baggage import set_baggage
+    from opentelemetry.context import attach, detach
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
+    ledger = tmp_path / "l.jsonl"
+    exporter = CapsuleOTelSpanExporter(
+        operator="acme",
+        developer="agent@v1",
+        ledger=str(ledger),
+        outcome_context_baggage_keys=frozenset({"exchange.state"}),
+    )
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("capsule-emit-otel-test")
+
+    ctx = set_baggage("exchange.state", "MATCHED")
+    token = attach(ctx)
+    try:
+        with tracer.start_as_current_span("write_record") as span:
+            span.set_attribute("http.request.method", "POST")
+    finally:
+        detach(token)
+
+    provider.shutdown()
+
+    entries = list(read_ledger(ledger))
+    assert len(entries) == 1
+    tagged = entries[0]["model_attestation"]["compute_attestation"][OUTCOME_CONTEXT_KEY]
+    assert tagged == {"exchange.state": hashlib.sha256(b"MATCHED").hexdigest()}

@@ -86,7 +86,7 @@ takes the safe branch as the default and makes the clear-text branch an explicit
 per-deployment opt-in (`clear_trace_context=True`) — never a default a deployment falls into
 without deciding.
 
-## Outcome-context tagging — shipped empty, by design
+## Outcome-context tagging — wired to a real Baggage read, empty allow-list by design
 
 `org.agentactioncapsule.otel` can never carry OpenTelemetry Baggage entries — the draft is
 unconditional: "no field of `org.agentactioncapsule.otel` MAY carry: ... OpenTelemetry baggage
@@ -94,11 +94,19 @@ entries ... clear or as a digest." Outcome-context tagging (tagging a sealed spa
 baggage-carried exchange/reconciliation state) is therefore a **sibling** compute_attestation
 key, `ext.otel.outcome_context`, never nested inside the block above.
 
+`CapsuleOTelSpanExporter.export()` reads `opentelemetry.baggage.get_all()` once per export call
+and threads it through to `build_outcome_context_block`. This is reliable under synchronous
+export (`SimpleSpanProcessor`, where the originating Context is still attached) and empty under
+async/batched export — the same "current context at export time" limitation the reverse-join
+attribute has, but a missed tag rather than a wrong one, since this function only ever adds
+allow-listed keys, never invents values.
+
 `outcome_context_baggage_keys` is an explicit, caller-supplied allow-list — **empty by
-default**. No design note naming the real baggage keys exists in the workspace as of v0 (the
-task that built this searched `_work/`/`_ops/`/both lane buffers; the only "Area 16" hit found
-was an unrelated reconciliation-states item) — see the outbox `Needs decision` entry filed
-alongside this. Configuring the real keys once they exist is a one-line change:
+default**, so even with baggage flowing correctly, v0 tags nothing until a deployment opts in.
+No design note naming the real baggage keys exists in the workspace as of v0 (the task that
+built this searched `_work/`/`_ops/`/both lane buffers; the only "Area 16" hit found was an
+unrelated reconciliation-states item) — see the outbox `Needs decision` entry filed alongside
+this. Configuring the real keys once they exist is a one-line change:
 
 ```python
 CapsuleOTelSpanExporter(
@@ -116,18 +124,20 @@ Provisional attribute name per the draft — expect a rename to `gen_ai.evidence
 OpenTelemetry semantic-conventions registry assigns one; `capsule_emit.otel.REVERSE_JOIN_ATTRIBUTE`
 is the one place that rename lands.
 
-**This is best-effort in `CapsuleOTelSpanExporter`, and that is an OpenTelemetry SDK
-constraint, not a bug here.** `SpanExporter.export()` receives already-ended, immutable
-`ReadableSpan` objects — the OTel Python SDK's own `Span.set_attribute()` silently no-ops once
-`end()` has been called, on ANY span, including the one just exported. There is no supported
-way for an exporter to amend the very span it is exporting. v0 calls
-`opentelemetry.trace.get_current_span().set_attribute(...)` from inside `export()`, which
-reaches a *different*, still-open span (typically the parent, when export fires synchronously
-inside the child's own `end()`, e.g. under `SimpleSpanProcessor`) and is a no-op when nothing
-is open (async/batched export on a background thread).
+**`CapsuleOTelSpanExporter` does not attempt this attribute itself, and that is an
+OpenTelemetry SDK constraint, not a missing feature.** `SpanExporter.export()` receives
+already-ended, immutable `ReadableSpan` objects — the OTel Python SDK's own
+`Span.set_attribute()` silently no-ops once `end()` has been called, on ANY span, including the
+one just exported. There is no supported way for an exporter to amend the very span it is
+exporting. An earlier version called `opentelemetry.trace.get_current_span().set_attribute(...)`
+from inside `export()` as a "best-effort" substitute, but "current span at export time" is not
+the exported span — under a synchronous `SimpleSpanProcessor` it is typically the *parent*, and
+under async/batched export it is often nothing at all. That stamps `aac.capsule_id` onto the
+wrong span with no signal that anything went wrong — a false join, which is worse than no join —
+so v0 does not attempt it.
 
-For a **guaranteed-correct** join on the same span, call `capsule_emit.otel.stamp_reverse_join`
-directly from application code, before that span's own `span.end()`:
+The **only guaranteed-correct** join on the same span is `capsule_emit.otel.stamp_reverse_join`,
+called directly from application code, before that span's own `span.end()`:
 
 ```python
 from capsule_emit.otel import stamp_reverse_join

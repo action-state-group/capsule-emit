@@ -21,10 +21,16 @@ All notable changes to `capsule-emit` are documented here. The format follows
   identifiers) never read at all. See `docs/extensions/otel-correlation.md`.
 - The reverse-join span attribute (`aac.capsule_id`, provisional) is set reliably via
   `capsule_emit.otel.stamp_reverse_join(span, capsule_id)` for application code that seals
-  inline before its own `span.end()`; the exporter no longer attempts a best-effort stamp of
-  its own — a `ReadableSpan` passed to an exporter has already had its context detached, so
-  setting the attribute there landed on whatever span was current at export time (the parent,
-  not the child) rather than on the span it was joining. A false join is worse than none.
+  inline before its own `span.end()`. `CapsuleOTelSpanExporter` itself does NOT attempt this
+  attribute — an earlier version stamped `get_current_span()` as a "best-effort" fallback, but
+  by export time that span is typically the parent, not the one being joined; a false join is
+  worse than no join, so v0 does not attempt it.
+- Outcome-context tagging (`ext.otel.outcome_context`, a sibling compute_attestation key, never
+  nested inside the OTel block itself per the draft's unconditional "no baggage entries in this
+  block" rule) reads real OpenTelemetry Baggage via `opentelemetry.baggage.get_all()` inside
+  `export()`, tagging only caller-allow-listed keys (`outcome_context_baggage_keys` — empty by
+  default, since no design note naming real keys exists yet; wiring the real keys in once they
+  do is a one-line config change, not a code change).
 
 ## 0.8.6 — 2026-09-23
 

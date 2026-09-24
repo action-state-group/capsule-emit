@@ -20,21 +20,24 @@ right shape: one call per span, after the fact, batched or not per the SDK's
 own ``BatchSpanProcessor``/``SimpleSpanProcessor`` choice upstream of this
 class.
 
-**The reverse-join attribute is best-effort, and this is an OTel SDK
-constraint, not a bug in this module.** A ``ReadableSpan`` is immutable by
-the time an exporter sees it -- and the OpenTelemetry Python SDK's own
+**The exporter never attempts the reverse-join attribute itself, and this is
+an OTel SDK constraint, not an oversight.** A ``ReadableSpan`` is immutable
+by the time an exporter sees it -- the OpenTelemetry Python SDK's own
 ``Span.set_attribute()`` silently no-ops once ``end()`` has been called, on
 ANY span, not just the exported one. There is no supported way for an
-exporter to amend the very span it is exporting. v0 calls
-``opentelemetry.trace.get_current_span().set_attribute(...)`` from inside
-``export()`` on a best-effort basis -- this reaches a DIFFERENT, still-open
-span (typically the parent, when ``export()`` fires synchronously inside the
-child's own ``end()`` call, e.g. under ``SimpleSpanProcessor``) and is a
-no-op when nothing is currently open (e.g. async/batched export on a
-background thread with no active context). For a guaranteed-correct join on
-the SAME span, call :func:`stamp_reverse_join` directly from application code
-BEFORE that span's own ``span.end()`` -- the one place a live, mutable
-``Span`` object is still available.
+exporter to amend the very span it is exporting. An earlier version of this
+module called ``opentelemetry.trace.get_current_span().set_attribute(...)``
+from inside ``export()`` as a "best-effort" substitute -- but "current span
+at export time" is not the exported span; under a synchronous
+``SimpleSpanProcessor`` it is typically the PARENT (the child's context is
+already detached by the time ``on_end`` fires), and under async/batched
+export it is often nothing at all. Setting the attribute there stamps
+``aac.capsule_id`` onto the wrong span with no indication anything went
+wrong -- a false join, which is worse than no join, so v0 does not attempt
+it. For a guaranteed-correct join on the SAME span, call
+:func:`stamp_reverse_join` directly from application code BEFORE that span's
+own ``span.end()`` -- the one place a live, mutable ``Span`` object is still
+available.
 """
 from __future__ import annotations
 
@@ -98,10 +101,16 @@ class SpanFacts:
             digested unconditionally (:mod:`capsule_emit.otel.block`), never
             read for any other purpose.
         status_is_error: Whether the span's OTel ``Status`` is ``ERROR``.
-        baggage: OpenTelemetry Baggage entries visible at export time, or
-            ``None`` -- consulted ONLY for the caller-allow-listed keys in
-            outcome-context tagging (:func:`capsule_emit.otel.block.build_outcome_context_block`);
-            never otherwise read.
+        baggage: OpenTelemetry Baggage entries read from the current Context
+            at ``export()`` call time, or ``None`` -- consulted ONLY for the
+            caller-allow-listed keys in outcome-context tagging
+            (:func:`capsule_emit.otel.block.build_outcome_context_block`);
+            never otherwise read. Reliable under synchronous export (e.g.
+            ``SimpleSpanProcessor``, where the originating Context is still
+            attached); empty under async/batched export, same as every
+            other "current context at export time" signal in this module --
+            a missed tag, never a wrong one, since :func:`build_outcome_context_block`
+            only ever adds keys, it does not invent values.
     """
 
     name: str
@@ -197,16 +206,16 @@ def process_span_facts(
 
 
 def stamp_reverse_join(span: Any, capsule_id: str) -> None:
-    """Set :data:`REVERSE_JOIN_ATTRIBUTE` on *span* directly -- the
+    """Set :data:`REVERSE_JOIN_ATTRIBUTE` on *span* directly -- the ONLY
     guaranteed-correct path, for application code that seals inline and
     still holds a live (not yet ended) ``Span`` object. See the module
-    docstring for why :class:`CapsuleOTelSpanExporter`'s own attempt is only
-    best-effort.
+    docstring for why :class:`CapsuleOTelSpanExporter` does not attempt this
+    itself.
     """
     span.set_attribute(REVERSE_JOIN_ATTRIBUTE, capsule_id)
 
 
-def _facts_from_readable_span(span: Any) -> SpanFacts:
+def _facts_from_readable_span(span: Any, *, baggage: Mapping[str, str] | None = None) -> SpanFacts:
     from opentelemetry.trace import format_span_id, format_trace_id
 
     ctx = span.context
@@ -229,6 +238,7 @@ def _facts_from_readable_span(span: Any) -> SpanFacts:
         trace_flags=f"{int(ctx.trace_flags):02x}",
         tracestate=tracestate,
         status_is_error=status_is_error,
+        baggage=baggage,
     )
 
 
@@ -271,12 +281,19 @@ class CapsuleOTelSpanExporter:
         self._outcome_context_baggage_keys = outcome_context_baggage_keys
 
     def export(self, spans: Sequence[Any]) -> SpanExportResult:
+        from opentelemetry.baggage import get_all as get_current_baggage
         from opentelemetry.sdk.trace.export import SpanExportResult
-        from opentelemetry.trace import get_current_span
+
+        # Read once per export() call, not per span: Baggage lives on the
+        # Context, not on any individual ReadableSpan, and every span in
+        # *spans* is exported under the same call. Empty under async/batched
+        # export, where no Context is attached by the time this runs -- see
+        # SpanFacts.baggage's docstring.
+        baggage = dict(get_current_baggage()) or None
 
         for span in spans:
-            facts = _facts_from_readable_span(span)
-            result = process_span_facts(
+            facts = _facts_from_readable_span(span, baggage=baggage)
+            process_span_facts(
                 facts,
                 operator=self._operator,
                 developer=self._developer,
@@ -286,11 +303,6 @@ class CapsuleOTelSpanExporter:
                 semconv_source=self._semconv_source,
                 outcome_context_baggage_keys=self._outcome_context_baggage_keys,
             )
-            if result is not None:
-                # Best-effort only -- see the module docstring's "reverse-join
-                # attribute" note. get_current_span() may return the
-                # INVALID_SPAN (no-op set_attribute) when nothing is open.
-                get_current_span().set_attribute(REVERSE_JOIN_ATTRIBUTE, result.capsule_id)
         return SpanExportResult.SUCCESS
 
     def shutdown(self) -> None:
