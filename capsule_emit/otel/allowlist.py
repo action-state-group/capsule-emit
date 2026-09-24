@@ -3,8 +3,7 @@
 
 Every table here is transcribed field-for-field from the draft's "The
 `org.agentactioncapsule.otel` Block", "Resource attributes", and "GenAI
-semantic conventions" sections (`_work/palanisamy-ep-drafts/draft-palanisamy-
-scitt-aac-otel-00.md` in the workspace at the time this was written — the
+semantic conventions" sections (draft-palanisamy-scitt-aac-otel-00 — the
 draft is "under review", not yet an RFC, so this module cites section titles
 rather than a stable URL). **Allow-list, default-deny**: a key absent from a
 table below never leaves this process, full stop — see
