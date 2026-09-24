@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for [o16-14-precond-checkpoint-signer] (O16-14's bundle
-precondition): checkpoint/stamp entries must stop carrying the ephemeral
+"""Acceptance tests for the checkpoint-signer bundle precondition:
+checkpoint/stamp entries must stop carrying the ephemeral
 HMAC ``witness._AutoSigner`` output and instead be signed by the SAME
 persisted Ed25519 identity ``capsule_emit.signing.LocalKeypairSigner`` (#80)
 already signs capsule content with -- so a checkpoint signed in one process
@@ -42,7 +42,7 @@ from capsule_emit.checkpoint.cose_wire import verify_checkpoint_cose_offline
 from capsule_emit.checkpoint.emit import CheckpointRecord, verify_checkpoint_signature
 from capsule_emit.signing import LocalKeypairSigner
 
-_WORKTREE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ---------------------------------------------------------------------------
 # Hermetic stub Transparency Service -- same shape used across the witness
@@ -247,7 +247,7 @@ def test_tampered_checkpoint_signature_is_rejected(tmp_path, stub_ts, monkeypatc
 
 _SUBPROCESS_SEAL_SCRIPT = """
 import sys
-sys.path.insert(0, {worktree_root!r})
+sys.path.insert(0, {repo_root!r})
 from capsule_emit import seal
 
 ledger_path, ts_url = sys.argv[1], sys.argv[2]
@@ -261,7 +261,7 @@ def test_checkpoint_signed_in_one_process_verifies_in_another(tmp_path, stub_ts)
     ts_url, received = stub_ts
     ledger_path = tmp_path / "ledger.jsonl"
 
-    script = _SUBPROCESS_SEAL_SCRIPT.format(worktree_root=_WORKTREE_ROOT)
+    script = _SUBPROCESS_SEAL_SCRIPT.format(repo_root=_REPO_ROOT)
     env = dict(os.environ, CAPSULE_WITNESS_CADENCE_ENTRIES="2")
     result = subprocess.run(
         [sys.executable, "-c", script, str(ledger_path), ts_url],

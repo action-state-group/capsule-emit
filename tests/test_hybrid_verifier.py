@@ -250,7 +250,7 @@ def test_canonicalization_id_is_parameterized() -> None:
     r = seal(None, action="ping", operator="op", developer="dev", anchor=False, ledger=_tmp_ledger())
     assert r.capsule["canonicalization_id"] == CANONICALIZATION_ID
     # The verifier does not inspect canonicalization_id (that is the sibling
-    # task [capsule-emit-canonicalization-id-emitter]); we assert here only
+    # canonicalization-id-emitter concern); we assert here only
     # that the id is NOT hardcoded at any verify call site.
     import inspect
 

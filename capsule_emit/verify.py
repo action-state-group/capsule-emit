@@ -8,7 +8,7 @@ may or may not actually be entered into. For anti-equivocation (was this
 capsule honestly logged, never rewritten, never shown differently to two
 parties), verify with ``capsule_emit.bundle`` (``bundle()`` /
 ``verify_bundle()``) instead — see ``docs/checkpoint.md``'s "Anti-
-equivocation" section ([capsule-emit-witness-required-profile], per
+equivocation" section (per
 JamesCarnley's projnanda/nandatown#217 review).
 
 **HYBRID verifier design (CPB §5)**

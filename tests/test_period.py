@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""[emit-ledger-io-home] capsule_emit.period -- moved here from
+"""capsule_emit.period -- moved here from
 capsule_engine.cli.period. Pure calendar-math + argparse-sugar unit tests;
 end-to-end ``capsule bundle --period`` wiring stays in capsule-engine's own
 suite (it owns the CLI that consumes this)."""

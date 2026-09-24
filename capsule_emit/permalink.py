@@ -12,7 +12,7 @@ Disclosure (``--reveal``) wraps a capsule in the Disclosure Envelope shape the
 verify-surface viewer reads (``{"capsule": <unmodified capsule>, "disclosures":
 {"agent_input": ..., "agent_output": ...}}`` —
 draft-mih-scitt-agent-action-capsule-disclosure-envelope-00, landed in the
-viewer via scitt-cose#27/[aac-disclosure-envelope]). Per-item disclosure in the
+viewer via scitt-cose#27). Per-item disclosure in the
 array-fragment bundle path is supported since scitt-cose#30
 (``unwrapEnvelope()``/``_unwrap_envelope()`` in the deployed viewer): each
 bundle item can independently be a bare capsule or an envelope-wrapped one, and

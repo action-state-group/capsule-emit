@@ -3,7 +3,7 @@
 """Messaging guard — fail the build on premature "unsigned/log-first"
 repositioning copy in public materials.
 
-[verify-entry-authorship-tristate-and-log] GATE, modeled on the neutrality
+Entry-authorship tristate GATE, modeled on the neutrality
 gate's (``.github/neutrality_scan.py``) fail-closed, span-based
 allow-phrase design. Before this ticket, ``verify_bundle``/
 ``verify_store_signed`` graded an unsigned entry INVALID (indistinguishable
@@ -42,8 +42,8 @@ SCAN_PATHS = (
     "docs/",
 )
 
-#: Forbidden ONLY as a repositioning claim — see the GATE text in
-#: [verify-entry-authorship-tristate-and-log]. Matched case-insensitively.
+#: Forbidden ONLY as a repositioning claim — see the GATE text above.
+#: Matched case-insensitively.
 FORBIDDEN_PHRASES = (
     "just logging",
     "just-logging",
@@ -144,7 +144,7 @@ def main(argv: list[str]) -> int:
     if offenders:
         print(
             "messaging guard: forbidden repositioning phrase(s) found in public "
-            "materials -- see [verify-entry-authorship-tristate-and-log]:",
+            "materials -- see the GATE text at the top of this file:",
             file=sys.stderr,
         )
         for o in offenders:

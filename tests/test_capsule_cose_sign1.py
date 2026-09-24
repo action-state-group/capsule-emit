@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for [capsule-cose-sign1] — the draft-04 reversal.
+"""Acceptance tests for the draft-04 reversal.
 
 FROZEN PROFILE (2026-08-24): ``capsule_id`` returns to a pure,
 signer-independent content address (excludes only ``capsule_id`` itself;

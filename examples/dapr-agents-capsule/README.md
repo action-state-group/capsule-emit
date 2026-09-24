@@ -42,7 +42,7 @@ capsule-emit permalink --ledger <ledger.jsonl produced by this run> --check
 printing a URL, and refuses to emit one if any capsule fails verification.
 
 **Revealed links (`--reveal <artifact>`) are not available yet** — that flag depends on
-[aac-disclosure-envelope], a separate, not-yet-built disclosure-envelope format change. Only
+a separate, not-yet-built disclosure-envelope format change. Only
 withheld links ship in this build.
 
 ## What gets recorded

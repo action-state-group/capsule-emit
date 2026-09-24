@@ -1,6 +1,6 @@
 # capsule-emit producer-envelope conformance vector
 
-[capsule-cose-sign1] (2026-08-24) — proves capsule-emit's own COSE_Sign1
+The draft-04 reversal (2026-08-24) — proves capsule-emit's own COSE_Sign1
 producer-envelope construction (`capsule_emit.signing.sign_producer_envelope`
 / `LocalKeypairSigner.sign_envelope`, which reuses `scitt_cose.cose_sign1
 .sign_sign1`) is cross-verifiable, byte for byte, against the frozen

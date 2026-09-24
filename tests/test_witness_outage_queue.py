@@ -196,7 +196,7 @@ def test_restart_mid_outage_loses_nothing(tmp_path, dead_ts, monkeypatch):
     dead_url = f"http://127.0.0.1:{port}"
     ledger_path = tmp_path / "ledger.jsonl"
     # Simulate that this hermetic stub IS the pinned default witness
-    # ([verify-batch-fastfollow] item D) so the no-key grade() read path
+    # so the no-key grade() read path
     # signature-verifies the backfilled stamp instead of merely structurally
     # validating it.
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", dead_url)

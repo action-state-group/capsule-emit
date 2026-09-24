@@ -87,7 +87,7 @@ def _start_stub_ts():
 @pytest.fixture
 def stub_ts(monkeypatch):
     # Simulate that this hermetic stub IS the pinned default witness
-    # ([verify-batch-fastfollow] item D) so fixtures built with it still
+    # so fixtures built with it still
     # signature-verify as WITNESSED via the DEFAULT (no-key) read path,
     # instead of correctly-but-inconveniently demoting to "TS identity
     # unverified" for being an unpinned TS. monkeypatch reverts per test.

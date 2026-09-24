@@ -29,7 +29,7 @@ produced anywhere in this library, only recognized when verifying records
 minted before the draft-04 reversal below. Do not repoint this constant to
 ``"jcs-n"``, and do not use it as a default for verifying format-2 records.
 
-**draft-04 reversal (2026-08-24, [capsule-cose-sign1]):** the profile default
+**draft-04 reversal (2026-08-24):** the profile default
 moved from ``jcs-n`` to ``jcs`` — plain JCS excluding only ``capsule_id``, so
 ``chain`` (parent_capsule_id/relation) is now committed into the preimage
 too, closing the prior unauthenticated-chain gap. ``jcs-n`` (absent-field

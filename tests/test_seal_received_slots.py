@@ -2,9 +2,9 @@
 """Tests for the seal() / received() / who() / can() / did() / audit() Layer-0
 developer surface.
 
-Surface of record: ``_work/dev-surface-v4-2026-08-24.md`` §1/§3 (frozen);
+Surface of record: the frozen v4 developer surface design notes §1/§3;
 clean break removing the v3 ``compose()``/``carry()`` verbs from the public
-surface: ``_work/v4-complete-050-and-single-witness-task-2026-08-27.md`` (A/B).
+surface, per the v4-complete developer-surface and single-witness design notes (A/B).
 """
 from __future__ import annotations
 

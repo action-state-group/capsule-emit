@@ -11,7 +11,7 @@ ever sees the record, and it is what upgrades in place as checkpoints get
 witnessed (see ``capsule_emit.witness``) -- a different, heavier layer that
 signs MMR checkpoint digests, not capsule content, and is not this module.
 
-**draft-04 reversal ([capsule-cose-sign1], 2026-08-24).** The producer proof
+**draft-04 reversal (2026-08-24).** The producer proof
 is a **COSE_Sign1 envelope** over the raw 32-byte ``capsule_id`` digest (the
 frozen AAC producer-envelope profile: ``alg=EdDSA``, ``content_type``
 ``application/agent-action-capsule-id``, ``kid`` = the raw 32-byte Ed25519
@@ -61,8 +61,7 @@ the unrelated checkpoint-signing path, see ``capsule_emit.witness``'s
 signing -- see :func:`sign_producer_envelope`), AND
 ``sign_cose_statement()`` (a generic SCITT Signed Statement with caller-
 supplied content type and CWT ``iss``/``sub`` claims -- used by
-``capsule_emit.checkpoint.cose_wire`` to put a CLL checkpoint on the wire,
-[cll-checkpoint-cose-wire]).
+``capsule_emit.checkpoint.cose_wire`` to put a CLL checkpoint on the wire).
 
 **Persistence path.** One key per ledger by default -- ``<ledger>.signing_key.pem``
 next to the ledger file, mirroring the per-ledger-path scoping
@@ -247,7 +246,7 @@ class LocalKeypairSigner:
         ``payload``, with this signer's key as ``kid`` and CWT ``iss``/
         ``sub`` identity claims in the protected header -- the profile
         ``capsule_emit.checkpoint.cose_wire`` uses to put a CLL checkpoint on
-        the wire ([cll-checkpoint-cose-wire]), and any future caller wanting
+        the wire, and any future caller wanting
         the same signed-statement shape over a different payload/claims.
 
         Reuses ``scitt_cose.statement.build_signed_statement`` for the
@@ -363,8 +362,8 @@ def sign_producer_envelope(signer: Signer, capsule_id: str) -> tuple[str, str]:
 
 
 class AuthorshipVerdict(str, Enum):
-    """Three-state per-entry authorship verdict
-    [verify-entry-authorship-tristate-and-log] -- the SAME shape already
+    """Three-state per-entry authorship verdict --
+    the SAME shape already
     shipped for witness-stamp authenticity (see
     ``cll.checkpoint.emit.StampVerdict``, which folds in the self-hosted-TS
     pin case too): a claim, once made, is either upheld or a forgery: never
@@ -418,8 +417,8 @@ def verify_capsule_signature_tristate(capsule: dict) -> tuple[AuthorshipVerdict,
     -- callers that read a carried ``capsule_id`` separately (e.g.
     ``capsule_emit.bundle.verify_bundle``) check that independently.
 
-    ``capsule_id`` is signer-independent (draft-04 reversal,
-    [capsule-cose-sign1]): computed over the signature-free payload,
+    ``capsule_id`` is signer-independent (draft-04 reversal):
+    computed over the signature-free payload,
     excluding only ``capsule_id`` itself plus ``signature``/``key_id`` (see
     ``capsule_emit.canonicalization`` -- never folded in, so no strip-and-
     recompute dance is needed here; ``compute_capsule_id`` already excludes
@@ -478,7 +477,7 @@ def verify_capsule_signature(capsule: dict) -> bool:
     :func:`verify_store_signed` -- use the tristate function instead; this
     bool form flattens :attr:`AuthorshipVerdict.UNCLAIMED` and
     :attr:`AuthorshipVerdict.INVALID` together, which is exactly the
-    conflation [verify-entry-authorship-tristate-and-log] fixes at those two
+    conflation the tristate verdict fixes at those two
     call sites.
     """
     verdict, _ = verify_capsule_signature_tristate(capsule)
@@ -512,7 +511,7 @@ def verify_store_signed(records: list[dict], *, require_signature: bool = False)
     producer-authorship verdict) so every existing caller of ``verify_store``
     becomes a drop-in caller of this instead. Never raises.
 
-    **Three-state, not two** [verify-entry-authorship-tristate-and-log]: an
+    **Three-state, not two:** an
     entry with no producer signature at all (e.g. a
     :func:`capsule_emit.surface.log` entry) gets a ``severity="warning"``
     finding (``producer_signature_unclaimed``) that does NOT gate

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""[capsule-cose-sign1] conformance: capsule-emit's own committed producer-
+"""Draft-04 conformance: capsule-emit's own committed producer-
 envelope vector (``test-vectors/producer-envelope/``) verifies under the
 Python reference verifier (``agent_action_capsule.producer_envelope``) and
 round-trips through capsule-emit's own signing/verification wrapper.

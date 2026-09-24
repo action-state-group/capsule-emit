@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Canonicalization-aware Capsule ID computation.
 
-**draft-04 reversal ([capsule-cose-sign1], 2026-08-24):** ``capsule_id`` is a
+**draft-04 reversal (2026-08-24):** ``capsule_id`` is a
 pure, signer-independent content address again. It excludes only
 ``capsule_id`` itself plus capsule-emit's own ledger-line bookkeeping fields
 (``signature``, ``key_id`` — the COSE_Sign1 producer envelope and the raw

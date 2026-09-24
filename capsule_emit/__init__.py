@@ -46,8 +46,8 @@ cryptographically signed, always, by a persisted producer key (see
 ``capsule_emit.signing``) — neither has an off switch, only a choice of
 *which* key signs (``signer=``/``signing_key_path=``). The ONE way to append
 unsigned is the distinct ``log()`` verb — see ``capsule_emit.surface.log``
-and ``capsule_emit.signing.verify_capsule_signature_tristate``
-[verify-entry-authorship-tristate-and-log]. Ledger is written to
+and ``capsule_emit.signing.verify_capsule_signature_tristate``.
+Ledger is written to
 ``ledger.jsonl`` by default. All of the above are configurable.
 """
 from typing import Any, NoReturn
