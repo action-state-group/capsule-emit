@@ -14,8 +14,8 @@ later?", because the party that ran the agent also holds and can rewrite the
 trace. A capsule is content-addressed and checkable against the capsule format
 ([`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/), an individual
 IETF Internet-Draft, not a WG document) by anyone holding the file. Altering a
-record's content changes its id; the external checkpoint, below, pins the ids
-as of the last accepted checkpoint — for everyone, the key holder included.
+record's content changes its id; an accepted external checkpoint, below, gives
+an outside party a reference to check those ids against.
 
 ## What you get, in three claims
 
@@ -39,8 +39,8 @@ as of the last accepted checkpoint — for everyone, the key holder included.
    record signed that id — and nothing more until you pin the producer's key
    through a channel you already trust: the signature and key id sit outside
    the digest, so a ledger re-signed under a fresh key passes offline `verify`
-   and still matches its checkpoint. What constrains everyone, the key holder
-   included, is the external checkpoint, as of the last accepted one — see
+   and still matches its checkpoint. What an outside party can check the key
+   holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
 3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
    recomputes every digest and checks every producer signature it
@@ -81,24 +81,25 @@ ledger and checks it for you; the wiring for your own agent is under
 
 ## Network behavior
 
-By default the emitter runs an async **checkpoint/witness** stream: it
-periodically posts a *checkpoint* — size, root hash, timestamp; **never capsule
-content** — to a transparency service, and prints a notice before the first
-attempt. That external commitment is what
-makes a re-seal of the content detectable — by anyone, the key holder
-included — as of the last accepted checkpoint; that comparison is the one check
-outside offline `verify`. A
-checkpoint goes out every 100 entries or 900 seconds by default, from a
-background thread joined at interpreter exit: records sealed since the last
-accepted checkpoint are covered only once the next one lands, dropping records
-from the end of the ledger is invisible to offline `verify` until then, and a
-process killed before exit never posts its pending checkpoint. The detection
-holds given one honest witness — one that checks each checkpoint against the
-last it accepted; multi-witness bundling, which the default does not do for you,
-is what raises the bar against a dishonest witness. For a first local run with **zero egress**, set
-`CAPSULE_WITNESS=off` (the demo does) — with it off, offline `verify` proves
-internal consistency only, and the anti-re-seal property is the part you
-turned off. `operator` and `developer` seal into the record permanently — use
+By default the emitter runs an async **checkpoint/witness** stream: after every
+100 records, or at the next seal once 900 seconds have passed (there is no
+background timer), it posts a *checkpoint* — size, root hash, timestamp; **never
+capsule content** — to a witness, and prints a notice before the first attempt.
+The default witness is the project's public one at
+`witness.agentactioncapsule.org`; `CAPSULE_WITNESS_URL` names another. Each
+checkpoint the witness accepts gives an outside party a reference to check the
+ledger against — as far as that party trusts the witness to be independent of
+the key holder — and that comparison is the one check outside offline `verify`.
+Records sealed after the last accepted checkpoint are not yet committed outside
+your environment, and dropping records from the end of the ledger is invisible
+to offline `verify` until the next checkpoint lands. There is no final
+checkpoint at exit: the exit hook only waits for one already in flight, so a run
+that seals fewer than 100 records, all within 900 seconds, posts none.
+Multi-witness bundling, which the default does not do for you, is what raises
+the bar against a dishonest witness. For a first local run with **zero egress**,
+set `CAPSULE_WITNESS=off` (the demo does) — offline `verify` checks the same
+things either way; what you turn off is the outside reference. `operator` and
+`developer` seal into the record permanently — use
 a role/version tag, not personal data. What the adapter takes from `tool_context` is under
 [What is and isn't recorded](#what-is-and-isnt-recorded).
 
@@ -130,12 +131,14 @@ a role/version tag, not personal data. What the adapter takes from `tool_context
   [Effects for consequential tools](#effects-for-consequential-tools).
 - **Tamper-evidence, not tamper-proof.** The digest catches an altered field;
   the signature catches an altered record only once you know which key to
-  expect. Neither, by itself, stops the holder from re-sealing the entire ledger offline — that's what the external witness is for, and why it
-  defaults on.
+  expect. Neither, by itself, stops the holder from re-sealing the entire ledger
+  offline — an accepted witness checkpoint is the outside reference for that,
+  and why the witness defaults on.
 - **Kinds of `verify` — don't conflate them.** Two checks live inside
   `capsule-emit verify` — the digest recompute and the producer signature — and
   both run offline. Checking the ledger's checkpoint against the transparency
-  service is outside it, and that is what backs the anti-re-seal property above.
+  service is outside it, and that comparison is the outside check described
+  under Network behavior.
   Never quote a green `capsule-emit verify` as witness verification, and never
   read a valid signature as a name: it proves the key in the record signed it,
   not who holds the key — a ledger re-signed under a fresh key passes it, so does one with the signatures stripped, unless you pass `--require-signature`

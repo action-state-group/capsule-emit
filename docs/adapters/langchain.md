@@ -26,8 +26,8 @@ trace. A capsule is content-addressed and independently checkable, so it can.
    record signed that id — and nothing more until you pin the producer's key
    through a channel you already trust: the signature and key id sit outside
    the digest, so a ledger re-signed under a fresh key passes offline `verify`
-   and still matches its checkpoint. What constrains everyone, the key holder
-   included, is the external checkpoint, as of the last accepted one — see
+   and still matches its checkpoint. What an outside party can check the key
+   holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
 3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
    recomputes every digest and outcome link and checks every producer signature it
@@ -375,9 +375,12 @@ chain is consistent; `verify_producer_envelope` proves who sealed it.
 Two channels exist, both off or content-free, and both worth knowing about
 before you run this in production:
 
-- **Witnessing** is **on by default**. Once enough ledger entries accumulate, a
-  signed checkpoint — log size, root hash, timestamp, *never* capsule content —
-  is POSTed to the default witness endpoint. Disable with `CAPSULE_WITNESS=off`.
+- **Witnessing** is **on by default**. After every 100 records, or at the next
+  seal once 900 seconds have passed, a signed checkpoint — log size, root hash,
+  timestamp, *never* capsule content — is POSTed to the default witness endpoint
+  (`witness.agentactioncapsule.org`; `CAPSULE_WITNESS_URL` names another). There
+  is no final checkpoint at exit, so a shorter run posts none. Disable with
+  `CAPSULE_WITNESS=off`.
 - **Anchoring** is off unless enabled. When on, it is fire-and-forget by
   default: `EmitResult.anchored` reports that a **submission was made**, not
   that an anchor was confirmed. Set `anchor_wait=<seconds>` to block for a
