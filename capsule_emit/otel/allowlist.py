@@ -132,9 +132,8 @@ SEMCONV_ATTRS: dict[str, Tier] = {
 #: table — NOT consulted by the allow-list lookup (absence from
 #: ``SEMCONV_ATTRS`` already denies them). Exists so a test can plant one of
 #: these keys into a *copy* of ``SEMCONV_ATTRS`` and prove the real
-#: block-builder leaks it — the mutant `[batch3-otel-processor-v0-digests-only]`'s
-#: acceptance line requires. Never imported by production code paths other
-#: than that test.
+#: block-builder leaks it, which the acceptance test requires. Never imported
+#: by production code paths other than that test.
 NEVER_ENTERS_SEMCONV: frozenset[str] = frozenset(
     {
         "gen_ai.input.messages",

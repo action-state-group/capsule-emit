@@ -204,19 +204,15 @@ def build_otel_block(
 def build_outcome_context_block(
     baggage: Mapping[str, str] | None, *, allowed_keys: frozenset[str]
 ) -> dict[str, str] | None:
-    """The outcome-context tag, sourced from OpenTelemetry Baggage entries --
-    this task's Do line ("tags outcome context ... via the baggage keys from
-    the Area 16 design notes"). *allowed_keys* is an explicit, caller-supplied
-    allow-list; this function never reads a baggage entry whose key is not in
-    it, and never invents key names of its own.
+    """The outcome-context tag, sourced from OpenTelemetry Baggage entries.
+    *allowed_keys* is an explicit, caller-supplied allow-list; this function
+    never reads a baggage entry whose key is not in it, and never invents key
+    names of its own.
 
     **``allowed_keys`` is empty by default at the call site
-    (:class:`capsule_emit.otel.processor.CapsuleOTelSpanExporter`).** No "Area
-    16" design note naming the real baggage keys exists anywhere in this
-    workspace as of this task (checked `_work/`, `_ops/`, both lane buffers;
-    the only "Area 16" hit is the reconciliation-states item, unrelated) --
-    see the outbox `Needs decision` entry this task files. Shipping a guessed
-    key list would violate the task's own "do not invent keys" instruction,
+    (:class:`capsule_emit.otel.processor.CapsuleOTelSpanExporter`).** No
+    design note naming the real baggage keys to allow-list exists yet.
+    Shipping a guessed key list would violate the "do not invent keys" rule,
     so v0 ships the mechanism wired to nothing; the day the real keys land,
     turning this on is a one-line config change, not a code change.
 
