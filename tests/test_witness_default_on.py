@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for [emit-witness-default-on]: the CLL checkpoint/witness
+"""Acceptance tests for witness-default-on: the CLL checkpoint/witness
 layer flips from opt-in to default-ON in ``capsule_emit.core.emit()``.
 
 Covers the acceptance check verbatim:
@@ -352,8 +352,8 @@ def test_many_emits_below_cadence_still_never_import_checkpoint(tmp_path):
 
 # ---------------------------------------------------------------------------
 # (e) crossing cadence *is* what imports checkpoint -- the mutant this file's
-#     "never imports" tests guard against a false positive on (QUEUE_PROTOCOL
-#     §7: every check must be able to fail).
+#     "never imports" tests guard against a false positive on (every check
+#     must be able to fail).
 # ---------------------------------------------------------------------------
 
 

@@ -273,7 +273,7 @@ def read_ledger_entries(path: str | os.PathLike) -> list[dict]:
     """Read every entry of a ledger, capsules and checkpoint-stamp records
     alike, in append order.
 
-    Store-aware ([mesh-ledger-store-migration]): if ``path`` is a directory
+    Store-aware: if ``path`` is a directory
     holding a ``cll.ledger.store.LedgerStore`` (:func:`is_ledger_store`),
     reads it via ``cll.ledger.store``/``cll.ledger.segments`` directly
     rather than as a flat file. An archived (unmounted) segment never

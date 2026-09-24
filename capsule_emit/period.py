@@ -3,8 +3,8 @@
 "the ledger scan already takes since/until (ISO-8601) ... Add --period
 week|month as sugar over since/until").
 
-**Moved here from ``capsule_engine.cli.period``** ([emit-ledger-io-home],
-2026-09-06). It lived in capsule-engine as an engine-local duplicate because
+**Moved here from ``capsule_engine.cli.period``** (2026-09-06).
+It lived in capsule-engine as an engine-local duplicate because
 ``capsule-ledger`` -- the shared ``ledger_io`` scan-query plumbing these
 flags actually decorate -- was archived (read-only) on 2026-09-02 while that
 task was in flight; now that ``ledger_io`` has a live home in

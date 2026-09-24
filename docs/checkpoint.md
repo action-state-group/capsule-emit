@@ -347,7 +347,7 @@ backlog = witness.checkpoint_witness_backlog(ledger_path, ["https://witness.exam
 witness.retry_pending_witness_stamps(ledger_path, ts_url="https://witness.example")
 ```
 
-## Fail-closed: `require_witness=True` ([capsule-emit-witness-required-profile])
+## Fail-closed: `require_witness=True`
 
 Everything above — the default cadence, the outage backlog, the retry drain —
 is deliberately **best-effort**: a `seal()`/`received()` call never blocks on
@@ -487,8 +487,8 @@ history *within this bundle* wasn't reordered/truncated) — never "no fork" /
 "not equivocated", since one offline bundle can never rule out a divergent
 history it doesn't see; that guarantee is the witness's and multi-witness
 config's job. It also checks witness-stamp authenticity
-(`checkpoint.verify_witness_stamp_offline` per `WitnessRecord`, per
-[stamp-authenticity-on-read-not-presence]): a stamp from the pinned default
+(`checkpoint.verify_witness_stamp_offline` per `WitnessRecord`): a stamp
+from the pinned default
 witness (`DEFAULT_TS_PUBLIC_KEY_PEM`) is signature-verified with no network
 call and no caller setup; a stamp from any other Transparency Service, with
 no caller-supplied `ts_pubkey_pem`, verifies as a genuine receipt *shape*
@@ -499,7 +499,7 @@ stamps but has none that verify at all is fatal (`ok=False`).
 the point of "standalone": a bundle survives being written to a file and
 handed to someone else's process.
 
-### `checkpoint_cose` — the COSE_Sign1 wire form ([cll-checkpoint-cose-wire])
+### `checkpoint_cose` — the COSE_Sign1 wire form
 
 `Bundle.checkpoint_cose` carries the covering checkpoint as a COSE_Sign1
 statement over a CBOR claims map, built once at production time (in
@@ -517,8 +517,8 @@ CWT `iss` header, `key_id` onto the COSE `kid` header. The full dev↔I-D
 field-mapping table — plus a known `iss`/`sub` semantics deviation from
 the I-D's producer/log identity split, worth reading before relying on
 those two claims for cross-implementation identity matching — lives in
-`cll.checkpoint.cose_wire`'s module docstring (this is the
-[cll-id-field-mapping-doc] resolution: ship the mapping table, don't rename
+`cll.checkpoint.cose_wire`'s module docstring (the resolution here was to
+ship the mapping table, not rename
 `CheckpointRecord`'s own fields). `capsule_emit.checkpoint.cose_wire` is a
 deprecated alias for the same module — import `cll.checkpoint.cose_wire`
 directly.

@@ -402,7 +402,7 @@ class TestVintageRule:
         # even though it is a well-formed vintage capsule_id/signature by
         # capsule-emit's own (more tolerant) dispatch, exercised above and
         # via verify_canonicalization_id below. That upstream structural
-        # rule is unrelated to and unchanged by [capsule-cose-sign1].
+        # rule is unrelated to and unchanged by the draft-04 reversal.
 
         # Canonicalization-layer equivalence still holds: a null-valued slot
         # digests identically to an absent one (resolve_canonicalization_id

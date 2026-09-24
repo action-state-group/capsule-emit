@@ -87,7 +87,7 @@ def _start_stub_ts():
 @pytest.fixture
 def stub_ts(monkeypatch):
     # Simulate that this hermetic stub IS the operator's pinned default
-    # witness ([verify-batch-fastfollow] item D): the DEFAULT read path only
+    # witness: the DEFAULT read path only
     # signature-verifies a stamp as WITNESSED when its ts_url matches the
     # pinned DEFAULT_TS_URL and the receipt verifies against
     # DEFAULT_TS_PUBLIC_KEY_PEM. Without this, every stamp this stub mints
@@ -198,7 +198,7 @@ def test_bundle_second_checkpoint_record_has_prior_and_consistency(two_checkpoin
 
 
 # ---------------------------------------------------------------------------
-# [verify-batch-fastfollow] item A / Decision 2 — the consistency-proof
+# The consistency-proof
 # check's PASSING message must label itself honestly: anti-REWRITE only,
 # never implying anti-FORK / anti-equivocation (that is the witness's job).
 # ---------------------------------------------------------------------------
@@ -324,7 +324,7 @@ def test_bundle_self_attested_checkpoint_still_verifies(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# [verify-threestate-trustanchor] -- a well-formed stamp from an UNPINNED
+# A well-formed stamp from an UNPINNED
 # witness (no caller-supplied pin, and not the built-in default) must NOT
 # make the bundle INVALID: it is exactly what a self-hosted/zero-egress TS
 # a caller hasn't pinned yet looks like, and frozen §1a.2 promises that
@@ -423,7 +423,7 @@ def test_bundle_json_roundtrip_still_verifies(two_checkpoint_ledger):
 
 
 # ---------------------------------------------------------------------------
-# [cll-checkpoint-cose-wire] Decision 1's moment (b): the covering
+# Decision 1's moment (b): the covering
 # checkpoint's COSE_Sign1 wire form, carried through from production
 # (witness._build_checkpoint_cose_hex) into the bundle, independently
 # checkable by a generic COSE/SCITT verifier.

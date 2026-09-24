@@ -19,8 +19,7 @@ It wraps ``agent_action_capsule.emit()`` with:
   .key_id, and .witness_outcome (.anchored / .anchor_status report the
   legacy, non-default anchor channel — see below; .witness_outcome reports
   the default checkpoint/witness stream's outcome, and pairs with the
-  fail-closed ``require_witness=True`` profile —
-  [capsule-emit-witness-required-profile])
+  fail-closed ``require_witness=True`` profile)
 
 **Single egress (2026-08, O16 items 1-2):** the per-seal SCITT anchor
 submission that used to dispatch on every ``seal()``/``received()`` call by
@@ -93,7 +92,7 @@ _DEFAULT_LEDGER = "ledger.jsonl"
 AnchorStatus = Literal["confirmed", "submitted", "failed", "skipped"]
 
 #: The witness/anchoring outcome for one ``_emit_capsule()`` call --
-#: [capsule-emit-witness-required-profile], per JamesCarnley's
+#: per JamesCarnley's
 #: projnanda/nandatown#217 review, which asked for outcome states more
 #: granular than a single ``anchored`` bool. Distinct from ``anchor_status``
 #: above (which reports only the legacy, non-default per-record anchor
@@ -465,7 +464,7 @@ class EmitResult:
     ``capsule["key_id"]`` — the self-attested producer proof over
     ``capsule_id`` and the producer key that made it. ``signature`` is a
     hex-encoded COSE_Sign1 envelope (the frozen AAC producer-envelope
-    profile, [capsule-cose-sign1]), not a bare signature; ``key_id`` is the
+    profile), not a bare signature; ``key_id`` is the
     raw Ed25519 public key, hex (see ``capsule_emit.signing``). Always
     present; every ``EmitResult`` is signed, not just anchored/witnessed
     ones.
@@ -484,8 +483,7 @@ class EmitResult:
     callers). See :data:`WitnessOutcome` above for the four states. Pass
     ``require_witness=True`` to ``_emit_capsule()`` to demand
     ``"witness_receipt_obtained"`` synchronously — see that parameter's
-    docs and ``capsule_emit.witness.WitnessRequiredError``
-    ([capsule-emit-witness-required-profile]).
+    docs and ``capsule_emit.witness.WitnessRequiredError``.
     """
 
     capsule_id: str
@@ -509,7 +507,7 @@ class EmitResult:
 @dataclass
 class LogEntry:
     """The result of a :func:`capsule_emit.surface.log` call --
-    [verify-entry-authorship-tristate-and-log] RULING 3: deliberately NOT an
+    deliberately NOT an
     :class:`EmitResult`. ``EmitResult``'s own docstring guarantees
     ``signature``/``key_id`` are "Always present; every EmitResult is
     signed" -- a ``log()`` entry never carries a producer signature, so
@@ -654,7 +652,7 @@ def _emit_capsule(
             what climbs from *witnessed (single witness)* to *multi-witness,
             equivocation-resistant* (see ``docs/checkpoint.md``).
         require_witness: Fail-closed witness profile
-            ([capsule-emit-witness-required-profile], per JamesCarnley's
+            (per JamesCarnley's
             projnanda/nandatown#217 review). ``False`` (default): unchanged
             best-effort behavior — witnessing (if enabled) runs on its usual
             async, cadence-batched schedule and this call never blocks on it
@@ -842,8 +840,7 @@ def _emit_capsule(
 
     # Write canonicalization_id into the self-describing binding slot
     # (top-level, inside the signed payload), then compute the PURE,
-    # signer-independent capsule_id, THEN sign it -- draft-04 reversal
-    # ([capsule-cose-sign1]):
+    # signer-independent capsule_id, THEN sign it -- draft-04 reversal:
     #
     # 1. capsule_id = compute_capsule_id(capsule) over everything above
     #    (canonicalization_id AND chain committed under "jcs"; capsule_id
@@ -904,7 +901,7 @@ def _emit_capsule(
         witness_endpoint=witness_endpoint,
     )
 
-    # [capsule-emit-witness-required-profile]: require_witness=True trades the
+    # require_witness=True trades the
     # default async, cadence-batched maybe_checkpoint() for a synchronous
     # push() that must actually be confirmed by a witness -- WitnessRequiredError
     # propagates uncaught (fail-closed: never a silent local-only capsule for a
@@ -973,8 +970,8 @@ def _emit_log_entry(
     signer: Signer | None = None,
     signing_key_path: str | os.PathLike | None = None,
 ) -> LogEntry:
-    """Internal primitive behind :func:`capsule_emit.surface.log` --
-    [verify-entry-authorship-tristate-and-log] RULING 3. Builds and appends
+    """Internal primitive behind :func:`capsule_emit.surface.log`.
+    Builds and appends
     an entry that NEVER carries a producer signature: no ``sign`` parameter
     exists on this function, by design -- ``log()``'s whole point is that
     the weaker guarantee is reached through a distinct, honestly-named verb,

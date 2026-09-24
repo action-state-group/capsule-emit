@@ -14,7 +14,7 @@
 # limitations under the License.
 """W8 interop tests: capsule-emit JSONL ledger ↔ capsule verify tooling.
 
-**draft-04 reversal ([capsule-cose-sign1], 2026-08-24):** ``capsule_id`` is
+**draft-04 reversal (2026-08-24):** ``capsule_id`` is
 signer-independent again — the producer's COSE_Sign1 envelope + ``key_id``
 are capsule-emit-local bookkeeping, not neutral Capsule members (see
 ``capsule_emit.canonicalization``), so the raw, generic

@@ -224,7 +224,7 @@ class WitnessRequiredError(RuntimeError):
     register the checkpoint covering the just-sealed capsule.
 
     A profile that sets ``require_witness=True`` is asking for the fail-closed
-    posture named in [capsule-emit-witness-required-profile] (per
+    posture named above (per
     JamesCarnley's projnanda/nandatown#217 review): "if a profile requires a
     witness, its absence must remain explicit." This exception is that
     explicitness -- the alternative (returning a normal, ok-looking
@@ -482,7 +482,7 @@ class _PersistedCheckpointSigner:
         extra_cwt_claims: dict | None = None,
     ) -> bytes:
         """Pass through to the wrapped ``signing.Signer``'s own
-        ``sign_cose_statement`` ([cll-checkpoint-cose-wire]) -- so THIS
+        ``sign_cose_statement`` -- so THIS
         adapter (what ``_build_and_register`` already holds as
         ``state.signer``) can also serve directly as the COSE-capable signer
         ``capsule_emit.checkpoint.cose_wire.checkpoint_to_cose`` needs,
@@ -660,9 +660,9 @@ def _build_checkpoint_cose_hex(
     consistency_proof: Any | None,
 ) -> str | None:
     """Best-effort COSE-wire serialization of ``cp``
-    ([cll-checkpoint-cose-wire]) -- built HERE, at production time, because
+    -- built HERE, at production time, because
     this is the one place the signing key AND the live MMR (``mmr``, for
-    [cll-commitment-interop]'s conformant peak-list commitment) are both
+    the conformant peak-list commitment) are both
     actually available; a later ``bundle()`` call may run keyless, in a
     different process, handed only the ledger file, so it can only ever
     READ this back, never mint it itself (see ``checkpoint.cose_wire``'s
@@ -675,7 +675,7 @@ def _build_checkpoint_cose_hex(
     yet -- the JSON checkpoint and its own signature, verified
     independently, are unaffected. This is why ``mmr.peak_hashes_at`` is
     called IN HERE rather than by the caller: every step that touches
-    [cll-commitment-interop]'s peak lists must stay inside this same
+    the interoperable peak-list commitment must stay inside this same
     try/except, not run unguarded before it.
     """
     try:
@@ -776,7 +776,7 @@ class CheckpointWitnessState:
     entry_digest: str
     checkpoint: Any  # capsule_emit.checkpoint.CheckpointRecord
     effective_witnesses: dict  # ts_url -> capsule_emit.checkpoint.WitnessRecord
-    #: Hex COSE_Sign1 bytes ([cll-checkpoint-cose-wire]) this stamp was
+    #: Hex COSE_Sign1 bytes this stamp was
     #: persisted with (see ``_build_checkpoint_cose_hex``), or ``None`` for a
     #: stamp that predates the COSE wire form / whose COSE build failed at
     #: the time. This is the exact wire body a retry re-POSTs to
@@ -924,7 +924,7 @@ def retry_pending_witness_stamps(
     (``CheckpointWitnessState.checkpoint_cose_hex`` -- see
     :func:`_build_checkpoint_cose_hex`), never rebuilt here: the witness
     route is COSE-only (single-host witness ruling, 2026-08-27,
-    [cll-checkpoint-cose-wire] wire alignment), and rebuilding would need the
+    wire alignment), and rebuilding would need the
     live MMR this process may no longer hold for an old checkpoint. A stamp
     with no persisted COSE form (pre-migration, or a COSE build that failed
     at the time) has nothing to (re)send and is skipped -- not counted as a
@@ -1015,7 +1015,7 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # around it.
     #
     # The real (non-stub) path registers the checkpoint's COSE-wire form
-    # ([cll-checkpoint-cose-wire]) -- the witness route independently decodes
+    # -- the witness route independently decodes
     # and verifies that envelope before ever counter-signing, never a plain
     # JSON CheckpointRecord dict. A checkpoint whose COSE form failed to
     # build (see ``_build_checkpoint_cose_hex``) has nothing to register with

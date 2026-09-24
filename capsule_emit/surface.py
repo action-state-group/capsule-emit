@@ -22,7 +22,7 @@ membership is always declared, never inferred — see ``who``/``can``/``did``/
 ``audit`` below. Neither verb re-implements signing or binding — they are
 thin, opinionated wrappers over :func:`capsule_emit.core._emit_capsule`, the
 internal primitive that already does the CPB-bind + sign + ledger-append
-work. See ``_work/dev-surface-v4-2026-08-24.md`` §1/§3 for the frozen
+work. See the v4 developer surface design notes §1/§3 for the frozen
 surface of record this module implements.
 
 **Dispatch rule for foreign bytes, stated once.** ``received()`` is legal
@@ -79,7 +79,7 @@ mechanism for binding a member that lives in someone else's log:
 first, and then a slot wrapper references it exactly like any member you
 authored yourself.
 
-**A third, unsigned verb: ``log()``** [verify-entry-authorship-tristate-and-log].
+**A third, unsigned verb: ``log()``.**
 ``seal()``/``received()`` always sign — there is no flag on either to opt
 out. ``log(artifact_bytes)`` is the distinct, honestly-named unsigned append:
 an opaque digest enters the log with full CLL guarantees (order,
@@ -424,8 +424,7 @@ def log(
     **kwargs: Any,
 ) -> LogEntry:
     """Append *artifact_bytes* to the log WITHOUT a producer signature — the
-    honestly-named unsigned, mass-market tier
-    [verify-entry-authorship-tristate-and-log] RULING 3.
+    honestly-named unsigned, mass-market tier.
 
     ``seal()``/``received()`` always sign; there is no way to reach a weaker
     guarantee through either of them (0.5.0, "no opt-out, only a choice of

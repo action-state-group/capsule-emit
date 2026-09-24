@@ -311,7 +311,7 @@ def test_e2e_full_handshake_and_verify(tmp_path):
     # (signature/key_id — the COSE_Sign1 producer envelope and its key;
     # never neutral Capsule members, see capsule_emit.canonicalization) must
     # be stripped first, same as any other neutral-verifier boundary
-    # ([capsule-cose-sign1] draft-04 reversal, 2026-08-24).
+    # (draft-04 reversal, 2026-08-24).
     def _neutral(capsule):
         return {k: v for k, v in capsule.items() if k not in ("signature", "key_id")}
 
