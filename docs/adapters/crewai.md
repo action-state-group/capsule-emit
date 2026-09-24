@@ -9,8 +9,9 @@ That's the difference between a log and a record. A log is for you. A record is 
 the person who has to believe you. Traces answer "what happened?" for the team that
 owns the trace; they don't answer "can a stranger confirm this months later?",
 because the party that ran the crew also holds and can rewrite the trace. A capsule
-is content-addressed and independently checkable — and, with the witness on, anchored
-outside your control — so it can.
+is content-addressed and independently checkable — and, once an accepted witness
+checkpoint covers it, checkable against a reference outside your control — so it
+can.
 
 ## What you get, in three claims
 
@@ -28,8 +29,8 @@ outside your control — so it can.
    record signed that id — and nothing more until you pin the producer's key
    through a channel you already trust: the signature and key id sit outside
    the digest, so a ledger re-signed under a fresh key passes offline `verify`
-   and still matches its checkpoint. What constrains everyone, the key holder
-   included, is the external checkpoint, as of the last accepted one — see
+   and still matches its checkpoint. What an outside party can check the key
+   holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
 3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
    recomputes every digest and outcome link and checks every producer signature it
@@ -59,14 +60,19 @@ the reference below.
 
 ## Network behavior
 
-By default the listener runs an async **checkpoint/witness** stream: it periodically
-posts a *checkpoint* — size, root hash, timestamp; **never capsule content** — to a
-transparency service, and prints a notice before the first attempt. That external
-commitment is what stops the holder from silently rewriting the past — it's what makes
-claim #2 hold against the person who produced the ledger. Wiring is one listener
+By default the listener runs an async **checkpoint/witness** stream: after every
+100 records, or at the next seal once 900 seconds have passed (there is no
+background timer), it posts a *checkpoint* — size, root hash, timestamp; **never
+capsule content** — to a witness, and prints a notice before the first attempt.
+The default witness is the project's public one at
+`witness.agentactioncapsule.org`; `CAPSULE_WITNESS_URL` names another. Each
+checkpoint the witness accepts gives an outside party a reference to check the
+ledger against — as far as that party trusts the witness to be independent of
+the key holder. There is no final checkpoint at exit, so a run that seals fewer
+than 100 records, all within 900 seconds, posts none. Wiring is one listener
 instantiated before `crew.kickoff()` (see below); for a first local run with **zero
-egress**, set `CAPSULE_WITNESS=off` — with it off, offline `verify` proves internal
-consistency only, and the anti-re-seal property is the part you turned off. `operator`
+egress**, set `CAPSULE_WITNESS=off` — offline `verify` checks the same things
+either way; what you turn off is the outside reference. `operator`
 and `developer` seal into the hash-chained record permanently — use a role/version tag,
 not personal data.
 
@@ -81,12 +87,13 @@ not personal data.
 - **Tamper-evidence, not tamper-proof.** The digest catches an altered field;
   the signature catches an altered record only once you know which key to
   expect. Neither, by itself, stops the holder from re-sealing the entire
-  chain offline — that's what the external witness is for, and why it
-  defaults on.
+  chain offline — an accepted witness checkpoint is the outside reference for
+  that, and why the witness defaults on.
 - **Kinds of `verify` — don't conflate them.** Two checks live inside
   `capsule-emit verify` — the digest recompute and the producer signature — and
   both run offline. Checking the ledger's checkpoint against the transparency
-  service is outside it, and that is what backs the anti-re-seal property above.
+  service is outside it, and that comparison is the outside check described
+  under Network behavior.
   Never quote a green `capsule-emit verify` as witness verification, and never
   read a valid signature as a name: it proves the key in the record signed it,
   not who holds the key — a ledger re-signed under a fresh key passes it, so does one with the signatures stripped, unless you pass `--require-signature`

@@ -153,7 +153,7 @@ def run(ledger: pathlib.Path, anchor_url: str) -> None:
         ledger=ledger,
         anchor=True,
         anchor_url=anchor_url,
-        anchor_wait=10.0,  # block for the real (stubbed) confirmation
+        anchor_wait=10.0,  # inert here: CAPSULE_WITNESS=off above also turns the legacy anchor off
     )
 
     def agent(script, tools):

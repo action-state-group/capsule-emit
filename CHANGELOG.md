@@ -4,6 +4,25 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Docs — the witness claims on the adapter pages now match what the witness does
+
+- The 14 adapter pages said the checkpoint stream made a re-seal "detectable — by anyone, the key
+  holder included". Nothing performs or documents that detection; what an accepted checkpoint gives
+  is an outside reference to check the ledger against, and only as far as the witness is trusted
+  to be independent of the key holder. The pages now say that.
+- The cadence was stated as "every 100 entries or 900 seconds" from a thread "joined at interpreter
+  exit". On 0.8.6 the age leg fires only at the next seal (no background timer), and the exit hook
+  only waits for a checkpoint already in flight: a run that seals fewer than 100 records within
+  900 seconds exits with no checkpoint at all (3 seals → 0 posts; 99 → 0; the 100th → 1). The pages
+  now say so, and name the default witness (`witness.agentactioncapsule.org`) and
+  `CAPSULE_WITNESS_URL`.
+- Five demos that set `CAPSULE_WITNESS=off` commented `anchor_wait` as blocking for "the real
+  (stubbed) confirmation"; the witness kill switch also turns the legacy anchor off, so nothing
+  reaches the stub. The comment now says the setting is inert there.
+- No code or example behavior changed; every page's code blocks are byte-identical.
+
 ## 0.8.6 — 2026-09-23
 
 ### Removed — the `ledger-io` extra, which no consumer could ever install
