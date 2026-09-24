@@ -1,0 +1,10 @@
+# hostname-lint exemptions — exact stripped line text, not line numbers (see
+# .github/hostname_lint.py's docstring: this self-invalidates the moment the
+# surrounding prose changes, instead of silently exempting whatever line a
+# stale number happens to point at).
+#
+# docs/adopt-transcript-2026-07-28.md is a historical before/after transcript
+# recording a fix that already happened -- editing it would erase the record
+# of the fix it documents, not just the fix itself.
+| `verify.actionstate.ai/v/<capsule_id>` 404s (P1 not deployed; wrong domain) | Step 3 | Removed. Step 3 now documents the working anchor API path (`POST /v1/digest`) + offline scitt-cose receipt verification |
+| Permalink note pointed at `verify.actionstate.ai` | Step 3 | Replaced with `verify.agentactioncapsule.org` (neutral domain), marked as "landing with verify-surface deploy" |

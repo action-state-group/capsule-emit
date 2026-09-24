@@ -375,7 +375,7 @@ print('included:', found)
 
 Or use the hosted verifier:
 ```
-https://verify.actionstate.ai
+https://verify.agentactioncapsule.org
 ```
 
 ---
@@ -610,4 +610,4 @@ if __name__ == "__main__":
 - capsule-emit library: <https://github.com/action-state-group/capsule-emit>
 - Agent Action Capsule spec: <https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/>
 - Public transparency log: <https://anchor.agentactioncapsule.org>
-- Hosted verifier: <https://verify.actionstate.ai>
+- Hosted verifier: <https://verify.agentactioncapsule.org>
