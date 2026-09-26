@@ -31,9 +31,9 @@ sandboxed process can run this same library and mint its own keypair — that
 is not preventable and this module makes no claim otherwise — but it cannot
 produce a record that verifies under the harness's own ``key_id``, because
 it never had the harness's private key. See
-``tests/test_inspect_ai_adapter.py::test_sandbox_process_cannot_sign_as_the_harness``
-for the check, and the two mutants recorded in
-``examples/evaluator-bilateral-harness-capture/README.md``.
+``tests/test_inspect_ai_core.py::test_sandbox_process_cannot_sign_as_the_harness``
+for the check; its docstring describes the key-into-sandbox mutant that
+turns it red.
 
 Why per-model-call, not just per-sample
 ----------------------------------------
@@ -118,8 +118,10 @@ class InspectAIListenerCore(CapsuleEmitterBase):
     """Framework-lazy core: seals plain dicts extracted from an Inspect
     ``.eval`` log. Takes no dependency on ``inspect_ai`` itself — every
     argument here is already a JSON-safe dict/str/int, so this class is
-    fully unit-testable without the package installed. :func:`seal_eval_log`
-    is the only place in this module that imports ``inspect_ai``.
+    tested without the package: ``tests/test_inspect_ai_core.py`` runs in the
+    default CI job and includes a check with ``import inspect_ai`` blocked.
+    :func:`seal_eval_log` is the only place in this module that imports
+    ``inspect_ai``; its tests need the ``inspect-ai`` extra.
     """
 
     def seal_model_call(

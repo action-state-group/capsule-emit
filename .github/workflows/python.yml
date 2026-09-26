@@ -39,3 +39,29 @@ jobs:
 
       - name: pytest
         run: python -m pytest -q
+
+  # seal_eval_log drives a real inspect_ai eval; its tests importorskip the
+  # package, so they only run where the inspect-ai extra is installed. This
+  # job installs it and fails if the import does not work, so those tests
+  # cannot silently skip here. (inspect-ai needs Python >= 3.10.)
+  inspect-ai:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install capsule-emit with the inspect-ai extra
+        run: pip install -e ".[dev,inspect-ai]"
+
+      - name: inspect_ai is importable (so nothing below skips)
+        run: python -c "import inspect_ai; print(inspect_ai.__version__)"
+
+      - name: pytest (inspect adapter + reconciliation)
+        run: >
+          python -m pytest -v -rs
+          tests/test_inspect_ai_core.py
+          tests/test_inspect_ai_eval_log.py
+          tests/test_reconciliation.py

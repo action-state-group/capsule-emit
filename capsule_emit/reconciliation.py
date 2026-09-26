@@ -22,7 +22,7 @@ Three states, not two — ``not present`` is a first-class outcome
 - ``contradicted`` — both halves exist and their digests disagree. This is
   the state a post-hoc transcript edit (METR's ``echo REAL`` → ``SPOOFTEST``
   finding) produces against a harness-sealed record of what actually
-  executed — see the tests in ``tests/test_inspect_ai_adapter.py`` and
+  executed — see the tests in ``tests/test_inspect_ai_core.py`` and
   ``tests/test_reconciliation.py`` for the vector, and the two mutants that
   must go red before the fix goes green.
 
