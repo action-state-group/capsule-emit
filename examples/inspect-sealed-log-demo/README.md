@@ -55,8 +55,10 @@ list.
    - one record per `ModelEvent` in the sample (the harness's own
      `request`/`response` bytes, digested unmodified — never reconstructed
      from a higher-level message list), chained in call order;
+   - one record per `ToolEvent`, chained in the same order as the model
+     calls (this task makes no tool calls, so none appear here);
    - one record for the sample's terminal state (final completion + score,
-     or its error), chained to the last model-call record.
+     or its error), chained to the last model-call or tool-call record.
 
    12 records come out of 4 samples (2 calls + 1 terminal each).
 
@@ -96,8 +98,10 @@ pip install inspect_ai "capsule-emit[dev]"
 python run_demo.py --out-dir out
 ```
 
-`--no-witness` skips the live registration (useful offline; the two bundles
-and the tamper check still run — a bundle just won't have a witness stamp).
+`--no-witness` skips the live registration and stops after sealing (useful
+offline to inspect the ledger). The bundle, verify and tamper steps do not
+run in that mode: a bundle needs a checkpoint covering its records, and
+without a witness there is none.
 
 ## What this establishes
 

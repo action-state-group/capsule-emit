@@ -282,6 +282,13 @@ def main() -> int:
     eval_log_path = run_eval(out_dir)
     core = seal_log(eval_log_path, ledger_path)
     register_checkpoint(ledger_path, out_dir, use_witness=not args.no_witness)
+    if args.no_witness:
+        # A bundle needs a checkpoint covering its records, and without a
+        # witness there is none -- so the bundle, verify and tamper steps
+        # cannot run. Stop here rather than fail inside disclose().
+        _section("Done (--no-witness: sealed only; bundles need a checkpoint)")
+        print(f"  ledger written to {ledger_path.resolve()}")
+        return 0
     disclosed, withheld = build_bundles(ledger_path, core, out_dir)
     verify_bundles(disclosed, withheld, out_dir)
     tamper_demo(disclosed, out_dir)
