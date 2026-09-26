@@ -782,44 +782,38 @@ def _receipt_grade(
     ANY receipt exists at all, never a claim about what was checked. See
     that class's docstring for the two-level rule.
 
-    Label ``-65537`` is read only after two checks pass, because anyone can
-    mint a COSE_Sign1 with their own key and write ``"mmr-verified"`` into
-    its protected header:
+    Label ``-65537`` is read only from a stamp that
+    ``capsule_emit.checkpoint.verify_witness_stamp_tristate`` grades
+    ``WITNESSED`` -- the same bar :meth:`CheckpointWitnessState.grade` uses
+    -- because anyone can mint a COSE_Sign1 with their own key and write
+    ``"mmr-verified"`` into its protected header. ``WITNESSED`` means:
 
-    1. **Bound to this checkpoint.**
-       ``capsule_emit.checkpoint.verify_witness_stamp_tristate`` must not
-       return ``INVALID``: ``witness.entry_hash`` equals the hash of
-       ``checkpoint.digest()`` and the receipt is a structurally valid COSE
-       Receipt for it. A genuine receipt replayed from another checkpoint
-       fails here.
-    2. **Signed by the key checked against.**
-       ``capsule_emit.checkpoint.verify_receipt_offline`` must return ok
-       under ``ts_pubkey_pem`` when the caller pins one, or otherwise under
-       the key served at ``witness.ts_url`` (the path
-       ``capsule_emit.status`` uses to re-confirm a witness; a network
-       call). The trust is exactly that key: whoever writes ``ts_url`` into
-       the ledger chooses where the key comes from, and a single pinned key
-       is applied to every witness it is passed with. Check 1 gets the same
-       pin; unpinned, it checks a witness at the library's default
-       ``ts_url`` against the key built into the library, so that witness
-       must verify under both the built-in key and the one it serves.
+    1. **Bound to this checkpoint.** ``witness.entry_hash`` equals the hash
+       of ``checkpoint.digest()``, so a genuine receipt replayed from
+       another checkpoint fails.
+    2. **Signed by a key this process already trusts.** With
+       ``ts_pubkey_pem`` the receipt must verify under that pinned key (one
+       key, applied to every witness it is passed with). Without it, only a
+       witness at the library's default ``ts_url`` can pass, under the
+       public key built into the library. No key is ever fetched: a
+       ``ts_url`` is written by whoever writes the ledger, so a key served
+       there proves nothing about who signed the receipt.
 
     ``None`` -- "no verified grade" -- when: the stamp is a stub
-    (``is_stub``); either check fails (check 1 also fails when
-    ``checkpoint`` is ``None``, having no digest to bind to) (wrong signer, replayed or tampered stamp, key fetch failed,
-    ``scitt_cose`` not installed); or the receipt verifies but carries no
-    label, or a value outside the two grades above. A witness that rotated
-    its key makes its older receipts ``None`` on the unpinned path, since
-    only the currently served key is fetched. ``None`` must never be
-    presented as either grade string.
+    (``is_stub``); it is not ``WITNESSED`` (wrong signer, replayed or
+    tampered stamp, no ``checkpoint`` to bind to, an unpinned witness other
+    than the default, ``scitt_cose`` not installed); or it is ``WITNESSED``
+    but carries no label, or a value outside the two grades above. ``None``
+    must never be presented as either grade string.
 
     The label itself is read by a further ``scitt_cose.verify_receipt``
     pass driven by a throwaway probe key: ``verify_receipt`` fills
     ``protected_header_ext`` during its structural decode, before the
-    signature check, and ``verify_receipt_offline`` does not return that
-    field. The probe pass's own verdict is ignored -- it decodes the same
-    ``witness.receipt_b64`` bytes check 2 authenticated, and the COSE_Sign1
-    signature covers the protected header.
+    signature check, and ``verify_witness_stamp_tristate`` does not return
+    that field. The probe pass's own verdict is ignored -- it decodes the
+    same ``witness.receipt_b64`` bytes the ``WITNESSED`` check
+    authenticated, and the COSE_Sign1 signature covers the protected
+    header.
     """
     if getattr(witness, "is_stub", False):
         return None
@@ -828,19 +822,13 @@ def _receipt_grade(
 
         from scitt_cose import verify_receipt
 
-        from .checkpoint import StampVerdict, verify_receipt_offline, verify_witness_stamp_tristate
+        from .checkpoint import StampVerdict, verify_witness_stamp_tristate
     except ImportError:
         # scitt_cose isn't installed here -- it is not a required dependency,
         # and without it nothing can be verified, so the documented None.
         return None
     verdict, _errors = verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=ts_pubkey_pem)
-    if verdict is StampVerdict.INVALID:
-        return None
-    if ts_pubkey_pem is not None:
-        verified, _errors = verify_receipt_offline(witness, ts_pubkey_pem=ts_pubkey_pem)
-    else:
-        verified, _errors = verify_receipt_offline(witness, ts_base_url=witness.ts_url)
-    if not verified:
+    if verdict is not StampVerdict.WITNESSED:
         return None
     try:
         probe_pem = _grade_probe_pubkey_pem()
@@ -941,16 +929,15 @@ class CheckpointWitnessState:
         """Each effective witness's OWN receipt grade for this checkpoint,
         keyed by ``ts_url`` -- ``countersigned-observed`` / ``mmr-verified``,
         or ``None`` when that witness has no receipt that is bound to this
-        checkpoint and verifies under the key checked against (see
+        checkpoint and verifies under a key this process already trusts (see
         :func:`_receipt_grade`). This is the per-witness fact a surface lists
         beside :meth:`grade`'s derived client state -- see this class's
         docstring. A stub stamp's entry is always ``None``: a stub never
         reached a real witness, so it has no receipt to grade.
 
         With ``ts_pubkey_pem`` every receipt is checked against that one
-        pinned key, with no network call. Without it each witness's receipt
-        is checked against the key served at its own ``ts_url``, one request
-        per non-stub witness."""
+        pinned key. Without it only the library's default witness, under its
+        built-in key, can have a grade. Never makes a network call."""
         return {
             ts_url: _receipt_grade(self.checkpoint, w, ts_pubkey_pem=ts_pubkey_pem)
             for ts_url, w in self.effective_witnesses.items()

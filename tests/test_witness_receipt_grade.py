@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """A receipt grade (``-65537`` in the COSE Receipt's protected header) is
 reported only for a receipt that is bound to the checkpoint and whose
-signature verifies under the key it is checked against.
+signature verifies under a key this process already trusts: the caller's
+pinned key, or the library's built-in default witness key.
 
 ``scitt_cose.verify_receipt`` fills ``protected_header_ext`` during its
 structural decode, before the signature check, so reading the label from
@@ -9,8 +10,10 @@ that result without checking ``ok`` lets anyone who can mint a COSE_Sign1
 with their own key claim ``mmr-verified`` for a witness. These tests mint
 exactly that receipt and require ``None`` for it, and the same for a genuine
 receipt replayed from another checkpoint, while a genuine receipt for this
-checkpoint keeps its grade -- both with a pinned key and with the key served
-at the witness's ``ts_url`` over HTTP.
+checkpoint keeps its grade under a pinned key. Unpinned, a key served at the
+ledger-recorded ``ts_url`` is never fetched or trusted: whoever writes the
+ledger chooses that URL, so an attacker's server there serving the attacker's
+key must not turn a self-signed ``mmr-verified`` receipt into a grade.
 """
 from __future__ import annotations
 
@@ -82,7 +85,7 @@ def _keypair() -> tuple[bytes, bytes, bytes]:
 
 
 WITNESS_PRIV, WITNESS_PUB, WITNESS_RAW = _keypair()
-ATTACKER_PRIV, _ATTACKER_PUB, _ATTACKER_RAW = _keypair()
+ATTACKER_PRIV, _ATTACKER_PUB, ATTACKER_RAW = _keypair()
 
 
 def _receipt_b64(private_key_pem: bytes, grade: str | None, entry_hash: str) -> str:
@@ -129,44 +132,51 @@ def _witness(
     )
 
 
-class _WitnessPubkeyHandler(BaseHTTPRequestHandler):
-    """Serves the witness's real key at the path
-    ``verify_receipt_offline(..., ts_base_url=...)`` fetches it from."""
+class _KeyServer:
+    """A local HTTP server answering at the path a Transparency Service
+    publishes its key on (``/anchor/authority-pubkey``) with ``raw_key``,
+    counting every request -- the stand-in for a server the ledger's author
+    controls. ``requests`` staying 0 shows the key was never fetched."""
 
-    def do_GET(self) -> None:
-        if self.path != "/anchor/authority-pubkey":
-            self.send_error(404)
-            return
-        body = json.dumps({"pubkey_hex": WITNESS_RAW.hex()}).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    def __init__(self, raw_key: bytes) -> None:
+        self.requests = 0
+        key_server = self
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 -- stdlib signature
-        pass
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                key_server.requests += 1
+                body = json.dumps({"pubkey_hex": raw_key.hex()}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
 
+            def log_message(self, format: str, *args: object) -> None:  # noqa: A002 -- stdlib signature
+                pass
 
-def _serve_witness_key() -> Iterator[str]:
-    server = HTTPServer(("127.0.0.1", 0), _WitnessPubkeyHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_address[1]}"
-    finally:
-        server.shutdown()
-        server.server_close()
+        self._server = HTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._server.server_address[1]}"
+
+    def __enter__(self) -> _KeyServer:
+        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self._server.shutdown()
+        self._server.server_close()
 
 
 @pytest.fixture
-def witness_url() -> Iterator[str]:
-    yield from _serve_witness_key()
+def attacker_server() -> Iterator[_KeyServer]:
+    with _KeyServer(ATTACKER_RAW) as server:
+        yield server
 
 
 @pytest.fixture
-def second_witness_url() -> Iterator[str]:
-    yield from _serve_witness_key()
+def witness_server() -> Iterator[_KeyServer]:
+    with _KeyServer(WITNESS_RAW) as server:
+        yield server
 
 
 # -- the test receipts are the shape scitt_cose mints ------------------------
@@ -237,48 +247,55 @@ def test_no_checkpoint_to_bind_to_yields_no_grade() -> None:
     assert _receipt_grade(None, genuine, ts_pubkey_pem=WITNESS_PUB) is None
 
 
-# -- key served at the witness's own ts_url (the default path) --------------
+# -- unpinned (the default path): nothing is fetched from ts_url ----------
 
 
-def test_attacker_signed_receipt_has_no_grade_when_key_fetched_from_ts_url(witness_url: str) -> None:
-    forged = _witness(witness_url, ATTACKER_PRIV, "mmr-verified")
+def test_attacker_ts_url_serving_attacker_key_gives_self_signed_receipt_no_grade(
+    attacker_server: _KeyServer,
+) -> None:
+    # The ledger's author points ts_url at their own server, which serves
+    # their own key, and self-signs an mmr-verified receipt bound to this
+    # checkpoint. Fetch-and-trust would verify it; the default path must not.
+    forged = _witness(attacker_server.url, ATTACKER_PRIV, "mmr-verified")
+    assert _receipt_grade(CHECKPOINT, forged) is None
+    assert attacker_server.requests == 0
+
+
+def test_genuine_receipt_at_an_unpinned_non_default_ts_url_has_no_grade(
+    witness_server: _KeyServer,
+) -> None:
+    # Even the real witness key served at ts_url is not trusted: the server
+    # is not what makes the key trustworthy. Pinning it is.
+    genuine = _witness(witness_server.url, WITNESS_PRIV, "countersigned-observed")
+    assert _receipt_grade(CHECKPOINT, genuine) is None
+    assert _receipt_grade(CHECKPOINT, genuine, ts_pubkey_pem=WITNESS_PUB) == "countersigned-observed"
+    assert witness_server.requests == 0
+
+
+def test_receipt_signed_by_another_key_at_the_default_ts_url_has_no_grade() -> None:
+    # Unpinned, the default ts_url is checked against the library's
+    # built-in key, which neither test key is.
+    forged = _witness(DEFAULT_TS_URL, ATTACKER_PRIV, "mmr-verified")
     assert _receipt_grade(CHECKPOINT, forged) is None
 
 
-def test_genuine_receipt_keeps_its_grade_when_key_fetched_from_ts_url(witness_url: str) -> None:
-    genuine = _witness(witness_url, WITNESS_PRIV, "countersigned-observed")
-    assert _receipt_grade(CHECKPOINT, genuine) == "countersigned-observed"
-
-
-def test_genuine_receipt_replayed_from_another_checkpoint_has_no_grade_when_key_fetched(
-    witness_url: str,
+def test_receipt_grades_unpinned_trusts_no_served_key(
+    witness_server: _KeyServer, attacker_server: _KeyServer
 ) -> None:
-    replayed = _witness(witness_url, WITNESS_PRIV, "mmr-verified", receipt_for=OTHER_CHECKPOINT)
-    assert _receipt_grade(CHECKPOINT, replayed) is None
-
-
-def test_unreachable_witness_key_yields_no_grade() -> None:
-    # Port 9 (discard) on loopback: nothing listens, the key fetch fails,
-    # and an unverifiable receipt must not keep its claimed grade.
-    genuine = _witness("http://127.0.0.1:9", WITNESS_PRIV, "mmr-verified")
-    assert _receipt_grade(CHECKPOINT, genuine) is None
-
-
-def test_receipt_grades_rejects_the_forged_signature_beside_a_genuine_one(
-    witness_url: str, second_witness_url: str
-) -> None:
-    # Both URLs serve the witness key, so the forged entry reaches the
-    # signature check and is rejected there, not by a failed key fetch.
     state = CheckpointWitnessState(
         entry_digest=CHECKPOINT.digest(),
         checkpoint=CHECKPOINT,
         effective_witnesses={
-            witness_url: _witness(witness_url, WITNESS_PRIV, "mmr-verified"),
-            second_witness_url: _witness(second_witness_url, ATTACKER_PRIV, "mmr-verified"),
+            witness_server.url: _witness(witness_server.url, WITNESS_PRIV, "mmr-verified"),
+            attacker_server.url: _witness(attacker_server.url, ATTACKER_PRIV, "mmr-verified"),
         },
     )
-    assert state.receipt_grades() == {witness_url: "mmr-verified", second_witness_url: None}
+    assert state.receipt_grades() == {witness_server.url: None, attacker_server.url: None}
+    # Pinned to the witness key, the genuine receipt is graded and the
+    # attacker's is rejected at the signature check.
     assert state.receipt_grades(ts_pubkey_pem=WITNESS_PUB) == {
-        witness_url: "mmr-verified",
-        second_witness_url: None,
+        witness_server.url: "mmr-verified",
+        attacker_server.url: None,
     }
+    assert witness_server.requests == 0
+    assert attacker_server.requests == 0
