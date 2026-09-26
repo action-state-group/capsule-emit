@@ -762,6 +762,112 @@ def _persist_checkpoint_stamp(
 # section for why that is deliberate, not an omission.
 
 
+#: The two receipt grades register row 5 defines. A label value outside this
+#: set is not reported as a grade, even from a receipt that verifies.
+_RECEIPT_GRADES = frozenset({"countersigned-observed", "mmr-verified"})
+
+
+def _receipt_grade(
+    checkpoint: Any,  # capsule_emit.checkpoint.CheckpointRecord
+    witness: Any,  # capsule_emit.checkpoint.WitnessRecord
+    *,
+    ts_pubkey_pem: bytes | str | None = None,
+) -> str | None:
+    """The RECEIPT grade this one witness put on its stamp for ``checkpoint``
+    -- decoded from the COSE Receipt's protected header, private-use label
+    ``-65537`` (register row 5: ``countersigned-observed`` = existence +
+    time, ``mmr-verified`` = consistency checked). This is NOT
+    :class:`CheckpointWitnessState`'s ``Grade`` (``witnessed`` /
+    ``self-attested``) -- that is the CLIENT state, derived from whether
+    ANY receipt exists at all, never a claim about what was checked. See
+    that class's docstring for the two-level rule.
+
+    Label ``-65537`` is read only from a stamp that
+    ``capsule_emit.checkpoint.verify_witness_stamp_tristate`` grades
+    ``WITNESSED`` -- the same bar :meth:`CheckpointWitnessState.grade` uses
+    -- because anyone can mint a COSE_Sign1 with their own key and write
+    ``"mmr-verified"`` into its protected header. ``WITNESSED`` means:
+
+    1. **Bound to this checkpoint.** ``witness.entry_hash`` equals the hash
+       of ``checkpoint.digest()``, so a genuine receipt replayed from
+       another checkpoint fails.
+    2. **Signed by a key this process already trusts.** With
+       ``ts_pubkey_pem`` the receipt must verify under that pinned key (one
+       key, applied to every witness it is passed with). Without it, only a
+       witness at the library's default ``ts_url`` can pass, under the
+       public key built into the library. No key is ever fetched: a
+       ``ts_url`` is written by whoever writes the ledger, so a key served
+       there proves nothing about who signed the receipt.
+
+    ``None`` -- "no verified grade" -- when: the stamp is a stub
+    (``is_stub``); it is not ``WITNESSED`` (wrong signer, replayed or
+    tampered stamp, no ``checkpoint`` to bind to, an unpinned witness other
+    than the default, ``scitt_cose`` not installed); or it is ``WITNESSED``
+    but carries no label, or a value outside the two grades above. ``None``
+    must never be presented as either grade string.
+
+    The label itself is read by a further ``scitt_cose.verify_receipt``
+    pass driven by a throwaway probe key: ``verify_receipt`` fills
+    ``protected_header_ext`` during its structural decode, before the
+    signature check, and ``verify_witness_stamp_tristate`` does not return
+    that field. The probe pass's own verdict is ignored -- it decodes the
+    same ``witness.receipt_b64`` bytes the ``WITNESSED`` check
+    authenticated, and the COSE_Sign1 signature covers the protected
+    header.
+    """
+    if getattr(witness, "is_stub", False):
+        return None
+    try:
+        import base64
+
+        from scitt_cose import verify_receipt
+
+        from .checkpoint import StampVerdict, verify_witness_stamp_tristate
+    except ImportError:
+        # scitt_cose isn't installed here -- it is not a required dependency,
+        # and without it nothing can be verified, so the documented None.
+        return None
+    verdict, _errors = verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=ts_pubkey_pem)
+    if verdict is not StampVerdict.WITNESSED:
+        return None
+    try:
+        probe_pem = _grade_probe_pubkey_pem()
+        receipt_bytes = base64.b64decode(witness.receipt_b64)
+        result = verify_receipt(
+            receipt_bytes,
+            leaf_entry_hex=witness.entry_hash,
+            log_public_key_pem=probe_pem,
+        )
+    except Exception:
+        # Broad on purpose: the bytes already verified above, so a failure
+        # here is an unexpected shape from the probe decode, and it must
+        # degrade to "no verified grade" (None), never raise into a
+        # rendering path. It cannot turn a missing grade into a present one.
+        return None
+    grade = result.protected_header_ext.get(-65537)
+    return grade if grade in _RECEIPT_GRADES else None
+
+
+_grade_probe_pubkey_pem_cache: bytes | None = None
+
+
+def _grade_probe_pubkey_pem() -> bytes:
+    """A syntactically valid Ed25519 public key PEM, generated once per
+    process and cached -- NOT a trust anchor, used only to drive
+    ``scitt_cose.verify_receipt`` far enough to decode the protected header
+    (see :func:`_receipt_grade`)."""
+    global _grade_probe_pubkey_pem_cache
+    if _grade_probe_pubkey_pem_cache is None:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+        public_key = Ed25519PrivateKey.generate().public_key()
+        _grade_probe_pubkey_pem_cache = public_key.public_bytes(
+            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+        )
+    return _grade_probe_pubkey_pem_cache
+
+
 @dataclass(frozen=True)
 class CheckpointWitnessState:
     """One persisted checkpoint stamp's EFFECTIVE witness set: its own
@@ -771,7 +877,21 @@ class CheckpointWitnessState:
     (redundantly) backfilled still counts once. This is the merged view
     every consumer of witness state should read from -- never
     ``checkpoint.grade()``/``checkpoint.witnesses`` directly once backfills
-    exist, since those only ever see the original registration."""
+    exist, since those only ever see the original registration.
+
+    **Two vocabularies, never conflated (register row 5 vs this module):**
+    the RECEIPT grade (``countersigned-observed`` / ``mmr-verified``, in
+    each receipt's own COSE protected header) is what THAT witness verified
+    -- a per-witness fact, read via :meth:`receipt_grades`. The CLIENT
+    state (:meth:`grade`, ``Grade.SELF_ATTESTED`` / ``Grade.WITNESSED``) is
+    DERIVED and never a claim: ``witnessed`` means only "at least one
+    receipt exists," independent of what any of them graded themselves. A
+    checkpoint whose only receipt is existence-and-time
+    (``countersigned-observed``) is still ``witnessed`` here -- correctly,
+    since that is what ``witnessed`` means -- but it must never be
+    RENDERED as consistency-verified on that basis; a surface showing
+    ``grade()`` must show :meth:`receipt_grades` beside it, not instead of
+    it."""
 
     entry_digest: str
     checkpoint: Any  # capsule_emit.checkpoint.CheckpointRecord
@@ -804,6 +924,24 @@ class CheckpointWitnessState:
             )
             else Grade.SELF_ATTESTED
         )
+
+    def receipt_grades(self, *, ts_pubkey_pem: bytes | str | None = None) -> dict[str, str | None]:
+        """Each effective witness's OWN receipt grade for this checkpoint,
+        keyed by ``ts_url`` -- ``countersigned-observed`` / ``mmr-verified``,
+        or ``None`` when that witness has no receipt that is bound to this
+        checkpoint and verifies under a key this process already trusts (see
+        :func:`_receipt_grade`). This is the per-witness fact a surface lists
+        beside :meth:`grade`'s derived client state -- see this class's
+        docstring. A stub stamp's entry is always ``None``: a stub never
+        reached a real witness, so it has no receipt to grade.
+
+        With ``ts_pubkey_pem`` every receipt is checked against that one
+        pinned key. Without it only the library's default witness, under its
+        built-in key, can have a grade. Never makes a network call."""
+        return {
+            ts_url: _receipt_grade(self.checkpoint, w, ts_pubkey_pem=ts_pubkey_pem)
+            for ts_url, w in self.effective_witnesses.items()
+        }
 
 
 def checkpoint_witness_states(ledger_path: str) -> list[CheckpointWitnessState]:
