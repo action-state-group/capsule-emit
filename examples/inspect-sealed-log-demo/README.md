@@ -17,8 +17,8 @@ sample's payload disclosed, one with a single sample's payload withheld.
    establishes **integrity and existence from the moment of sealing** — not
    contemporaneous capture at the harness boundary while each model call
    happened. A "seal as it fires," attached-at-the-boundary mechanism is a
-   different, real thing, and is the filed follow-up
-   `[evaluator-inspect-live-hook-and-real-eval]` — a next step, not built here.
+   different, real thing: a follow-up will wire the live hook against a real
+   eval. It is a next step, not built here.
 3. **One witness, ours.** The checkpoint below was registered with a single
    witness, `witness.agentactioncapsule.org`, operated by the same party that
    publishes the Agent Action Capsule spec. Two separate things are true, and
