@@ -138,7 +138,7 @@ def build_evidence_markdown(
     if viewer_link:
         try:
             url = build_url(capsules, base_url=base_url, bundle=len(capsules) > 1)
-        except PermalinkError as exc:  # pragma: no cover — inputs already validated
+        except PermalinkError as exc:  # e.g. a ledger too large for an inline permalink
             raise EvidenceError(str(exc)) from exc
         lines += ["", f"[Open the capsule chain in the verify viewer]({url})"]
     lines += [

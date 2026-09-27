@@ -1,0 +1,707 @@
+{
+  "description": "Permalink fragments: evidence-bundle/v2 §9 codec (unpadded base64url over UTF-8 JCS) and the pointer form. fragment, bundle_digest and pointer_fragment were produced by an independent implementation (agent-action-capsule go/bundle.EncodeFragment and go/canonical.JCS), not by capsule-emit.",
+  "locations": [
+    "https://bundles.example.org/b/1.json",
+    "ipfs://bafyexample"
+  ],
+  "cases": [
+    {
+      "id": "single",
+      "bundle": false,
+      "capsules": [
+        {
+          "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+          "format_version": "4",
+          "capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+          "action_id": "write_order/80b73358-1270-4a79-a2bc-fc9a25d3d56c",
+          "action_type": "decide",
+          "operator": "example-org",
+          "developer": "agent@v1",
+          "timestamp": "2026-09-27T17:48:25.970843Z",
+          "canonicalization_id": "jcs",
+          "model_attestation": {
+            "compute_attestation": {
+              "agent_input_digest": "8012847ed726ac00fab50857380443bf52ebd93a84bb78ebb337d858b7db0f35",
+              "agent_output_digest": "32fd818d90a120da932941514c65803ee804250b97c480763b987835fc07259e"
+            }
+          },
+          "assurance": {
+            "attestation_mode": "self_attested",
+            "effect_mode": "not_applicable",
+            "ledger_mode": "standalone"
+          },
+          "disposition": {
+            "decision": "accept",
+            "approver": "policy",
+            "human_disposed": false,
+            "verdict_class": "executed"
+          }
+        }
+      ],
+      "disclosures": null,
+      "expected_bundle": {
+        "bundle_version": "2",
+        "bundle_kind": "evidence-bundle/v2",
+        "root": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+        "records": [
+          {
+            "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+            "format_version": "4",
+            "capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+            "action_id": "write_order/80b73358-1270-4a79-a2bc-fc9a25d3d56c",
+            "action_type": "decide",
+            "operator": "example-org",
+            "developer": "agent@v1",
+            "timestamp": "2026-09-27T17:48:25.970843Z",
+            "canonicalization_id": "jcs",
+            "model_attestation": {
+              "compute_attestation": {
+                "agent_input_digest": "8012847ed726ac00fab50857380443bf52ebd93a84bb78ebb337d858b7db0f35",
+                "agent_output_digest": "32fd818d90a120da932941514c65803ee804250b97c480763b987835fc07259e"
+              }
+            },
+            "assurance": {
+              "attestation_mode": "self_attested",
+              "effect_mode": "not_applicable",
+              "ledger_mode": "standalone"
+            },
+            "disposition": {
+              "decision": "accept",
+              "approver": "policy",
+              "human_disposed": false,
+              "verdict_class": "executed"
+            }
+          }
+        ],
+        "completeness": {
+          "closure_depth": 1,
+          "records_mode": "complete"
+        }
+      },
+      "fragment": "eyJidW5kbGVfa2luZCI6ImV2aWRlbmNlLWJ1bmRsZS92MiIsImJ1bmRsZV92ZXJzaW9uIjoiMiIsImNvbXBsZXRlbmVzcyI6eyJjbG9zdXJlX2RlcHRoIjoxLCJyZWNvcmRzX21vZGUiOiJjb21wbGV0ZSJ9LCJyZWNvcmRzIjpbeyJhY3Rpb25faWQiOiJ3cml0ZV9vcmRlci84MGI3MzM1OC0xMjcwLTRhNzktYTJiYy1mYzlhMjVkM2Q1NmMiLCJhY3Rpb25fdHlwZSI6ImRlY2lkZSIsImFzc3VyYW5jZSI6eyJhdHRlc3RhdGlvbl9tb2RlIjoic2VsZl9hdHRlc3RlZCIsImVmZmVjdF9tb2RlIjoibm90X2FwcGxpY2FibGUiLCJsZWRnZXJfbW9kZSI6InN0YW5kYWxvbmUifSwiY2Fub25pY2FsaXphdGlvbl9pZCI6ImpjcyIsImNhcHN1bGVfaWQiOiIwMTUyNzI4YTQzNDllZmM2MmNmNmRmNTlkY2MwNDhlZTk4OTBiMTBlNGE0ZjNiMWVlODA0OGRkNjQzYWZkNTk5IiwiZGV2ZWxvcGVyIjoiYWdlbnRAdjEiLCJkaXNwb3NpdGlvbiI6eyJhcHByb3ZlciI6InBvbGljeSIsImRlY2lzaW9uIjoiYWNjZXB0IiwiaHVtYW5fZGlzcG9zZWQiOmZhbHNlLCJ2ZXJkaWN0X2NsYXNzIjoiZXhlY3V0ZWQifSwiZm9ybWF0X3ZlcnNpb24iOiI0IiwibW9kZWxfYXR0ZXN0YXRpb24iOnsiY29tcHV0ZV9hdHRlc3RhdGlvbiI6eyJhZ2VudF9pbnB1dF9kaWdlc3QiOiI4MDEyODQ3ZWQ3MjZhYzAwZmFiNTA4NTczODA0NDNiZjUyZWJkOTNhODRiYjc4ZWJiMzM3ZDg1OGI3ZGIwZjM1IiwiYWdlbnRfb3V0cHV0X2RpZ2VzdCI6IjMyZmQ4MThkOTBhMTIwZGE5MzI5NDE1MTRjNjU4MDNlZTgwNDI1MGI5N2M0ODA3NjNiOTg3ODM1ZmMwNzI1OWUifX0sIm9wZXJhdG9yIjoiZXhhbXBsZS1vcmciLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTA5LTI3VDE3OjQ4OjI1Ljk3MDg0M1oifV0sInJvb3QiOiIwMTUyNzI4YTQzNDllZmM2MmNmNmRmNTlkY2MwNDhlZTk4OTBiMTBlNGE0ZjNiMWVlODA0OGRkNjQzYWZkNTk5In0",
+      "bundle_digest": "b02f20c06707fb2600ebd573f4d28f0826fdfa58aeaabada9205fc23c1d9a9ef",
+      "pointer": {
+        "bundle_ref": {
+          "digest": "b02f20c06707fb2600ebd573f4d28f0826fdfa58aeaabada9205fc23c1d9a9ef",
+          "root": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+          "locations": [
+            "https://bundles.example.org/b/1.json",
+            "ipfs://bafyexample"
+          ]
+        }
+      },
+      "pointer_fragment": "eyJidW5kbGVfcmVmIjp7ImRpZ2VzdCI6ImIwMmYyMGMwNjcwN2ZiMjYwMGViZDU3M2Y0ZDI4ZjA4MjZmZGZhNThhZWFhYmFkYTkyMDVmYzIzYzFkOWE5ZWYiLCJsb2NhdGlvbnMiOlsiaHR0cHM6Ly9idW5kbGVzLmV4YW1wbGUub3JnL2IvMS5qc29uIiwiaXBmczovL2JhZnlleGFtcGxlIl0sInJvb3QiOiIwMTUyNzI4YTQzNDllZmM2MmNmNmRmNTlkY2MwNDhlZTk4OTBiMTBlNGE0ZjNiMWVlODA0OGRkNjQzYWZkNTk5In19"
+    },
+    {
+      "id": "chain",
+      "bundle": true,
+      "capsules": [
+        {
+          "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+          "format_version": "4",
+          "capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+          "action_id": "write_order/80b73358-1270-4a79-a2bc-fc9a25d3d56c",
+          "action_type": "decide",
+          "operator": "example-org",
+          "developer": "agent@v1",
+          "timestamp": "2026-09-27T17:48:25.970843Z",
+          "canonicalization_id": "jcs",
+          "model_attestation": {
+            "compute_attestation": {
+              "agent_input_digest": "8012847ed726ac00fab50857380443bf52ebd93a84bb78ebb337d858b7db0f35",
+              "agent_output_digest": "32fd818d90a120da932941514c65803ee804250b97c480763b987835fc07259e"
+            }
+          },
+          "assurance": {
+            "attestation_mode": "self_attested",
+            "effect_mode": "not_applicable",
+            "ledger_mode": "standalone"
+          },
+          "disposition": {
+            "decision": "accept",
+            "approver": "policy",
+            "human_disposed": false,
+            "verdict_class": "executed"
+          }
+        },
+        {
+          "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+          "format_version": "4",
+          "capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+          "action_id": "approve_order/45f82102-b2ab-4a3a-853f-afcae6f5e672",
+          "action_type": "decide",
+          "operator": "example-org",
+          "developer": "agent@v1",
+          "timestamp": "2026-09-27T17:48:26.076212Z",
+          "canonicalization_id": "jcs",
+          "model_attestation": {
+            "compute_attestation": {
+              "agent_input_digest": "1dcff78aa087758fa87d926b730781a5f4ff4c4b5935d262a2dfb43fb15c12e6",
+              "agent_output_digest": "233b788f32203a6484c728734a08e6634e57a2cdcb5863f799805c6a86783edc"
+            }
+          },
+          "assurance": {
+            "attestation_mode": "self_attested",
+            "effect_mode": "not_applicable",
+            "ledger_mode": "chained"
+          },
+          "disposition": {
+            "decision": "accept",
+            "approver": "policy",
+            "human_disposed": false,
+            "verdict_class": "blocked"
+          },
+          "chain": {
+            "parent_capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+            "relation": "confirms"
+          }
+        },
+        {
+          "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+          "format_version": "4",
+          "capsule_id": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+          "action_id": "escalate/29cc3295-3d00-428b-ada9-1740bd971065",
+          "action_type": "decide",
+          "operator": "example-org",
+          "developer": "agent@v1",
+          "timestamp": "2026-09-27T17:48:26.077884Z",
+          "canonicalization_id": "jcs",
+          "model_attestation": {
+            "compute_attestation": {
+              "agent_input_digest": "3f10c47fd92bdaba0f65835f64b0385ed554f1bbb56b3583520ae1a1ea3e630e"
+            }
+          },
+          "assurance": {
+            "attestation_mode": "self_attested",
+            "effect_mode": "not_applicable",
+            "ledger_mode": "chained"
+          },
+          "disposition": {
+            "decision": "accept",
+            "approver": "policy",
+            "human_disposed": false,
+            "verdict_class": "executed"
+          },
+          "chain": {
+            "parent_capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+            "relation": "confirms"
+          }
+        }
+      ],
+      "disclosures": null,
+      "expected_bundle": {
+        "bundle_version": "2",
+        "bundle_kind": "evidence-bundle/v2",
+        "root": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+        "records": [
+          {
+            "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+            "format_version": "4",
+            "capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+            "action_id": "write_order/80b73358-1270-4a79-a2bc-fc9a25d3d56c",
+            "action_type": "decide",
+            "operator": "example-org",
+            "developer": "agent@v1",
+            "timestamp": "2026-09-27T17:48:25.970843Z",
+            "canonicalization_id": "jcs",
+            "model_attestation": {
+              "compute_attestation": {
+                "agent_input_digest": "8012847ed726ac00fab50857380443bf52ebd93a84bb78ebb337d858b7db0f35",
+                "agent_output_digest": "32fd818d90a120da932941514c65803ee804250b97c480763b987835fc07259e"
+              }
+            },
+            "assurance": {
+              "attestation_mode": "self_attested",
+              "effect_mode": "not_applicable",
+              "ledger_mode": "standalone"
+            },
+            "disposition": {
+              "decision": "accept",
+              "approver": "policy",
+              "human_disposed": false,
+              "verdict_class": "executed"
+            }
+          },
+          {
+            "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+            "format_version": "4",
+            "capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+            "action_id": "approve_order/45f82102-b2ab-4a3a-853f-afcae6f5e672",
+            "action_type": "decide",
+            "operator": "example-org",
+            "developer": "agent@v1",
+            "timestamp": "2026-09-27T17:48:26.076212Z",
+            "canonicalization_id": "jcs",
+            "model_attestation": {
+              "compute_attestation": {
+                "agent_input_digest": "1dcff78aa087758fa87d926b730781a5f4ff4c4b5935d262a2dfb43fb15c12e6",
+                "agent_output_digest": "233b788f32203a6484c728734a08e6634e57a2cdcb5863f799805c6a86783edc"
+              }
+            },
+            "assurance": {
+              "attestation_mode": "self_attested",
+              "effect_mode": "not_applicable",
+              "ledger_mode": "chained"
+            },
+            "disposition": {
+              "decision": "accept",
+              "approver": "policy",
+              "human_disposed": false,
+              "verdict_class": "blocked"
+            },
+            "chain": {
+              "parent_capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+              "relation": "confirms"
+            }
+          },
+          {
+            "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+            "format_version": "4",
+            "capsule_id": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+            "action_id": "escalate/29cc3295-3d00-428b-ada9-1740bd971065",
+            "action_type": "decide",
+            "operator": "example-org",
+            "developer": "agent@v1",
+            "timestamp": "2026-09-27T17:48:26.077884Z",
+            "canonicalization_id": "jcs",
+            "model_attestation": {
+              "compute_attestation": {
+                "agent_input_digest": "3f10c47fd92bdaba0f65835f64b0385ed554f1bbb56b3583520ae1a1ea3e630e"
+              }
+            },
+            "assurance": {
+              "attestation_mode": "self_attested",
+              "effect_mode": "not_applicable",
+              "ledger_mode": "chained"
+            },
+            "disposition": {
+              "decision": "accept",
+              "approver": "policy",
+              "human_disposed": false,
+              "verdict_class": "executed"
+            },
+            "chain": {
+              "parent_capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+              "relation": "confirms"
+            }
+          }
+        ],
+        "completeness": {
+          "closure_depth": 3,
+          "records_mode": "complete"
+        }
+      },
+      "fragment": "eyJidW5kbGVfa2luZCI6ImV2aWRlbmNlLWJ1bmRsZS92MiIsImJ1bmRsZV92ZXJzaW9uIjoiMiIsImNvbXBsZXRlbmVzcyI6eyJjbG9zdXJlX2RlcHRoIjozLCJyZWNvcmRzX21vZGUiOiJjb21wbGV0ZSJ9LCJyZWNvcmRzIjpbeyJhY3Rpb25faWQiOiJ3cml0ZV9vcmRlci84MGI3MzM1OC0xMjcwLTRhNzktYTJiYy1mYzlhMjVkM2Q1NmMiLCJhY3Rpb25fdHlwZSI6ImRlY2lkZSIsImFzc3VyYW5jZSI6eyJhdHRlc3RhdGlvbl9tb2RlIjoic2VsZl9hdHRlc3RlZCIsImVmZmVjdF9tb2RlIjoibm90X2FwcGxpY2FibGUiLCJsZWRnZXJfbW9kZSI6InN0YW5kYWxvbmUifSwiY2Fub25pY2FsaXphdGlvbl9pZCI6ImpjcyIsImNhcHN1bGVfaWQiOiIwMTUyNzI4YTQzNDllZmM2MmNmNmRmNTlkY2MwNDhlZTk4OTBiMTBlNGE0ZjNiMWVlODA0OGRkNjQzYWZkNTk5IiwiZGV2ZWxvcGVyIjoiYWdlbnRAdjEiLCJkaXNwb3NpdGlvbiI6eyJhcHByb3ZlciI6InBvbGljeSIsImRlY2lzaW9uIjoiYWNjZXB0IiwiaHVtYW5fZGlzcG9zZWQiOmZhbHNlLCJ2ZXJkaWN0X2NsYXNzIjoiZXhlY3V0ZWQifSwiZm9ybWF0X3ZlcnNpb24iOiI0IiwibW9kZWxfYXR0ZXN0YXRpb24iOnsiY29tcHV0ZV9hdHRlc3RhdGlvbiI6eyJhZ2VudF9pbnB1dF9kaWdlc3QiOiI4MDEyODQ3ZWQ3MjZhYzAwZmFiNTA4NTczODA0NDNiZjUyZWJkOTNhODRiYjc4ZWJiMzM3ZDg1OGI3ZGIwZjM1IiwiYWdlbnRfb3V0cHV0X2RpZ2VzdCI6IjMyZmQ4MThkOTBhMTIwZGE5MzI5NDE1MTRjNjU4MDNlZTgwNDI1MGI5N2M0ODA3NjNiOTg3ODM1ZmMwNzI1OWUifX0sIm9wZXJhdG9yIjoiZXhhbXBsZS1vcmciLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTA5LTI3VDE3OjQ4OjI1Ljk3MDg0M1oifSx7ImFjdGlvbl9pZCI6ImFwcHJvdmVfb3JkZXIvNDVmODIxMDItYjJhYi00YTNhLTg1M2YtYWZjYWU2ZjVlNjcyIiwiYWN0aW9uX3R5cGUiOiJkZWNpZGUiLCJhc3N1cmFuY2UiOnsiYXR0ZXN0YXRpb25fbW9kZSI6InNlbGZfYXR0ZXN0ZWQiLCJlZmZlY3RfbW9kZSI6Im5vdF9hcHBsaWNhYmxlIiwibGVkZ2VyX21vZGUiOiJjaGFpbmVkIn0sImNhbm9uaWNhbGl6YXRpb25faWQiOiJqY3MiLCJjYXBzdWxlX2lkIjoiNjUxYWZkOTAxN2VlOGVhMzE1ZTUyZjBkMTFkMjRlMTM2ZjY5ZDVmZjc3NTlmNDI4M2JhNGIxYzlmMjA4MDRjMyIsImNoYWluIjp7InBhcmVudF9jYXBzdWxlX2lkIjoiMDE1MjcyOGE0MzQ5ZWZjNjJjZjZkZjU5ZGNjMDQ4ZWU5ODkwYjEwZTRhNGYzYjFlZTgwNDhkZDY0M2FmZDU5OSIsInJlbGF0aW9uIjoiY29uZmlybXMifSwiZGV2ZWxvcGVyIjoiYWdlbnRAdjEiLCJkaXNwb3NpdGlvbiI6eyJhcHByb3ZlciI6InBvbGljeSIsImRlY2lzaW9uIjoiYWNjZXB0IiwiaHVtYW5fZGlzcG9zZWQiOmZhbHNlLCJ2ZXJkaWN0X2NsYXNzIjoiYmxvY2tlZCJ9LCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6IjFkY2ZmNzhhYTA4Nzc1OGZhODdkOTI2YjczMDc4MWE1ZjRmZjRjNGI1OTM1ZDI2MmEyZGZiNDNmYjE1YzEyZTYiLCJhZ2VudF9vdXRwdXRfZGlnZXN0IjoiMjMzYjc4OGYzMjIwM2E2NDg0YzcyODczNGEwOGU2NjM0ZTU3YTJjZGNiNTg2M2Y3OTk4MDVjNmE4Njc4M2VkYyJ9fSwib3BlcmF0b3IiOiJleGFtcGxlLW9yZyIsInNwZWNfdmVyc2lvbiI6ImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wNSIsInRpbWVzdGFtcCI6IjIwMjYtMDktMjdUMTc6NDg6MjYuMDc2MjEyWiJ9LHsiYWN0aW9uX2lkIjoiZXNjYWxhdGUvMjljYzMyOTUtM2QwMC00MjhiLWFkYTktMTc0MGJkOTcxMDY1IiwiYWN0aW9uX3R5cGUiOiJkZWNpZGUiLCJhc3N1cmFuY2UiOnsiYXR0ZXN0YXRpb25fbW9kZSI6InNlbGZfYXR0ZXN0ZWQiLCJlZmZlY3RfbW9kZSI6Im5vdF9hcHBsaWNhYmxlIiwibGVkZ2VyX21vZGUiOiJjaGFpbmVkIn0sImNhbm9uaWNhbGl6YXRpb25faWQiOiJqY3MiLCJjYXBzdWxlX2lkIjoiY2U0ODU4NTczZjVlZDNhODk4MWI2MDQ5NzliMDA1NWM0ZjczNzY2NzhlYWE3MjA2ZjNjZGI0N2Y1ZTFjYjI5YyIsImNoYWluIjp7InBhcmVudF9jYXBzdWxlX2lkIjoiNjUxYWZkOTAxN2VlOGVhMzE1ZTUyZjBkMTFkMjRlMTM2ZjY5ZDVmZjc3NTlmNDI4M2JhNGIxYzlmMjA4MDRjMyIsInJlbGF0aW9uIjoiY29uZmlybXMifSwiZGV2ZWxvcGVyIjoiYWdlbnRAdjEiLCJkaXNwb3NpdGlvbiI6eyJhcHByb3ZlciI6InBvbGljeSIsImRlY2lzaW9uIjoiYWNjZXB0IiwiaHVtYW5fZGlzcG9zZWQiOmZhbHNlLCJ2ZXJkaWN0X2NsYXNzIjoiZXhlY3V0ZWQifSwiZm9ybWF0X3ZlcnNpb24iOiI0IiwibW9kZWxfYXR0ZXN0YXRpb24iOnsiY29tcHV0ZV9hdHRlc3RhdGlvbiI6eyJhZ2VudF9pbnB1dF9kaWdlc3QiOiIzZjEwYzQ3ZmQ5MmJkYWJhMGY2NTgzNWY2NGIwMzg1ZWQ1NTRmMWJiYjU2YjM1ODM1MjBhZTFhMWVhM2U2MzBlIn19LCJvcGVyYXRvciI6ImV4YW1wbGUtb3JnIiwic3BlY192ZXJzaW9uIjoiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTA1IiwidGltZXN0YW1wIjoiMjAyNi0wOS0yN1QxNzo0ODoyNi4wNzc4ODRaIn1dLCJyb290IjoiY2U0ODU4NTczZjVlZDNhODk4MWI2MDQ5NzliMDA1NWM0ZjczNzY2NzhlYWE3MjA2ZjNjZGI0N2Y1ZTFjYjI5YyJ9",
+      "bundle_digest": "25450de234fc1a1c925418855e65ea7e6be0c56039d8f847c62ea70fa960d5c6",
+      "pointer": {
+        "bundle_ref": {
+          "digest": "25450de234fc1a1c925418855e65ea7e6be0c56039d8f847c62ea70fa960d5c6",
+          "root": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+          "locations": [
+            "https://bundles.example.org/b/1.json",
+            "ipfs://bafyexample"
+          ]
+        }
+      },
+      "pointer_fragment": "eyJidW5kbGVfcmVmIjp7ImRpZ2VzdCI6IjI1NDUwZGUyMzRmYzFhMWM5MjU0MTg4NTVlNjVlYTdlNmJlMGM1NjAzOWQ4Zjg0N2M2MmVhNzBmYTk2MGQ1YzYiLCJsb2NhdGlvbnMiOlsiaHR0cHM6Ly9idW5kbGVzLmV4YW1wbGUub3JnL2IvMS5qc29uIiwiaXBmczovL2JhZnlleGFtcGxlIl0sInJvb3QiOiJjZTQ4NTg1NzNmNWVkM2E4OTgxYjYwNDk3OWIwMDU1YzRmNzM3NjY3OGVhYTcyMDZmM2NkYjQ3ZjVlMWNiMjljIn19"
+    },
+    {
+      "id": "chain-disclosed",
+      "bundle": true,
+      "capsules": [
+        {
+          "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+          "format_version": "4",
+          "capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+          "action_id": "write_order/80b73358-1270-4a79-a2bc-fc9a25d3d56c",
+          "action_type": "decide",
+          "operator": "example-org",
+          "developer": "agent@v1",
+          "timestamp": "2026-09-27T17:48:25.970843Z",
+          "canonicalization_id": "jcs",
+          "model_attestation": {
+            "compute_attestation": {
+              "agent_input_digest": "8012847ed726ac00fab50857380443bf52ebd93a84bb78ebb337d858b7db0f35",
+              "agent_output_digest": "32fd818d90a120da932941514c65803ee804250b97c480763b987835fc07259e"
+            }
+          },
+          "assurance": {
+            "attestation_mode": "self_attested",
+            "effect_mode": "not_applicable",
+            "ledger_mode": "standalone"
+          },
+          "disposition": {
+            "decision": "accept",
+            "approver": "policy",
+            "human_disposed": false,
+            "verdict_class": "executed"
+          }
+        },
+        {
+          "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+          "format_version": "4",
+          "capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+          "action_id": "approve_order/45f82102-b2ab-4a3a-853f-afcae6f5e672",
+          "action_type": "decide",
+          "operator": "example-org",
+          "developer": "agent@v1",
+          "timestamp": "2026-09-27T17:48:26.076212Z",
+          "canonicalization_id": "jcs",
+          "model_attestation": {
+            "compute_attestation": {
+              "agent_input_digest": "1dcff78aa087758fa87d926b730781a5f4ff4c4b5935d262a2dfb43fb15c12e6",
+              "agent_output_digest": "233b788f32203a6484c728734a08e6634e57a2cdcb5863f799805c6a86783edc"
+            }
+          },
+          "assurance": {
+            "attestation_mode": "self_attested",
+            "effect_mode": "not_applicable",
+            "ledger_mode": "chained"
+          },
+          "disposition": {
+            "decision": "accept",
+            "approver": "policy",
+            "human_disposed": false,
+            "verdict_class": "blocked"
+          },
+          "chain": {
+            "parent_capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+            "relation": "confirms"
+          }
+        },
+        {
+          "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+          "format_version": "4",
+          "capsule_id": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+          "action_id": "escalate/29cc3295-3d00-428b-ada9-1740bd971065",
+          "action_type": "decide",
+          "operator": "example-org",
+          "developer": "agent@v1",
+          "timestamp": "2026-09-27T17:48:26.077884Z",
+          "canonicalization_id": "jcs",
+          "model_attestation": {
+            "compute_attestation": {
+              "agent_input_digest": "3f10c47fd92bdaba0f65835f64b0385ed554f1bbb56b3583520ae1a1ea3e630e"
+            }
+          },
+          "assurance": {
+            "attestation_mode": "self_attested",
+            "effect_mode": "not_applicable",
+            "ledger_mode": "chained"
+          },
+          "disposition": {
+            "decision": "accept",
+            "approver": "policy",
+            "human_disposed": false,
+            "verdict_class": "executed"
+          },
+          "chain": {
+            "parent_capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+            "relation": "confirms"
+          }
+        }
+      ],
+      "disclosures": {
+        "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599": {
+          "agent_input": {
+            "order": "PO-7",
+            "note": "Zürich"
+          }
+        },
+        "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3": {
+          "agent_output": {
+            "reason": "over ceiling 🛑"
+          }
+        }
+      },
+      "expected_bundle": {
+        "bundle_version": "2",
+        "bundle_kind": "evidence-bundle/v2",
+        "root": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+        "records": [
+          {
+            "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+            "format_version": "4",
+            "capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+            "action_id": "write_order/80b73358-1270-4a79-a2bc-fc9a25d3d56c",
+            "action_type": "decide",
+            "operator": "example-org",
+            "developer": "agent@v1",
+            "timestamp": "2026-09-27T17:48:25.970843Z",
+            "canonicalization_id": "jcs",
+            "model_attestation": {
+              "compute_attestation": {
+                "agent_input_digest": "8012847ed726ac00fab50857380443bf52ebd93a84bb78ebb337d858b7db0f35",
+                "agent_output_digest": "32fd818d90a120da932941514c65803ee804250b97c480763b987835fc07259e"
+              }
+            },
+            "assurance": {
+              "attestation_mode": "self_attested",
+              "effect_mode": "not_applicable",
+              "ledger_mode": "standalone"
+            },
+            "disposition": {
+              "decision": "accept",
+              "approver": "policy",
+              "human_disposed": false,
+              "verdict_class": "executed"
+            }
+          },
+          {
+            "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+            "format_version": "4",
+            "capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+            "action_id": "approve_order/45f82102-b2ab-4a3a-853f-afcae6f5e672",
+            "action_type": "decide",
+            "operator": "example-org",
+            "developer": "agent@v1",
+            "timestamp": "2026-09-27T17:48:26.076212Z",
+            "canonicalization_id": "jcs",
+            "model_attestation": {
+              "compute_attestation": {
+                "agent_input_digest": "1dcff78aa087758fa87d926b730781a5f4ff4c4b5935d262a2dfb43fb15c12e6",
+                "agent_output_digest": "233b788f32203a6484c728734a08e6634e57a2cdcb5863f799805c6a86783edc"
+              }
+            },
+            "assurance": {
+              "attestation_mode": "self_attested",
+              "effect_mode": "not_applicable",
+              "ledger_mode": "chained"
+            },
+            "disposition": {
+              "decision": "accept",
+              "approver": "policy",
+              "human_disposed": false,
+              "verdict_class": "blocked"
+            },
+            "chain": {
+              "parent_capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+              "relation": "confirms"
+            }
+          },
+          {
+            "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+            "format_version": "4",
+            "capsule_id": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+            "action_id": "escalate/29cc3295-3d00-428b-ada9-1740bd971065",
+            "action_type": "decide",
+            "operator": "example-org",
+            "developer": "agent@v1",
+            "timestamp": "2026-09-27T17:48:26.077884Z",
+            "canonicalization_id": "jcs",
+            "model_attestation": {
+              "compute_attestation": {
+                "agent_input_digest": "3f10c47fd92bdaba0f65835f64b0385ed554f1bbb56b3583520ae1a1ea3e630e"
+              }
+            },
+            "assurance": {
+              "attestation_mode": "self_attested",
+              "effect_mode": "not_applicable",
+              "ledger_mode": "chained"
+            },
+            "disposition": {
+              "decision": "accept",
+              "approver": "policy",
+              "human_disposed": false,
+              "verdict_class": "executed"
+            },
+            "chain": {
+              "parent_capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+              "relation": "confirms"
+            }
+          }
+        ],
+        "completeness": {
+          "closure_depth": 3,
+          "records_mode": "complete"
+        },
+        "disclosures": {
+          "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599": {
+            "agent_input": {
+              "order": "PO-7",
+              "note": "Zürich"
+            }
+          },
+          "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3": {
+            "agent_output": {
+              "reason": "over ceiling 🛑"
+            }
+          }
+        }
+      },
+      "fragment": "eyJidW5kbGVfa2luZCI6ImV2aWRlbmNlLWJ1bmRsZS92MiIsImJ1bmRsZV92ZXJzaW9uIjoiMiIsImNvbXBsZXRlbmVzcyI6eyJjbG9zdXJlX2RlcHRoIjozLCJyZWNvcmRzX21vZGUiOiJjb21wbGV0ZSJ9LCJkaXNjbG9zdXJlcyI6eyIwMTUyNzI4YTQzNDllZmM2MmNmNmRmNTlkY2MwNDhlZTk4OTBiMTBlNGE0ZjNiMWVlODA0OGRkNjQzYWZkNTk5Ijp7ImFnZW50X2lucHV0Ijp7Im5vdGUiOiJaw7xyaWNoIiwib3JkZXIiOiJQTy03In19LCI2NTFhZmQ5MDE3ZWU4ZWEzMTVlNTJmMGQxMWQyNGUxMzZmNjlkNWZmNzc1OWY0MjgzYmE0YjFjOWYyMDgwNGMzIjp7ImFnZW50X291dHB1dCI6eyJyZWFzb24iOiJvdmVyIGNlaWxpbmcg8J-bkSJ9fX0sInJlY29yZHMiOlt7ImFjdGlvbl9pZCI6IndyaXRlX29yZGVyLzgwYjczMzU4LTEyNzAtNGE3OS1hMmJjLWZjOWEyNWQzZDU2YyIsImFjdGlvbl90eXBlIjoiZGVjaWRlIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJub3RfYXBwbGljYWJsZSIsImxlZGdlcl9tb2RlIjoic3RhbmRhbG9uZSJ9LCJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6IjAxNTI3MjhhNDM0OWVmYzYyY2Y2ZGY1OWRjYzA0OGVlOTg5MGIxMGU0YTRmM2IxZWU4MDQ4ZGQ2NDNhZmQ1OTkiLCJkZXZlbG9wZXIiOiJhZ2VudEB2MSIsImRpc3Bvc2l0aW9uIjp7ImFwcHJvdmVyIjoicG9saWN5IiwiZGVjaXNpb24iOiJhY2NlcHQiLCJodW1hbl9kaXNwb3NlZCI6ZmFsc2UsInZlcmRpY3RfY2xhc3MiOiJleGVjdXRlZCJ9LCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6IjgwMTI4NDdlZDcyNmFjMDBmYWI1MDg1NzM4MDQ0M2JmNTJlYmQ5M2E4NGJiNzhlYmIzMzdkODU4YjdkYjBmMzUiLCJhZ2VudF9vdXRwdXRfZGlnZXN0IjoiMzJmZDgxOGQ5MGExMjBkYTkzMjk0MTUxNGM2NTgwM2VlODA0MjUwYjk3YzQ4MDc2M2I5ODc4MzVmYzA3MjU5ZSJ9fSwib3BlcmF0b3IiOiJleGFtcGxlLW9yZyIsInNwZWNfdmVyc2lvbiI6ImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wNSIsInRpbWVzdGFtcCI6IjIwMjYtMDktMjdUMTc6NDg6MjUuOTcwODQzWiJ9LHsiYWN0aW9uX2lkIjoiYXBwcm92ZV9vcmRlci80NWY4MjEwMi1iMmFiLTRhM2EtODUzZi1hZmNhZTZmNWU2NzIiLCJhY3Rpb25fdHlwZSI6ImRlY2lkZSIsImFzc3VyYW5jZSI6eyJhdHRlc3RhdGlvbl9tb2RlIjoic2VsZl9hdHRlc3RlZCIsImVmZmVjdF9tb2RlIjoibm90X2FwcGxpY2FibGUiLCJsZWRnZXJfbW9kZSI6ImNoYWluZWQifSwiY2Fub25pY2FsaXphdGlvbl9pZCI6ImpjcyIsImNhcHN1bGVfaWQiOiI2NTFhZmQ5MDE3ZWU4ZWEzMTVlNTJmMGQxMWQyNGUxMzZmNjlkNWZmNzc1OWY0MjgzYmE0YjFjOWYyMDgwNGMzIiwiY2hhaW4iOnsicGFyZW50X2NhcHN1bGVfaWQiOiIwMTUyNzI4YTQzNDllZmM2MmNmNmRmNTlkY2MwNDhlZTk4OTBiMTBlNGE0ZjNiMWVlODA0OGRkNjQzYWZkNTk5IiwicmVsYXRpb24iOiJjb25maXJtcyJ9LCJkZXZlbG9wZXIiOiJhZ2VudEB2MSIsImRpc3Bvc2l0aW9uIjp7ImFwcHJvdmVyIjoicG9saWN5IiwiZGVjaXNpb24iOiJhY2NlcHQiLCJodW1hbl9kaXNwb3NlZCI6ZmFsc2UsInZlcmRpY3RfY2xhc3MiOiJibG9ja2VkIn0sImZvcm1hdF92ZXJzaW9uIjoiNCIsIm1vZGVsX2F0dGVzdGF0aW9uIjp7ImNvbXB1dGVfYXR0ZXN0YXRpb24iOnsiYWdlbnRfaW5wdXRfZGlnZXN0IjoiMWRjZmY3OGFhMDg3NzU4ZmE4N2Q5MjZiNzMwNzgxYTVmNGZmNGM0YjU5MzVkMjYyYTJkZmI0M2ZiMTVjMTJlNiIsImFnZW50X291dHB1dF9kaWdlc3QiOiIyMzNiNzg4ZjMyMjAzYTY0ODRjNzI4NzM0YTA4ZTY2MzRlNTdhMmNkY2I1ODYzZjc5OTgwNWM2YTg2NzgzZWRjIn19LCJvcGVyYXRvciI6ImV4YW1wbGUtb3JnIiwic3BlY192ZXJzaW9uIjoiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTA1IiwidGltZXN0YW1wIjoiMjAyNi0wOS0yN1QxNzo0ODoyNi4wNzYyMTJaIn0seyJhY3Rpb25faWQiOiJlc2NhbGF0ZS8yOWNjMzI5NS0zZDAwLTQyOGItYWRhOS0xNzQwYmQ5NzEwNjUiLCJhY3Rpb25fdHlwZSI6ImRlY2lkZSIsImFzc3VyYW5jZSI6eyJhdHRlc3RhdGlvbl9tb2RlIjoic2VsZl9hdHRlc3RlZCIsImVmZmVjdF9tb2RlIjoibm90X2FwcGxpY2FibGUiLCJsZWRnZXJfbW9kZSI6ImNoYWluZWQifSwiY2Fub25pY2FsaXphdGlvbl9pZCI6ImpjcyIsImNhcHN1bGVfaWQiOiJjZTQ4NTg1NzNmNWVkM2E4OTgxYjYwNDk3OWIwMDU1YzRmNzM3NjY3OGVhYTcyMDZmM2NkYjQ3ZjVlMWNiMjljIiwiY2hhaW4iOnsicGFyZW50X2NhcHN1bGVfaWQiOiI2NTFhZmQ5MDE3ZWU4ZWEzMTVlNTJmMGQxMWQyNGUxMzZmNjlkNWZmNzc1OWY0MjgzYmE0YjFjOWYyMDgwNGMzIiwicmVsYXRpb24iOiJjb25maXJtcyJ9LCJkZXZlbG9wZXIiOiJhZ2VudEB2MSIsImRpc3Bvc2l0aW9uIjp7ImFwcHJvdmVyIjoicG9saWN5IiwiZGVjaXNpb24iOiJhY2NlcHQiLCJodW1hbl9kaXNwb3NlZCI6ZmFsc2UsInZlcmRpY3RfY2xhc3MiOiJleGVjdXRlZCJ9LCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6IjNmMTBjNDdmZDkyYmRhYmEwZjY1ODM1ZjY0YjAzODVlZDU1NGYxYmJiNTZiMzU4MzUyMGFlMWExZWEzZTYzMGUifX0sIm9wZXJhdG9yIjoiZXhhbXBsZS1vcmciLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTA5LTI3VDE3OjQ4OjI2LjA3Nzg4NFoifV0sInJvb3QiOiJjZTQ4NTg1NzNmNWVkM2E4OTgxYjYwNDk3OWIwMDU1YzRmNzM3NjY3OGVhYTcyMDZmM2NkYjQ3ZjVlMWNiMjljIn0",
+      "bundle_digest": "e4348cb75ef604b17b62758eac497bbfc068e41883949df2a38c1c9359c6d98f",
+      "pointer": {
+        "bundle_ref": {
+          "digest": "e4348cb75ef604b17b62758eac497bbfc068e41883949df2a38c1c9359c6d98f",
+          "root": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+          "locations": [
+            "https://bundles.example.org/b/1.json",
+            "ipfs://bafyexample"
+          ]
+        }
+      },
+      "pointer_fragment": "eyJidW5kbGVfcmVmIjp7ImRpZ2VzdCI6ImU0MzQ4Y2I3NWVmNjA0YjE3YjYyNzU4ZWFjNDk3YmJmYzA2OGU0MTg4Mzk0OWRmMmEzOGMxYzkzNTljNmQ5OGYiLCJsb2NhdGlvbnMiOlsiaHR0cHM6Ly9idW5kbGVzLmV4YW1wbGUub3JnL2IvMS5qc29uIiwiaXBmczovL2JhZnlleGFtcGxlIl0sInJvb3QiOiJjZTQ4NTg1NzNmNWVkM2E4OTgxYjYwNDk3OWIwMDU1YzRmNzM3NjY3OGVhYTcyMDZmM2NkYjQ3ZjVlMWNiMjljIn19"
+    },
+    {
+      "id": "partial-chain",
+      "bundle": true,
+      "capsules": [
+        {
+          "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+          "format_version": "4",
+          "capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+          "action_id": "approve_order/45f82102-b2ab-4a3a-853f-afcae6f5e672",
+          "action_type": "decide",
+          "operator": "example-org",
+          "developer": "agent@v1",
+          "timestamp": "2026-09-27T17:48:26.076212Z",
+          "canonicalization_id": "jcs",
+          "model_attestation": {
+            "compute_attestation": {
+              "agent_input_digest": "1dcff78aa087758fa87d926b730781a5f4ff4c4b5935d262a2dfb43fb15c12e6",
+              "agent_output_digest": "233b788f32203a6484c728734a08e6634e57a2cdcb5863f799805c6a86783edc"
+            }
+          },
+          "assurance": {
+            "attestation_mode": "self_attested",
+            "effect_mode": "not_applicable",
+            "ledger_mode": "chained"
+          },
+          "disposition": {
+            "decision": "accept",
+            "approver": "policy",
+            "human_disposed": false,
+            "verdict_class": "blocked"
+          },
+          "chain": {
+            "parent_capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+            "relation": "confirms"
+          }
+        },
+        {
+          "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+          "format_version": "4",
+          "capsule_id": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+          "action_id": "escalate/29cc3295-3d00-428b-ada9-1740bd971065",
+          "action_type": "decide",
+          "operator": "example-org",
+          "developer": "agent@v1",
+          "timestamp": "2026-09-27T17:48:26.077884Z",
+          "canonicalization_id": "jcs",
+          "model_attestation": {
+            "compute_attestation": {
+              "agent_input_digest": "3f10c47fd92bdaba0f65835f64b0385ed554f1bbb56b3583520ae1a1ea3e630e"
+            }
+          },
+          "assurance": {
+            "attestation_mode": "self_attested",
+            "effect_mode": "not_applicable",
+            "ledger_mode": "chained"
+          },
+          "disposition": {
+            "decision": "accept",
+            "approver": "policy",
+            "human_disposed": false,
+            "verdict_class": "executed"
+          },
+          "chain": {
+            "parent_capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+            "relation": "confirms"
+          }
+        }
+      ],
+      "disclosures": null,
+      "expected_bundle": {
+        "bundle_version": "2",
+        "bundle_kind": "evidence-bundle/v2",
+        "root": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+        "records": [
+          {
+            "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+            "format_version": "4",
+            "capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+            "action_id": "approve_order/45f82102-b2ab-4a3a-853f-afcae6f5e672",
+            "action_type": "decide",
+            "operator": "example-org",
+            "developer": "agent@v1",
+            "timestamp": "2026-09-27T17:48:26.076212Z",
+            "canonicalization_id": "jcs",
+            "model_attestation": {
+              "compute_attestation": {
+                "agent_input_digest": "1dcff78aa087758fa87d926b730781a5f4ff4c4b5935d262a2dfb43fb15c12e6",
+                "agent_output_digest": "233b788f32203a6484c728734a08e6634e57a2cdcb5863f799805c6a86783edc"
+              }
+            },
+            "assurance": {
+              "attestation_mode": "self_attested",
+              "effect_mode": "not_applicable",
+              "ledger_mode": "chained"
+            },
+            "disposition": {
+              "decision": "accept",
+              "approver": "policy",
+              "human_disposed": false,
+              "verdict_class": "blocked"
+            },
+            "chain": {
+              "parent_capsule_id": "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599",
+              "relation": "confirms"
+            }
+          },
+          {
+            "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+            "format_version": "4",
+            "capsule_id": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+            "action_id": "escalate/29cc3295-3d00-428b-ada9-1740bd971065",
+            "action_type": "decide",
+            "operator": "example-org",
+            "developer": "agent@v1",
+            "timestamp": "2026-09-27T17:48:26.077884Z",
+            "canonicalization_id": "jcs",
+            "model_attestation": {
+              "compute_attestation": {
+                "agent_input_digest": "3f10c47fd92bdaba0f65835f64b0385ed554f1bbb56b3583520ae1a1ea3e630e"
+              }
+            },
+            "assurance": {
+              "attestation_mode": "self_attested",
+              "effect_mode": "not_applicable",
+              "ledger_mode": "chained"
+            },
+            "disposition": {
+              "decision": "accept",
+              "approver": "policy",
+              "human_disposed": false,
+              "verdict_class": "executed"
+            },
+            "chain": {
+              "parent_capsule_id": "651afd9017ee8ea315e52f0d11d24e136f69d5ff7759f4283ba4b1c9f20804c3",
+              "relation": "confirms"
+            }
+          }
+        ],
+        "completeness": {
+          "closure_depth": 2,
+          "records_mode": "declared_incomplete",
+          "missing": [
+            "0152728a4349efc62cf6df59dcc048ee9890b10e4a4f3b1ee8048dd643afd599"
+          ]
+        }
+      },
+      "fragment": "eyJidW5kbGVfa2luZCI6ImV2aWRlbmNlLWJ1bmRsZS92MiIsImJ1bmRsZV92ZXJzaW9uIjoiMiIsImNvbXBsZXRlbmVzcyI6eyJjbG9zdXJlX2RlcHRoIjoyLCJtaXNzaW5nIjpbIjAxNTI3MjhhNDM0OWVmYzYyY2Y2ZGY1OWRjYzA0OGVlOTg5MGIxMGU0YTRmM2IxZWU4MDQ4ZGQ2NDNhZmQ1OTkiXSwicmVjb3Jkc19tb2RlIjoiZGVjbGFyZWRfaW5jb21wbGV0ZSJ9LCJyZWNvcmRzIjpbeyJhY3Rpb25faWQiOiJhcHByb3ZlX29yZGVyLzQ1ZjgyMTAyLWIyYWItNGEzYS04NTNmLWFmY2FlNmY1ZTY3MiIsImFjdGlvbl90eXBlIjoiZGVjaWRlIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJub3RfYXBwbGljYWJsZSIsImxlZGdlcl9tb2RlIjoiY2hhaW5lZCJ9LCJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6IjY1MWFmZDkwMTdlZThlYTMxNWU1MmYwZDExZDI0ZTEzNmY2OWQ1ZmY3NzU5ZjQyODNiYTRiMWM5ZjIwODA0YzMiLCJjaGFpbiI6eyJwYXJlbnRfY2Fwc3VsZV9pZCI6IjAxNTI3MjhhNDM0OWVmYzYyY2Y2ZGY1OWRjYzA0OGVlOTg5MGIxMGU0YTRmM2IxZWU4MDQ4ZGQ2NDNhZmQ1OTkiLCJyZWxhdGlvbiI6ImNvbmZpcm1zIn0sImRldmVsb3BlciI6ImFnZW50QHYxIiwiZGlzcG9zaXRpb24iOnsiYXBwcm92ZXIiOiJwb2xpY3kiLCJkZWNpc2lvbiI6ImFjY2VwdCIsImh1bWFuX2Rpc3Bvc2VkIjpmYWxzZSwidmVyZGljdF9jbGFzcyI6ImJsb2NrZWQifSwiZm9ybWF0X3ZlcnNpb24iOiI0IiwibW9kZWxfYXR0ZXN0YXRpb24iOnsiY29tcHV0ZV9hdHRlc3RhdGlvbiI6eyJhZ2VudF9pbnB1dF9kaWdlc3QiOiIxZGNmZjc4YWEwODc3NThmYTg3ZDkyNmI3MzA3ODFhNWY0ZmY0YzRiNTkzNWQyNjJhMmRmYjQzZmIxNWMxMmU2IiwiYWdlbnRfb3V0cHV0X2RpZ2VzdCI6IjIzM2I3ODhmMzIyMDNhNjQ4NGM3Mjg3MzRhMDhlNjYzNGU1N2EyY2RjYjU4NjNmNzk5ODA1YzZhODY3ODNlZGMifX0sIm9wZXJhdG9yIjoiZXhhbXBsZS1vcmciLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTA5LTI3VDE3OjQ4OjI2LjA3NjIxMloifSx7ImFjdGlvbl9pZCI6ImVzY2FsYXRlLzI5Y2MzMjk1LTNkMDAtNDI4Yi1hZGE5LTE3NDBiZDk3MTA2NSIsImFjdGlvbl90eXBlIjoiZGVjaWRlIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJub3RfYXBwbGljYWJsZSIsImxlZGdlcl9tb2RlIjoiY2hhaW5lZCJ9LCJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6ImNlNDg1ODU3M2Y1ZWQzYTg5ODFiNjA0OTc5YjAwNTVjNGY3Mzc2Njc4ZWFhNzIwNmYzY2RiNDdmNWUxY2IyOWMiLCJjaGFpbiI6eyJwYXJlbnRfY2Fwc3VsZV9pZCI6IjY1MWFmZDkwMTdlZThlYTMxNWU1MmYwZDExZDI0ZTEzNmY2OWQ1ZmY3NzU5ZjQyODNiYTRiMWM5ZjIwODA0YzMiLCJyZWxhdGlvbiI6ImNvbmZpcm1zIn0sImRldmVsb3BlciI6ImFnZW50QHYxIiwiZGlzcG9zaXRpb24iOnsiYXBwcm92ZXIiOiJwb2xpY3kiLCJkZWNpc2lvbiI6ImFjY2VwdCIsImh1bWFuX2Rpc3Bvc2VkIjpmYWxzZSwidmVyZGljdF9jbGFzcyI6ImV4ZWN1dGVkIn0sImZvcm1hdF92ZXJzaW9uIjoiNCIsIm1vZGVsX2F0dGVzdGF0aW9uIjp7ImNvbXB1dGVfYXR0ZXN0YXRpb24iOnsiYWdlbnRfaW5wdXRfZGlnZXN0IjoiM2YxMGM0N2ZkOTJiZGFiYTBmNjU4MzVmNjRiMDM4NWVkNTU0ZjFiYmI1NmIzNTgzNTIwYWUxYTFlYTNlNjMwZSJ9fSwib3BlcmF0b3IiOiJleGFtcGxlLW9yZyIsInNwZWNfdmVyc2lvbiI6ImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wNSIsInRpbWVzdGFtcCI6IjIwMjYtMDktMjdUMTc6NDg6MjYuMDc3ODg0WiJ9XSwicm9vdCI6ImNlNDg1ODU3M2Y1ZWQzYTg5ODFiNjA0OTc5YjAwNTVjNGY3Mzc2Njc4ZWFhNzIwNmYzY2RiNDdmNWUxY2IyOWMifQ",
+      "bundle_digest": "c8de5f81fd11aadaf6e0e6c6dcbf18186f3ab0daa0aeef1252c55ee7a73eb321",
+      "pointer": {
+        "bundle_ref": {
+          "digest": "c8de5f81fd11aadaf6e0e6c6dcbf18186f3ab0daa0aeef1252c55ee7a73eb321",
+          "root": "ce4858573f5ed3a8981b604979b0055c4f7376678eaa7206f3cdb47f5e1cb29c",
+          "locations": [
+            "https://bundles.example.org/b/1.json",
+            "ipfs://bafyexample"
+          ]
+        }
+      },
+      "pointer_fragment": "eyJidW5kbGVfcmVmIjp7ImRpZ2VzdCI6ImM4ZGU1ZjgxZmQxMWFhZGFmNmUwZTZjNmRjYmYxODE4NmYzYWIwZGFhMGFlZWYxMjUyYzU1ZWU3YTczZWIzMjEiLCJsb2NhdGlvbnMiOlsiaHR0cHM6Ly9idW5kbGVzLmV4YW1wbGUub3JnL2IvMS5qc29uIiwiaXBmczovL2JhZnlleGFtcGxlIl0sInJvb3QiOiJjZTQ4NTg1NzNmNWVkM2E4OTgxYjYwNDk3OWIwMDU1YzRmNzM3NjY3OGVhYTcyMDZmM2NkYjQ3ZjVlMWNiMjljIn19"
+    }
+  ]
+}

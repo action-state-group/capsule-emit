@@ -48,6 +48,10 @@ capsule-emit permalink --ledger <this run's ledger.jsonl> --check
 # → 3 capsules — chain: executed → blocked → executed (f708b92a → 16a6ab95 → 061e6bde)
 ```
 
+> Current `capsule-emit permalink` emits an evidence-bundle/v2 Bundle on the viewer's
+> `/bundle#` route (the draft's §9 codec) instead of this legacy `/v/<id>#` array form,
+> so regenerating produces a different link. The link above predates that change.
+
 `--check` runs `agent_action_capsule.verify()` on every capsule locally (no network) and refuses
 to emit a URL if any capsule fails verification — so a presenter can't hand out a bad demo link.
 `demo.py`'s own `_permalink`/`_bundle_permalink` helpers (step 9 of the run — see

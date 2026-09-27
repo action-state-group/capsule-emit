@@ -159,7 +159,7 @@ def _build_parser() -> argparse.ArgumentParser:
     status_p.add_argument("--json", dest="as_json", action="store_true", help="raw JSON output")
 
     # permalink
-    from .permalink import DEFAULT_BASE_URL
+    from .permalink import DEFAULT_BASE_URL, MAX_INLINE_URL_BYTES
 
     permalink_p = sub.add_parser(
         "permalink",
@@ -183,7 +183,7 @@ def _build_parser() -> argparse.ArgumentParser:
     permalink_p.add_argument(
         "--bundle",
         action="store_true",
-        help="JSON-array fragment that renders the chain-navigation table; "
+        help="carry every capsule as a record of one Evidence Bundle (the chain view); "
         "this is the DEFAULT whenever more than one capsule is supplied",
     )
     permalink_p.add_argument(
@@ -207,9 +207,25 @@ def _build_parser() -> argparse.ArgumentParser:
         "more than one capsule), prefix with a selector: --reveal "
         "SELECTOR:FIELD=payload.json, where SELECTOR is a 1-based record number "
         "(as shown in the chain summary) or an >=8-char capsule_id prefix — repeat "
-        "--reveal per field/item to disclose more than one. Wraps the targeted "
-        "capsule(s) in the Disclosure Envelope shape the viewer reads; items with "
-        "no --reveal stay withheld.",
+        "--reveal per field/item to disclose more than one. Goes in the Bundle's "
+        "disclosures overlay; items with no --reveal stay withheld.",
+    )
+    permalink_p.add_argument(
+        "--bundle-out",
+        metavar="PATH",
+        default=None,
+        help="also write the Evidence Bundle (JCS JSON) to PATH, for hosting it "
+        "behind a pointer permalink",
+    )
+    permalink_p.add_argument(
+        "--bundle-location",
+        action="append",
+        metavar="URL",
+        default=None,
+        help="where the hosted bundle can be fetched (repeatable). Used only when the "
+        f"inline permalink would exceed {MAX_INLINE_URL_BYTES // (1024 * 1024)} MiB: "
+        "the fragment then carries a digest-checked pointer instead of the bundle. "
+        "Without it an oversize permalink is refused.",
     )
 
     # evidence
@@ -501,7 +517,16 @@ _FRAGMENT_SIZE_WARN_BYTES = 16 * 1024
 
 
 def _cmd_permalink(args: argparse.Namespace) -> int:
-    from .permalink import PermalinkError, build_url, check_capsules, load_capsules, summarize
+    from agent_action_capsule.canonical import jcs
+
+    from .permalink import (
+        PermalinkError,
+        build_bundle,
+        build_url,
+        check_capsules,
+        load_capsules,
+        summarize,
+    )
 
     try:
         capsules = load_capsules(
@@ -555,7 +580,20 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
         )
         disclosures = per_capsule if bundle else next(iter(per_capsule.values()))
 
-    url = build_url(capsules, base_url=args.base_url, bundle=bundle, disclosures=disclosures)
+    try:
+        if args.bundle_out:
+            bundle_obj = build_bundle(capsules, bundle=bundle, disclosures=disclosures)
+            Path(args.bundle_out).write_bytes(jcs(bundle_obj))
+        url = build_url(
+            capsules,
+            base_url=args.base_url,
+            bundle=bundle,
+            disclosures=disclosures,
+            bundle_locations=args.bundle_location,
+        )
+    except PermalinkError as exc:
+        print(f"permalink: {exc}", file=sys.stderr)
+        return 1
     frag_len = len(url.split("#", 1)[1].encode())
     if frag_len > _FRAGMENT_SIZE_WARN_BYTES:
         print(
