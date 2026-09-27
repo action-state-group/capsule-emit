@@ -50,7 +50,7 @@ if (mode === "produce") {
     const checkpoint = await runner.runOnce();
     assert.ok(checkpoint);
     assert.equal(checkpoint.mmrSize, 1n);
-    assert.equal(cll.verifyCheckpoint(checkpoint.cose), true);
+    assert.equal(await cll.verifyCheckpoint(checkpoint.cose), true);
     await writeFile(checkpointPath, checkpoint.cose);
   } finally {
     await store.close();
