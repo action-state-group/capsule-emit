@@ -474,6 +474,12 @@ class _PersistedCheckpointSigner:
         signature_hex, _key_id = self._signing_signer.sign(digest_hex.encode("ascii"))
         return signature_hex
 
+    def sign_bytes(self, payload: bytes) -> tuple[str, str]:
+        """The wrapped signer's own ``sign(bytes) -> (signature_hex,
+        key_id)`` -- what the ``rekor`` binding signs its DSSE envelope with
+        (see ``capsule_emit.witness_bindings.register_rekor``)."""
+        return self._signing_signer.sign(payload)
+
     def sign_cose_statement(
         self,
         payload: bytes,
@@ -1072,11 +1078,35 @@ def _persist_witness_backfill(cp: Any, witness_record: Any, ledger_path: str) ->
         )
 
 
+def _register_with(
+    checkpoint_cose: bytes, url: str, checkpoint: Any, *, sign: Any = None
+) -> Any:
+    """Register one checkpoint with one witness, through the binding its URL
+    names (``capsule_emit.witness_bindings.binding_of``): ``cll`` is the
+    existing ``POST /checkpoints``; ``rekor`` and ``scrapi`` go through
+    :mod:`capsule_emit.witness_bindings`. ``sign`` (``sign(bytes) ->
+    (signature_hex, key_id)``) is needed only by ``rekor``; without it a
+    ``rekor`` witness raises and is retried later from the backlog."""
+    from . import witness_bindings as wb
+    from .checkpoint import register_checkpoint
+
+    binding = wb.binding_of(url)
+    if binding == wb.BINDING_CLL:
+        return register_checkpoint(checkpoint_cose, url)
+    entry_hash = hashlib.sha256(bytes.fromhex(checkpoint.digest())).hexdigest()
+    if binding == wb.BINDING_REKOR:
+        if sign is None:
+            raise wb.WitnessBindingError("rekor binding needs the checkpoint signer; none in scope")
+        return wb.register_rekor(checkpoint_cose, url, entry_hash=entry_hash, sign=sign)
+    return wb.register_scrapi(checkpoint_cose, url, entry_hash=entry_hash)
+
+
 def retry_pending_witness_stamps(
     ledger_path: str,
     *,
     ts_url: str | list[str] | None = None,
     enabled: bool | None = None,
+    sign: Any = None,
 ) -> dict[str, int]:
     """Drain each configured witness's durable backlog -- the per-witness
     cursor described in the module docstring. For every witness in
@@ -1105,8 +1135,13 @@ def retry_pending_witness_stamps(
     with no persisted COSE form (pre-migration, or a COSE build that failed
     at the time) has nothing to (re)send and is skipped -- not counted as a
     failure, so it never blocks the rest of this witness's drain.
+
+    ``sign`` is the checkpoint signer's ``sign(bytes) -> (signature_hex,
+    key_id)``, needed only to drain a ``rekor`` witness's backlog (see
+    :func:`_register_with`). Without it a ``rekor`` backlog is left for a
+    later call that has the signer; other witnesses drain as usual.
     """
-    from .checkpoint import register_checkpoint
+    from . import witness_bindings as wb
 
     if not witness_enabled(enabled):
         return {}
@@ -1115,13 +1150,17 @@ def retry_pending_witness_stamps(
     states = checkpoint_witness_states(ledger_path)
     backfilled = {url: 0 for url in urls}
     for url in urls:
+        if sign is None and wb.binding_of(url) == wb.BINDING_REKOR:
+            continue
         for state in states:
             if url in state.effective_witnesses:
                 continue
             if state.checkpoint_cose_hex is None:
                 continue
             try:
-                witness_record = register_checkpoint(bytes.fromhex(state.checkpoint_cose_hex), url)
+                witness_record = _register_with(
+                    bytes.fromhex(state.checkpoint_cose_hex), url, state.checkpoint, sign=sign
+                )
             except Exception:  # noqa: BLE001 -- still down; stop this witness's drain for now
                 break
             _persist_witness_backfill(state.checkpoint, witness_record, ledger_path)
@@ -1136,7 +1175,6 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
         CheckpointError,
         RollbackError,
         emit_checkpoint,
-        register_checkpoint,
         register_checkpoint_stub,
     )
 
@@ -1152,7 +1190,8 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # cursor instead of only ever seeing the newest checkpoint. Reads/
     # appends only already-settled checkpoint stamps on disk, never
     # ``state.mmr``/``state.prev``, so it needs no lock here.
-    retry_pending_witness_stamps(state.ledger_path, ts_url=resolved_urls)
+    sign = getattr(state.signer, "sign_bytes", None)
+    retry_pending_witness_stamps(state.ledger_path, ts_url=resolved_urls, sign=sign)
 
     with state.lock:
         state.mmr.sync()
@@ -1224,7 +1263,7 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
         checkpoint_cose = bytes.fromhex(checkpoint_cose_hex)
         for url in resolved_urls:
             try:
-                witness_record = register_checkpoint(checkpoint_cose, url)
+                witness_record = _register_with(checkpoint_cose, url, cp, sign=sign)
                 cp.witnesses.append(witness_record)
             except Exception as exc:  # noqa: BLE001 -- fire-and-forget, never raises into emit()
                 warnings.warn(
