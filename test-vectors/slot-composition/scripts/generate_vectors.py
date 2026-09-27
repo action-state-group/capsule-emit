@@ -59,16 +59,28 @@ def _fixed_signer():
     return LocalKeypairSigner(_KEY_PATH)
 
 
-def main() -> None:
+#: spec_version per case directory. ``valid/`` is the -04 corpus that shipped
+#: in v0.5.0 and is frozen: regenerating it (with capsule-emit's stamped
+#: spec_version pinned back to -04) must reproduce its bytes exactly.
+#: ``valid-v05/`` is its -05 twin -- the same calls, the same pinned key,
+#: uuids and timestamp, with spec_version -05 as seal()/received() now stamp.
+_CASES = (
+    ("valid", "draft-mih-scitt-agent-action-capsule-04"),
+    ("valid-v05", "draft-mih-scitt-agent-action-capsule-05"),
+)
+
+
+def _write_case(case_dir: Path, spec_version: str) -> None:
     import importlib
 
     from capsule_emit.surface import can, did, received, seal, who
 
     base_emit_module = importlib.import_module("agent_action_capsule.emit")
+    core_module = importlib.import_module("capsule_emit.core")
 
-    OUT.mkdir(parents=True, exist_ok=True)
     if _LEDGER_PATH.exists():
         _LEDGER_PATH.unlink()
+    _LEDGER_PATH.with_name(_LEDGER_PATH.name + ".lock").unlink(missing_ok=True)
     signer = _fixed_signer()
 
     kwargs = {
@@ -86,6 +98,7 @@ def main() -> None:
     with (
         mock.patch.object(base_emit_module.uuid, "uuid4", side_effect=lambda: next(uuid_iter)),
         mock.patch.object(base_emit_module, "_utc_now", return_value=_FIXED_TIMESTAMP),
+        mock.patch.object(core_module, "SPEC_VERSION", spec_version),
     ):
         # The carry-form: received() standalone.
         mandate = received(mandate_jws, type="machine-mandate", **kwargs)
@@ -99,16 +112,16 @@ def main() -> None:
             **kwargs,
         )
 
+    assert mandate.capsule["spec_version"] == spec_version == action.capsule["spec_version"]
     members = action.capsule["model_attestation"]["compute_attestation"]["composed_members"]
     can_ref = next(m for m in members if m["slot"] == "can")
     assert can_ref["digest"] == mandate.capsule_id, "O8 violated: can(mandate) re-minted instead of referencing"
 
-    valid_dir = OUT / "valid"
-    valid_dir.mkdir(parents=True, exist_ok=True)
-    (valid_dir / "carry_form.json").write_text(
+    case_dir.mkdir(parents=True, exist_ok=True)
+    (case_dir / "carry_form.json").write_text(
         json.dumps(mandate.capsule, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    (valid_dir / "slot_form_composition.json").write_text(
+    (case_dir / "slot_form_composition.json").write_text(
         json.dumps(action.capsule, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     expected = {
@@ -117,12 +130,25 @@ def main() -> None:
         "composed_members": members,
         "byte_identical_check": "composed_members[slot=can].digest == carry_form_capsule_id",
     }
-    (valid_dir / "expected.json").write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
+    (case_dir / "expected.json").write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
+
+    print(f"[{case_dir.name}] carry_form capsule_id:            {mandate.capsule_id}")
+    print(f"[{case_dir.name}] slot_form_composition capsule_id: {action.capsule_id}")
+    print(f"[{case_dir.name}] can-slot member digest:           {can_ref['digest']}  (byte-identical: {can_ref['digest'] == mandate.capsule_id})")
+
+
+def main() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
 
     checksums = []
-    for f in sorted(valid_dir.iterdir()):
-        digest = hashlib.sha256(f.read_bytes()).hexdigest()
-        checksums.append(f"{digest}  {f.relative_to(OUT)}")
+    for name, spec_version in _CASES:
+        case_dir = OUT / name
+        _write_case(case_dir, spec_version)
+        # One case directory after another, in _CASES order, so the lines the
+        # released valid/ corpus shipped with stay a byte-identical prefix.
+        for f in sorted(case_dir.iterdir()):
+            digest = hashlib.sha256(f.read_bytes()).hexdigest()
+            checksums.append(f"{digest}  {f.relative_to(OUT)}")
     (OUT / "SHA256SUMS").write_text("\n".join(checksums) + "\n", encoding="utf-8")
 
     manifest = {
@@ -141,6 +167,20 @@ def main() -> None:
                     "the can-slot member ref must digest-match carry_form's capsule_id exactly"
                 ),
             },
+            {
+                "name": "carry_form-v05",
+                "description": (
+                    "carry_form with spec_version draft-mih-scitt-agent-action-capsule-05 "
+                    "(valid-v05/carry_form.json)"
+                ),
+            },
+            {
+                "name": "slot_form_composition-v05",
+                "description": (
+                    "slot_form_composition with spec_version draft-mih-scitt-agent-action-capsule-05 "
+                    "(valid-v05/slot_form_composition.json); the same can-slot byte-identity holds"
+                ),
+            },
         ],
     }
     (OUT / "vectors.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -148,10 +188,6 @@ def main() -> None:
     _KEY_PATH.unlink(missing_ok=True)
     _LEDGER_PATH.unlink(missing_ok=True)
     _LEDGER_PATH.with_name(_LEDGER_PATH.name + ".lock").unlink(missing_ok=True)
-
-    print(f"carry_form capsule_id:            {mandate.capsule_id}")
-    print(f"slot_form_composition capsule_id: {action.capsule_id}")
-    print(f"can-slot member digest:           {can_ref['digest']}  (byte-identical: {can_ref['digest'] == mandate.capsule_id})")
 
 
 if __name__ == "__main__":

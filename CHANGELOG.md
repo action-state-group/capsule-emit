@@ -6,6 +6,23 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed — capsules now stamp spec_version -05 (draft -05 wire)
+
+- `seal()`, `received()`, `log()` and the `holds/` lifecycle capsules stamp
+  `spec_version: "draft-mih-scitt-agent-action-capsule-05"` (was -04). capsule-emit
+  now passes it to `agent_action_capsule.emit()` explicitly
+  (`capsule_emit.SPEC_VERSION`), so what it stamps no longer depends on which
+  `agent-action-capsule` release is installed.
+- Verification is unchanged in behaviour and now stated: -04 and -05 records both
+  verify (`capsule_emit.ACCEPTED_SPEC_VERSIONS`), and an unrecognized
+  `spec_version` is informational, never by itself a rejection. `spec_version`
+  participates in `capsule_id` but selects no algorithm.
+- Released vectors are untouched. `test-vectors/producer-envelope/valid-v05/` and
+  `test-vectors/slot-composition/valid-v05/` add -05 twins beside the frozen -04
+  cases; `SHA256SUMS` and `vectors.json` gain entries for the new files only.
+- CI installs `agent-action-capsule` from source at main 439dc02 (the -05 wire;
+  no PyPI release carries it yet). The `pyproject.toml` floor is unchanged.
+
 ### Docs — the witness claims on the adapter pages now match what the witness does
 
 - The 14 adapter pages said the checkpoint stream made a re-seal "detectable — by anyone, the key

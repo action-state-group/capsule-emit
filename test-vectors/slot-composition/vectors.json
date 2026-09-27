@@ -10,6 +10,14 @@
     {
       "name": "slot_form_composition",
       "description": "seal(who(...), can(<the carry_form Capsule>), did(...)) -- the can-slot member ref must digest-match carry_form's capsule_id exactly"
+    },
+    {
+      "name": "carry_form-v05",
+      "description": "carry_form with spec_version draft-mih-scitt-agent-action-capsule-05 (valid-v05/carry_form.json)"
+    },
+    {
+      "name": "slot_form_composition-v05",
+      "description": "slot_form_composition with spec_version draft-mih-scitt-agent-action-capsule-05 (valid-v05/slot_form_composition.json); the same can-slot byte-identity holds"
     }
   ]
 }
