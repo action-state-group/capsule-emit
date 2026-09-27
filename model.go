@@ -24,6 +24,11 @@ type Input struct {
 	Compute        *ComputeAttestation
 	compute        *computeAttestation
 	ProvenanceMode *ProvenanceMode
+
+	// specVersion overrides SpecVersion for in-package replay of released -04
+	// vectors only. No exported API sets it: every Capsule a caller builds
+	// carries SpecVersion.
+	specVersion string
 }
 
 // ProvenanceMode marks a Capsule as a backfilled import of a pre-existing

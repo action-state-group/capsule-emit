@@ -12,6 +12,13 @@ persistence and witnessed checkpoints compose it with
 It supports format 4 only. There is no legacy `Create` or signed-payload
 statement API, and verification rejects formats 2 and 3.
 
+Every Capsule it builds carries `spec_version`
+`draft-mih-scitt-agent-action-capsule-05` (`emit.SpecVersion`).
+`VerifyCapsule` accepts the revisions that define format 4, -04 and -05
+(`emit.AcceptedSpecVersions`), and never rejects a Capsule for its
+`spec_version` alone: the value selects no algorithm, and an unrecognized one
+is not a rejection. Released -04 records keep verifying.
+
 ## Install
 
 Requires Go 1.27 or newer. `DigestJSON` uses `encoding/json/v2`.
@@ -123,7 +130,7 @@ primitives for applications that need to control projections, commitments,
 construction, or signing separately. Effect request and response digests stay
 caller-owned; `Seal` does not replace them with the general agent digests.
 
-AAC draft-04 defines only `fyi` and `decide` as conformant `action_type`
+AAC drafts -04 and -05 define only `fyi` and `decide` as conformant `action_type`
 values. The package rejects other values so every `Build` result continues to
 pass the current AAC Class 1 verifier.
 
@@ -330,7 +337,7 @@ top-level `capsule_id` and local-only Producer Envelope fields `signature` and
 
 ## Cross-record references
 
-`Input.References` adds draft-04 external citations to the committed payload.
+`Input.References` adds AAC external citations to the committed payload.
 Use `Reference{Type: "agent-action-capsule", DigestAlg: "SHA-256", Digest: id,
 CitationPurpose: "responds_to"}` to cite another AAC record. `acted_on` is also
 seeded; additional purposes remain informational. References must not duplicate

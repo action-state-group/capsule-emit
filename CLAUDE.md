@@ -50,11 +50,16 @@ SealInput → DigestJSON + Build/BuildComposition + Sign → Capsule + Envelope
 
 ## Invariants
 
-- **Format 4 only.** Emit draft-04, format 4, and
+- **Format 4 only.** Emit `spec_version` -05 (`SpecVersion`), format 4, and
   `canonicalization_id: "jcs"`. Do not restore format-2 construction or the
   legacy signed-payload statement API.
+- **spec_version selects nothing.** `VerifyCapsule` accepts -04, -05 and
+  unrecognized `spec_version` values alike and never branches on it; keep
+  `SpecVersion`/`AcceptedSpecVersions` equal to upstream
+  `verify.CurrentSpecVersion`/`verify.AcceptedSpecVersions`. Released vector
+  files are never rewritten; a new revision gets a `-v05`-style twin beside them.
 - **Class 1 action types.** Emit only `fyi` and `decide`. Although the Python
-  convenience producer currently accepts `act` and `retrieve`, draft-04 and
+  convenience producer currently accepts `act` and `retrieve`, drafts -04/-05 and
   both reference verifiers reject those wire values as `action_type_invalid`.
 - **One implementation per primitive.** `Seal` orchestrates `DigestJSON`,
   `Build` or `BuildComposition`, and `Sign`. It must not duplicate JSON

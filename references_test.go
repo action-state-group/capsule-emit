@@ -35,7 +35,22 @@ func TestBuildCrossRecordReferences(t *testing.T) {
 		require.NoError(t, decoder.Decode(&storedCapsule))
 		expected, err := canonical.JCS(storedCapsule)
 		require.NoError(t, err)
-		assert.Equal(t, string(expected), string(built.JSON))
+		// The upstream vector is a released -04 record: replay it at -04.
+		released := referenceInput()
+		released.specVersion = storedCapsule["spec_version"].(string)
+		replayed, err := Build(released)
+		require.NoError(t, err)
+		assert.Equal(t, string(expected), string(replayed.JSON))
+
+		// The default -05 build is that record with only spec_version changed.
+		storedCapsule["spec_version"] = SpecVersion
+		delete(storedCapsule, "capsule_id")
+		twinID, err := canonical.ComputeCapsuleID(storedCapsule)
+		require.NoError(t, err)
+		storedCapsule["capsule_id"] = twinID
+		twin, err := canonical.JCS(storedCapsule)
+		require.NoError(t, err)
+		assert.Equal(t, string(twin), string(built.JSON))
 	})
 	verified, err := VerifyCapsule(built.JSON)
 	require.NoError(t, err)

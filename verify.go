@@ -43,7 +43,10 @@ func registrySet(values ...string) map[string]bool {
 	return result
 }
 
-var v4Registries = map[string]map[string]bool{
+// seededRegistries are the registry values seeded through draft -05, matching
+// the agent-action-capsule authoritative registry. Values outside this set are
+// informational findings, never rejections (check 8).
+var seededRegistries = map[string]map[string]bool{
 	"verdict_class": registrySet(
 		string(VerdictExecuted), string(VerdictBlocked), string(VerdictHITLDispatched),
 		string(VerdictDenied), string(VerdictTimeout), string(VerdictErrored),
@@ -52,18 +55,22 @@ var v4Registries = map[string]map[string]bool{
 		string(VerdictEpochBoundary),
 	),
 	"disposition.decision": registrySet(string(DecisionAccept), string(DecisionReject), string(DecisionNeedsInput), string(DecisionDeferred)),
-	"effect.type":          registrySet("write_order", "send_payment"),
+	"effect.type":          registrySet("write_order", "send_payment", "inference_completion"),
 	"irreversibility_class": registrySet(
 		string(IrreversibilityTwoWay), string(IrreversibilityOneWayRecoverable),
 		string(IrreversibilityOneWayConsequential), string(IrreversibilityOneWayTerminal),
 	),
-	"effect_attestation": registrySet(string(AttestationGateExecuted), string(AttestationRuntimeClaimed)),
-	"chain.relation":     registrySet(string(ChainConfirms), string(ChainSupersedes), string(ChainEpochOpens), string(ChainDuplicates)),
-	"citation_purpose":   registrySet("acted_on", "responds_to"),
+	"effect_attestation": registrySet(string(AttestationGateExecuted), string(AttestationRuntimeClaimed), "host_served_observed"),
+	"chain.relation": registrySet(
+		string(ChainConfirms), string(ChainSupersedes), string(ChainEpochOpens), string(ChainDuplicates), "follows",
+	),
+	"citation_purpose": registrySet(
+		"acted_on", "responds_to", "ran_under", "corroborates_source_time", "counterparty_half", "counterparty_inclusion",
+	),
 }
 
 func knownRegistries() map[string]map[string]bool {
-	return v4Registries
+	return seededRegistries
 }
 
 // IsV4IrreversibilityClass reports whether value is seeded by AAC v4.
@@ -80,7 +87,9 @@ func VerifyCapsule(data []byte) (verify.VerificationResult, error) {
 	if err != nil {
 		return verify.VerificationResult{}, err
 	}
-	if payload["spec_version"] != SpecVersion || payload["format_version"] != FormatVersion || payload["canonicalization_id"] != CanonicalizationID {
+	// spec_version is deliberately not compared: -04, -05 and unrecognized
+	// values all reach Class 1 alike (draft -05, "Identity and parties").
+	if payload["format_version"] != FormatVersion || payload["canonicalization_id"] != CanonicalizationID {
 		return verify.VerificationResult{}, fmt.Errorf("unsupported Capsule profile: only AAC format 4 with canonicalization_id %q is supported", CanonicalizationID)
 	}
 	result := verifyClass1(payload)

@@ -1,8 +1,10 @@
 package emit
 
 const (
-	// SpecVersion is the AAC profile version implemented by this package.
-	SpecVersion = "draft-mih-scitt-agent-action-capsule-04"
+	// SpecVersion is the spec_version every Capsule this package builds
+	// carries: a producer conforming to draft -05 emits -05. It mirrors
+	// agent-action-capsule/go verify.CurrentSpecVersion.
+	SpecVersion = "draft-mih-scitt-agent-action-capsule-05"
 	// FormatVersion is the AAC serialization-suite version.
 	FormatVersion = "4"
 	// CanonicalizationID is the only profile emitted for format-4 Capsules.
@@ -10,6 +12,16 @@ const (
 	// ContentType is the Producer Envelope payload media type.
 	ContentType = "application/agent-action-capsule-id"
 )
+
+// AcceptedSpecVersions are the spec_version values a verifier MUST accept:
+// the draft revisions that define format 4. It mirrors agent-action-capsule/go
+// verify.AcceptedSpecVersions and is informational only: spec_version selects
+// no digest or verification algorithm, and an unrecognized value is never by
+// itself a reason to reject, so VerifyCapsule never branches on it.
+var AcceptedSpecVersions = []string{
+	"draft-mih-scitt-agent-action-capsule-04",
+	SpecVersion,
+}
 
 // ActionType states whether the Capsule is informational or records a decision.
 type ActionType string

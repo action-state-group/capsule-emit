@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Generate the implementation-neutral format-4 interoperability vectors."""
+"""Generate the implementation-neutral format-4 interoperability vectors.
+
+Two packs share one input.json. ``format4-interop/`` is the -04 pack that
+shipped in capsule-emit-go v0.1.0 and is frozen: regenerating it (with
+capsule-emit's stamped spec_version pinned back to -04) must reproduce its
+vector bytes exactly. ``format4-interop-v05/`` beside it is the -05 twin --
+the same calls, key, uuids and timestamp, stamping -05 as capsule-emit now
+does. Only spec_version differs between the two packs' inputs to the emitter.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +31,12 @@ from capsule_emit.canonicalization import _LOCAL_ONLY_FIELDS
 from capsule_emit.signing import LocalKeypairSigner
 
 VECTOR_ROOT = Path(__file__).resolve().parents[1]
+V05_ROOT = VECTOR_ROOT.parent / "format4-interop-v05"
+SPEC_VERSION_04 = "draft-mih-scitt-agent-action-capsule-04"
+SPEC_VERSION_05 = "draft-mih-scitt-agent-action-capsule-05"
+
+#: (pack root, spec_version stamped into every record of that pack).
+PACKS = ((VECTOR_ROOT, SPEC_VERSION_04), (V05_ROOT, SPEC_VERSION_05))
 SLOT_WRAPPERS = {"who": who, "can": can, "did": did, "audit": audit}
 
 
@@ -49,13 +63,17 @@ def _common_kwargs(spec: dict, record: dict, ledger: Path, signer: LocalKeypairS
     }
 
 
-def _emit_records(spec: dict, ledger: Path, signer: LocalKeypairSigner) -> dict:
+def _emit_records(
+    spec: dict, ledger: Path, signer: LocalKeypairSigner, spec_version: str
+) -> dict:
     emitted = {}
     uuids = iter(uuid.UUID(record["uuid"]) for record in spec["records"])
     base_emit = importlib.import_module("agent_action_capsule.emit")
+    core = importlib.import_module("capsule_emit.core")
     with (
         mock.patch.object(base_emit.uuid, "uuid4", side_effect=lambda: next(uuids)),
         mock.patch.object(base_emit, "_utc_now", return_value=spec["timestamp"]),
+        mock.patch.object(core, "SPEC_VERSION", spec_version),
     ):
         for record in spec["records"]:
             kwargs = _common_kwargs(spec, record, ledger, signer)
@@ -84,6 +102,10 @@ def _emit_records(spec: dict, ledger: Path, signer: LocalKeypairSigner) -> dict:
                 result = seal(*members, **kwargs)
             else:
                 raise ValueError(f"unsupported vector operation: {operation}")
+            if result.capsule["spec_version"] != spec_version:
+                raise AssertionError(
+                    f"{record['name']} spec_version: {result.capsule['spec_version']} != {spec_version}"
+                )
             if result.capsule["action_id"] != record["action_id"]:
                 raise AssertionError(
                     f"{record['name']} action_id: {result.capsule['action_id']} != {record['action_id']}"
@@ -125,7 +147,11 @@ def _write_checksums(output_root: Path) -> None:
     (output_root / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def generate(input_path: Path = VECTOR_ROOT / "input.json", output_root: Path = VECTOR_ROOT) -> None:
+def generate(
+    input_path: Path = VECTOR_ROOT / "input.json",
+    output_root: Path = VECTOR_ROOT,
+    spec_version: str = SPEC_VERSION_04,
+) -> None:
     spec = json.loads(input_path.read_text(encoding="utf-8"))
     output_root.mkdir(parents=True, exist_ok=True)
     if input_path.resolve() != (output_root / "input.json").resolve():
@@ -139,12 +165,12 @@ def generate(input_path: Path = VECTOR_ROOT / "input.json", output_root: Path = 
         temp_root = Path(temporary)
         ledger = temp_root / "ledger.jsonl"
         signer = _signer(temp_root / "signing-key.pem", spec["seed_hex"])
-        emitted = _emit_records(spec, ledger, signer)
+        emitted = _emit_records(spec, ledger, signer, spec_version)
 
     cases = [_write_case(output_root, name, result) for name, result in emitted.items()]
     manifest = {
         "format_version": "1",
-        "profile": "draft-mih-scitt-agent-action-capsule-04#format4-interop",
+        "profile": f"{spec_version}#format4-interop",
         "generator": "capsule_emit.surface seal/received/slot composition",
         "generator_versions": {
             "capsule-emit": capsule_emit_version,
@@ -159,4 +185,5 @@ def generate(input_path: Path = VECTOR_ROOT / "input.json", output_root: Path = 
 
 
 if __name__ == "__main__":
-    generate()
+    for root, stamped in PACKS:
+        generate(output_root=root, spec_version=stamped)

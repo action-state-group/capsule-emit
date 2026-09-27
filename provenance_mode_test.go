@@ -1,6 +1,8 @@
 package emit
 
 import (
+	"crypto/ed25519"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,12 +16,10 @@ import (
 // provenance_mode conformance corpus (agent-action-capsule, branch
 // aac-external-review-followups, commit 8def04c5,
 // provenance-mode-vectors/<case>/{input,expected}.json), pinned by the
-// upstream SHA256SUMS also copied into this directory. Class 1 check 9 (the
-// gating provenance_mode verifier findings these vectors exercise) has not
-// landed in the Go reference verifier (agent-action-capsule/go/verify) yet
-// -- see the [capsule-emit-go-provenance-mode] outbox stanza. These tests
-// cover the slice that does not depend on check 9: capsule_id byte-parity,
-// proving provenance_mode's JCS/digest participation is identical to Python.
+// upstream SHA256SUMS also copied into this directory. The copies are
+// released and never rewritten. Class 1 check 9 has since landed in the Go
+// reference verifier, so these tests cover both capsule_id byte-parity and
+// the committed verdicts.
 const provenanceModeVectorDir = "testdata/provenance-mode-vectors"
 
 func TestProvenanceModeVectorsCapsuleIDByteParity(t *testing.T) {
@@ -99,20 +99,155 @@ func TestBuildEmitsProvenanceModeBackfilled(t *testing.T) {
 	assert.Equal(t, built.CapsuleID, recomputed)
 }
 
-func TestBuildEmitsProvenanceModeBackfilledWithWitnessedTimeRung(t *testing.T) {
-	input := validInput()
-	input.ProvenanceMode = &ProvenanceMode{
+func backfilledProvenanceMode() *ProvenanceMode {
+	return &ProvenanceMode{
 		Mode:             ProvenanceModeBackfilled,
 		SourceRef:        &Reference{Type: "x-external-ledger-entry", DigestAlg: "SHA-256", Digest: parentDigest},
 		SourceAssertedAt: "2026-01-01T00:00:00Z",
 		ImportBatch:      "import-2026-09",
 		ImportedAt:       "2026-09-22T00:00:00Z",
-		TimeRung:         TimeRungWitnessed,
 	}
+}
+
+func corroboratingTimeReference() Reference {
+	return Reference{
+		Type:            "x-transparency-receipt",
+		DigestAlg:       "SHA-256",
+		Digest:          "4444444444444444444444444444444444444444444444444444444444444444",
+		CitationPurpose: "corroborates_source_time",
+	}
+}
+
+// TestBuildEmitsWitnessedTimeRungWhenCorroborated: check 9 lets a backfilled
+// Capsule claim time_rung "witnessed" only with a well-formed references[]
+// entry citing corroborates_source_time; with one, Build emits the claim and
+// the verifier rederives the same rung from that evidence.
+func TestBuildEmitsWitnessedTimeRungWhenCorroborated(t *testing.T) {
+	input := validInput()
+	input.ProvenanceMode = backfilledProvenanceMode()
+	input.ProvenanceMode.TimeRung = TimeRungWitnessed
+	input.References = []Reference{corroboratingTimeReference()}
 	built, err := Build(input)
 	require.NoError(t, err)
 	mode := built.Value["provenance_mode"].(map[string]any)
 	assert.Equal(t, "witnessed", mode["time_rung"])
+
+	verified, err := VerifyCapsule(built.JSON)
+	require.NoError(t, err)
+	assert.Equal(t, "witnessed", verified.Assurance["provenance_time_rung"])
+}
+
+func requireCheck9Refusal(t *testing.T, err error, code string) {
+	t.Helper()
+	var class1 *Class1Error
+	require.ErrorAs(t, err, &class1)
+	codes := make([]string, 0, len(class1.Findings))
+	for _, finding := range class1.Findings {
+		if finding.Severity == "error" {
+			require.NotNil(t, finding.Check)
+			assert.Equal(t, 9, *finding.Check)
+			codes = append(codes, finding.Code)
+		}
+	}
+	assert.Equal(t, []string{code}, codes)
+}
+
+func sealIdentityForTest(t *testing.T) SigningIdentity {
+	t.Helper()
+	seed := make([]byte, ed25519.SeedSize)
+	identity, err := NewEd25519SigningIdentity(ed25519.NewKeyFromSeed(seed))
+	require.NoError(t, err)
+	return identity
+}
+
+// A producer must never emit a timing overclaim: Build and Seal refuse a
+// witnessed time rung that no corroborates_source_time reference supports.
+func TestBuildRefusesUncorroboratedWitnessedTimeRung(t *testing.T) {
+	input := validInput()
+	input.ProvenanceMode = backfilledProvenanceMode()
+	input.ProvenanceMode.TimeRung = TimeRungWitnessed
+	_, err := Build(input)
+	requireCheck9Refusal(t, err, "provenance_time_rung_overclaim")
+}
+
+func TestSealRefusesUncorroboratedWitnessedTimeRung(t *testing.T) {
+	input := validInput()
+	input.ProvenanceMode = backfilledProvenanceMode()
+	input.ProvenanceMode.TimeRung = TimeRungWitnessed
+	result, err := Seal(SealInput{Capsule: input, Identity: sealIdentityForTest(t)})
+	requireCheck9Refusal(t, err, "provenance_time_rung_overclaim")
+	assert.Empty(t, result.Payload)
+	assert.Empty(t, result.Envelope)
+}
+
+// A reference under any other purpose never corroborates source time.
+func TestBuildRefusesWitnessedTimeRungCitedUnderAnotherPurpose(t *testing.T) {
+	input := validInput()
+	input.ProvenanceMode = backfilledProvenanceMode()
+	input.ProvenanceMode.TimeRung = TimeRungWitnessed
+	reference := corroboratingTimeReference()
+	reference.CitationPurpose = "acted_on"
+	input.References = []Reference{reference}
+	_, err := Build(input)
+	requireCheck9Refusal(t, err, "provenance_time_rung_overclaim")
+}
+
+// Build and Seal refuse the laundering shape: imported_at byte-equal to
+// source_asserted_at on a backfilled record.
+func TestBuildRefusesTimeLaunderingShape(t *testing.T) {
+	input := validInput()
+	input.ProvenanceMode = backfilledProvenanceMode()
+	input.ProvenanceMode.ImportedAt = input.ProvenanceMode.SourceAssertedAt
+	_, err := Build(input)
+	requireCheck9Refusal(t, err, "provenance_time_laundering_shape")
+}
+
+func TestSealRefusesTimeLaunderingShape(t *testing.T) {
+	input := validInput()
+	input.ProvenanceMode = backfilledProvenanceMode()
+	input.ProvenanceMode.ImportedAt = input.ProvenanceMode.SourceAssertedAt
+	result, err := Seal(SealInput{Capsule: input, Identity: sealIdentityForTest(t)})
+	requireCheck9Refusal(t, err, "provenance_time_laundering_shape")
+	assert.Empty(t, result.Payload)
+	assert.Empty(t, result.Envelope)
+}
+
+// TestProvenanceModeVectorsVerifyAsCommitted checks VerifyCapsule against the
+// committed AAC verdicts: the positive verifies, and each negative fails with
+// exactly its committed check-9 finding codes.
+func TestProvenanceModeVectorsVerifyAsCommitted(t *testing.T) {
+	for _, name := range []string{
+		"pos-provenance-mode-backfilled",
+		"neg-provenance-mode-time-rung-overclaim",
+		"neg-provenance-mode-backfilled-missing-fields",
+		"neg-provenance-mode-time-laundering",
+	} {
+		t.Run(name, func(t *testing.T) {
+			input, err := os.ReadFile(filepath.Join(provenanceModeVectorDir, name, "input.json"))
+			require.NoError(t, err)
+			expectedData, err := os.ReadFile(filepath.Join(provenanceModeVectorDir, name, "expected.json"))
+			require.NoError(t, err)
+			var expected struct {
+				OK       bool `json:"ok"`
+				Findings []struct {
+					Code string `json:"code"`
+				} `json:"findings"`
+			}
+			require.NoError(t, json.Unmarshal(expectedData, &expected))
+			result, verifyErr := VerifyCapsule(input)
+			assert.Equal(t, expected.OK, result.OK)
+			assert.Equal(t, expected.OK, verifyErr == nil)
+			wantCodes := make([]string, 0, len(expected.Findings))
+			for _, finding := range expected.Findings {
+				wantCodes = append(wantCodes, finding.Code)
+			}
+			gotCodes := make([]string, 0, len(result.Findings))
+			for _, finding := range result.Findings {
+				gotCodes = append(gotCodes, finding.Code)
+			}
+			assert.Equal(t, wantCodes, gotCodes)
+		})
+	}
 }
 
 func TestBuildOmitsProvenanceModeWhenAbsent(t *testing.T) {

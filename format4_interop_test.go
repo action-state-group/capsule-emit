@@ -15,7 +15,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const format4InteropRoot = "testdata/capsule-emit/format4-interop"
+// format4InteropPack is one frozen Python-generated pack and the spec_version
+// every record in it carries. The -04 pack shipped in v0.1.0 and is never
+// rewritten; the -05 pack beside it is its twin from the same input.json.
+type format4InteropPack struct {
+	root        string
+	specVersion string
+}
+
+var format4InteropPacks = []format4InteropPack{
+	{root: "testdata/capsule-emit/format4-interop", specVersion: "draft-mih-scitt-agent-action-capsule-04"},
+	{root: "testdata/capsule-emit/format4-interop-v05", specVersion: SpecVersion},
+}
 
 type format4InteropSpec struct {
 	SeedHex     string                    `json:"seed_hex"`
@@ -72,21 +83,34 @@ type format4InteropCase struct {
 }
 
 func TestFormat4InteropFrozenChecksums(t *testing.T) {
-	contents, err := os.ReadFile(filepath.Join(format4InteropRoot, "SHA256SUMS"))
-	require.NoError(t, err)
-	for _, line := range strings.Split(strings.TrimSpace(string(contents)), "\n") {
-		parts := strings.SplitN(line, "  ", 2)
-		require.Len(t, parts, 2)
-		data, readErr := os.ReadFile(filepath.Join(format4InteropRoot, parts[1]))
-		require.NoError(t, readErr)
-		digest := sha256.Sum256(data)
-		assert.Equal(t, parts[0], hex.EncodeToString(digest[:]), parts[1])
+	for _, pack := range format4InteropPacks {
+		t.Run(pack.specVersion, func(t *testing.T) {
+			contents, err := os.ReadFile(filepath.Join(pack.root, "SHA256SUMS"))
+			require.NoError(t, err)
+			for _, line := range strings.Split(strings.TrimSpace(string(contents)), "\n") {
+				parts := strings.SplitN(line, "  ", 2)
+				require.Len(t, parts, 2)
+				data, readErr := os.ReadFile(filepath.Join(pack.root, parts[1]))
+				require.NoError(t, readErr)
+				digest := sha256.Sum256(data)
+				assert.Equal(t, parts[0], hex.EncodeToString(digest[:]), parts[1])
+			}
+		})
 	}
 }
 
 func TestFormat4InteropManifestCoversRequiredRecords(t *testing.T) {
-	spec := loadFormat4InteropSpec(t)
-	manifestData, err := os.ReadFile(filepath.Join(format4InteropRoot, "vectors.json"))
+	for _, pack := range format4InteropPacks {
+		t.Run(pack.specVersion, func(t *testing.T) {
+			assertFormat4InteropManifestCoversRequiredRecords(t, pack)
+		})
+	}
+}
+
+func assertFormat4InteropManifestCoversRequiredRecords(t *testing.T, pack format4InteropPack) {
+	t.Helper()
+	spec := loadFormat4InteropSpec(t, pack)
+	manifestData, err := os.ReadFile(filepath.Join(pack.root, "vectors.json"))
 	require.NoError(t, err)
 	var manifest format4InteropManifest
 	require.NoError(t, json.Unmarshal(manifestData, &manifest))
@@ -108,8 +132,21 @@ func TestFormat4InteropManifestCoversRequiredRecords(t *testing.T) {
 	require.Equal(t, manifestCases, manifest.Cases)
 }
 
+// TestFormat4InteropReplaysPythonVectorsByteForByte proves Go and Python
+// capsule-emit produce identical Capsule, ID, and Envelope bytes for both the
+// released -04 pack and its -05 twin. The -04 replay pins the in-package
+// spec_version override; the -05 replay is the default Seal path.
 func TestFormat4InteropReplaysPythonVectorsByteForByte(t *testing.T) {
-	spec := loadFormat4InteropSpec(t)
+	for _, pack := range format4InteropPacks {
+		t.Run(pack.specVersion, func(t *testing.T) {
+			replayFormat4InteropPack(t, pack)
+		})
+	}
+}
+
+func replayFormat4InteropPack(t *testing.T, pack format4InteropPack) {
+	t.Helper()
+	spec := loadFormat4InteropSpec(t, pack)
 	seed, err := hex.DecodeString(spec.SeedHex)
 	require.NoError(t, err)
 	require.Len(t, seed, ed25519.SeedSize)
@@ -120,15 +157,15 @@ func TestFormat4InteropReplaysPythonVectorsByteForByte(t *testing.T) {
 
 	results := make(map[string]Result, len(spec.Records))
 	for _, record := range spec.Records {
-		result := replayFormat4InteropRecord(t, spec, record, timestamp, identity, results)
+		result := replayFormat4InteropRecord(t, pack, spec, record, timestamp, identity, results)
 		results[record.Name] = result
-		assertFormat4InteropResult(t, record.Name, result)
+		assertFormat4InteropResult(t, pack, record.Name, result)
 	}
 }
 
-func loadFormat4InteropSpec(t *testing.T) format4InteropSpec {
+func loadFormat4InteropSpec(t *testing.T, pack format4InteropPack) format4InteropSpec {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(format4InteropRoot, "input.json"))
+	data, err := os.ReadFile(filepath.Join(pack.root, "input.json"))
 	require.NoError(t, err)
 	var spec format4InteropSpec
 	require.NoError(t, json.Unmarshal(data, &spec))
@@ -137,6 +174,7 @@ func loadFormat4InteropSpec(t *testing.T) format4InteropSpec {
 
 func replayFormat4InteropRecord(
 	t *testing.T,
+	pack format4InteropPack,
 	spec format4InteropSpec,
 	record format4InteropRecord,
 	timestamp time.Time,
@@ -156,6 +194,9 @@ func replayFormat4InteropRecord(
 			HumanDisposed: spec.Disposition.HumanDisposed,
 			VerdictClass:  VerdictClass(record.Verdict),
 		},
+	}
+	if pack.specVersion != SpecVersion {
+		capsule.specVersion = pack.specVersion
 	}
 
 	switch record.Operation {
@@ -223,9 +264,9 @@ func requireFormat4InteropResult(t *testing.T, results map[string]Result, name s
 	return result
 }
 
-func assertFormat4InteropResult(t *testing.T, name string, result Result) {
+func assertFormat4InteropResult(t *testing.T, pack format4InteropPack, name string, result Result) {
 	t.Helper()
-	caseDir := filepath.Join(format4InteropRoot, "valid", name)
+	caseDir := filepath.Join(pack.root, "valid", name)
 	detached, err := os.ReadFile(filepath.Join(caseDir, "capsule.detached.jcs"))
 	require.NoError(t, err)
 	envelope, err := os.ReadFile(filepath.Join(caseDir, "envelope.cose"))
@@ -254,4 +295,5 @@ func assertFormat4InteropResult(t *testing.T, name string, result Result) {
 	assert.Equal(t, result.CapsuleID, storedValue["capsule_id"])
 	assert.Equal(t, hex.EncodeToString(result.Envelope), storedValue["signature"])
 	assert.Equal(t, expected.PublicKeyHex, storedValue["key_id"])
+	assert.Equal(t, pack.specVersion, storedValue["spec_version"])
 }

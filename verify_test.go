@@ -3,32 +3,18 @@ package emit
 import (
 	"testing"
 
+	"github.com/action-state-group/agent-action-capsule/go/registries"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestKnownRegistriesMatchV4Seeds(t *testing.T) {
-	set := func(values ...string) map[string]bool {
-		result := make(map[string]bool, len(values))
-		for _, value := range values {
-			result[value] = true
-		}
-		return result
-	}
-	assert.Equal(t, map[string]map[string]bool{
-		"verdict_class": set(
-			"executed", "blocked", "hitl_dispatched", "denied", "timeout", "errored",
-			"engine_failure", "deferred", "needs_decision", "expired", "escalated",
-			"resolved", "epoch_boundary",
-		),
-		"disposition.decision": set("accept", "reject", "needs_input", "deferred"),
-		"effect.type":          set("write_order", "send_payment"),
-		"irreversibility_class": set(
-			"two_way", "one_way_recoverable", "one_way_consequential", "one_way_terminal",
-		),
-		"effect_attestation": set("gate_executed", "runtime_claimed"),
-		"chain.relation":     set("confirms", "supersedes", "epoch_opens", "duplicates"),
-		"citation_purpose":   set("acted_on", "responds_to"),
-	}, knownRegistries())
+// TestKnownRegistriesMatchAuthoritativeSeeds pins the emitter's registry set
+// to the agent-action-capsule authoritative registry at the pinned module, so
+// values seeded through draft -05 are never reported as unknown.
+func TestKnownRegistriesMatchAuthoritativeSeeds(t *testing.T) {
+	authoritative, err := registries.LoadAuthoritative()
+	require.NoError(t, err)
+	assert.Equal(t, authoritative, knownRegistries())
 }
 
 func TestIsV4IrreversibilityClass(t *testing.T) {

@@ -24,8 +24,12 @@ func Build(input Input) (BuiltPayload, error) {
 		return BuiltPayload{}, err
 	}
 
+	specVersion := SpecVersion
+	if input.specVersion != "" {
+		specVersion = input.specVersion
+	}
 	payload := map[string]any{
-		"spec_version":        SpecVersion,
+		"spec_version":        specVersion,
 		"format_version":      FormatVersion,
 		"canonicalization_id": CanonicalizationID,
 		"action_id":           input.ActionID,
