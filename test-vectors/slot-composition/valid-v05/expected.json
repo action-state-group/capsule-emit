@@ -1,0 +1,25 @@
+{
+  "carry_form_capsule_id": "a46fc8b88ebeba4b4be24373f3e76bd0754033d6881020567b623a0568fb1eb9",
+  "slot_form_composition_capsule_id": "192fb6794b998813daefb4b356df9aced15a8282636aee4b8d195327e84daf7b",
+  "composed_members": [
+    {
+      "type": "capsule",
+      "digest_alg": "SHA-256",
+      "digest": "4df79af121836c933a5e445c50f1dd6eb091ef45925c9ed8fa4ee46fccbcdd90",
+      "slot": "who"
+    },
+    {
+      "type": "capsule",
+      "digest_alg": "SHA-256",
+      "digest": "a46fc8b88ebeba4b4be24373f3e76bd0754033d6881020567b623a0568fb1eb9",
+      "slot": "can"
+    },
+    {
+      "type": "capsule",
+      "digest_alg": "SHA-256",
+      "digest": "e5d9769a0ae46ee4d6303db8881ae88a2e363e645bfa788f725dca73ef74813c",
+      "slot": "did"
+    }
+  ],
+  "byte_identical_check": "composed_members[slot=can].digest == carry_form_capsule_id"
+}

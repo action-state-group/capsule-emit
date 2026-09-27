@@ -49,19 +49,27 @@ def _fixed_signer():
     return LocalKeypairSigner(_KEY_PATH)
 
 
-def main() -> None:
+#: spec_version per case directory. ``valid/`` is the -04 case that shipped in
+#: v0.5.0 and is frozen: regenerating it must reproduce its bytes exactly.
+#: ``valid-v05/`` is its -05 twin -- the same body with only spec_version
+#: changed, so the pair shows spec_version participates in capsule_id (the ids
+#: differ) while selecting no envelope or verification algorithm (both verify).
+_CASES = (
+    ("valid", "draft-mih-scitt-agent-action-capsule-04"),
+    ("valid-v05", "draft-mih-scitt-agent-action-capsule-05"),
+)
+
+
+def _write_case(signer, case_dir: Path, spec_version: str) -> dict:
     from capsule_emit.canonicalization import compute_capsule_id
     from capsule_emit.signing import sign_producer_envelope
-
-    OUT.mkdir(parents=True, exist_ok=True)
-    signer = _fixed_signer()
 
     # A minimal, deterministic capsule body -- the exact field set does not
     # matter to the producer-envelope profile (it only ever signs the raw
     # capsule_id digest), so this is a small fixed fixture, not a full
     # seal() call (which mints a fresh UUID/timestamp on every run).
     body = {
-        "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+        "spec_version": spec_version,
         "format_version": "4",
         "action_id": "test_action/00000000-0000-0000-0000-000000000000",
         "action_type": "decide",
@@ -81,31 +89,47 @@ def main() -> None:
     body["key_id"] = key_id
 
     envelope = bytes.fromhex(envelope_hex)
-    valid_dir = OUT / "valid"
-    valid_dir.mkdir(parents=True, exist_ok=True)
-    (valid_dir / "capsule_id.txt").write_text(body["capsule_id"] + "\n", encoding="ascii")
-    (valid_dir / "envelope.cose").write_bytes(envelope)
-    (valid_dir / "capsule.json").write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    case_dir.mkdir(parents=True, exist_ok=True)
+    (case_dir / "capsule_id.txt").write_text(body["capsule_id"] + "\n", encoding="ascii")
+    (case_dir / "envelope.cose").write_bytes(envelope)
+    (case_dir / "capsule.json").write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     expected = {"ok": True, "finding_codes": [], "public_key_hex": key_id}
-    (valid_dir / "expected.json").write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
+    (case_dir / "expected.json").write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
+    print(f"{case_dir.name}: capsule_id {body['capsule_id']}  key_id {key_id}  envelope {len(envelope)} bytes")
+    return body
+
+
+def main() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+    signer = _fixed_signer()
 
     checksums = []
-    for f in sorted(valid_dir.iterdir()):
-        digest = hashlib.sha256(f.read_bytes()).hexdigest()
-        checksums.append(f"{digest}  {f.relative_to(OUT)}")
+    for name, spec_version in _CASES:
+        case_dir = OUT / name
+        _write_case(signer, case_dir, spec_version)
+        # One case directory after another, in _CASES order, so the lines the
+        # released valid/ case shipped with stay a byte-identical prefix.
+        for f in sorted(case_dir.iterdir()):
+            digest = hashlib.sha256(f.read_bytes()).hexdigest()
+            checksums.append(f"{digest}  {f.relative_to(OUT)}")
     (OUT / "SHA256SUMS").write_text("\n".join(checksums) + "\n", encoding="utf-8")
 
     manifest = {
         "format_version": "1",
         "profile": "draft-mih-scitt-agent-action-capsule-04#producer-envelope",
         "generator": "capsule_emit.signing.sign_producer_envelope (LocalKeypairSigner.sign_envelope, reuses scitt_cose.cose_sign1.sign_sign1)",
-        "cases": [{"name": "valid", "description": "seal()'s real code path over a fixed capsule body + fixed test key"}],
+        "cases": [
+            {"name": "valid", "description": "seal()'s real code path over a fixed capsule body + fixed test key"},
+            {
+                "name": "valid-v05",
+                "description": (
+                    "the valid case with only spec_version changed to draft-mih-scitt-agent-action-capsule-05: "
+                    "a different capsule_id, the same envelope profile, and it verifies the same way"
+                ),
+            },
+        ],
     }
     (OUT / "vectors.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-
-    print(f"capsule_id: {body['capsule_id']}")
-    print(f"key_id:     {key_id}")
-    print(f"envelope:   {len(envelope)} bytes -> {valid_dir / 'envelope.cose'}")
 
 
 if __name__ == "__main__":

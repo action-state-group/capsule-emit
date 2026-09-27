@@ -17,7 +17,14 @@ COSE_Sign1 producer envelope) — under **both** the Go reference verifier
 - `valid/capsule.json` — the full capsule body the id was computed over
   (for context; not itself part of the envelope conformance check).
 - `valid/expected.json` — the expected verdict + authenticated key.
-- `SHA256SUMS` — checksum manifest over the corpus.
+- `valid-v05/` — the same four files for the `spec_version` -05 twin: the
+  `valid/` body with only `spec_version` changed to
+  `draft-mih-scitt-agent-action-capsule-05`. The Capsule ID (and so the
+  envelope payload) differs; the envelope profile and the verdict do not.
+  `valid/` shipped in v0.5.0 and is frozen byte-for-byte; the generator
+  reproduces it exactly.
+- `SHA256SUMS` — checksum manifest over the corpus (`valid/` lines first,
+  unchanged; `valid-v05/` lines after).
 
 Regenerate deterministically (fixed test seed — public test material, never
 a production signing key — same convention as agent-action-capsule's own
@@ -42,3 +49,7 @@ against the Python reference verifier on every test run (no Go dependency
 needed in CI); the Go cross-check above was run manually against
 `agent-action-capsule` main to confirm this exact corpus before it was
 committed — see that commit's message for the result.
+Both cases were cross-verified the same way against `agent-action-capsule`
+main at 439dc02 (the -05 wire): the Go (`go/envelope`, `go/verify`) and
+TypeScript (`verifyProducerEnvelope`, `verifyClass1`) references accept both
+envelopes and both capsule bodies, as the Python reference does.

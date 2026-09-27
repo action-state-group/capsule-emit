@@ -15,7 +15,15 @@ repo — coordinate with him, do not push there; see
   `slot_form_composition.composed_members[slot="can"].digest` equals
   `carry_form.capsule_id`, byte for byte — `can()` referenced the already-
   produced capsule, it did not re-mint one.
-- `SHA256SUMS` — checksum manifest over the corpus.
+- `valid-v05/` — the same three files for the `spec_version` -05 twin: the
+  same calls with the same pinned key, uuids and timestamp, stamping
+  `draft-mih-scitt-agent-action-capsule-05` as `seal()`/`received()` now do.
+  Every Capsule ID differs; the can-slot byte-identity holds the same way.
+  `valid/` shipped in v0.5.0 and is frozen byte-for-byte; the generator
+  reproduces it exactly (it pins the stamped `spec_version` back to -04 for
+  that case).
+- `SHA256SUMS` — checksum manifest over the corpus (`valid/` lines first,
+  unchanged; `valid-v05/` lines after).
 
 Also demonstrates the new member-ref shape: each entry in
 `composed_members` carries a `slot` key (`"who"|"can"|"did"|"audit"`)
@@ -31,5 +39,7 @@ python test-vectors/slot-composition/scripts/generate_vectors.py
 ```
 
 `tests/test_slot_composition_vectors.py` checks the checked-in corpus on
-every test run: the two capsules verify independently, and the byte-identity
-assertion holds.
+every test run, for both `valid/` and `valid-v05/`: the two capsules verify
+independently, and the byte-identity assertion holds. Both cases also verify
+under the Go and TypeScript references at `agent-action-capsule` main 439dc02
+(the -05 wire).
