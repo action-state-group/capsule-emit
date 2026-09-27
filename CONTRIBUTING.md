@@ -51,6 +51,25 @@ ruff check .                       # lint
 python examples/quickstart_demo.py # the 5-minute acceptance demo
 ```
 
+## Adding a witness or countersigner to the directory
+
+`witnesses.json` at the repository root lists who runs a witness and who
+issues countersignatures, so a verifier can put a name to a key. Anyone who
+operates one can add a row; no row is privileged, the maintainers' own
+included. Both arrays are alphabetical by `name`, one row per operator and
+endpoint, and every row passes the same checks
+(`python -m capsule_emit.witness_directory witnesses.json`; field shapes in
+`docs/schemas/witnesses.schema.json`).
+
+Open the pull request with the directory-row template
+(`?template=directory-row.md` on the compare URL). A reviewer fetches your
+key from your endpoint's own host before merging. The directory records who
+holds a key, never how good they are: rows carry no rating, score, or tier.
+It also never decides whether a particular countersignature is independent.
+A verifier works that out for each entry from the signer key and the
+producer key, and a countersignature made with the producer's own key is
+shown as not independent whatever the row says.
+
 ## Where discussion happens
 
 The underlying specification is discussed in the IETF **SCITT** Working Group

@@ -1,0 +1,27 @@
+{
+  "directory_version": "1",
+  "witnesses": [
+    {
+      "name": "Action State Group",
+      "endpoint": "https://witness.agentactioncapsule.org",
+      "key_ids": [
+        "39bb654c9dc0afe1c0edef0deffaa69099b8518836c9ba26e0491535840f96b5"
+      ],
+      "since": "2026-06-28"
+    }
+  ],
+  "countersigners": [
+    {
+      "name": "Action State Group",
+      "endpoint": "https://countersign.actionstate.ai",
+      "key_ids": [
+        "PLACEHOLDER-countersign-instance-key-not-yet-generated"
+      ],
+      "statement_types_issued": [
+        "countersign/v1"
+      ],
+      "since": "PLACEHOLDER-date-of-first-live-countersignature",
+      "independent_of": []
+    }
+  ]
+}

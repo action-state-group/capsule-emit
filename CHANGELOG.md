@@ -6,6 +6,20 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added — `witnesses.json`: the witness and countersigner directory
+
+- `witnesses.json` at the repository root lists witnesses (`witnesses[]`) and
+  countersigners (`countersigners[]`: `name`, `endpoint`, `key_ids`,
+  `statement_types_issued`, `since`, `independent_of`). A verifier resolves a
+  countersignature's `signer.key_id` against `countersigners[].key_ids`.
+- `capsule_emit.witness_directory` validates it: exact field set per row,
+  full 64-hex Ed25519 keys, a key listed at most once across the file,
+  https endpoints, calendar dates, alphabetical order by name, and no row
+  declaring independence of itself. Field shapes are also published as
+  `docs/schemas/witnesses.schema.json`.
+- `CONTRIBUTING.md` and `.github/PULL_REQUEST_TEMPLATE/directory-row.md`
+  describe how another operator adds a row.
+
 ### Changed — capsules now stamp spec_version -05 (draft -05 wire)
 
 - `seal()`, `received()`, `log()` and the `holds/` lifecycle capsules stamp

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/action-state-group/capsule-emit/blob/main/docs/schemas/witnesses.schema.json",
+  "title": "Witness and countersigner directory",
+  "description": "Shape of witnesses.json. Checks JSON Schema cannot express (alphabetical order, a key id listed at most once across the file, a row not declaring independence of itself) are enforced by capsule_emit.witness_directory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["directory_version", "witnesses", "countersigners"],
+  "properties": {
+    "directory_version": { "const": "1" },
+    "witnesses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "endpoint", "key_ids", "since"],
+        "properties": {
+          "name": { "$ref": "#/$defs/name" },
+          "endpoint": { "$ref": "#/$defs/endpoint" },
+          "key_ids": { "$ref": "#/$defs/key_ids" },
+          "since": { "$ref": "#/$defs/since" }
+        }
+      }
+    },
+    "countersigners": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "endpoint", "key_ids", "statement_types_issued", "since", "independent_of"],
+        "properties": {
+          "name": { "$ref": "#/$defs/name" },
+          "endpoint": { "$ref": "#/$defs/endpoint" },
+          "key_ids": { "$ref": "#/$defs/key_ids" },
+          "statement_types_issued": {
+            "description": "Registered Evidence Bundle countersignature types this operator issues, e.g. countersign/v1.",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "since": { "$ref": "#/$defs/since" },
+          "independent_of": {
+            "description": "The operator's own declaration of parties it is under no common control with. A declaration, not a finding: a verifier computes the independence of each countersignature from its signer key, never from this list.",
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "name": {
+      "description": "The operator's self-declared name. Rows are ordered by it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "endpoint": {
+      "description": "Absolute https URL of the service; no credentials, query, or fragment.",
+      "type": "string",
+      "pattern": "^https://[^/?#@]+(/[^?#]*)?$"
+    },
+    "key_ids": {
+      "description": "Full 32-byte Ed25519 public keys, lowercase hex. More than one when the operator has rotated keys.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    },
+    "since": {
+      "description": "Date the row's service began issuing, YYYY-MM-DD.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    }
+  }
+}
