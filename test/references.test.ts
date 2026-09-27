@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { build, verifyCapsule, type Reference } from "../src/index.js";
+import {
+  build,
+  SPEC_VERSION,
+  verifyCapsule,
+  type Reference,
+} from "../src/index.js";
 import {
   computeCapsuleId,
   decodeStrictJson,
@@ -10,41 +15,35 @@ import {
   type ParsedJson,
 } from "../src/aac/index.js";
 
-const root = resolve(process.env.AAC_ROOT ?? "../agent-action-capsule");
-const vectors = JSON.parse(
-  readFileSync(resolve(root, "go/verify/testdata/references.json"), "utf8"),
-) as {
-  cases: {
-    name: string;
-    capsule: Record<string, ParsedJson>;
-    canonical: string;
-    ok: boolean;
-    codes: string[];
-  }[];
-};
+const root = resolve(
+  process.env.AAC_ROOT ?? "../agent-action-capsule",
+  "vectors",
+  "capsule",
+);
+// The shared draft-04 cross-record reference vectors now live in the
+// upstream capsule corpus as reference-* cases, which test/class1.test.ts
+// runs in full; this file keeps the producer-side and extension checks.
+const vector = (name: string): Record<string, ParsedJson> =>
+  decodeStrictJson(
+    readFileSync(resolve(root, `reference-${name}`, "input.json")),
+  ) as Record<string, ParsedJson>;
 
 describe("shared draft-04 cross-record reference vectors", () => {
-  for (const vector of vectors.cases) {
-    it(vector.name, () => {
-      const capsule = decodeStrictJson(JSON.stringify(vector.capsule));
-      const result = verifyClass1(capsule, new Set(["a".repeat(64)]));
-      expect(result.ok).toBe(vector.ok);
-      expect(result.findings.map((finding) => finding.code)).toEqual(
-        vector.codes,
-      );
-      expect(new TextDecoder().decode(jcs(capsule))).toBe(vector.canonical);
-      if (vector.name === "future-purpose") {
-        const custom = verifyClass1(capsule, new Set(["a".repeat(64)]), {
-          citation_purpose: new Set(["example-purpose"]),
-        });
-        expect(custom.ok).toBe(true);
-        expect(custom.findings).toEqual([]);
-      }
+  it("accepts a caller-registered citation purpose without findings", () => {
+    const capsule = vector("future-purpose");
+    const custom = verifyClass1(capsule, new Set(["a".repeat(64)]), {
+      citation_purpose: new Set(["example-purpose"]),
     });
-  }
+    expect(custom.ok).toBe(true);
+    expect(custom.findings).toEqual([]);
+  });
 
   it("constructs the same cited Capsule bytes as Python and commits the citation", () => {
-    const expected = vectors.cases.find((v) => v.name === "external-capsule")!;
+    // The released vector is -04; this producer stamps -05. Its bytes are
+    // the vector's with only spec_version (and so capsule_id) changed.
+    const expected = vector("external-capsule");
+    expected.spec_version = SPEC_VERSION;
+    expected.capsule_id = computeCapsuleId(expected);
     const reference: Reference = {
       type: "agent-action-capsule",
       digestAlg: "SHA-256",
@@ -60,7 +59,9 @@ describe("shared draft-04 cross-record reference vectors", () => {
       chain: { parentCapsuleId: "a".repeat(64), relation: "confirms" },
       references: [reference],
     });
-    expect(new TextDecoder().decode(built.json)).toBe(expected.canonical);
+    expect(new TextDecoder().decode(built.json)).toBe(
+      new TextDecoder().decode(jcs(expected)),
+    );
     const tampered = JSON.parse(new TextDecoder().decode(built.json));
     tampered.references[0].citation_purpose = "acted_on";
     expect(computeCapsuleId(tampered)).not.toBe(built.capsuleId);
@@ -131,9 +132,12 @@ it("records opaque log coordinates and preserves absent versus empty references"
 });
 
 it("treats decoded numbers as scalars in reference object positions", () => {
-  const vector = vectors.cases.find((v) => v.name === "opaque-proof")!;
+  const source = readFileSync(
+    resolve(root, "reference-opaque-proof", "input.json"),
+    "utf8",
+  );
   for (const numericEntry of [true, false]) {
-    const capsule = JSON.parse(JSON.stringify(vector.capsule));
+    const capsule = JSON.parse(source);
     if (numericEntry) capsule.references = [1];
     else capsule.references[0].log_coordinates = 7;
     capsule.capsule_id = computeCapsuleId(capsule);

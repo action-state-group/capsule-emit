@@ -333,8 +333,8 @@ assurance. Refresh the snapshot from that source; the test suite checks its
 provenance and content. Raw JCS still normalizes `-0` to `0`; Python's optional
 strict input verification tier is a separate acceptance policy.
 
-Shared reference and vocabulary vectors live in the AAC source checkout under
-`go/verify/testdata/`. The producer-to-CLL check is maintained in
+Shared Class 1, reference and Producer Envelope vectors live in the AAC source
+checkout under `vectors/`; vocabulary vectors under `go/verify/testdata/`. The producer-to-CLL check is maintained in
 `capsule-emit-go/scripts/check-producer-cll-interop.sh` and runs in both emitters'
 CI. It covers in-memory append/checkpoint interoperability without witness I/O.
 

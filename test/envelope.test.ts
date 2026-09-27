@@ -5,7 +5,8 @@ import { verifyEnvelope } from "../src/index.js";
 
 const root = resolve(
   process.env.AAC_ROOT ?? "../agent-action-capsule",
-  "producer-envelope-vectors",
+  "vectors",
+  "producer-envelope",
 );
 const manifest = JSON.parse(
   readFileSync(resolve(root, "vectors.json"), "utf8"),

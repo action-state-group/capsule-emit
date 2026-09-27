@@ -1,6 +1,22 @@
 import type { KeyObject } from "node:crypto";
 
-export const SPEC_VERSION = "draft-mih-scitt-agent-action-capsule-04";
+/**
+ * The draft revision every Capsule this package produces carries. A producer
+ * conforming to draft -05 emits -05.
+ */
+export const SPEC_VERSION = "draft-mih-scitt-agent-action-capsule-05";
+/**
+ * The revisions a verifier accepts for format 4: -04 and -05. Informational
+ * only: `spec_version` selects no digest or verification algorithm (those
+ * follow `format_version` and `canonicalization_id`), and an unrecognized
+ * value is never by itself a reason to reject, so no verifier here branches
+ * on it. Same rule and values as agent-action-capsule's
+ * `CURRENT_SPEC_VERSION` / `ACCEPTED_SPEC_VERSIONS`.
+ */
+export const ACCEPTED_SPEC_VERSIONS: readonly string[] = Object.freeze([
+  "draft-mih-scitt-agent-action-capsule-04",
+  SPEC_VERSION,
+]);
 export const FORMAT_VERSION = "4";
 export const CANONICALIZATION_ID = "jcs";
 export const CONTENT_TYPE = "application/agent-action-capsule-id";

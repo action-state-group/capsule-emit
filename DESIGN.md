@@ -14,15 +14,20 @@ imports no storage driver into the root; see [Artifact storage](#artifact-storag
 | Repository             | Revision                                   | Authority                                         |
 | ---------------------- | ------------------------------------------ | ------------------------------------------------- |
 | `agent-action-capsule` | `7e112c8b877ad79d4d2a53be7b522a63470a2b1d` | Pinned draft-04 implementation and frozen vectors |
-| `agent-action-capsule` | `bb648e15d4826ff78e7d71eb4f3cc87ec5e6713c` | Synchronized current tree                         |
+| `agent-action-capsule` | `439dc02c05d1177ea7c786bf759994d71b85ccc3` | Draft-05 wire, registries and vector layout       |
 | `capsule-emit-go`      | `280596e03070d6c3333224313fd6aa20b0cb992a` | Public producer API and behavior                  |
 | `capsule-emit`         | `40b592192e19622ff7a8c82674eb7caddb52e8db` | Released 0.7.0 Python byte-exact fixtures         |
 
 These revisions record the implementation baseline. CI interoperability jobs
 intentionally test the current change against each peer repository's `main`.
 
-The pinned and current AAC revisions do not differ under `spec/`, `go/`,
-`test-vectors/`, or `producer-envelope-vectors/`.
+At `439dc02` AAC moved its corpora to `vectors/capsule/` and
+`vectors/producer-envelope/`, folded the cross-record reference vectors into
+`vectors/capsule/reference-*`, dropped format 2 from the Class 1 verifier, and
+defined draft -05. This package stamps `spec_version`
+`draft-mih-scitt-agent-action-capsule-05` (`SPEC_VERSION`); its verifiers
+accept -04 and -05 (`ACCEPTED_SPEC_VERSIONS`) and never branch on the value:
+it selects no algorithm, and an unrecognized value is not a rejection.
 
 ## Parity matrix
 
@@ -30,7 +35,7 @@ The pinned and current AAC revisions do not differ under `spec/`, `go/`,
 | ----------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `DigestJSON`                  | `digestJSON`                                     | SHA-256 over RFC 8785 JCS; rejects floats and unsafe integers; normalizes negative zero    |
 | `DecodePayload`               | `decodePayload`                                  | Strict UTF-8 object decode; rejects duplicates and trailing data; preserves number lexemes |
-| `Build`                       | `build`                                          | Draft-04, format 4, `jcs`, UTC microseconds, derived assurance, signer-independent ID      |
+| `Build`                       | `build`                                          | Draft-05, format 4, `jcs`, UTC microseconds, derived assurance, signer-independent ID      |
 | `Carry`                       | `carry`                                          | Exact opaque bytes using artifact type `foreign-artifact`                                  |
 | `Received`                    | `received`                                       | Exact opaque bytes with a caller-declared non-empty type                                   |
 | `Who`/`Can`/`Did`/`Audit`     | `who`/`can`/`did`/`audit`                        | Verified Capsule slot wrappers                                                             |

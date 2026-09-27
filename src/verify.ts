@@ -3,7 +3,7 @@ import {
   verifyClass1,
   type VerificationResult,
 } from "./aac/index.js";
-import { CANONICALIZATION_ID, FORMAT_VERSION, SPEC_VERSION } from "./types.js";
+import { CANONICALIZATION_ID, FORMAT_VERSION } from "./types.js";
 
 export { isV4IrreversibilityClass } from "./aac/index.js";
 
@@ -24,8 +24,9 @@ export function decodePayload(
 
 export function verifyCapsule(data: Uint8Array | string): VerificationResult {
   const payload = decodeCapsuleJson(data);
+  // spec_version is deliberately not compared: it selects no algorithm, and
+  // -04, -05, or an unrecognized revision is never by itself a rejection.
   if (
-    payload.spec_version !== SPEC_VERSION ||
     payload.format_version !== FORMAT_VERSION ||
     payload.canonicalization_id !== CANONICALIZATION_ID
   )

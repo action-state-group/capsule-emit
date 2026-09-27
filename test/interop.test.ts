@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -14,12 +14,22 @@ import {
   who,
   type Input,
   type Result,
+  verifyCapsule,
 } from "../src/index.js";
 
 const goRoot = resolve(
   process.env.CAPSULE_EMIT_GO_ROOT ?? "../capsule-emit-go",
 );
-const vectorRoot = resolve(goRoot, "testdata/capsule-emit/format4-interop");
+// capsule-emit-go keeps the released -04 pack in format4-interop/ and its -05
+// twin beside it in format4-interop-v05/. This producer stamps -05, so it
+// replays the -05 pack; until that pack exists upstream, the single pack
+// (regenerated live from Python main in CI) is the one to replay. Every pack
+// present is also verified, whichever spec_version it carries.
+const packRoots = [
+  resolve(goRoot, "testdata/capsule-emit/format4-interop"),
+  resolve(goRoot, "testdata/capsule-emit/format4-interop-v05"),
+].filter((root) => existsSync(resolve(root, "vectors.json")));
+const vectorRoot = packRoots.at(-1)!;
 const spec = JSON.parse(
   readFileSync(resolve(vectorRoot, "input.json"), "utf8"),
 ) as {
@@ -116,5 +126,30 @@ describe("Go/Python format-4 frozen vectors", () => {
       ).toBe(true);
       expect(verifyEnvelope(result.capsuleId, result.envelope).ok).toBe(true);
     });
+  }
+});
+
+describe("Go/Python format-4 packs verify whatever spec_version they carry", () => {
+  for (const root of packRoots) {
+    const manifest = JSON.parse(
+      readFileSync(resolve(root, "vectors.json"), "utf8"),
+    ) as { profile: string; cases: Array<{ name: string; path: string }> };
+    for (const item of manifest.cases)
+      it(`${manifest.profile} ${item.name} verifies with its envelope`, () => {
+        const directory = resolve(root, item.path);
+        const expected = JSON.parse(
+          readFileSync(resolve(directory, "expected.json"), "utf8"),
+        ) as { capsule_id: string };
+        const result = verifyCapsule(
+          readFileSync(resolve(directory, "capsule.detached.jcs")),
+        );
+        expect(result.capsuleId).toBe(expected.capsule_id);
+        expect(
+          verifyEnvelope(
+            expected.capsule_id,
+            readFileSync(resolve(directory, "envelope.cose")),
+          ).ok,
+        ).toBe(true);
+      });
   }
 });
