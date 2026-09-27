@@ -806,14 +806,15 @@ def _receipt_grade(
     but carries no label, or a value outside the two grades above. ``None``
     must never be presented as either grade string.
 
-    The label itself is read by a further ``scitt_cose.verify_receipt``
-    pass driven by a throwaway probe key: ``verify_receipt`` fills
-    ``protected_header_ext`` during its structural decode, before the
-    signature check, and ``verify_witness_stamp_tristate`` does not return
-    that field. The probe pass's own verdict is ignored -- it decodes the
-    same ``witness.receipt_b64`` bytes the ``WITNESSED`` check
-    authenticated, and the COSE_Sign1 signature covers the protected
-    header.
+    The label itself is read from a ``scitt_cose.verify_receipt`` call under
+    the SAME key the ``WITNESSED`` check used -- ``ts_pubkey_pem`` when
+    pinned, else :data:`capsule_emit.checkpoint.DEFAULT_TS_PUBLIC_KEY_PEM`
+    for a witness at :data:`capsule_emit.checkpoint.DEFAULT_TS_URL` (the
+    auto-pin ``verify_witness_stamp_tristate`` applies) -- and only when that
+    call's own ``ok`` is ``True``. ``verify_witness_stamp_tristate`` returns
+    only a verdict, not the decoded header, hence the second call; requiring
+    its ``ok`` means the grade is never read from a result whose signature
+    did not verify, whatever ``scitt_cose`` version fills that field.
     """
     if getattr(witness, "is_stub", False):
         return None
@@ -822,7 +823,12 @@ def _receipt_grade(
 
         from scitt_cose import verify_receipt
 
-        from .checkpoint import StampVerdict, verify_witness_stamp_tristate
+        from .checkpoint import (
+            DEFAULT_TS_PUBLIC_KEY_PEM,
+            DEFAULT_TS_URL,
+            StampVerdict,
+            verify_witness_stamp_tristate,
+        )
     except ImportError:
         # scitt_cose isn't installed here -- it is not a required dependency,
         # and without it nothing can be verified, so the documented None.
@@ -830,42 +836,32 @@ def _receipt_grade(
     verdict, _errors = verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=ts_pubkey_pem)
     if verdict is not StampVerdict.WITNESSED:
         return None
+    # The key the WITNESSED verdict was reached under -- the same selection
+    # verify_witness_stamp_tristate makes: the caller's pin, else the
+    # built-in default key auto-pinned for the default ts_url only.
+    trusted_pem = ts_pubkey_pem
+    if trusted_pem is None and witness.ts_url == DEFAULT_TS_URL:
+        trusted_pem = DEFAULT_TS_PUBLIC_KEY_PEM
+    if trusted_pem is None:
+        # Unreachable while WITNESSED implies one of the two keys above; kept
+        # so a future change there degrades to "no grade", not to a read
+        # under no key at all.
+        return None
     try:
-        probe_pem = _grade_probe_pubkey_pem()
-        receipt_bytes = base64.b64decode(witness.receipt_b64)
+        receipt_bytes = base64.b64decode(witness.receipt_b64, validate=True)
         result = verify_receipt(
             receipt_bytes,
             leaf_entry_hex=witness.entry_hash,
-            log_public_key_pem=probe_pem,
+            log_public_key_pem=trusted_pem,
         )
     except Exception:
-        # Broad on purpose: the bytes already verified above, so a failure
-        # here is an unexpected shape from the probe decode, and it must
-        # degrade to "no verified grade" (None), never raise into a
-        # rendering path. It cannot turn a missing grade into a present one.
+        # Broad on purpose: a failure here must degrade to "no verified
+        # grade" (None), never raise into a rendering path.
+        return None
+    if not result.ok:
         return None
     grade = result.protected_header_ext.get(-65537)
     return grade if grade in _RECEIPT_GRADES else None
-
-
-_grade_probe_pubkey_pem_cache: bytes | None = None
-
-
-def _grade_probe_pubkey_pem() -> bytes:
-    """A syntactically valid Ed25519 public key PEM, generated once per
-    process and cached -- NOT a trust anchor, used only to drive
-    ``scitt_cose.verify_receipt`` far enough to decode the protected header
-    (see :func:`_receipt_grade`)."""
-    global _grade_probe_pubkey_pem_cache
-    if _grade_probe_pubkey_pem_cache is None:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-
-        public_key = Ed25519PrivateKey.generate().public_key()
-        _grade_probe_pubkey_pem_cache = public_key.public_bytes(
-            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
-        )
-    return _grade_probe_pubkey_pem_cache
 
 
 @dataclass(frozen=True)
