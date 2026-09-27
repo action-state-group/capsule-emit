@@ -1,0 +1,91 @@
+{
+  "description": "Bilateral attestation signed-payload bytes: RFC 8785 JCS of the phase object, UTF-8. Expected bytes were produced by an independent implementation (agent-action-capsule go/canonical.JCS), not by capsule-emit.",
+  "canonicalization": "jcs (RFC 8785)",
+  "cases": [
+    {
+      "id": "request-ascii",
+      "fn": "request_payload",
+      "args": [
+        "org-a",
+        "org-b",
+        "9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b"
+      ],
+      "object": {
+        "phase": "request",
+        "requester_org": "org-a",
+        "responder_org": "org-b",
+        "action_digest": "9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b"
+      },
+      "jcs_hex": "7b22616374696f6e5f646967657374223a2239663263346131623966326334613162396632633461316239663263346131623966326334613162396632633461316239663263346131623966326334613162222c227068617365223a2272657175657374222c227265717565737465725f6f7267223a226f72672d61222c22726573706f6e6465725f6f7267223a226f72672d62227d",
+      "sha256": "24559c6a9c0426693fe99e2827e46472c4526b22ec0c065361a8ef1800387f19"
+    },
+    {
+      "id": "request-no-responder",
+      "fn": "request_payload",
+      "args": [
+        "org-a",
+        null,
+        "9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b"
+      ],
+      "object": {
+        "phase": "request",
+        "requester_org": "org-a",
+        "responder_org": null,
+        "action_digest": "9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b"
+      },
+      "jcs_hex": "7b22616374696f6e5f646967657374223a2239663263346131623966326334613162396632633461316239663263346131623966326334613162396632633461316239663263346131623966326334613162222c227068617365223a2272657175657374222c227265717565737465725f6f7267223a226f72672d61222c22726573706f6e6465725f6f7267223a6e756c6c7d",
+      "sha256": "0bad2e116a87c3f64ce7cfc7a24777b1987fb47545c99846dbb57f09292e0b90"
+    },
+    {
+      "id": "request-non-ascii",
+      "fn": "request_payload",
+      "args": [
+        "Zürich Rück AG",
+        "株式会社ビー",
+        "9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b"
+      ],
+      "object": {
+        "phase": "request",
+        "requester_org": "Zürich Rück AG",
+        "responder_org": "株式会社ビー",
+        "action_digest": "9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b9f2c4a1b"
+      },
+      "jcs_hex": "7b22616374696f6e5f646967657374223a2239663263346131623966326334613162396632633461316239663263346131623966326334613162396632633461316239663263346131623966326334613162222c227068617365223a2272657175657374222c227265717565737465725f6f7267223a225ac3bc726963682052c3bc636b204147222c22726573706f6e6465725f6f7267223a22e6a0aae5bc8fe4bc9ae7a4bee38393e383bc227d",
+      "sha256": "13a2756ec599863fa71d098691514fc52ac8bfc1d18035fc67e55da96bbd80f6"
+    },
+    {
+      "id": "action-astral-and-u2028",
+      "fn": "action_payload",
+      "args": [
+        "hs-🦫-1",
+        "org b",
+        "0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd"
+      ],
+      "object": {
+        "phase": "action",
+        "handshake_id": "hs-🦫-1",
+        "responder_org": "org b",
+        "request_sig_digest": "0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd"
+      },
+      "jcs_hex": "7b2268616e647368616b655f6964223a2268732df09fa6ab2d31222c227068617365223a22616374696f6e222c22726571756573745f7369675f646967657374223a2230313233616263643031323361626364303132336162636430313233616263643031323361626364303132336162636430313233616263643031323361626364222c22726573706f6e6465725f6f7267223a226f7267e280a862227d",
+      "sha256": "fb6d0773b5ce6e5ecf40ae03e9892a41359b1f17aac7e92003dd166b9ae8a328"
+    },
+    {
+      "id": "confirm-non-ascii",
+      "fn": "confirm_payload",
+      "args": [
+        "hs-1",
+        "Société Générale é",
+        "0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd"
+      ],
+      "object": {
+        "phase": "confirm",
+        "handshake_id": "hs-1",
+        "party_org": "Société Générale é",
+        "acked_sig_digest": "0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd0123abcd"
+      },
+      "jcs_hex": "7b2261636b65645f7369675f646967657374223a2230313233616263643031323361626364303132336162636430313233616263643031323361626364303132336162636430313233616263643031323361626364222c2268616e647368616b655f6964223a2268732d31222c2270617274795f6f7267223a22536f6369c3a974c3a92047c3a96ec3a972616c6520c3a9222c227068617365223a22636f6e6669726d227d",
+      "sha256": "676dd6e4379eb1d4b05ed4c488effcfddff4a8d6912e3761c61381ebab98ab58"
+    }
+  ]
+}

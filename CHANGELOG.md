@@ -6,6 +6,19 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed — bilateral signed payloads are RFC 8785 JCS
+
+- `capsule_emit.bilateral`'s `request_payload`, `action_payload` and
+  `confirm_payload` now return the RFC 8785 JCS bytes of the phase object
+  (`agent_action_capsule.canonical.jcs`). They used `json.dumps(sort_keys=True)`,
+  which escapes every non-ASCII code point, so a payload with any non-ASCII value
+  signed different bytes than another JCS implementation computes. ASCII-only
+  payloads are byte-identical under both, so signatures over them still verify;
+  a signature over a non-ASCII payload made before this change does not.
+- The module no longer says the encoding is "TBD".
+- `test-vectors/bilateral-payloads/` pins the bytes, computed by
+  agent-action-capsule's Go `canonical.JCS`.
+
 ### Changed — capsules now stamp spec_version -05 (draft -05 wire)
 
 - `seal()`, `received()`, `log()` and the `holds/` lifecycle capsules stamp
