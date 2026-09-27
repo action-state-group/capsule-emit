@@ -85,6 +85,7 @@ from .canonicalization import compute_capsule_id
 from .ledger import append_to_ledger
 from .numbers import CANONICALIZATION_ID
 from .signing import Signer
+from .spec_version import SPEC_VERSION
 
 __all__ = ["_emit_capsule", "_emit_log_entry", "EmitResult", "LogEntry", "ReferenceEntry"]
 
@@ -827,6 +828,7 @@ def _emit_capsule(
     capsule = _base_emit(
         action_id=None,
         action_type=_action_type,
+        spec_version=SPEC_VERSION,
         operator=operator,
         developer=developer,
         model_id=model_id,
@@ -1019,6 +1021,7 @@ def _emit_log_entry(
     entry = _base_emit(
         action_id=None,
         action_type="fyi",
+        spec_version=SPEC_VERSION,
         operator=operator,
         developer=developer,
         compute_attestation=compute_att,

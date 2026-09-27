@@ -44,6 +44,7 @@ from agent_action_capsule import (
 )
 
 from ..numbers import CANONICALIZATION_ID
+from ..spec_version import SPEC_VERSION
 from .action import Action
 from .errors import FLOAT_IN_HOLD_AMOUNT, NON_INTEGER_HOLD_AMOUNT, HoldError
 
@@ -60,7 +61,6 @@ __all__ = [
     "build_hold_decision_capsule",
 ]
 
-_SPEC_VERSION = "draft-mih-scitt-agent-action-capsule-04"
 _FORMAT_VERSION = "4"
 
 ALLOW = "allow"
@@ -132,7 +132,7 @@ def _build(
 ) -> dict:
     disposition = Disposition(decision=decision, approver="policy", human_disposed=False, verdict_class=verdict_class)
     capsule_obj = Capsule(
-        spec_version=_SPEC_VERSION,
+        spec_version=SPEC_VERSION,
         format_version=_FORMAT_VERSION,
         canonicalization_id=CANONICALIZATION_ID,
         action_id=hold_action.resolved_action_id(),

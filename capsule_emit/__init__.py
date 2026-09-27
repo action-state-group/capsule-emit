@@ -89,6 +89,7 @@ from .signing import (
     verify_capsule_signature_tristate,
     verify_store_signed,
 )
+from .spec_version import ACCEPTED_SPEC_VERSIONS, SPEC_VERSION
 from .surface import Capsule, audit, can, did, log, push, received, seal, who
 from .verify import InputDigestResult, VerifyReason, verify_input_digest
 from .verify_canonicalization import (
@@ -179,6 +180,9 @@ __all__ = [
     # Number conversion (RFC 8785 §3.2.2.3) and canonicalization identifier
     "CANONICALIZATION_ID",
     "float_to_str",
+    # Draft revision stamped (-05) and accepted (-04, -05) -- informational only
+    "SPEC_VERSION",
+    "ACCEPTED_SPEC_VERSIONS",
     "KNOWN_ALGORITHMS",
     "verify_canonicalization_id",
     "CanonicalizationVerdict",
