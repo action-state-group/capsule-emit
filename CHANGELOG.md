@@ -6,6 +6,17 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added — `countersigners[]` in `witnesses.json`
+
+- `witnesses.json` gains an optional `countersigners[]` array (`name`, `endpoint`, `key_ids`,
+  `statement_types_issued`, `since`, `independent_of`). A verifier resolves a countersignature's
+  `signer.key_id` against `countersigners[].key_ids`; a countersigner key id is always the raw
+  32-byte Ed25519 public key in 64 lowercase hex, the form `signer.key_id` carries.
+- `capsule_emit.witness_directory` checks countersigner rows the same way as witness rows (exact
+  field set, https endpoints, calendar dates, alphabetical order), lists a key at most once across
+  both arrays, and refuses a row that declares independence of itself. Independence of a given
+  countersignature is never read from the directory; the verifier computes it per entry.
+
 ### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
 
 - `capsule-emit verify --bundle FILE.json [--require-signature] [--json]` checks an evidence file

@@ -51,24 +51,29 @@ ruff check .                       # lint
 python examples/quickstart_demo.py # the 5-minute acceptance demo
 ```
 
-## Adding a witness to the directory
+## Adding a witness or countersigner to the directory
 
 `witnesses.json` at the repository root lists transparency services that
-take a log's checkpoint and return a receipt a verifier can check offline,
-with the keys those receipts are signed with. Anyone who runs one can add a
-row. No row is privileged, the maintainers' own included: rows are
-alphabetical by `name`, one per operator and endpoint, every row passes the
-same checks (`python -m capsule_emit.witness_directory witnesses.json`;
-field shapes in `docs/schemas/witnesses.schema.json`), and
-`capsule_emit.witness_bindings.verify_witnesses` reads every row's keys the
-same way, with no built-in key for any service.
+take a log's checkpoint and return a receipt a verifier can check offline
+(`witnesses[]`), and parties that issue countersignatures over an Evidence
+Bundle (`countersigners[]`), with the keys each signs with. Anyone who runs
+one can add a row. No row is privileged, the maintainers' own included: both
+arrays are alphabetical by `name`, one row per operator and endpoint, every
+row passes the same checks (`python -m capsule_emit.witness_directory
+witnesses.json`; field shapes in `docs/schemas/witnesses.schema.json`), and
+`capsule_emit.witness_bindings.verify_witnesses` reads every witness row's
+keys the same way, with no built-in key for any service.
 
 Open the pull request with the directory-row template
 (`?template=directory-row.md` on the compare URL). A reviewer fetches your
 key from your endpoint's own host before merging. The directory records who
 holds a key, never how good they are: rows carry no rating, score, or tier.
 How many witnesses, from how many distinct operators, a checkpoint needs is
-the verifier's policy, not the directory's.
+the verifier's policy, not the directory's. The directory also never decides
+whether a particular countersignature is independent. A verifier works that
+out for each entry from the signer key and the producer key, and a
+countersignature made with the producer's own key is shown as not
+independent whatever the row says.
 
 ## Where discussion happens
 

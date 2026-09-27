@@ -15,6 +15,8 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from capsule_emit.witness_directory import (
+    COUNTERSIGNER_FIELDS,
+    OPTIONAL_TOP_LEVEL_FIELDS,
     OPTIONAL_WITNESS_FIELDS,
     TOP_LEVEL_FIELDS,
     WITNESS_FIELDS,
@@ -31,6 +33,8 @@ SCHEMA = ROOT / "docs" / "schemas" / "witnesses.schema.json"
 
 KEY_A = "11" * 32
 KEY_B = "22" * 32
+KEY_C = "33" * 32
+KEY_D = "77" * 32
 _EC_DER = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
     Encoding.DER, PublicFormat.SubjectPublicKeyInfo
 )
@@ -51,16 +55,38 @@ def _valid() -> dict:
             },
             {"name": "Gamma Ltd", "endpoint": "https://ts.gamma.example/v1", "binding": "scrapi", "key_ids": [KEY_B], "since": "2026-05-06"},
         ],
+        "countersigners": [
+            {
+                "name": "beta co",
+                "endpoint": "https://cs.beta.example",
+                "key_ids": [KEY_C],
+                "statement_types_issued": ["countersign/v1"],
+                "since": "2026-03-04",
+                "independent_of": [],
+            },
+            {
+                "name": "Gamma Ltd",
+                "endpoint": "https://cs.gamma.example/v1",
+                "key_ids": [KEY_D],
+                "statement_types_issued": ["countersign/v1"],
+                "since": "2026-05-06",
+                "independent_of": ["beta co"],
+            },
+        ],
     }
 
 
 def test_committed_directory_validates():
+    """Fails while our countersigner row still carries placeholders: the key
+    and the start date exist only once the instance is live. That failure is
+    the merge gate for the row, on purpose; scripts/fill_countersigner_row.py
+    fills both."""
     assert validate_file(DIRECTORY) == []
 
 
-def test_committed_directory_has_only_the_two_top_level_fields():
+def test_committed_directory_has_only_the_known_top_level_fields():
     doc = json.loads(DIRECTORY.read_text(encoding="utf-8"))
-    assert set(doc) == {"directory_version", "witnesses"}
+    assert set(doc) == {"directory_version", "witnesses", "countersigners"}
 
 
 def test_valid_document_passes():
@@ -74,12 +100,25 @@ def test_schema_file_matches_validator_fields():
     assert tuple(item["required"]) == WITNESS_FIELDS
     assert set(item["properties"]) == set(WITNESS_FIELDS) | set(OPTIONAL_WITNESS_FIELDS)
     assert set(item["properties"]["binding"]["enum"]) == {"cll", "rekor", "scrapi"}
+    assert tuple(schema["properties"]) == TOP_LEVEL_FIELDS + OPTIONAL_TOP_LEVEL_FIELDS
+    cs_item = schema["properties"]["countersigners"]["items"]
+    assert tuple(cs_item["required"]) == COUNTERSIGNER_FIELDS
+    assert set(cs_item["properties"]) == set(COUNTERSIGNER_FIELDS)
+
+
+def test_countersigner_rows_use_the_field_names_the_go_verifier_reads():
+    # capsule-cli's countersignerDirectory decodes {"countersigners": [...]}
+    # with these json tags; a renamed field would silently read as empty there.
+    assert COUNTERSIGNER_FIELDS == (
+        "name", "endpoint", "key_ids", "statement_types_issued", "since", "independent_of",
+    )
 
 
 def test_committed_directory_is_alphabetical():
     doc = json.loads(DIRECTORY.read_text(encoding="utf-8"))
-    names = [row["name"].casefold() for row in doc["witnesses"]]
-    assert names == sorted(names)
+    for array in ("witnesses", "countersigners"):
+        names = [row["name"].casefold() for row in doc[array]]
+        assert names == sorted(names)
 
 
 def test_out_of_order_rows_fail():
@@ -273,3 +312,102 @@ def test_unreadable_file_is_reported(tmp_path):
     path = tmp_path / "broken.json"
     path.write_text("{not json", encoding="utf-8")
     assert any("cannot read as JSON" in e for e in validate_file(path))
+
+
+# -- countersigners ------------------------------------------------------------
+
+
+def test_countersigners_array_is_optional():
+    doc = _valid()
+    del doc["countersigners"]
+    assert validate_directory(doc) == []
+
+
+def test_countersigners_must_be_a_list():
+    doc = _valid()
+    doc["countersigners"] = {}
+    assert any("countersigners: must be a list" in e for e in validate_directory(doc))
+
+
+def test_out_of_order_countersigner_rows_fail():
+    doc = _valid()
+    doc["countersigners"].reverse()
+    assert any("countersigners: rows must be in alphabetical order" in e for e in validate_directory(doc))
+
+
+def test_countersigner_placeholders_are_reported_as_placeholders():
+    doc = _valid()
+    doc["countersigners"][0]["key_ids"] = ["PLACEHOLDER-key"]
+    doc["countersigners"][0]["since"] = "PLACEHOLDER-date"
+    errors = validate_directory(doc)
+    assert any("countersigners[0].key_ids[0]: placeholder" in e for e in errors)
+    assert any("countersigners[0].since: placeholder" in e for e in errors)
+
+
+@pytest.mark.parametrize("key", ["11" * 31, ("ab" * 32).upper(), "19a9ab3e02fad55c", "zz" * 32])
+def test_countersigner_key_id_must_be_64_lowercase_hex(key):
+    doc = _valid()
+    doc["countersigners"][0]["key_ids"] = [key]
+    assert any("countersigners[0].key_ids[0]: must be 64 lowercase hex" in e for e in validate_directory(doc))
+
+
+def test_a_countersigner_key_resolves_to_at_most_one_row():
+    doc = _valid()
+    doc["countersigners"][1]["key_ids"] = [KEY_C]
+    assert any("already listed at countersigners[0]" in e for e in validate_directory(doc))
+
+
+def test_a_witness_key_is_not_reused_as_a_countersigner_key():
+    doc = _valid()
+    doc["countersigners"][0]["key_ids"] = [KEY_A]
+    assert any("already listed at witnesses[0]" in e for e in validate_directory(doc))
+
+
+@pytest.mark.parametrize("field", COUNTERSIGNER_FIELDS)
+def test_countersigner_missing_field_fails(field):
+    doc = _valid()
+    del doc["countersigners"][0][field]
+    assert any("missing field" in e and field in e for e in validate_directory(doc))
+
+
+@pytest.mark.parametrize("field", ["score", "rating", "tier", "compliant", "binding", "public_keys"])
+def test_countersigner_unknown_field_fails(field):
+    doc = _valid()
+    doc["countersigners"][0][field] = "x"
+    assert any("countersigners[0]: unknown field" in e for e in validate_directory(doc))
+
+
+def test_countersigner_endpoint_and_since_are_checked():
+    doc = _valid()
+    doc["countersigners"][0]["endpoint"] = "http://cs.beta.example"
+    doc["countersigners"][1]["since"] = "2026-13-01"
+    errors = validate_directory(doc)
+    assert any("countersigners[0].endpoint:" in e for e in errors)
+    assert any("countersigners[1].since:" in e for e in errors)
+
+
+def test_statement_types_must_not_be_empty():
+    doc = _valid()
+    doc["countersigners"][0]["statement_types_issued"] = []
+    assert any("statement_types_issued: must not be empty" in e for e in validate_directory(doc))
+
+
+def test_a_row_cannot_declare_independence_of_itself():
+    doc = _valid()
+    doc["countersigners"][0]["independent_of"] = ["beta co"]
+    assert any("independence of itself" in e for e in validate_directory(doc))
+
+
+def test_independent_of_has_no_duplicates():
+    doc = _valid()
+    doc["countersigners"][1]["independent_of"] = ["beta co", "beta co"]
+    assert any("independent_of: duplicate" in e for e in validate_directory(doc))
+
+
+def test_empty_independent_of_is_valid():
+    # Declaring nothing is allowed. Independence of a given countersignature
+    # is computed per entry by the verifier (signer key vs producer key), so a
+    # row's declaration never makes a self-countersignature independent.
+    doc = _valid()
+    doc["countersigners"][1]["independent_of"] = []
+    assert validate_directory(doc) == []

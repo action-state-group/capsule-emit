@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``witnesses.json``: the public directory of witnesses, its validator, and
-the one way a verifier reads keys and operator names out of it.
+"""``witnesses.json``: the public directory of witnesses and countersigners,
+its validator, and the one way a verifier reads keys and operator names out
+of it.
 
 A witness is a transparency service that takes a log's checkpoint and returns
 a receipt a verifier can check offline. The directory says who runs each one
@@ -13,6 +14,21 @@ source of a witness's key and no built-in default for any service.
 What the directory does NOT decide is trust. A row says who holds a key.
 Whether a verifier accepts that operator, and how many distinct operators it
 requires, is the verifier's policy.
+
+**Countersigners.** The optional ``countersigners`` array lists parties that
+issue countersignatures (a signature by a party other than the producer over
+an Evidence Bundle digest, with a statement of what that party recomputed).
+A verifier resolves a countersignature by its ``signer.key_id`` against
+``countersigners[].key_ids``; a row is how a stamp gets a name. A
+countersigner key id is always the raw 32-byte Ed25519 public key in 64
+lowercase hex -- the form ``signer.key_id`` carries -- so a countersigner row
+has no ``binding`` or ``public_keys``. The directory never decides whether a
+given countersignature is independent: the verifier computes that per entry
+from the signer key and the producer key, and a countersignature made with
+the producer's own key is not independent whatever the row says.
+``independent_of`` is the operator's own published declaration; it can be
+contradicted, and a verifier never derives independence from it. A key is
+listed at most once across both arrays, so a key resolves to one row.
 
 **Keys.** ``key_ids`` entries are 64 lowercase hex characters. For an Ed25519
 key this is the raw 32-byte public key. A service whose key is not Ed25519
@@ -48,8 +64,17 @@ from urllib.parse import urlsplit
 DIRECTORY_VERSION = "1"
 
 TOP_LEVEL_FIELDS = ("directory_version", "witnesses")
+OPTIONAL_TOP_LEVEL_FIELDS = ("countersigners",)
 WITNESS_FIELDS = ("name", "endpoint", "key_ids", "since")
 OPTIONAL_WITNESS_FIELDS = ("binding", "public_keys")
+COUNTERSIGNER_FIELDS = (
+    "name",
+    "endpoint",
+    "key_ids",
+    "statement_types_issued",
+    "since",
+    "independent_of",
+)
 BINDINGS = ("cll", "rekor", "scrapi")
 DEFAULT_BINDING = "cll"
 
@@ -148,19 +173,49 @@ def _check_since(where: str, value: object, errors: list[str]) -> None:
         errors.append(f"{where}.since: {value!r} is not a calendar date")
 
 
-def _check_rows(rows: object, errors: list[str]) -> None:
+def _check_witness_extras(where: str, row: dict, key_ids: list[str], errors: list[str]) -> None:
+    if "binding" in row and row["binding"] not in BINDINGS:
+        errors.append(f"{where}.binding: must be one of {', '.join(BINDINGS)}")
+    if "public_keys" in row:
+        _check_public_keys(where, row["public_keys"], key_ids, errors)
+    if row.get("binding") == "rekor":
+        covered = _public_key_hashes(row.get("public_keys"))
+        for i, key in enumerate(key_ids):
+            if _KEY_ID.match(key) and key not in covered:
+                errors.append(
+                    f"{where}.key_ids[{i}]: a rekor row's key id is a log ID; "
+                    "add the key it hashes from to public_keys"
+                )
+
+
+def _check_countersigner_extras(where: str, row: dict, key_ids: list[str], errors: list[str]) -> None:
+    _check_string_list(
+        where, "statement_types_issued", row.get("statement_types_issued"), errors, allow_empty=False
+    )
+    declared = _check_string_list(where, "independent_of", row.get("independent_of"), errors, allow_empty=True)
+    if isinstance(row.get("name"), str) and row["name"] in declared:
+        errors.append(f"{where}.independent_of: a row cannot declare independence of itself")
+
+
+def _check_rows(
+    array: str,
+    rows: object,
+    fields: tuple[str, ...],
+    optional: tuple[str, ...],
+    errors: list[str],
+    key_owner: dict[str, str],
+) -> None:
     if not isinstance(rows, list):
-        errors.append("witnesses: must be a list")
+        errors.append(f"{array}: must be a list")
         return
-    key_owner: dict[str, str] = {}
     sort_keys: list[tuple[str, str]] = []
     for i, row in enumerate(rows):
-        where = f"witnesses[{i}]"
+        where = f"{array}[{i}]"
         if not isinstance(row, dict):
             errors.append(f"{where}: must be an object")
             continue
-        missing = [f for f in WITNESS_FIELDS if f not in row]
-        unknown = sorted(set(row) - set(WITNESS_FIELDS) - set(OPTIONAL_WITNESS_FIELDS))
+        missing = [f for f in fields if f not in row]
+        unknown = sorted(set(row) - set(fields) - set(optional))
         if missing:
             errors.append(f"{where}: missing field(s) {', '.join(missing)}")
         if unknown:
@@ -174,25 +229,17 @@ def _check_rows(rows: object, errors: list[str]) -> None:
             else:
                 key_owner[key] = where
         _check_since(where, row.get("since"), errors)
-        if "binding" in row and row["binding"] not in BINDINGS:
-            errors.append(f"{where}.binding: must be one of {', '.join(BINDINGS)}")
-        if "public_keys" in row:
-            _check_public_keys(where, row["public_keys"], key_ids, errors)
-        if row.get("binding") == "rekor":
-            covered = _public_key_hashes(row.get("public_keys"))
-            for i, key in enumerate(key_ids):
-                if _KEY_ID.match(key) and key not in covered:
-                    errors.append(
-                        f"{where}.key_ids[{i}]: a rekor row's key id is a log ID; "
-                        "add the key it hashes from to public_keys"
-                    )
+        if array == "countersigners":
+            _check_countersigner_extras(where, row, key_ids, errors)
+        else:
+            _check_witness_extras(where, row, key_ids, errors)
         name, endpoint = row.get("name"), row.get("endpoint")
         if isinstance(name, str) and isinstance(endpoint, str):
             sort_keys.append((name.casefold(), endpoint))
     if len(set(sort_keys)) != len(sort_keys):
-        errors.append("witnesses: two rows share the same name and endpoint")
+        errors.append(f"{array}: two rows share the same name and endpoint")
     if sort_keys != sorted(sort_keys):
-        errors.append("witnesses: rows must be in alphabetical order by name (case-insensitive), then endpoint")
+        errors.append(f"{array}: rows must be in alphabetical order by name (case-insensitive), then endpoint")
 
 
 def validate_directory(doc: object) -> list[str]:
@@ -200,12 +247,15 @@ def validate_directory(doc: object) -> list[str]:
     if not isinstance(doc, dict):
         return ["directory: must be a JSON object"]
     errors: list[str] = []
-    unknown = sorted(set(doc) - set(TOP_LEVEL_FIELDS))
+    unknown = sorted(set(doc) - set(TOP_LEVEL_FIELDS) - set(OPTIONAL_TOP_LEVEL_FIELDS))
     if unknown:
         errors.append(f"directory: unknown field(s) {', '.join(unknown)}")
     if doc.get("directory_version") != DIRECTORY_VERSION:
         errors.append(f'directory_version: must be "{DIRECTORY_VERSION}"')
-    _check_rows(doc.get("witnesses"), errors)
+    key_owner: dict[str, str] = {}
+    _check_rows("witnesses", doc.get("witnesses"), WITNESS_FIELDS, OPTIONAL_WITNESS_FIELDS, errors, key_owner)
+    if "countersigners" in doc:
+        _check_rows("countersigners", doc["countersigners"], COUNTERSIGNER_FIELDS, (), errors, key_owner)
     return errors
 
 
