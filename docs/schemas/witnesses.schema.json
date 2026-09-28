@@ -14,6 +14,12 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["name", "endpoint", "key_ids", "since"],
+        "allOf": [
+          {
+            "if": { "required": ["binding"], "properties": { "binding": { "const": "rekor" } } },
+            "then": { "required": ["public_keys"] }
+          }
+        ],
         "properties": {
           "name": { "$ref": "#/$defs/name" },
           "endpoint": { "$ref": "#/$defs/endpoint" },
@@ -24,7 +30,7 @@
             "enum": ["cll", "rekor", "scrapi"]
           },
           "public_keys": {
-            "description": "Base64 DER SubjectPublicKeyInfo of each key that is not Ed25519. Each must hash (SHA-256) to one of the row's key_ids.",
+            "description": "Base64 DER SubjectPublicKeyInfo of each key that is not Ed25519. Each must hash (SHA-256) to one of the row's key_ids. Required for a rekor row, where every key id is a log ID; the validator also checks each rekor key id has its key here.",
             "type": "array",
             "minItems": 1,
             "uniqueItems": true,

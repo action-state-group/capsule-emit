@@ -19,7 +19,11 @@ key this is the raw 32-byte public key. A service whose key is not Ed25519
 (a Rekor log signs with ECDSA P-256) lists the SHA-256 of the key's DER
 SubjectPublicKeyInfo -- the RFC 6962 log ID -- and carries the key itself in
 ``public_keys`` (base64 DER); every ``public_keys`` entry must hash to one of
-the row's ``key_ids``.
+the row's ``key_ids``. A key id cannot say which of the two it is -- any 32
+bytes load as an Ed25519 public key, a log ID included -- so a ``rekor`` row
+must carry a ``public_keys`` entry for EVERY key id (a Rekor key id is always
+a log ID), and :func:`row_public_keys_pem` never reads a ``rekor`` key id as
+a raw Ed25519 key.
 
 **Binding.** ``binding`` is optional: ``cll`` (the default, ``POST
 /checkpoints``), ``rekor`` or ``scrapi``. It is the same name
@@ -110,6 +114,12 @@ def _der(b64: str) -> bytes | None:
         return None
 
 
+def _public_key_hashes(value: object) -> set[str]:
+    if not isinstance(value, list):
+        return set()
+    return {hashlib.sha256(der).hexdigest() for der in (_der(v) for v in value if isinstance(v, str)) if der}
+
+
 def _check_public_keys(where: str, value: object, key_ids: list[str], errors: list[str]) -> None:
     from cryptography.hazmat.primitives.serialization import load_der_public_key
 
@@ -168,6 +178,14 @@ def _check_rows(rows: object, errors: list[str]) -> None:
             errors.append(f"{where}.binding: must be one of {', '.join(BINDINGS)}")
         if "public_keys" in row:
             _check_public_keys(where, row["public_keys"], key_ids, errors)
+        if row.get("binding") == "rekor":
+            covered = _public_key_hashes(row.get("public_keys"))
+            for i, key in enumerate(key_ids):
+                if _KEY_ID.match(key) and key not in covered:
+                    errors.append(
+                        f"{where}.key_ids[{i}]: a rekor row's key id is a log ID; "
+                        "add the key it hashes from to public_keys"
+                    )
         name, endpoint = row.get("name"), row.get("endpoint")
         if isinstance(name, str) and isinstance(endpoint, str):
             sort_keys.append((name.casefold(), endpoint))
@@ -235,7 +253,9 @@ def row_for(directory: Any, ts_url: str) -> dict | None:
 def row_public_keys_pem(row: dict) -> list[bytes]:
     """Every public key a row lists, as SubjectPublicKeyInfo PEM, in
     ``key_ids`` order: the ``public_keys`` entry whose SHA-256 is the key id
-    when there is one, else the key id read as a raw Ed25519 key."""
+    when there is one, else the key id read as a raw Ed25519 key -- except in
+    a ``rekor`` row, where an uncovered key id raises ``ValueError`` (it is a
+    log ID, and reading it as a key would fail silently)."""
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     from cryptography.hazmat.primitives.serialization import (
         Encoding,
@@ -252,6 +272,8 @@ def row_public_keys_pem(row: dict) -> list[bytes]:
     for key_id in row.get("key_ids", []):
         if key_id in by_hash:
             key = load_der_public_key(by_hash[key_id])
+        elif row.get("binding") == "rekor":
+            raise ValueError(f"rekor row {row.get('name')!r}: no public key for log ID {key_id[:16]}...")
         else:
             key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(key_id))
         pems.append(key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo))

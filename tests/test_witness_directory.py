@@ -217,6 +217,32 @@ def test_public_key_must_be_der():
     assert any("base64 DER" in e for e in validate_directory(doc))
 
 
+def test_a_rekor_row_without_public_keys_is_refused():
+    """Any 32 bytes load as an Ed25519 key -- a Rekor log ID included -- so
+    decoding cannot catch this; the binding must."""
+    doc = _valid()
+    del doc["witnesses"][1]["public_keys"]
+    assert any("a rekor row's key id is a log ID" in e for e in validate_directory(doc))
+
+
+def test_every_rekor_key_id_needs_its_public_key():
+    doc = _valid()
+    doc["witnesses"][1]["key_ids"].append("66" * 32)  # a rotated log ID with no key listed
+    assert any("key_ids[1]: a rekor row's key id is a log ID" in e for e in validate_directory(doc))
+
+
+def test_a_rekor_key_id_is_never_read_as_an_ed25519_key():
+    row = copy.deepcopy(_valid()["witnesses"][1])
+    del row["public_keys"]
+    with pytest.raises(ValueError, match="no public key for log ID"):
+        row_public_keys_pem(row)
+
+
+def test_a_cll_row_may_list_raw_ed25519_keys_without_public_keys():
+    doc = _valid()
+    assert "public_keys" not in doc["witnesses"][0] and validate_directory(doc) == []
+
+
 def test_row_keys_read_ed25519_and_other_keys_the_same_way():
     ed_row, ec_row = _valid()["witnesses"][0], _valid()["witnesses"][1]
     assert row_public_keys_pem(ed_row)[0].startswith(b"-----BEGIN PUBLIC KEY-----")
