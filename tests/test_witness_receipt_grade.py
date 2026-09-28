@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import inspect
 import json
 import threading
 from collections.abc import Iterator
@@ -35,8 +36,20 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from scitt_cose import build_receipt, sign_sign1
 
-from capsule_emit.checkpoint import DEFAULT_TS_URL, CheckpointRecord, WitnessRecord
-from capsule_emit.witness import CheckpointWitnessState, _receipt_grade
+from capsule_emit.checkpoint import (
+    DEFAULT_TS_PUBLIC_KEY_PEM,
+    DEFAULT_TS_URL,
+    CheckpointRecord,
+    StampVerdict,
+    WitnessRecord,
+    verify_witness_stamp_tristate,
+)
+from capsule_emit.witness import (
+    CheckpointWitnessState,
+    StampVerification,
+    _receipt_grade,
+    verify_witness_stamp_tristate_keyed,
+)
 
 #: COSE Receipt header labels, as scitt_cose.receipt defines them (verifiable
 #: data structure / verifiable data proofs), and the private-use receipt-grade
@@ -299,3 +312,80 @@ def test_receipt_grades_unpinned_trusts_no_served_key(
     }
     assert witness_server.requests == 0
     assert attacker_server.requests == 0
+
+
+# -- the key comes from the verification, not from _receipt_grade ------------
+
+
+def test_keyed_verification_returns_the_pin_when_pinned() -> None:
+    genuine = _witness("https://witness.example", WITNESS_PRIV, "mmr-verified")
+    checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, genuine, ts_pubkey_pem=WITNESS_PUB)
+    assert checked == StampVerification(StampVerdict.WITNESSED, (), WITNESS_PUB)
+    # A pin also replaces the built-in key at the default ts_url.
+    at_default = _witness(DEFAULT_TS_URL, WITNESS_PRIV, "mmr-verified")
+    checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, at_default, ts_pubkey_pem=WITNESS_PUB)
+    assert (checked.verdict, checked.key_pem) == (StampVerdict.WITNESSED, WITNESS_PUB)
+
+
+def test_keyed_verification_returns_the_default_key_at_the_default_ts_url() -> None:
+    # Neither test key is the built-in one, so the stamp fails -- but it was
+    # judged under the built-in key, and the result says which.
+    forged = _witness(DEFAULT_TS_URL, ATTACKER_PRIV, "mmr-verified")
+    checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, forged)
+    assert checked.verdict is StampVerdict.INVALID
+    assert checked.key_pem == DEFAULT_TS_PUBLIC_KEY_PEM
+
+
+def test_keyed_verification_returns_no_key_for_an_unpinned_non_default_witness() -> None:
+    genuine = _witness("https://witness.example", WITNESS_PRIV, "mmr-verified")
+    checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, genuine)
+    assert checked.verdict is StampVerdict.UNVERIFIED
+    assert checked.key_pem is None
+
+
+def test_keyed_verification_verdict_matches_the_tuple_api() -> None:
+    # The old (verdict, errors) function is unchanged; the keyed one reaches
+    # the same verdict and errors for every stamp.
+    cases = [
+        (CHECKPOINT, _witness("https://witness.example", WITNESS_PRIV, "mmr-verified"), WITNESS_PUB),
+        (CHECKPOINT, _witness("https://witness.example", ATTACKER_PRIV, "mmr-verified"), WITNESS_PUB),
+        (CHECKPOINT, _witness("https://witness.example", WITNESS_PRIV, "mmr-verified"), None),
+        (CHECKPOINT, _witness(DEFAULT_TS_URL, WITNESS_PRIV, "mmr-verified"), None),
+        (CHECKPOINT, _witness(DEFAULT_TS_URL, WITNESS_PRIV, "mmr-verified"), WITNESS_PUB),
+        (
+            CHECKPOINT,
+            _witness("https://witness.example", WITNESS_PRIV, None, receipt_for=OTHER_CHECKPOINT),
+            WITNESS_PUB,
+        ),
+        (None, _witness("https://witness.example", WITNESS_PRIV, "mmr-verified"), WITNESS_PUB),
+    ]
+    for checkpoint, witness, pin in cases:
+        verdict, errors = verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=pin)
+        checked = verify_witness_stamp_tristate_keyed(checkpoint, witness, ts_pubkey_pem=pin)
+        assert (checked.verdict, list(checked.errors)) == (verdict, errors)
+
+
+def test_receipt_grade_does_not_choose_a_key() -> None:
+    # The key choice lives in verify_witness_stamp_tristate_keyed only;
+    # _receipt_grade reads the grade under the key that call returned.
+    source = inspect.getsource(_receipt_grade)
+    assert "verify_witness_stamp_tristate_keyed(" in source
+    assert "DEFAULT_TS_URL" not in source
+    assert "DEFAULT_TS_PUBLIC_KEY_PEM" not in source
+
+
+def test_receipt_grade_follows_the_default_key_the_verification_returns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Re-point the built-in default key (as a deployment of its own witness
+    # would) at the test witness key. The unpinned default-URL stamp is then
+    # verified -- and its grade read -- under that key, with no pin passed.
+    import cll.checkpoint.emit as emit_mod
+
+    monkeypatch.setattr(emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", WITNESS_PUB)
+    genuine = _witness(DEFAULT_TS_URL, WITNESS_PRIV, "mmr-verified")
+    checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, genuine)
+    assert (checked.verdict, checked.key_pem) == (StampVerdict.WITNESSED, WITNESS_PUB)
+    assert _receipt_grade(CHECKPOINT, genuine) == "mmr-verified"
+    forged = _witness(DEFAULT_TS_URL, ATTACKER_PRIV, "mmr-verified")
+    assert _receipt_grade(CHECKPOINT, forged) is None
