@@ -23,6 +23,21 @@ All notable changes to `capsule-emit` are documented here. The format follows
 - CI installs `agent-action-capsule` from source at main 439dc02 (the -05 wire;
   no PyPI release carries it yet). The `pyproject.toml` floor is unchanged.
 
+### Added — `verify_witness_stamp_tristate_keyed`: the witness verdict now says which key it was reached under
+
+- `capsule_emit.witness.verify_witness_stamp_tristate_keyed(checkpoint, witness, *, ts_pubkey_pem=None)`
+  returns a frozen `StampVerification(verdict, errors, key_pem)`. `key_pem` is the caller's pin,
+  else the built-in `DEFAULT_TS_PUBLIC_KEY_PEM` for a witness at `DEFAULT_TS_URL`, else `None`
+  (an unpinned witness anywhere else, which is `UNVERIFIED` at best). The key is chosen once and
+  passed to the tristate explicitly, so a `WITNESSED` verdict always means "verified under exactly
+  `key_pem`".
+- The receipt grade (`CheckpointWitnessState.receipt_grades()`) is read under that returned key.
+  It no longer repeats the pin-else-default choice, so a later change to how the key is chosen
+  cannot leave the grade read under a different key from the one the stamp was verified under.
+  It still reads a grade only when the receipt verifies under that key.
+- `verify_witness_stamp_tristate` is unchanged and still returns `(verdict, errors)`; for every
+  stamp it gives the same verdict and errors as the keyed function.
+
 ### Docs — the witness claims on the adapter pages now match what the witness does
 
 - The 14 adapter pages said the checkpoint stream made a re-seal "detectable — by anyone, the key

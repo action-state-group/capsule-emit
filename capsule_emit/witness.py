@@ -188,6 +188,8 @@ __all__ = [
     "CAPSULE_ENV_VAR",
     "resolved_witness_urls",
     "CheckpointWitnessState",
+    "StampVerification",
+    "verify_witness_stamp_tristate_keyed",
     "checkpoint_witness_states",
     "checkpoint_witness_backlog",
     "retry_pending_witness_stamps",
@@ -767,6 +769,63 @@ def _persist_checkpoint_stamp(
 _RECEIPT_GRADES = frozenset({"countersigned-observed", "mmr-verified"})
 
 
+@dataclass(frozen=True)
+class StampVerification:
+    """What :func:`verify_witness_stamp_tristate_keyed` found for one stamp:
+    the three-state ``verdict``, its ``errors``, and ``key_pem``, the trusted
+    Transparency Service key the verdict was reached under.
+
+    ``key_pem`` is the caller's pin when one was given; else
+    :data:`capsule_emit.checkpoint.DEFAULT_TS_PUBLIC_KEY_PEM` for a witness
+    at :data:`capsule_emit.checkpoint.DEFAULT_TS_URL`; else ``None`` (an
+    unpinned witness anywhere else, for which no key is trusted and nothing
+    better than ``UNVERIFIED`` is possible). ``WITNESSED`` means the receipt's
+    signature verified under exactly ``key_pem``. With any other verdict the
+    key is only the one the stamp was judged against, not one it verified
+    under, so nothing may be read from the receipt on its strength."""
+
+    verdict: Any  # capsule_emit.checkpoint.StampVerdict
+    errors: tuple[str, ...]
+    key_pem: bytes | str | None
+
+
+def verify_witness_stamp_tristate_keyed(
+    checkpoint: Any,  # capsule_emit.checkpoint.CheckpointRecord
+    witness: Any,  # capsule_emit.checkpoint.WitnessRecord
+    *,
+    ts_pubkey_pem: bytes | str | None = None,
+) -> StampVerification:
+    """:func:`capsule_emit.checkpoint.verify_witness_stamp_tristate`, plus the
+    key it judged the stamp under (:class:`StampVerification`). Never raises;
+    never makes a network call.
+
+    The trust-anchor choice is made HERE, once: the caller's
+    ``ts_pubkey_pem``, else the built-in default key for a witness at the
+    default ``ts_url``, else none. The chosen key is then passed to the
+    tristate explicitly, so the tristate never picks a key of its own on this
+    path, and the returned verdict and ``key_pem`` cannot describe two
+    different keys. Anything that must read more from a receipt after a
+    ``WITNESSED`` verdict (as :func:`_receipt_grade` reads the grade label)
+    reads it under ``key_pem`` and does not choose a key again.
+
+    ``verify_witness_stamp_tristate`` itself is unchanged and still returns
+    ``(verdict, errors)``; for any stamp it returns the same verdict this
+    function does.
+    """
+    # The constants are read off the module at call time, not bound at
+    # import, so a deployment (or test) that re-points DEFAULT_TS_URL /
+    # DEFAULT_TS_PUBLIC_KEY_PEM on it is seen here exactly as the tristate
+    # sees it. cll's module directly: capsule_emit.checkpoint.emit is the
+    # same module object behind a deprecated alias.
+    from cll.checkpoint import emit as _emit
+
+    key_pem = ts_pubkey_pem
+    if key_pem is None and getattr(witness, "ts_url", None) == _emit.DEFAULT_TS_URL:
+        key_pem = _emit.DEFAULT_TS_PUBLIC_KEY_PEM
+    verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=key_pem)
+    return StampVerification(verdict=verdict, errors=tuple(errors), key_pem=key_pem)
+
+
 def _receipt_grade(
     checkpoint: Any,  # capsule_emit.checkpoint.CheckpointRecord
     witness: Any,  # capsule_emit.checkpoint.WitnessRecord
@@ -783,10 +842,10 @@ def _receipt_grade(
     that class's docstring for the two-level rule.
 
     Label ``-65537`` is read only from a stamp that
-    ``capsule_emit.checkpoint.verify_witness_stamp_tristate`` grades
-    ``WITNESSED`` -- the same bar :meth:`CheckpointWitnessState.grade` uses
-    -- because anyone can mint a COSE_Sign1 with their own key and write
-    ``"mmr-verified"`` into its protected header. ``WITNESSED`` means:
+    :func:`verify_witness_stamp_tristate_keyed` grades ``WITNESSED`` -- the
+    same bar :meth:`CheckpointWitnessState.grade` uses -- because anyone can
+    mint a COSE_Sign1 with their own key and write ``"mmr-verified"`` into
+    its protected header. ``WITNESSED`` means:
 
     1. **Bound to this checkpoint.** ``witness.entry_hash`` equals the hash
        of ``checkpoint.digest()``, so a genuine receipt replayed from
@@ -806,15 +865,12 @@ def _receipt_grade(
     but carries no label, or a value outside the two grades above. ``None``
     must never be presented as either grade string.
 
-    The label itself is read from a ``scitt_cose.verify_receipt`` call under
-    the SAME key the ``WITNESSED`` check used -- ``ts_pubkey_pem`` when
-    pinned, else :data:`capsule_emit.checkpoint.DEFAULT_TS_PUBLIC_KEY_PEM`
-    for a witness at :data:`capsule_emit.checkpoint.DEFAULT_TS_URL` (the
-    auto-pin ``verify_witness_stamp_tristate`` applies) -- and only when that
-    call's own ``ok`` is ``True``. ``verify_witness_stamp_tristate`` returns
-    only a verdict, not the decoded header, hence the second call; requiring
-    its ``ok`` means the grade is never read from a result whose signature
-    did not verify, whatever ``scitt_cose`` version fills that field.
+    The label is read from a ``scitt_cose.verify_receipt`` call under the
+    key the verification returned (:attr:`StampVerification.key_pem`); this
+    function never chooses a key itself. The tristate returns a verdict,
+    not the decoded header, hence the second call; it must also return
+    ``ok``, so the grade is never read from a result whose signature did not
+    verify, whatever ``scitt_cose`` version fills that field.
     """
     if getattr(witness, "is_stub", False):
         return None
@@ -823,36 +879,22 @@ def _receipt_grade(
 
         from scitt_cose import verify_receipt
 
-        from .checkpoint import (
-            DEFAULT_TS_PUBLIC_KEY_PEM,
-            DEFAULT_TS_URL,
-            StampVerdict,
-            verify_witness_stamp_tristate,
-        )
+        from .checkpoint import StampVerdict
     except ImportError:
         # scitt_cose isn't installed here -- it is not a required dependency,
         # and without it nothing can be verified, so the documented None.
         return None
-    verdict, _errors = verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=ts_pubkey_pem)
-    if verdict is not StampVerdict.WITNESSED:
-        return None
-    # The key the WITNESSED verdict was reached under -- the same selection
-    # verify_witness_stamp_tristate makes: the caller's pin, else the
-    # built-in default key auto-pinned for the default ts_url only.
-    trusted_pem = ts_pubkey_pem
-    if trusted_pem is None and witness.ts_url == DEFAULT_TS_URL:
-        trusted_pem = DEFAULT_TS_PUBLIC_KEY_PEM
-    if trusted_pem is None:
-        # Unreachable while WITNESSED implies one of the two keys above; kept
-        # so a future change there degrades to "no grade", not to a read
-        # under no key at all.
+    checked = verify_witness_stamp_tristate_keyed(checkpoint, witness, ts_pubkey_pem=ts_pubkey_pem)
+    if checked.verdict is not StampVerdict.WITNESSED or checked.key_pem is None:
+        # key_pem is never None for WITNESSED; the second test keeps a future
+        # change there degrading to "no grade", not to a read under no key.
         return None
     try:
         receipt_bytes = base64.b64decode(witness.receipt_b64, validate=True)
         result = verify_receipt(
             receipt_bytes,
             leaf_entry_hex=witness.entry_hash,
-            log_public_key_pem=trusted_pem,
+            log_public_key_pem=checked.key_pem,
         )
     except Exception:
         # Broad on purpose: a failure here must degrade to "no verified
