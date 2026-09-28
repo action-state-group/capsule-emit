@@ -42,9 +42,11 @@ no label proves inclusion (existence and time) and is
 ``countersigned-observed``. A ``cll`` receipt keeps its own label, read by
 ``capsule_emit.witness._receipt_grade``.
 
-Every verification here is offline: no key is fetched, and a key the caller
-did not pin (or, for Rekor, the public instance key shipped below) proves
-nothing about who signed.
+Every verification here is offline and takes its keys from one place: the
+witness directory (``witnesses.json``, see ``capsule_emit.witness_directory``).
+Every row is read the same way, and no service -- including the library's
+own default witness, or public Rekor -- has a key built in here. A receipt
+from a witness with no directory row is ``not checked``.
 """
 from __future__ import annotations
 
@@ -64,8 +66,6 @@ __all__ = [
     "BINDING_SCRAPI",
     "BINDINGS",
     "PUBLIC_REKOR_URL",
-    "PUBLIC_REKOR_PUBLIC_KEY_PEM",
-    "PUBLIC_REKOR_LOG_ID",
     "WitnessBindingError",
     "binding_of",
     "endpoint_of",
@@ -87,19 +87,9 @@ BINDING_REKOR = "rekor"
 BINDING_SCRAPI = "scrapi"
 BINDINGS = (BINDING_CLL, BINDING_REKOR, BINDING_SCRAPI)
 
-#: Sigstore's public-good Rekor instance.
+#: The public-good Rekor instance, as a witness URL. A URL only: its key is
+#: read from the witness directory like every other witness's.
 PUBLIC_REKOR_URL = "rekor+https://rekor.sigstore.dev"
-
-#: Its log public key, as served at ``/api/v1/log/publicKey`` (read
-#: 2026-09-27). ``PUBLIC_REKOR_LOG_ID`` is the SHA-256 of this key's DER
-#: SubjectPublicKeyInfo -- the ``logID`` every entry from that log carries.
-PUBLIC_REKOR_PUBLIC_KEY_PEM = (
-    b"-----BEGIN PUBLIC KEY-----\n"
-    b"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2G2Y+2tabdTV5BcGiBIx0a9fAFwr\n"
-    b"kBbmLSGtks4L3qX6yYY0zufBnhC8Ur/iy55GhWP/9A/bY2LhC30M9+RYtw==\n"
-    b"-----END PUBLIC KEY-----\n"
-)
-PUBLIC_REKOR_LOG_ID = "c0d23d6ad406973f9559f3ba2d1ca01f84147d8ffc5b8445c224f98b9591801d"
 
 _REKOR_ENTRIES_PATH = "/api/v1/log/entries"
 _SCRAPI_ENTRIES_PATH = "/entries"
@@ -135,15 +125,17 @@ def endpoint_of(url: str) -> str:
     return url.rstrip("/")
 
 
-def operator_of(url: str, directory: dict[str, str] | None = None) -> str:
-    """Who operates the witness at ``url``, for the distinct-operators rule.
+def operator_of(url: str, directory: Any = None) -> str:
+    """Who operates the witness at ``url``, for the distinct-operators rule:
+    the ``name`` of its row in ``directory`` (a parsed ``witnesses.json``,
+    or its ``witnesses`` list). Without a row, the endpoint's host name --
+    two endpoints on the same host count as one operator, the conservative
+    reading."""
+    from .witness_directory import row_for
 
-    ``directory`` maps a witness URL (as recorded on the receipt) to an
-    operator name the verifier chose -- e.g. from ``witnesses.json``. Without
-    an entry, the operator is the endpoint's host name: two endpoints on the
-    same host count as one operator, which is the conservative reading."""
-    if directory and url in directory:
-        return directory[url]
+    row = row_for(directory, url)
+    if row is not None:
+        return row["name"]
     return (urllib.parse.urlsplit(endpoint_of(url)).hostname or url).lower()
 
 
@@ -264,7 +256,7 @@ def verify_rekor_receipt(
     *,
     checkpoint_cose: bytes,
     checkpoint_key_id: str,
-    rekor_public_key_pem: bytes = PUBLIC_REKOR_PUBLIC_KEY_PEM,
+    rekor_public_key_pem: bytes,
 ) -> tuple[bool, str]:
     """Offline check of one Rekor entry against the checkpoint it claims.
 
@@ -468,31 +460,66 @@ class PluralityResult:
         return f"{self.counted} {w} · {self.operators} {o}"
 
 
+def _verify_one(checkpoint: Any, w: Any, pem: bytes, cose: bytes | None) -> tuple[bool, str, str | None]:
+    """One receipt under one key. The same call for every row's key."""
+    binding = binding_of(w.ts_url)
+    if binding == BINDING_CLL:
+        from .checkpoint import StampVerdict, verify_witness_stamp_tristate
+        from .witness import _receipt_grade
+
+        grade = _receipt_grade(checkpoint, w, ts_pubkey_pem=pem)
+        if grade is not None:
+            return True, "ok", grade
+        verdict, errors = verify_witness_stamp_tristate(checkpoint, w, ts_pubkey_pem=pem)
+        if verdict is StampVerdict.WITNESSED:
+            return True, "ok (receipt carries no grade label)", None
+        return False, "; ".join(errors) or str(verdict), None
+    if cose is None:
+        return False, "not checked: checkpoint COSE statement not available", None
+    if binding == BINDING_REKOR:
+        try:
+            receipt = json.loads(base64.b64decode(w.receipt_b64))
+        except ValueError as exc:
+            return False, f"unreadable receipt: {exc}", None
+        ok, reason = verify_rekor_receipt(
+            receipt, checkpoint_cose=cose, checkpoint_key_id=checkpoint.key_id, rekor_public_key_pem=pem
+        )
+        return ok, reason, _COUNTERSIGNED_OBSERVED if ok else None
+    return verify_scrapi_receipt(
+        base64.b64decode(w.receipt_b64), checkpoint_cose=cose, service_public_key_pem=pem
+    )
+
+
 def verify_witnesses(
     checkpoint: Any,
     witnesses: Any,
     *,
+    directory: Any,
     checkpoint_cose_hex: str | None = None,
     policy: WitnessPolicy | None = None,
-    keys: dict[str, bytes | str] | None = None,
-    directory: dict[str, str] | None = None,
 ) -> PluralityResult:
     """Verify every receipt ``checkpoint`` carries and apply ``policy``.
 
     ``witnesses`` is an iterable of ``WitnessRecord`` (or a
     ``{ts_url: WitnessRecord}`` mapping, e.g.
-    ``CheckpointWitnessState.effective_witnesses``). ``keys`` pins a public
-    key per witness URL (``cll`` and ``scrapi`` receipts; for ``rekor`` it
-    overrides the built-in public-instance key). ``checkpoint_cose_hex`` is
-    the checkpoint's persisted COSE statement, which ``rekor`` and ``scrapi``
-    receipts bind to; without it those receipts are ``not checked``.
+    ``CheckpointWitnessState.effective_witnesses``). ``directory`` is a
+    parsed ``witnesses.json`` (or its ``witnesses`` list) -- the verifier's
+    choice of which witnesses and keys it accepts, and the ONLY source of
+    keys and operator names here. Every receipt is resolved the same way:
+    its row (``witness_directory.row_for``), then each of that row's keys in
+    turn (``witness_directory.row_public_keys_pem``, so a rotated key still
+    verifies). No witness has a built-in key. A receipt with no row is
+    ``not checked``.
+
+    ``checkpoint_cose_hex`` is the checkpoint's persisted COSE statement,
+    which ``rekor`` and ``scrapi`` receipts bind to; without it those
+    receipts are ``not checked``.
 
     A receipt that does not verify is reported with its reason and does not
     count. Stub receipts never count. Offline; never raises."""
-    from .witness import _receipt_grade
+    from .witness_directory import row_for, row_public_keys_pem
 
     policy = policy or WitnessPolicy()
-    keys = keys or {}
     records = list(witnesses.values()) if isinstance(witnesses, dict) else list(witnesses)
     cose = bytes.fromhex(checkpoint_cose_hex) if checkpoint_cose_hex else None
 
@@ -500,43 +527,21 @@ def verify_witnesses(
     for w in records:
         binding = binding_of(w.ts_url)
         operator = operator_of(w.ts_url, directory)
+        row = row_for(directory, w.ts_url)
         ok, reason, grade = False, "", None
         if getattr(w, "is_stub", False):
             reason = "stub receipt (never reached a witness)"
-        elif binding == BINDING_CLL:
-            grade = _receipt_grade(checkpoint, w, ts_pubkey_pem=keys.get(w.ts_url))
-            if grade is None:
-                from .checkpoint import StampVerdict, verify_witness_stamp_tristate
-
-                verdict, errors = verify_witness_stamp_tristate(
-                    checkpoint, w, ts_pubkey_pem=keys.get(w.ts_url)
-                )
-                ok = verdict is StampVerdict.WITNESSED
-                reason = "ok (receipt carries no grade label)" if ok else "; ".join(errors) or str(verdict)
-            else:
-                ok, reason = True, "ok"
-        elif cose is None:
-            reason = "not checked: checkpoint COSE statement not available"
-        elif binding == BINDING_REKOR:
-            try:
-                receipt = json.loads(base64.b64decode(w.receipt_b64))
-            except ValueError as exc:
-                receipt, reason = None, f"unreadable receipt: {exc}"
-            if receipt is not None:
-                pem = keys.get(w.ts_url, PUBLIC_REKOR_PUBLIC_KEY_PEM)
-                ok, reason = verify_rekor_receipt(
-                    receipt,
-                    checkpoint_cose=cose,
-                    checkpoint_key_id=checkpoint.key_id,
-                    rekor_public_key_pem=pem.encode() if isinstance(pem, str) else pem,
-                )
-                grade = _COUNTERSIGNED_OBSERVED if ok else None
+        elif row is None:
+            reason = "not checked: no directory row for this witness"
         else:
-            ok, reason, grade = verify_scrapi_receipt(
-                base64.b64decode(w.receipt_b64),
-                checkpoint_cose=cose,
-                service_public_key_pem=keys.get(w.ts_url),
-            )
+            try:
+                pems = row_public_keys_pem(row)
+            except ValueError as exc:
+                pems, reason = [], f"not checked: unusable key in directory row ({exc})"
+            for pem in pems:
+                ok, reason, grade = _verify_one(checkpoint, w, pem, cose)
+                if ok:
+                    break
         verdicts.append(ReceiptVerdict(w.ts_url, binding, operator, ok, grade if ok else None, reason))
 
     good = [v for v in verdicts if v.verified]

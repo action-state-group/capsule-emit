@@ -143,16 +143,17 @@ Each witness is registered independently. A failure is a warning and joins that 
 backlog (see "Witness outage" below), never a failed checkpoint.
 
 **Verifying plurality.** `capsule_emit.witness_bindings.verify_witnesses(checkpoint, witnesses,
-checkpoint_cose_hex=..., policy=WitnessPolicy(min_receipts=2, distinct_operators=True), keys=...,
-directory=...)` checks every receipt offline and reports each one: verified or not, why, and its
-grade. It then applies the policy. `keys` pins a key per witness URL. For `rekor`, the public
-instance's key ships with the library. A `scrapi` receipt with no pinned key is `not checked`. A
-receipt that does not verify is listed with its reason and not counted. `summary()` gives counts,
-never names: `2 witnesses · 2 operators`. Operators come from `directory` (for example
-[`witnesses/witnesses.json`](../witnesses/README.md)); an unlisted URL's operator is its host name.
+directory=..., checkpoint_cose_hex=..., policy=WitnessPolicy(min_receipts=2,
+distinct_operators=True))` checks every receipt offline and reports each one: verified or not, why,
+and its grade. It then applies the policy. `directory` is a parsed
+[`witnesses.json`](../witnesses.json) (or your own file in the same schema): the one source of
+keys and operator names. Every row is read the same way; no service, including the default
+witness, has a key built into the verifier. A receipt from a witness with no row is `not checked`.
+A receipt that does not verify is listed with its reason and not counted. `summary()` gives counts,
+never names: `2 witnesses · 2 operators`.
 
 A Rekor receipt verifies only if all three hold: Rekor's Signed Entry Timestamp checks out under
-the pinned Rekor key; the entry's payload hash is this checkpoint's bytes; and the entry is signed
+the Rekor key in its directory row; the entry's payload hash is this checkpoint's bytes; and the entry is signed
 by this checkpoint's own key, so someone else logging our bytes under their key does not count.
 
 **Signing.** The default path signs checkpoints with the SAME persisted

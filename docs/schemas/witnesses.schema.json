@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/action-state-group/capsule-emit/blob/main/docs/schemas/witnesses.schema.json",
+  "title": "Witness directory",
+  "description": "Shape of witnesses.json. Checks JSON Schema cannot express (alphabetical order, a key id listed at most once, each public_keys entry hashing to one of its row's key_ids) are enforced by capsule_emit.witness_directory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["directory_version", "witnesses"],
+  "properties": {
+    "directory_version": { "const": "1" },
+    "witnesses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "endpoint", "key_ids", "since"],
+        "properties": {
+          "name": { "$ref": "#/$defs/name" },
+          "endpoint": { "$ref": "#/$defs/endpoint" },
+          "key_ids": { "$ref": "#/$defs/key_ids" },
+          "since": { "$ref": "#/$defs/since" },
+          "binding": {
+            "description": "How a checkpoint reaches this witness: cll (POST /checkpoints), rekor (a Rekor dsse entry) or scrapi (SCRAPI POST /entries). Absent means cll.",
+            "enum": ["cll", "rekor", "scrapi"]
+          },
+          "public_keys": {
+            "description": "Base64 DER SubjectPublicKeyInfo of each key that is not Ed25519. Each must hash (SHA-256) to one of the row's key_ids.",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "name": {
+      "description": "The operator's self-declared name, or the service's host name when it declares none. Rows are ordered by it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "endpoint": {
+      "description": "Absolute https URL of the service; no credentials, query, or fragment.",
+      "type": "string",
+      "pattern": "^https://[^/?#@]+(/[^?#]*)?$"
+    },
+    "key_ids": {
+      "description": "64 lowercase hex characters per key: a 32-byte Ed25519 public key, or for any other key type the SHA-256 of its DER SubjectPublicKeyInfo (listed in public_keys). More than one when the operator has rotated keys.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    },
+    "since": {
+      "description": "Date the service began issuing receipts at this endpoint, YYYY-MM-DD.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    }
+  }
+}

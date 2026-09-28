@@ -53,11 +53,16 @@ All notable changes to `capsule-emit` are documented here. The format follows
   `scrapi+https://` registers it with a SCITT SCRAPI service. No new setting:
   `witness_url=` / `CAPSULE_WITNESS_URL` take mixed lists, and the backlog and retry machinery
   keys each binding separately.
-- `capsule_emit.witness_bindings.verify_witnesses()` verifies every receipt offline and applies a
-  `WitnessPolicy(min_receipts, distinct_operators)`. It reports per-receipt verdicts and counts,
-  never "trusted". A Rekor receipt is `countersigned-observed`, never `mmr-verified`.
-- `witnesses/witnesses.json` is a witness directory with one row, alphabetical by operator, plus a
-  PR template for adding a row.
+- `capsule_emit.witness_bindings.verify_witnesses(..., directory=...)` verifies every receipt
+  offline against keys read from the witness directory -- the same way for every row, with no
+  built-in key for any service -- and applies a `WitnessPolicy(min_receipts, distinct_operators)`.
+  It reports per-receipt verdicts and counts, never "trusted". A Rekor receipt is
+  `countersigned-observed`, never `mmr-verified`.
+- `witnesses.json` at the repository root is the witness directory (rows: `name`, `endpoint`,
+  `key_ids`, `since`, optional `binding` and `public_keys`), alphabetical by name. It lists
+  `rekor.sigstore.dev` and `witness.agentactioncapsule.org`. `capsule_emit.witness_directory`
+  validates it (also published as `docs/schemas/witnesses.schema.json`), and `CONTRIBUTING.md` plus
+  `.github/PULL_REQUEST_TEMPLATE/directory-row.md` describe adding a row.
 - Rekor uses `dsse`, not `hashedrekord`, because Rekor verifies an Ed25519 `hashedrekord` as
   Ed25519ph over SHA-512 and a checkpoint key signs plain Ed25519.
 

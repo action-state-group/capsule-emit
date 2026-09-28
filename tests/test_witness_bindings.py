@@ -1,14 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 """Witness bindings (``cll`` / ``rekor`` / ``scrapi``) and the plurality
-policy -- [witness-plurality-bindings-and-directory-p2].
+policy.
 
 Rekor is mocked here with a local server that checks what the real one
 checks for a ``dsse`` entry (the Ed25519 signature over the DSSE PAE) and
 answers in the real response shape, with a Signed Entry Timestamp from a
 test P-256 key. One golden test verifies a REAL public-Rekor entry's SET
-under the shipped key, so the canonicalization is pinned against production
-bytes, not only against our own mock. The live test against
-``rekor.sigstore.dev`` is opt-in (``CAPSULE_EMIT_TEST_LIVE_REKOR=1``).
+under the key the committed ``witnesses.json`` lists for that log, so the
+canonicalization is pinned against production bytes, not only against our
+own mock. The live test against ``rekor.sigstore.dev`` is opt-in
+(``CAPSULE_EMIT_TEST_LIVE_REKOR=1``).
+
+Every verification reads its keys from a witness directory; no test pins a
+key any other way, because ``verify_witnesses`` has no other way.
 """
 from __future__ import annotations
 
@@ -30,7 +34,7 @@ from _stub_receipt import (
 )
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -41,6 +45,7 @@ from scitt_cose import build_receipt
 import capsule_emit.core as core
 from capsule_emit import seal, witness
 from capsule_emit import witness_bindings as wb
+from capsule_emit import witness_directory as wd
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -223,6 +228,36 @@ def _pushed(tmp_path, urls):
     return ledger, cp, states[-1]
 
 
+# -- directory helpers: every test builds rows the same way -------------------
+
+ROOT = Path(__file__).resolve().parent.parent
+COMMITTED = json.loads((ROOT / "witnesses.json").read_text())
+
+
+def _row(name, url, pem, *, binding=None):
+    """A directory row for witness ``url`` whose key is ``pem`` -- the shape a
+    real row has: raw Ed25519 key as key_id, or SHA-256(DER) + public_keys."""
+    key = load_pem_public_key(pem)
+    row = {"name": name, "endpoint": wb.endpoint_of(url), "since": "2026-01-01",
+           "binding": binding or wb.binding_of(url)}
+    if isinstance(key, Ed25519PublicKey):
+        row["key_ids"] = [key.public_bytes(Encoding.Raw, PublicFormat.Raw).hex()]
+    else:
+        der = key.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+        row["key_ids"] = [hashlib.sha256(der).hexdigest()]
+        row["public_keys"] = [base64.b64encode(der).decode()]
+    return row
+
+
+def _dir(*rows):
+    return {"directory_version": "1", "witnesses": sorted(rows, key=lambda r: (r["name"].casefold(), r["endpoint"]))}
+
+
+def _committed_pem(name):
+    row = next(r for r in COMMITTED["witnesses"] if r["name"] == name)
+    return wd.row_public_keys_pem(row)[0]
+
+
 # -- binding selection --------------------------------------------------------
 
 
@@ -234,16 +269,21 @@ def test_binding_is_named_by_the_url_scheme():
     assert wb.endpoint_of("https://witness.example/") == "https://witness.example"
 
 
-def test_operator_defaults_to_host_and_directory_overrides():
+def test_operator_is_the_row_name_else_the_host():
+    directory = _dir(_row("Operator A", "https://a.example", TEST_TS_PUBLIC_KEY_PEM))
+    assert wb.operator_of("https://a.example", directory) == "Operator A"
+    assert wb.operator_of("https://a.example/", directory) == "Operator A"
+    # same endpoint, different binding: not that row
+    assert wb.operator_of("scrapi+https://a.example", directory) == "a.example"
     assert wb.operator_of("rekor+https://rekor.sigstore.dev") == "rekor.sigstore.dev"
-    assert wb.operator_of("https://a.example:8443") == "a.example"
-    assert wb.operator_of("https://a.example", {"https://a.example": "Operator A"}) == "Operator A"
+    assert wb.operator_of("https://b.example:8443", directory) == "b.example"
 
 
-def test_the_shipped_rekor_log_id_is_the_shipped_key():
-    key = load_pem_public_key(wb.PUBLIC_REKOR_PUBLIC_KEY_PEM)
+def test_committed_rekor_row_key_id_is_its_log_id():
+    key = load_pem_public_key(_committed_pem("rekor.sigstore.dev"))
     der = key.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
-    assert hashlib.sha256(der).hexdigest() == wb.PUBLIC_REKOR_LOG_ID
+    raw = json.loads((FIXTURES / "rekor_public_entry_100000000.json").read_text())
+    assert hashlib.sha256(der).hexdigest() == next(iter(raw.values()))["logID"]
 
 
 # -- golden: a real public-Rekor entry ---------------------------------------
@@ -251,12 +291,16 @@ def test_the_shipped_rekor_log_id_is_the_shipped_key():
 
 def test_set_canonicalization_matches_a_real_public_rekor_entry():
     """logIndex 100000000 on rekor.sigstore.dev, fetched 2026-09-27. Its SET
-    verifies under the shipped key; the entry is not ours, so the binding
-    check (step 2) is what refuses it -- proving step 1 passed."""
+    verifies under the committed directory's key for that log; the entry is
+    not ours, so the binding check (step 2) is what refuses it -- proving
+    step 1 passed."""
     raw = json.loads((FIXTURES / "rekor_public_entry_100000000.json").read_text())
     uuid, entry = next(iter(raw.items()))
     ok, reason = wb.verify_rekor_receipt(
-        {"uuid": uuid, **entry}, checkpoint_cose=b"not this entry", checkpoint_key_id="00" * 32
+        {"uuid": uuid, **entry},
+        checkpoint_cose=b"not this entry",
+        checkpoint_key_id="00" * 32,
+        rekor_public_key_pem=_committed_pem("rekor.sigstore.dev"),
     )
     assert not ok
     assert "signedEntryTimestamp" not in reason and "logID" not in reason, reason
@@ -267,7 +311,10 @@ def test_a_tampered_real_entry_fails_the_set():
     uuid, entry = next(iter(raw.items()))
     entry = {**entry, "integratedTime": entry["integratedTime"] + 1}
     ok, reason = wb.verify_rekor_receipt(
-        {"uuid": uuid, **entry}, checkpoint_cose=b"x", checkpoint_key_id="00" * 32
+        {"uuid": uuid, **entry},
+        checkpoint_cose=b"x",
+        checkpoint_key_id="00" * 32,
+        rekor_public_key_pem=_committed_pem("rekor.sigstore.dev"),
     )
     assert not ok and "signedEntryTimestamp does not verify" in reason
 
@@ -286,8 +333,10 @@ def test_push_to_cll_and_rekor_gives_two_receipts_two_operators(tmp_path, server
         state.effective_witnesses,
         checkpoint_cose_hex=state.checkpoint_cose_hex,
         policy=wb.WitnessPolicy(min_receipts=2, distinct_operators=True),
-        keys={cll_url: TEST_TS_PUBLIC_KEY_PEM, rekor_url: REKOR_TEST_PUBLIC_KEY_PEM},
-        directory={cll_url: "Witness Operator A", rekor_url: "Rekor Operator B"},
+        directory=_dir(
+            _row("Witness Operator A", cll_url, TEST_TS_PUBLIC_KEY_PEM),
+            _row("Rekor Operator B", rekor_url, REKOR_TEST_PUBLIC_KEY_PEM),
+        ),
     )
     by_binding = {v.binding: v for v in result.receipts}
     assert by_binding["rekor"].verified, by_binding["rekor"].reason
@@ -304,18 +353,21 @@ def test_rekor_receipt_is_never_mmr_verified(tmp_path, servers):
         state.checkpoint,
         state.effective_witnesses,
         checkpoint_cose_hex=state.checkpoint_cose_hex,
-        keys={rekor_url: REKOR_TEST_PUBLIC_KEY_PEM},
+        directory=_dir(_row("r", rekor_url, REKOR_TEST_PUBLIC_KEY_PEM)),
     )
     assert [v.grade for v in result.receipts] == ["countersigned-observed"]
 
 
-def test_rekor_receipt_under_an_unpinned_key_does_not_count(tmp_path, servers):
-    """Without the test key pinned, the verifier uses the public-instance
-    key -- our mock's SET is not Rekor's, so it must not count."""
+def test_rekor_receipt_under_another_rows_key_does_not_count(tmp_path, servers):
+    """The row for this endpoint lists public Rekor's key (from the committed
+    directory); our mock's SET is not Rekor's, so it must not count."""
     rekor_url = "rekor+" + servers(_RekorHandler, entries=[], fail_with=[])
     _l, _cp, state = _pushed(tmp_path, [rekor_url])
     result = wb.verify_witnesses(
-        state.checkpoint, state.effective_witnesses, checkpoint_cose_hex=state.checkpoint_cose_hex
+        state.checkpoint,
+        state.effective_witnesses,
+        checkpoint_cose_hex=state.checkpoint_cose_hex,
+        directory=_dir(_row("r", rekor_url, _committed_pem("rekor.sigstore.dev"))),
     )
     assert result.counted == 0 and not result.policy_met
     assert "logID" in result.receipts[0].reason
@@ -404,25 +456,25 @@ def test_rekor_refusal_never_blocks_the_other_witness_and_is_retried(tmp_path, s
 # -- scrapi -------------------------------------------------------------------
 
 
-def test_scrapi_registration_polls_and_verifies_under_the_pinned_key(tmp_path, servers):
+def test_scrapi_registration_polls_and_verifies_under_the_rows_key(tmp_path, servers):
     scrapi_url = "scrapi+" + servers(_ScrapiHandler, pending={})
     _l, cp, state = _pushed(tmp_path, [scrapi_url])
     assert [w.ts_url for w in cp.witnesses] == [scrapi_url]
 
-    pinned = wb.verify_witnesses(
+    listed = wb.verify_witnesses(
         state.checkpoint,
         state.effective_witnesses,
         checkpoint_cose_hex=state.checkpoint_cose_hex,
-        keys={scrapi_url: TEST_TS_PUBLIC_KEY_PEM},
+        directory=_dir(_row("s", scrapi_url, TEST_TS_PUBLIC_KEY_PEM)),
     )
-    assert pinned.counted == 1, pinned.receipts
-    assert pinned.receipts[0].grade == "countersigned-observed"
+    assert listed.counted == 1, listed.receipts
+    assert listed.receipts[0].grade == "countersigned-observed"
 
-    unpinned = wb.verify_witnesses(
-        state.checkpoint, state.effective_witnesses, checkpoint_cose_hex=state.checkpoint_cose_hex
+    unlisted = wb.verify_witnesses(
+        state.checkpoint, state.effective_witnesses, checkpoint_cose_hex=state.checkpoint_cose_hex, directory=_dir()
     )
-    assert unpinned.counted == 0
-    assert unpinned.receipts[0].reason.startswith("not checked")
+    assert unlisted.counted == 0
+    assert unlisted.receipts[0].reason.startswith("not checked")
 
 
 def test_scrapi_receipt_under_a_different_key_does_not_count(tmp_path, servers):
@@ -435,9 +487,63 @@ def test_scrapi_receipt_under_a_different_key_does_not_count(tmp_path, servers):
         state.checkpoint,
         state.effective_witnesses,
         checkpoint_cose_hex=state.checkpoint_cose_hex,
-        keys={scrapi_url: other},
+        directory=_dir(_row("s", scrapi_url, other)),
     )
     assert result.counted == 0
+
+
+# -- no row is privileged -----------------------------------------------------
+
+
+def _cll_receipt_at(url, tmp_path, servers):
+    """A real cll receipt (signed by the test witness key), relabelled as if
+    it came from ``url``. The receipt binds to the checkpoint, not the URL, so
+    it verifies under the right key whatever URL it is filed under."""
+    from dataclasses import replace
+
+    local = servers(_CllHandler)
+    _l, _cp, state = _pushed(tmp_path, [local])
+    return state, replace(state.effective_witnesses[local], ts_url=url)
+
+
+def test_the_default_witness_has_no_built_in_key(tmp_path, servers):
+    """A receipt filed under the library's default witness URL, with no
+    directory row for it, is not checked -- exactly like an unlisted third
+    party. Before the directory was the only key source, this URL was
+    auto-pinned to a built-in key."""
+    from capsule_emit.checkpoint import DEFAULT_TS_URL
+
+    for url in (DEFAULT_TS_URL, "https://third.example"):
+        state, rec = _cll_receipt_at(url, tmp_path / url.split("//")[1], servers)
+        r = wb.verify_witnesses(state.checkpoint, [rec], directory=_dir())
+        assert r.counted == 0 and r.receipts[0].reason == "not checked: no directory row for this witness", url
+
+
+def test_our_row_is_treated_exactly_like_a_third_row(tmp_path, servers):
+    """The same receipt, under the same key, filed once under our committed
+    row's endpoint and once under a third party's: identical verdict, grade
+    and reason. With the committed key (which did not sign it) both fail the
+    same way."""
+    ours = next(r for r in COMMITTED["witnesses"] if r["binding"] == "cll")
+    our_url = ours["endpoint"]
+    third_url = "https://third.example"
+    outcomes = {}
+    for key_pem, label in ((TEST_TS_PUBLIC_KEY_PEM, "test-key"), (wd.row_public_keys_pem(ours)[0], "committed-key")):
+        for url in (our_url, third_url):
+            state, rec = _cll_receipt_at(url, tmp_path / f"{label}-{url.split('//')[1]}", servers)
+            directory = _dir(_row(ours["name"], our_url, key_pem), _row("third.example", third_url, key_pem))
+            v = wb.verify_witnesses(state.checkpoint, [rec], directory=directory).receipts[0]
+            outcomes[(label, url)] = (v.verified, v.grade, v.reason)
+    assert outcomes[("test-key", our_url)] == outcomes[("test-key", third_url)]
+    assert outcomes[("committed-key", our_url)][:2] == outcomes[("committed-key", third_url)][:2] == (False, None)
+    assert outcomes[("test-key", our_url)][0] is True
+
+
+def test_a_rotated_key_later_in_the_row_still_verifies(tmp_path, servers):
+    state, rec = _cll_receipt_at("https://w.example", tmp_path, servers)
+    row = _row("w", "https://w.example", TEST_TS_PUBLIC_KEY_PEM)
+    row["key_ids"] = ["11" * 32, *row["key_ids"]]
+    assert wb.verify_witnesses(state.checkpoint, [rec], directory=_dir(row)).counted == 1
 
 
 # -- policy -------------------------------------------------------------------
@@ -448,34 +554,39 @@ def _three_witness_state(tmp_path, servers):
     cll_b = servers(_CllHandler)
     rekor_url = "rekor+" + servers(_RekorHandler, entries=[], fail_with=[])
     _l, _cp, state = _pushed(tmp_path, [cll_a, cll_b, rekor_url])
-    keys = {cll_a: TEST_TS_PUBLIC_KEY_PEM, cll_b: TEST_TS_PUBLIC_KEY_PEM, rekor_url: REKOR_TEST_PUBLIC_KEY_PEM}
-    return state, (cll_a, cll_b, rekor_url), keys
+    return state, (cll_a, cll_b, rekor_url)
+
+
+def _three_dir(urls, names):
+    pems = (TEST_TS_PUBLIC_KEY_PEM, TEST_TS_PUBLIC_KEY_PEM, REKOR_TEST_PUBLIC_KEY_PEM)
+    rows = [_row(n, u, p) for n, u, p in zip(names, urls, pems)]
+    # two cll rows share the test witness key; key_ids are unique per file in
+    # a committed directory, but verify_witnesses does not require that.
+    return _dir(*rows)
 
 
 def test_k_of_n(tmp_path, servers):
-    state, _urls, keys = _three_witness_state(tmp_path, servers)
-    directory = {u: f"op{i}" for i, u in enumerate(state.effective_witnesses)}
+    state, urls = _three_witness_state(tmp_path, servers)
+    directory = _three_dir(urls, ("op0", "op1", "op2"))
     for k, met in ((1, True), (3, True), (4, False)):
         r = wb.verify_witnesses(
             state.checkpoint,
             state.effective_witnesses,
             checkpoint_cose_hex=state.checkpoint_cose_hex,
             policy=wb.WitnessPolicy(min_receipts=k),
-            keys=keys,
             directory=directory,
         )
         assert r.counted == 3 and r.policy_met is met, (k, r)
 
 
 def test_distinct_operators_counts_operators_not_receipts(tmp_path, servers):
-    state, (cll_a, cll_b, rekor_url), keys = _three_witness_state(tmp_path, servers)
-    same_op = {cll_a: "Operator A", cll_b: "Operator A", rekor_url: "Operator B"}
+    state, urls = _three_witness_state(tmp_path, servers)
+    same_op = _three_dir(urls, ("Operator A", "Operator A", "Operator B"))
     strict = wb.verify_witnesses(
         state.checkpoint,
         state.effective_witnesses,
         checkpoint_cose_hex=state.checkpoint_cose_hex,
         policy=wb.WitnessPolicy(min_receipts=3, distinct_operators=True),
-        keys=keys,
         directory=same_op,
     )
     assert strict.counted == 3 and strict.operators == 2 and not strict.policy_met
@@ -484,48 +595,40 @@ def test_distinct_operators_counts_operators_not_receipts(tmp_path, servers):
         state.effective_witnesses,
         checkpoint_cose_hex=state.checkpoint_cose_hex,
         policy=wb.WitnessPolicy(min_receipts=3, distinct_operators=False),
-        keys=keys,
         directory=same_op,
     )
     assert loose.policy_met
 
 
 def test_one_bad_receipt_is_reported_and_not_counted(tmp_path, servers):
-    state, (cll_a, _cll_b, _rekor_url), keys = _three_witness_state(tmp_path, servers)
+    state, urls = _three_witness_state(tmp_path, servers)
     from dataclasses import replace
 
     tampered = dict(state.effective_witnesses)
-    good = tampered[cll_a]
-    tampered[cll_a] = replace(good, receipt_b64=base64.b64encode(b"\x00" * 40).decode())
-    directory = {u: f"op{i}" for i, u in enumerate(tampered)}
+    tampered[urls[0]] = replace(tampered[urls[0]], receipt_b64=base64.b64encode(b"\x00" * 40).decode())
     r = wb.verify_witnesses(
         state.checkpoint,
         tampered,
         checkpoint_cose_hex=state.checkpoint_cose_hex,
         policy=wb.WitnessPolicy(min_receipts=2),
-        keys=keys,
-        directory=directory,
+        directory=_three_dir(urls, ("op0", "op1", "op2")),
     )
-    bad = [v for v in r.receipts if v.ts_url == cll_a][0]
+    bad = [v for v in r.receipts if v.ts_url == urls[0]][0]
     assert not bad.verified and bad.grade is None and bad.reason
     assert r.counted == 2 and r.policy_met
 
 
 def test_stub_receipts_never_count(tmp_path):
-    from capsule_emit.checkpoint import register_checkpoint_stub
+    from capsule_emit.checkpoint import emit_checkpoint, register_checkpoint_stub
 
     ledger = str(tmp_path / "l.jsonl")
     for i in range(2):
         seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger, witness=False)
-    cp = witness.push(ledger, ts_url=["https://unused.example"], witness=False)
-    assert cp is None  # witnessing off -> nothing built; use a stub record directly
     state = witness._get_state(ledger)
     state.mmr.sync()
-    from capsule_emit.checkpoint import emit_checkpoint
-
     record = emit_checkpoint(state.mmr, state.signer, log_id=state.log_id)
     stub = register_checkpoint_stub(record)
-    r = wb.verify_witnesses(record, [stub], policy=wb.WitnessPolicy(min_receipts=1))
+    r = wb.verify_witnesses(record, [stub], directory=COMMITTED, policy=wb.WitnessPolicy(min_receipts=1))
     assert r.counted == 0 and not r.policy_met and "stub" in r.receipts[0].reason
 
 
@@ -544,10 +647,13 @@ def test_summary_is_counts_never_names():
 def test_live_public_rekor_accepts_and_verifies_a_checkpoint(tmp_path):
     """Writes ONE content-free entry (a throwaway log's checkpoint: size,
     root, time, key id) to the public Rekor log, then verifies it offline
-    under the shipped key."""
+    against the committed witnesses.json."""
     ledger, cp, state = _pushed(tmp_path, [wb.PUBLIC_REKOR_URL])
     assert [w.ts_url for w in cp.witnesses] == [wb.PUBLIC_REKOR_URL]
     r = wb.verify_witnesses(
-        state.checkpoint, state.effective_witnesses, checkpoint_cose_hex=state.checkpoint_cose_hex
+        state.checkpoint,
+        state.effective_witnesses,
+        checkpoint_cose_hex=state.checkpoint_cose_hex,
+        directory=COMMITTED,
     )
     assert r.counted == 1, r.receipts

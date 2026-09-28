@@ -51,6 +51,25 @@ ruff check .                       # lint
 python examples/quickstart_demo.py # the 5-minute acceptance demo
 ```
 
+## Adding a witness to the directory
+
+`witnesses.json` at the repository root lists transparency services that
+take a log's checkpoint and return a receipt a verifier can check offline,
+with the keys those receipts are signed with. Anyone who runs one can add a
+row. No row is privileged, the maintainers' own included: rows are
+alphabetical by `name`, one per operator and endpoint, every row passes the
+same checks (`python -m capsule_emit.witness_directory witnesses.json`;
+field shapes in `docs/schemas/witnesses.schema.json`), and
+`capsule_emit.witness_bindings.verify_witnesses` reads every row's keys the
+same way, with no built-in key for any service.
+
+Open the pull request with the directory-row template
+(`?template=directory-row.md` on the compare URL). A reviewer fetches your
+key from your endpoint's own host before merging. The directory records who
+holds a key, never how good they are: rows carry no rating, score, or tier.
+How many witnesses, from how many distinct operators, a checkpoint needs is
+the verifier's policy, not the directory's.
+
 ## Where discussion happens
 
 The underlying specification is discussed in the IETF **SCITT** Working Group
