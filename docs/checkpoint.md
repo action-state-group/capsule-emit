@@ -123,6 +123,39 @@ one Transparency Service (`seal(..., witness_url=[url1, url2])` or a
 comma-separated `CAPSULE_WITNESS_URL`) to climb from single-witness to
 multi-witness; the zero-config default does not do this for you.
 
+### More than one kind of witness: `cll`, `rekor`, `scrapi`
+
+"More than one witness" is a count of receipts a checkpoint carries, checked against a policy the
+verifier chooses. No service is privileged, and the library ships no list of trusted ones. The
+binding is named by the URL scheme, so `witness_url=` and `CAPSULE_WITNESS_URL` take all three:
+
+| URL | Binding | What is sent | Receipt grade |
+|---|---|---|---|
+| `https://host` | `cll`: `POST /checkpoints` | the checkpoint's COSE statement | the witness's own label: `countersigned-observed` or `mmr-verified` |
+| `rekor+https://rekor.sigstore.dev` | `rekor`: a Rekor `dsse` entry | the checkpoint's COSE statement in a DSSE envelope, signed by the log's own key; Rekor stores only its hash | always `countersigned-observed` (existence + time); Rekor never checks MMR consistency |
+| `scrapi+https://host` | `scrapi`: SCRAPI `POST /entries` | the checkpoint's COSE statement, as a signed statement | the receipt's own label; if it has none, `countersigned-observed` |
+
+Why `dsse` and not `hashedrekord`: Rekor verifies an Ed25519 `hashedrekord` signature as
+Ed25519ph over a SHA-512 digest, and a checkpoint key signs plain Ed25519. The `dsse` type carries
+the envelope, so Rekor checks the plain signature over the DSSE pre-authentication encoding.
+
+Each witness is registered independently. A failure is a warning and joins that witness's durable
+backlog (see "Witness outage" below), never a failed checkpoint.
+
+**Verifying plurality.** `capsule_emit.witness_bindings.verify_witnesses(checkpoint, witnesses,
+directory=..., checkpoint_cose_hex=..., policy=WitnessPolicy(min_receipts=2,
+distinct_operators=True))` checks every receipt offline and reports each one: verified or not, why,
+and its grade. It then applies the policy. `directory` is a parsed
+[`witnesses.json`](../witnesses.json) (or your own file in the same schema): the one source of
+keys and operator names. Every row is read the same way; no service, including the default
+witness, has a key built into the verifier. A receipt from a witness with no row is `not checked`.
+A receipt that does not verify is listed with its reason and not counted. `summary()` gives counts,
+never names: `2 witnesses · 2 operators`.
+
+A Rekor receipt verifies only if all three hold: Rekor's Signed Entry Timestamp checks out under
+the Rekor key in its directory row; the entry's payload hash is this checkpoint's bytes; and the entry is signed
+by this checkpoint's own key, so someone else logging our bytes under their key does not count.
+
 **Signing.** The default path signs checkpoints with the SAME persisted
 Ed25519 identity (`capsule_emit.signing.LocalKeypairSigner`) that signs
 capsule content — resolved with the identical precedence `seal()` uses
