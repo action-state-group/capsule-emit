@@ -539,11 +539,36 @@ def test_our_row_is_treated_exactly_like_a_third_row(tmp_path, servers):
     assert outcomes[("test-key", our_url)][0] is True
 
 
-def test_a_rotated_key_later_in_the_row_still_verifies(tmp_path, servers):
+@pytest.mark.parametrize("valid_first", [False, True], ids=["new-key-last", "old-key-first"])
+def test_every_key_in_the_row_is_tried(tmp_path, servers, valid_first):
+    """The signing key may sit anywhere in ``key_ids``: last (a receipt from
+    the newest key, listed after the old one) or first (an old receipt,
+    signed before a rotation added a newer key after it)."""
     state, rec = _cll_receipt_at("https://w.example", tmp_path, servers)
     row = _row("w", "https://w.example", TEST_TS_PUBLIC_KEY_PEM)
-    row["key_ids"] = ["11" * 32, *row["key_ids"]]
+    other = "11" * 32
+    row["key_ids"] = [*row["key_ids"], other] if valid_first else [other, *row["key_ids"]]
     assert wb.verify_witnesses(state.checkpoint, [rec], directory=_dir(row)).counted == 1
+
+
+def test_our_row_is_not_rescued_by_the_built_in_key(tmp_path, servers, monkeypatch):
+    """Make the library's built-in default-witness key the key that actually
+    signed the receipt, and give our row a DIFFERENT key. The directory row is
+    the only key source, so the receipt must not verify: if anything in the
+    plurality path still reached for the built-in key, it would."""
+    import cll.checkpoint
+    import cll.checkpoint.emit
+
+    import capsule_emit.checkpoint
+    from capsule_emit.checkpoint import DEFAULT_TS_URL
+
+    for mod in (cll.checkpoint.emit, cll.checkpoint, capsule_emit.checkpoint):
+        monkeypatch.setattr(mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM, raising=False)
+    state, rec = _cll_receipt_at(DEFAULT_TS_URL, tmp_path, servers)
+    wrong = Ed25519PrivateKey.generate().public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    ours = next(r for r in COMMITTED["witnesses"] if r["binding"] == "cll")
+    r = wb.verify_witnesses(state.checkpoint, [rec], directory=_dir(_row(ours["name"], DEFAULT_TS_URL, wrong)))
+    assert r.counted == 0 and not r.receipts[0].verified, r.receipts
 
 
 # -- policy -------------------------------------------------------------------
