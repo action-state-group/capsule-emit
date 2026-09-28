@@ -1,36 +1,42 @@
 # SPDX-License-Identifier: Apache-2.0
 """Demo permalink builder — withheld/bundle half.
 
-The verify-surface viewer at ``<base-url>/v/<capsule_id>#<fragment>`` renders a
-single-capsule detail view when the fragment decodes to a JSON object, and the
-chain-navigation table when it decodes to a JSON array. A single-capsule link
-where the presenter meant to paste the whole chain silently degrades to the
-first case — that is the failure this module exists to make impossible: bundle
-mode is the default whenever more than one capsule is supplied, not opt-in.
+Every permalink carries an AAC Evidence Bundle (``evidence-bundle/v2``,
+draft-mih-zhang-agent-disclosure-bundle-00) in the URL fragment, encoded with
+that draft's §9 Fragment Codec: unpadded RFC 4648 base64url over the UTF-8 JCS
+bytes of the whole Bundle (``agent_action_capsule.bundle.encode_fragment``).
+One capsule is a Bundle of one; a chain is a Bundle whose ``root`` is the last
+capsule in ledger order. The link opens the viewer's ``/bundle`` route, which
+decodes that codec. (Before this, the fragment was padded standard base64 over
+``json.dumps`` of a bare capsule or array, which no conformant decoder reads.)
 
-Disclosure (``--reveal``) wraps a capsule in the Disclosure Envelope shape the
-verify-surface viewer reads (``{"capsule": <unmodified capsule>, "disclosures":
-{"agent_input": ..., "agent_output": ...}}`` —
-draft-mih-scitt-agent-action-capsule-disclosure-envelope-00, landed in the
-viewer via scitt-cose#27/[aac-disclosure-envelope]). Per-item disclosure in the
-array-fragment bundle path is supported since scitt-cose#30
-(``unwrapEnvelope()``/``_unwrap_envelope()`` in the deployed viewer): each
-bundle item can independently be a bare capsule or an envelope-wrapped one, and
-``findChainGaps``/``annotateRecords``/``evaluateRitual``/``verifyCapsuleId``
-unwrap before reading ``capsule_id``/``chain``, so an enveloped item's
-Integrity/Sequence check is real, not silently skipped (that was the bug —
-scitt-cose#30 — this module's old ``bundle=True`` refusal existed to route
-around). Items with no disclosure stay bare in the array.
+Disclosure (``--reveal``) goes in the Bundle-level ``disclosures`` overlay,
+``{capsule_id: {member: preimage}}`` (the draft's §5). Enclosed capsules are
+never wrapped or altered, so each one's ``capsule_id`` still recomputes.
+
+A URL past ``MAX_INLINE_URL_BYTES`` (Chromium's 2 MiB URL cap) does not open,
+so above it the fragment carries a pointer instead of the Bundle:
+``{"bundle_ref": {"digest": <bundle digest>, "root": <capsule_id>,
+"locations": [<URI>, ...]}}``, encoded with the same codec. ``locations`` are
+routes the producer chooses and hosts; there is no default. With no location,
+an oversize permalink is refused rather than emitted unopenable.
 """
 from __future__ import annotations
 
-import base64
 import json
 import os
 from pathlib import Path
 from typing import Any
 
+from agent_action_capsule.bundle import bundle_digest, encode_fragment
+
 DEFAULT_BASE_URL = "https://verify.agentactioncapsule.org"
+
+#: Chromium refuses URLs longer than 2 MiB; a longer permalink never opens.
+MAX_INLINE_URL_BYTES = 2 * 1024 * 1024
+
+BUNDLE_VERSION = "2"
+BUNDLE_KIND = "evidence-bundle/v2"
 
 
 class PermalinkError(Exception):
@@ -115,54 +121,158 @@ def summarize(capsules: list[dict]) -> str:
     return f"{len(capsules)} capsules — chain: {chain} ({ids})"
 
 
+def _citation_targets(capsule: dict) -> list[str]:
+    """The capsule digests a record cites: its chain parent and every
+    ``agent-action-capsule`` SHA-256 reference (the Bundle draft's §4)."""
+    targets: list[str] = []
+    chain = capsule.get("chain")
+    if isinstance(chain, dict) and isinstance(chain.get("parent_capsule_id"), str):
+        targets.append(chain["parent_capsule_id"])
+    for ref in capsule.get("references") or []:
+        if (
+            isinstance(ref, dict)
+            and ref.get("type") == "agent-action-capsule"
+            and ref.get("digest_alg") == "SHA-256"
+            and isinstance(ref.get("digest"), str)
+        ):
+            targets.append(ref["digest"])
+    return targets
+
+
+def _completeness(root_id: str, capsules: list[dict]) -> dict:
+    """Declare citation closure from ``root_id`` deep enough to reach every
+    supplied record, listing each cited capsule that is not supplied."""
+    by_id = {_capsule_id_of(c): c for c in capsules}
+    depth = len(capsules)
+    missing: list[str] = []
+    frontier = [root_id]
+    for _ in range(depth):
+        next_frontier: list[str] = []
+        for source_id in frontier:
+            for target in _citation_targets(by_id[source_id]):
+                if target in by_id:
+                    next_frontier.append(target)
+                elif target not in missing:
+                    missing.append(target)
+        frontier = next_frontier
+    completeness: dict[str, Any] = {
+        "closure_depth": depth,
+        "records_mode": "declared_incomplete" if missing else "complete",
+    }
+    if missing:
+        completeness["missing"] = missing
+    return completeness
+
+
+def build_bundle(
+    capsules: list[dict],
+    *,
+    bundle: bool,
+    disclosures: dict[str, Any] | None = None,
+) -> dict:
+    """Build the ``evidence-bundle/v2`` object a permalink carries.
+
+    ``bundle=False`` makes a Bundle of one from ``capsules[0]``; otherwise
+    every capsule is a record and the last one (in ledger order) is ``root``.
+
+    ``disclosures`` shape depends on ``bundle``:
+
+    - ``bundle=False``: a flat ``{field: payload}`` dict (e.g.
+      ``{"agent_input": {...}, "agent_output": {...}}``) for the single
+      capsule. Requires exactly one capsule.
+    - ``bundle=True``: a ``{capsule_id: {field: payload}}`` dict. Every key
+      must match a capsule_id present in ``capsules``.
+
+    Either way it lands in the Bundle-level ``disclosures`` overlay; items
+    with no entry are WITHHELD.
+    """
+    if disclosures is not None and not bundle and len(capsules) != 1:
+        raise PermalinkError("disclosures require exactly one capsule (or bundle=True)")
+    records = capsules if bundle else capsules[:1]
+    ids = [_capsule_id_of(c) for c in records]
+    if len(set(ids)) != len(ids):
+        raise PermalinkError("duplicate capsule_id in the bundle")
+    root_id = ids[-1]
+    overlay: dict[str, Any] = {}
+    if disclosures:
+        if bundle:
+            unknown = sorted(set(disclosures) - set(ids))
+            if unknown:
+                raise PermalinkError(
+                    f"disclosures given for capsule_id(s) not in the bundle: {unknown}"
+                )
+            overlay = dict(disclosures)
+        else:
+            overlay = {root_id: disclosures}
+    out: dict[str, Any] = {
+        "bundle_version": BUNDLE_VERSION,
+        "bundle_kind": BUNDLE_KIND,
+        "root": root_id,
+        "records": records,
+        "completeness": _completeness(root_id, records),
+    }
+    if overlay:
+        out["disclosures"] = overlay
+    return out
+
+
+def pointer_fragment(bundle_obj: dict, locations: list[str]) -> dict:
+    """The pointer form a fragment carries in place of an oversize Bundle."""
+    if not locations:
+        raise PermalinkError("a bundle pointer needs at least one location")
+    return {
+        "bundle_ref": {
+            "digest": bundle_digest(bundle_obj),
+            "root": bundle_obj["root"],
+            "locations": list(locations),
+        }
+    }
+
+
+def resolve_pointer(pointer: dict, fetched: Any) -> dict:
+    """Accept a Bundle fetched from a pointer's location only if its bundle
+    digest and ``root`` equal the pointer's. Locations are routes, never
+    identity, so the fetched bytes prove nothing until this check passes."""
+    ref = pointer.get("bundle_ref") if isinstance(pointer, dict) else None
+    if not isinstance(ref, dict):
+        raise PermalinkError("not a bundle pointer")
+    if not isinstance(fetched, dict):
+        raise PermalinkError("fetched bundle is not a JSON object")
+    if bundle_digest(fetched) != ref.get("digest"):
+        raise PermalinkError("fetched bundle does not match the pointer's digest")
+    if fetched.get("root") != ref.get("root"):
+        raise PermalinkError("fetched bundle's root does not match the pointer's root")
+    return fetched
+
+
 def build_url(
     capsules: list[dict],
     *,
     base_url: str = DEFAULT_BASE_URL,
     bundle: bool,
     disclosures: dict[str, Any] | None = None,
+    bundle_locations: list[str] | None = None,
+    max_url_bytes: int = MAX_INLINE_URL_BYTES,
 ) -> str:
-    """Build the verify-surface permalink.
+    """Build the verify-surface permalink: ``<base_url>/bundle#<fragment>``.
 
-    ``bundle=True`` encodes the JSON-array fragment (chain-navigation table);
-    otherwise the single capsule object is encoded directly.
-
-    ``disclosures`` shape depends on ``bundle``:
-
-    - ``bundle=False``: a flat ``{field: payload}`` dict (e.g.
-      ``{"agent_input": {...}, "agent_output": {...}}``) — wraps the single
-      capsule in the Disclosure Envelope shape (``{"capsule": ...,
-      "disclosures": ...}``) instead of the bare capsule. Requires exactly
-      one capsule.
-    - ``bundle=True``: a ``{capsule_id: {field: payload}}`` dict, keyed by
-      the ``capsule_id`` of each bundle item to disclose. Every key must
-      match a capsule_id present in ``capsules``. Items with no entry stay
-      bare in the array; items with an entry are envelope-wrapped in place —
-      each disclosed independently, per module docstring.
+    The fragment is the §9 encoding of :func:`build_bundle`'s Bundle (see it
+    for ``bundle`` and ``disclosures``). When that URL would exceed
+    ``max_url_bytes`` the fragment is the pointer form instead, naming
+    ``bundle_locations``; with no locations it raises :class:`PermalinkError`.
     """
     base_url = base_url.rstrip("/")
-    anchor_id = _capsule_id_of(capsules[0])
-    if disclosures is not None and not bundle:
-        if len(capsules) != 1:
-            raise PermalinkError("disclosures require exactly one capsule (or bundle=True)")
-        payload: Any = {"capsule": capsules[0], "disclosures": disclosures}
-    elif bundle:
-        if disclosures:
-            ids = {_capsule_id_of(c) for c in capsules}
-            unknown = sorted(set(disclosures) - ids)
-            if unknown:
-                raise PermalinkError(
-                    f"disclosures given for capsule_id(s) not in the bundle: {unknown}"
-                )
-            payload = [
-                {"capsule": c, "disclosures": disclosures[_capsule_id_of(c)]}
-                if _capsule_id_of(c) in disclosures
-                else c
-                for c in capsules
-            ]
-        else:
-            payload = capsules
-    else:
-        payload = capsules[0]
-    frag = base64.b64encode(json.dumps(payload).encode()).decode()
-    return f"{base_url}/v/{anchor_id}#{frag}"
+    bundle_obj = build_bundle(capsules, bundle=bundle, disclosures=disclosures)
+    url = f"{base_url}/bundle#{encode_fragment(bundle_obj)}"
+    if len(url) <= max_url_bytes:
+        return url
+    if not bundle_locations:
+        raise PermalinkError(
+            f"the permalink would be {len(url):,} bytes, over the {max_url_bytes:,}-byte "
+            "limit browsers open; host the bundle (write it with --bundle-out) and pass "
+            "its URL with --bundle-location to emit a pointer permalink instead"
+        )
+    url = f"{base_url}/bundle#{encode_fragment(pointer_fragment(bundle_obj, bundle_locations))}"
+    if len(url) > max_url_bytes:
+        raise PermalinkError("even the pointer permalink exceeds the URL limit; pass fewer locations")
+    return url

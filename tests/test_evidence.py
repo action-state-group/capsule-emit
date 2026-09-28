@@ -61,7 +61,7 @@ def test_markdown_structure(tmp_path):
     assert "| 2 | `run_tests` | decide |" in md
     assert "agent-action-capsule verify --store ledger.jsonl" in md
     assert "capsule-emit permalink --ledger ledger.jsonl --check" in md
-    assert "verify.agentactioncapsule.org/v/" in md
+    assert "verify.agentactioncapsule.org/bundle#" in md
     # short capsule_ids from the real ledger appear in the table
     for cap in capsules:
         assert f"`{cap['capsule_id'][:8]}`" in md

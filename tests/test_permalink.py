@@ -2,10 +2,11 @@
 """Tests for `capsule-emit permalink` — withheld/bundle and disclosed (--reveal)."""
 from __future__ import annotations
 
-import base64
 import json
 
 import pytest
+from agent_action_capsule.bundle import decode_fragment, verify_bundle
+from agent_action_capsule.disclosure_envelope import MATCH
 
 from capsule_emit import seal
 from capsule_emit.cli import main as cli_main
@@ -133,9 +134,10 @@ def two_capsule_run_dir(tmp_path):
     return run_dir, [root, child]
 
 
-def _decode_fragment(url: str) -> object:
-    frag = url.split("#", 1)[1]
-    return json.loads(base64.b64decode(frag))
+def _decode_fragment(url: str) -> dict:
+    """Decode with the reference §9 decoder, which rejects padded or
+    standard-alphabet base64 and non-UTF-8/non-JSON bytes."""
+    return decode_fragment(url.split("#", 1)[1])
 
 
 # ---------------------------------------------------------------------------
@@ -205,40 +207,56 @@ def test_load_capsules_from_run_no_capsules_errors(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_build_url_single_capsule_encodes_object(three_capsule_chain):
+def test_build_url_single_capsule_is_a_bundle_of_one(three_capsule_chain):
     _, records = three_capsule_chain
     capsules = [records[0].capsule]
     url = build_url(capsules, bundle=False)
-    assert url.startswith(f"{DEFAULT_BASE_URL}/v/{records[0].capsule_id}#")
+    assert url.startswith(f"{DEFAULT_BASE_URL}/bundle#")
     decoded = _decode_fragment(url)
-    assert isinstance(decoded, dict)
-    assert decoded["capsule_id"] == records[0].capsule_id
+    assert decoded["bundle_kind"] == "evidence-bundle/v2"
+    assert decoded["root"] == records[0].capsule_id
+    assert decoded["records"] == capsules
+    assert decoded["completeness"] == {"closure_depth": 1, "records_mode": "complete"}
+    assert "disclosures" not in decoded
 
 
-def test_build_url_bundle_encodes_array(three_capsule_chain):
+def test_build_url_bundle_carries_every_record_rooted_at_the_tip(three_capsule_chain):
     _, records = three_capsule_chain
     capsules = [r.capsule for r in records]
     url = build_url(capsules, bundle=True)
     decoded = _decode_fragment(url)
-    assert isinstance(decoded, list)
-    assert len(decoded) == 3
-    assert [c["capsule_id"] for c in decoded] == [r.capsule_id for r in records]
+    assert [c["capsule_id"] for c in decoded["records"]] == [r.capsule_id for r in records]
+    assert decoded["root"] == records[2].capsule_id
+    assert decoded["completeness"] == {"closure_depth": 3, "records_mode": "complete"}
+    assert verify_bundle(decoded).graph_closure.status == "pass"
+
+
+def test_build_url_partial_chain_declares_the_missing_parent(three_capsule_chain):
+    """A chain cut off from its parent says so, instead of claiming completeness."""
+    _, records = three_capsule_chain
+    capsules = [records[1].capsule, records[2].capsule]
+    decoded = _decode_fragment(build_url(capsules, bundle=True))
+    assert decoded["completeness"]["records_mode"] == "declared_incomplete"
+    assert decoded["completeness"]["missing"] == [records[0].capsule_id]
+    assert verify_bundle(decoded).graph_closure.status == "withheld"
 
 
 def test_build_url_custom_base_url(three_capsule_chain):
     _, records = three_capsule_chain
     url = build_url([records[0].capsule], bundle=False, base_url="http://localhost:8080/")
-    assert url.startswith("http://localhost:8080/v/")
+    assert url.startswith("http://localhost:8080/bundle#")
 
 
-def test_build_url_disclosures_wraps_in_envelope(three_capsule_chain):
+def test_build_url_disclosures_go_in_the_overlay(three_capsule_chain):
     _, records = three_capsule_chain
     cap = records[0].capsule
     url = build_url([cap], bundle=False, disclosures={"agent_input": {"invoice_id": "INV-1"}})
     decoded = _decode_fragment(url)
-    assert decoded == {"capsule": cap, "disclosures": {"agent_input": {"invoice_id": "INV-1"}}}
-    # the wrapped capsule is byte-identical to the unmodified sealed one — no re-keying/mutation
-    assert decoded["capsule"] == cap
+    assert decoded["disclosures"] == {records[0].capsule_id: {"agent_input": {"invoice_id": "INV-1"}}}
+    # the enclosed capsule is the unmodified sealed one — no wrapping, no re-keying
+    assert decoded["records"] == [cap]
+    statuses = {f.member: f.status for f in verify_bundle(decoded).disclosures}
+    assert statuses == {"agent_input": MATCH, "agent_output": "withheld"}
 
 
 def test_build_url_disclosures_reject_multiple_capsules(three_capsule_chain):
@@ -249,27 +267,20 @@ def test_build_url_disclosures_reject_multiple_capsules(three_capsule_chain):
 
 
 # ---------------------------------------------------------------------------
-# build_url — per-item bundle disclosure (scitt-cose#30 lifted the block)
+# build_url — per-item bundle disclosure
 # ---------------------------------------------------------------------------
 
 
-def test_build_url_bundle_disclosures_wraps_only_targeted_item(three_capsule_chain):
-    """bundle=True + disclosures={capsule_id: {field: payload}} envelope-wraps
-    only the targeted item(s); the rest of the array stays bare."""
+def test_build_url_bundle_disclosures_only_the_targeted_item(three_capsule_chain):
+    """bundle=True + disclosures={capsule_id: {field: payload}} discloses only
+    the targeted item(s); every record stays the unmodified capsule."""
     _, records = three_capsule_chain
     capsules = [r.capsule for r in records]
     disclosures = {records[1].capsule_id: {"agent_input": {"po_number": "PO-42"}}}
     url = build_url(capsules, bundle=True, disclosures=disclosures)
     decoded = _decode_fragment(url)
-    assert isinstance(decoded, list) and len(decoded) == 3
-    assert decoded[0] == capsules[0]
-    assert decoded[2] == capsules[2]
-    assert decoded[1] == {
-        "capsule": capsules[1],
-        "disclosures": {"agent_input": {"po_number": "PO-42"}},
-    }
-    # the wrapped capsule is byte-identical to the unmodified sealed one
-    assert decoded[1]["capsule"] == capsules[1]
+    assert decoded["records"] == capsules
+    assert decoded["disclosures"] == disclosures
 
 
 def test_build_url_bundle_disclosures_multiple_items(three_capsule_chain):
@@ -281,18 +292,15 @@ def test_build_url_bundle_disclosures_multiple_items(three_capsule_chain):
     }
     url = build_url(capsules, bundle=True, disclosures=disclosures)
     decoded = _decode_fragment(url)
-    assert decoded[0]["disclosures"] == {"agent_output": {"risk": "low"}}
-    assert decoded[1] == capsules[1]
-    assert decoded[2]["disclosures"] == {"agent_input": {"escalated": True}}
+    assert decoded["disclosures"] == disclosures
+    assert decoded["records"] == capsules
 
 
 def test_build_url_bundle_disclosures_no_entries_is_plain_bundle(three_capsule_chain):
-    """An empty disclosures dict behaves like disclosures=None — a plain bundle array."""
+    """An empty disclosures dict behaves like disclosures=None — no overlay."""
     _, records = three_capsule_chain
     capsules = [r.capsule for r in records]
-    url = build_url(capsules, bundle=True, disclosures={})
-    decoded = _decode_fragment(url)
-    assert decoded == capsules
+    assert build_url(capsules, bundle=True, disclosures={}) == build_url(capsules, bundle=True)
 
 
 def test_build_url_bundle_disclosures_unknown_capsule_id_rejected(three_capsule_chain):
@@ -350,10 +358,10 @@ def test_cli_permalink_defaults_to_bundle_for_multiple_capsules(three_capsule_ch
     assert "executed → blocked → executed" in out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
     decoded = _decode_fragment(url)
-    assert isinstance(decoded, list) and len(decoded) == 3
+    assert [c["capsule_id"] for c in decoded["records"]] == [r.capsule_id for r in records]
 
 
-def test_cli_permalink_single_capsule_defaults_to_object(two_capsule_run_dir, capsys):
+def test_cli_permalink_single_capsule_defaults_to_bundle_of_one(two_capsule_run_dir, capsys):
     run_dir, records = two_capsule_run_dir
     cap_path = run_dir.parent / "single.json"
     cap_path.write_text(json.dumps(records[0].capsule))
@@ -362,10 +370,10 @@ def test_cli_permalink_single_capsule_defaults_to_object(two_capsule_run_dir, ca
     out = capsys.readouterr().out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
     decoded = _decode_fragment(url)
-    assert isinstance(decoded, dict)
+    assert [c["capsule_id"] for c in decoded["records"]] == [records[0].capsule_id]
 
 
-def test_cli_permalink_bundle_flag_forces_array_for_single_capsule(two_capsule_run_dir, capsys):
+def test_cli_permalink_bundle_flag_on_single_capsule(two_capsule_run_dir, capsys):
     run_dir, records = two_capsule_run_dir
     cap_path = run_dir.parent / "single.json"
     cap_path.write_text(json.dumps(records[0].capsule))
@@ -374,7 +382,7 @@ def test_cli_permalink_bundle_flag_forces_array_for_single_capsule(two_capsule_r
     out = capsys.readouterr().out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
     decoded = _decode_fragment(url)
-    assert isinstance(decoded, list) and len(decoded) == 1
+    assert len(decoded["records"]) == 1
 
 
 def test_cli_permalink_check_passes_on_valid_chain(three_capsule_chain, capsys):
@@ -424,7 +432,7 @@ def test_cli_permalink_reveal_unqualified_on_bundle_is_rejected(three_capsule_ch
 
 
 def test_cli_permalink_reveal_matching_payload(tmp_path, capsys):
-    """--reveal FIELD=payload.json wraps the capsule in the Disclosure Envelope shape."""
+    """--reveal FIELD=payload.json puts the payload in the Bundle's disclosures overlay."""
     ledger = tmp_path / "l.jsonl"
     cap = seal(
         {"invoice_id": "INV-1"},
@@ -457,9 +465,15 @@ def test_cli_permalink_reveal_matching_payload(tmp_path, capsys):
     assert "digest-match VALID" in out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
     decoded = _decode_fragment(url)
-    assert decoded["capsule"]["capsule_id"] == cap.capsule_id
-    assert decoded["disclosures"]["agent_input"] == {"invoice_id": "INV-1"}
-    assert decoded["disclosures"]["agent_output"] == {"risk": "low"}
+    assert decoded["root"] == cap.capsule_id
+    assert decoded["disclosures"][cap.capsule_id] == {
+        "agent_input": {"invoice_id": "INV-1"},
+        "agent_output": {"risk": "low"},
+    }
+    assert {(f.member, f.status) for f in verify_bundle(decoded).disclosures} == {
+        ("agent_input", MATCH),
+        ("agent_output", MATCH),
+    }
 
 
 def test_cli_permalink_reveal_mismatched_payload_refused(tmp_path, capsys):
@@ -517,12 +531,13 @@ def test_cli_permalink_reveal_bundle_by_index(three_capsule_chain_with_io, tmp_p
     assert "1/3 capsule(s) disclosed" in out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
     decoded = _decode_fragment(url)
-    assert isinstance(decoded, list) and len(decoded) == 3
-    assert decoded[0] == records[0].capsule
-    assert decoded[2] == records[2].capsule
-    assert decoded[1]["capsule"]["capsule_id"] == records[1].capsule_id
-    assert decoded[1]["disclosures"]["agent_input"] == {"po_number": "PO-1", "amount_usd": "125000.00"}
-    assert decoded[1]["disclosures"]["agent_output"] == {"reason": "exceeds PO ceiling"}
+    assert decoded["records"] == [r.capsule for r in records]
+    assert decoded["disclosures"] == {
+        records[1].capsule_id: {
+            "agent_input": {"po_number": "PO-1", "amount_usd": "125000.00"},
+            "agent_output": {"reason": "exceeds PO ceiling"},
+        }
+    }
 
 
 def test_cli_permalink_reveal_bundle_by_capsule_id_prefix(three_capsule_chain_with_io, tmp_path, capsys):
@@ -538,10 +553,8 @@ def test_cli_permalink_reveal_bundle_by_capsule_id_prefix(three_capsule_chain_wi
     out = capsys.readouterr().out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
     decoded = _decode_fragment(url)
-    assert decoded[0]["capsule"]["capsule_id"] == records[0].capsule_id
-    assert decoded[0]["disclosures"]["agent_input"] == {"po_number": "PO-1"}
-    assert decoded[1] == records[1].capsule
-    assert decoded[2] == records[2].capsule
+    assert decoded["records"] == [r.capsule for r in records]
+    assert decoded["disclosures"] == {records[0].capsule_id: {"agent_input": {"po_number": "PO-1"}}}
 
 
 def test_cli_permalink_reveal_bundle_multiple_items(three_capsule_chain_with_io, tmp_path, capsys):
@@ -568,9 +581,11 @@ def test_cli_permalink_reveal_bundle_multiple_items(three_capsule_chain_with_io,
     assert "2/3 capsule(s) disclosed" in out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
     decoded = _decode_fragment(url)
-    assert decoded[0]["disclosures"]["agent_input"] == {"po_number": "PO-1"}
-    assert decoded[1] == records[1].capsule
-    assert decoded[2]["disclosures"]["agent_output"] == {"escalated_to": "ap-manager@acme-co.com"}
+    assert decoded["disclosures"][records[0].capsule_id] == {"agent_input": {"po_number": "PO-1"}}
+    assert records[1].capsule_id not in decoded["disclosures"]
+    assert decoded["disclosures"][records[2].capsule_id] == {
+        "agent_output": {"escalated_to": "ap-manager@acme-co.com"}
+    }
 
 
 def test_cli_permalink_reveal_bundle_mismatch_refused_per_item(three_capsule_chain_with_io, tmp_path, capsys):
@@ -683,7 +698,7 @@ def test_cli_permalink_fragment_size_warning_past_16kb(tmp_path, capsys):
     assert "16" in captured.err
     url = [line for line in captured.out.splitlines() if line.startswith("http")][0]
     decoded = _decode_fragment(url)
-    assert decoded["capsule"]["capsule_id"] == cap.capsule_id
+    assert decoded["root"] == cap.capsule_id
 
 
 def test_cli_permalink_from_run(two_capsule_run_dir, capsys):
@@ -693,4 +708,5 @@ def test_cli_permalink_from_run(two_capsule_run_dir, capsys):
     out = capsys.readouterr().out
     assert "2 capsules" in out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
-    assert url.startswith(f"{DEFAULT_BASE_URL}/v/{records[0].capsule_id}#")
+    assert url.startswith(f"{DEFAULT_BASE_URL}/bundle#")
+    assert _decode_fragment(url)["root"] == records[1].capsule_id

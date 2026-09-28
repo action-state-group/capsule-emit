@@ -38,6 +38,10 @@ same code behind `capsule-emit permalink`). Regenerate it yourself any time:
 capsule-emit permalink --ledger <ledger.jsonl produced by this run> --check
 ```
 
+> Current `capsule-emit permalink` emits an evidence-bundle/v2 Bundle on the viewer's
+> `/bundle#` route (the draft's §9 codec) instead of this legacy `/v/<id>#` array form,
+> so regenerating produces a different link. The link above predates that change.
+
 `--check` runs `agent_action_capsule.verify()` on every capsule locally (no network) before
 printing a URL, and refuses to emit one if any capsule fails verification.
 

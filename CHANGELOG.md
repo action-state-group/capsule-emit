@@ -6,6 +6,46 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed — permalinks use the evidence-bundle/v2 §9 codec; oversize ones fall back to a pointer
+
+- `capsule-emit permalink` and `capsule_emit.permalink.build_url` encoded the
+  fragment as padded standard base64 over `json.dumps` of a bare capsule or
+  array. No conformant decoder reads that. The fragment is now an
+  `evidence-bundle/v2` Bundle encoded with
+  `agent_action_capsule.bundle.encode_fragment` (unpadded base64url over JCS),
+  and the link opens the viewer's `/bundle` route. One capsule is a Bundle of
+  one. A chain's `root` is its last capsule, and its closure depth covers every
+  supplied record. A cited capsule that is not supplied is listed in
+  `completeness.missing`.
+- `--reveal` payloads go in the Bundle-level `disclosures` overlay. Capsules are
+  no longer wrapped in `{capsule, disclosures}`.
+- A permalink longer than 2 MiB (Chromium's URL cap) used to be printed anyway,
+  and it did not open. Now the fragment carries the pointer
+  `{"bundle_ref": {"digest", "root", "locations"}}` for the locations you pass
+  with `--bundle-location URL`. `--bundle-out PATH` writes the Bundle to host.
+  With no location, an oversize permalink exits 1 and prints no URL.
+  `resolve_pointer` accepts a fetched Bundle only when its bundle digest and
+  `root` equal the pointer's.
+- New API: `build_bundle`, `pointer_fragment`, `resolve_pointer`,
+  `MAX_INLINE_URL_BYTES`.
+- `test-vectors/permalink-bundle/` pins the fragments. They were computed by
+  agent-action-capsule's Go `bundle.EncodeFragment`.
+- The `agent-action-capsule` floor is now 0.4.0, the first release with
+  `agent_action_capsule.bundle`.
+
+### Fixed — bilateral signed payloads are RFC 8785 JCS
+
+- `capsule_emit.bilateral`'s `request_payload`, `action_payload` and
+  `confirm_payload` now return the RFC 8785 JCS bytes of the phase object
+  (`agent_action_capsule.canonical.jcs`). They used `json.dumps(sort_keys=True)`,
+  which escapes every non-ASCII code point, so a payload with any non-ASCII value
+  signed different bytes than another JCS implementation computes. ASCII-only
+  payloads are byte-identical under both, so signatures over them still verify;
+  a signature over a non-ASCII payload made before this change does not.
+- The module no longer says the encoding is "TBD".
+- `test-vectors/bilateral-payloads/` pins the bytes, computed by
+  agent-action-capsule's Go `canonical.JCS`.
+
 ### Changed — capsules now stamp spec_version -05 (draft -05 wire)
 
 - `seal()`, `received()`, `log()` and the `holds/` lifecycle capsules stamp

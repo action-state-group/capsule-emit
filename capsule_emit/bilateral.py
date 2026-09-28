@@ -29,18 +29,20 @@ Verifier stubs:
   no_op_verifier       -- ALWAYS PASSES — for tests only; never production
   dict_verifier(keys)  -- verifies HMAC-SHA256 keyed by org_id (demo only)
 
-Wire encoding for the four exchange objects is TBD; see the companion I-D.
+Every signed payload is the RFC 8785 JCS serialization of its phase object
+(the ``jcs`` construction), UTF-8 encoded; see ``_canon``.
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import threading
 import uuid
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Callable
+
+from agent_action_capsule.canonical import jcs
 
 if TYPE_CHECKING:
     from capsule_emit.core import EmitResult
@@ -138,9 +140,9 @@ class UnknownParty(BilateralError):
 # ---------------------------------------------------------------------------
 # Canonical payload functions
 #
-# These functions produce the deterministic byte strings that each party signs.
-# They are transport-agnostic: the signed bytes are pinned here; wire encoding
-# of the four exchange objects is TBD for a future revision of the I-D.
+# These functions produce the deterministic byte strings that each party signs:
+# the RFC 8785 JCS serialization of each phase object. They are
+# transport-agnostic; the signed bytes are pinned here.
 #
 # The signed payloads bind progressively more context across four phases;
 # later signatures bind earlier signature digests so they cannot be lifted.
@@ -149,8 +151,13 @@ class UnknownParty(BilateralError):
 
 
 def _canon(obj: dict) -> bytes:
-    """Deterministic JSON: sorted keys, compact separators, UTF-8 bytes."""
-    return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    """RFC 8785 JCS of ``obj`` as UTF-8 bytes.
+
+    Not ``json.dumps(sort_keys=True)``: that escapes every non-ASCII code
+    point and sorts keys by code point, so any non-ASCII value would sign
+    different bytes than another JCS implementation computes.
+    """
+    return jcs(obj)
 
 
 def sig_digest(sig: BilateralSig) -> str:

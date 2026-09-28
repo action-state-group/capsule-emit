@@ -20,6 +20,7 @@ import hashlib
 import json
 
 import pytest
+from agent_action_capsule.canonical import jcs
 
 from capsule_emit.bilateral import (
     BilateralHandshake,
@@ -52,8 +53,7 @@ _verify_fn = dict_verifier(_KEYS)
 
 
 def _action_digest(action: dict) -> str:
-    raw = json.dumps(action, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(raw.encode()).hexdigest()
+    return hashlib.sha256(jcs(action)).hexdigest()
 
 
 ACTION = {"type": "book_slot", "amount": 1000, "vendor": "Acme"}
