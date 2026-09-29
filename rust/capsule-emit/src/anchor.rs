@@ -142,7 +142,8 @@ impl AnchorClient {
     /// `POST /checkpoints {COSE_Sign1 bytes}` -- registers a checkpoint's
     /// COSE-wire statement (`cll::checkpoint::checkpoint_to_cose`'s output)
     /// with the Transparency Service. COSE-only: never a plain JSON
-    /// `CheckpointRecord` body (single-host ruling, 2026-08-27) — never the
+    /// `CheckpointRecord` body (a transparency service registers the signed
+    /// statement, never an unsigned body) — never the
     /// `/v1/digest` route `post_digest` uses for a single capsule digest.
     pub fn post_checkpoint_cose(
         &self,

@@ -1,5 +1,5 @@
-//! Per-`(self, counterparty)` monotone capsule sequencing (history proposal
-//! §1: continuity is bilateral only). Every sealed capsule carries `seq` and
+//! Per-`(self, counterparty)` monotone capsule sequencing. Continuity is
+//! bilateral only: it is checked per pair, never across a node's whole log. Every sealed capsule carries `seq` and
 //! `prev_seq` for the pair it was sealed under, so a verifier can later check
 //! that pair's stream for gaps (missing records) or regressions (a `seq`
 //! that repeats or goes backward) WITHOUT trusting anything this node did
@@ -331,20 +331,20 @@ mod tests {
     fn verify_pair_continuity_reports_unbroken_for_a_clean_sequence() {
         let records = vec![
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 1,
                 prev_seq: None,
             },
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 2,
                 prev_seq: Some(1),
             },
         ];
         let result = verify_pair_continuity(&records, None);
-        let pair = result.get(&pair_key("m4", "m3")).unwrap();
+        let pair = result.get(&pair_key("node-b", "node-a")).unwrap();
         assert_eq!(pair.continuity, "unbroken");
         assert_eq!(pair.gaps_detected, 0);
         assert_eq!(pair.records_checked, 2);
@@ -357,20 +357,20 @@ mod tests {
     fn verify_pair_continuity_labels_a_dropped_record_as_a_gap_not_broken() {
         let records = vec![
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 1,
                 prev_seq: None,
             },
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 3,
                 prev_seq: Some(2),
             },
         ];
         let result = verify_pair_continuity(&records, None);
-        let pair = result.get(&pair_key("m4", "m3")).unwrap();
+        let pair = result.get(&pair_key("node-b", "node-a")).unwrap();
         assert_eq!(pair.continuity, "unbroken");
         assert_eq!(pair.gaps_detected, 1);
     }
@@ -382,27 +382,27 @@ mod tests {
     fn verify_pair_continuity_flags_a_reset_as_broken_not_a_fresh_start() {
         let records = vec![
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 1,
                 prev_seq: None,
             },
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 2,
                 prev_seq: Some(1),
             },
             // Counter file wiped; sealing resumed as if this were a new pair.
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 1,
                 prev_seq: None,
             },
         ];
         let result = verify_pair_continuity(&records, None);
-        let pair = result.get(&pair_key("m4", "m3")).unwrap();
+        let pair = result.get(&pair_key("node-b", "node-a")).unwrap();
         assert!(
             pair.continuity.starts_with("broken"),
             "expected a broken continuity report, got {:?}",
@@ -417,13 +417,13 @@ mod tests {
     #[test]
     fn verify_pair_continuity_detects_a_dropped_prefix_via_first_record_prev_seq() {
         let records = vec![PairSeq {
-            self_id: "m4",
-            counterparty_id: "m3",
+            self_id: "node-b",
+            counterparty_id: "node-a",
             seq: 4,
             prev_seq: Some(3),
         }];
         let result = verify_pair_continuity(&records, None);
-        let pair = result.get(&pair_key("m4", "m3")).unwrap();
+        let pair = result.get(&pair_key("node-b", "node-a")).unwrap();
         assert_eq!(pair.continuity, "unbroken");
         assert_eq!(
             pair.gaps_detected, 3,
@@ -439,21 +439,21 @@ mod tests {
     fn verify_pair_continuity_flags_a_lying_prev_seq_as_broken() {
         let records = vec![
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 1,
                 prev_seq: None,
             },
             // Honest seq (2, monotone) but a fabricated prev_seq.
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 2,
                 prev_seq: Some(99),
             },
         ];
         let result = verify_pair_continuity(&records, None);
-        let pair = result.get(&pair_key("m4", "m3")).unwrap();
+        let pair = result.get(&pair_key("node-b", "node-a")).unwrap();
         assert!(
             pair.continuity.starts_with("broken"),
             "expected a broken continuity report, got {:?}",
@@ -469,21 +469,21 @@ mod tests {
     fn verify_pair_continuity_detects_a_dropped_trail_via_checkpoint_cross_check() {
         let records = vec![
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 1,
                 prev_seq: None,
             },
             PairSeq {
-                self_id: "m4",
-                counterparty_id: "m3",
+                self_id: "node-b",
+                counterparty_id: "node-a",
                 seq: 2,
                 prev_seq: Some(1),
             },
             // seq=3, the pair's true last record, was dropped from delivery.
         ];
         let result = verify_pair_continuity(&records, Some(3));
-        let pair = result.get(&pair_key("m4", "m3")).unwrap();
+        let pair = result.get(&pair_key("node-b", "node-a")).unwrap();
         assert!(
             pair.continuity.starts_with("broken"),
             "expected a broken continuity report, got {:?}",
@@ -494,12 +494,18 @@ mod tests {
         // what was actually delivered, are honestly unbroken.
         let honest = verify_pair_continuity(&records, Some(2));
         assert_eq!(
-            honest.get(&pair_key("m4", "m3")).unwrap().continuity,
+            honest
+                .get(&pair_key("node-b", "node-a"))
+                .unwrap()
+                .continuity,
             "unbroken"
         );
         let unanchored = verify_pair_continuity(&records, None);
         assert_eq!(
-            unanchored.get(&pair_key("m4", "m3")).unwrap().continuity,
+            unanchored
+                .get(&pair_key("node-b", "node-a"))
+                .unwrap()
+                .continuity,
             "unbroken"
         );
     }

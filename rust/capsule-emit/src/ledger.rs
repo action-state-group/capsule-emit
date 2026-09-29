@@ -958,7 +958,7 @@ mod tests {
 
     /// The counterparty-half citation set survives append AND reopen, and is
     /// keyed on `citation_purpose` alone -- a legacy `relation: "cites"`
-    /// citing record counts exactly like a post-ruling `"follows"` one
+    /// citing record counts exactly like a current `"follows"` one
     /// (the record kind is the citation purpose, never the
     /// relation string).
     #[test]
@@ -971,7 +971,7 @@ mod tests {
         ledger.append(&local, &statement_for(&local)).unwrap();
         assert!(!ledger.cites_counterparty_half(&"a".repeat(64)));
 
-        // A post-ruling citing record (relation "follows").
+        // A current citing record (relation "follows").
         let cite1 = citing_capsule("cite1", Some(&local_id), &"a".repeat(64));
         let cite1_id = cite1["capsule_id"].as_str().unwrap().to_string();
         ledger.append(&cite1, &statement_for(&cite1)).unwrap();
