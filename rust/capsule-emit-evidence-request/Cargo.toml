@@ -1,6 +1,6 @@
 [package]
 name = "capsule-emit-evidence-request"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 license = "Apache-2.0"
 description = "The evidence request protocol (draft-mih-agent-evidence-request-00): parse and digest requests, resolve them exactly, sign and verify refusals, and classify outcomes, invariance and retention."
@@ -21,3 +21,6 @@ hex = "0.4"
 ed25519-dalek = "2"
 ciborium = "0.2"
 thiserror = "1"
+# The checkpointed local log: checkpoints, inclusion, range and consistency
+# proofs for the answer path.
+cll = { package = "checkpointed-local-log", version = "0.2.0" }

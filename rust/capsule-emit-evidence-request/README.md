@@ -14,6 +14,7 @@ refusal, or the requester's own record that nothing arrived.
 | `outcome` | the one state an interaction is recorded as; a signed refusal is never an absence, and silence is never a refusal |
 | `invariance` | caller invariance: the same subject under the same anchor gives the same bytes |
 | `retention` | retention commitments and the breach table |
+| `answer` (0.0.2) | build the artifact response over a checkpointed local log (`cll`): records with inclusion proofs, a range or the full history with a range proof, the checkpoints, or the `history_card/1` derivation with consistency proofs; the artifact is deterministic and the same for every requester, the envelope is signed by the responder and binds the request digest and the anchor. `answer::verify` checks it all offline |
 
 ```rust
 use capsule_emit_evidence_request::{digest, request, resolve};
@@ -34,16 +35,19 @@ follows the readings the draft's conformance vectors document; each module
 says which. The API is pre-stable (0.0.x) until a later draft fixes those
 shapes.
 
-**0.0.1 does not build answers.** It parses, digests and resolves
-requests, signs and verifies refusals, and classifies outcomes. Building the
-artifact (a record, a range or a chain segment with its inclusion or range
-proof under the anchor) is the responder's in 0.0.1; **0.0.2 adds the answer
-path**.
+**0.0.2 adds the answer path** (`answer`). 0.0.1 parsed, digested and
+resolved requests, signed and verified refusals, and classified outcomes.
 
 To accept a refusal as a responder's answer to your request, use
 `refusal::verify_for` (it binds the responder's key and your request
-digest). `refusal::check` reports shape and self-consistency only and is not
-authentication.
+digest); `refusal::check` reports shape and self-consistency only and is not
+authentication. To accept an artifact, use `answer::verify`: it checks the
+envelope signature and bindings, the artifact digest, the anchor checkpoint
+(the responder's; exactly the pinned one under `expected_pin`), the coverage
+constraint, every record against its digest (with your evidence format's
+digest function) and every proof. Which records a `correlation` or
+`exchange` subject should include is format-specific: `verify` proves each
+served record is in the log under the anchor, and you check its content.
 
 Not in this crate: transport, storage, and any store-and-forward or delivery
 guarantee.
