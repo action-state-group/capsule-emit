@@ -1,15 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``--period week|month`` sugar over ``--since``/``--until`` (design §10.2:
-"the ledger scan already takes since/until (ISO-8601) ... Add --period
-week|month as sugar over since/until").
+"""``--period week|month`` sugar over ``--since``/``--until``. The ledger
+scan already takes ``since``/``until`` (ISO-8601); ``--period`` only computes
+those two bounds for a calendar week or month.
 
-**Moved here from ``capsule_engine.cli.period``** ([emit-ledger-io-home],
-2026-09-06). It lived in capsule-engine as an engine-local duplicate because
-``capsule-ledger`` -- the shared ``ledger_io`` scan-query plumbing these
-flags actually decorate -- was archived (read-only) on 2026-09-02 while that
-task was in flight; now that ``ledger_io`` has a live home in
-:mod:`capsule_emit.ledger_io`, this belongs beside it instead of duplicated
-per verb. Each ledger-backed verb that wants ``--period`` adds this
+It lives beside :mod:`capsule_emit.ledger_io` -- the shared scan-query
+plumbing these flags decorate -- so every ledger-backed verb reuses one
+implementation instead of each carrying a duplicate. Each ledger-backed verb that wants ``--period`` adds this
 module's argument and calls :func:`apply_period` before building its
 ``ScanQuery``.
 """

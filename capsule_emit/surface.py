@@ -70,8 +70,8 @@ with nothing configured. Consequently a composition here binds members by
 their CPB typed digest reference alone (``{type, digest_alg, digest}``,
 ``slot`` added when the member has one) — the ``{log_id, leaf_index,
 inclusion_proof}`` upgrade is the CLL layer's, additive and never required to
-use this surface (design doc §7a: the digest reference is the member's
-identity; log coordinates are an upgrade, not a second vocabulary).
+use this surface (the digest reference is the member's identity; log
+coordinates are an upgrade, not a second vocabulary).
 
 **Cross-stream composition = carry-then-compose.** There is no separate
 mechanism for binding a member that lives in someone else's log:

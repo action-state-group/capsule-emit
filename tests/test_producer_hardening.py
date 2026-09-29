@@ -315,8 +315,8 @@ def test_verdict_blocked_never_dispatch(tmp_ledger):
 
 def test_verdict_assessed_action_type_not_fyi(tmp_ledger):
     """verdict="assessed" is a disposition verb — it must not auto-derive to
-    "fyi" (design doc §8 build item 1: without the vocabulary addition,
-    action_type silently fell back to "fyi", which is the bug this closes)."""
+    "fyi" (without "assessed" in the disposition vocabulary, action_type
+    silently fell back to "fyi", which is the bug this closes)."""
     cap = seal(
         None,
         action="judge",
