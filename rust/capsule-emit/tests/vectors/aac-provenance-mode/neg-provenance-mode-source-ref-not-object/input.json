@@ -1,0 +1,29 @@
+{
+  "action_id": "prov-source-ref-not-object",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "canonicalization_id": "jcs",
+  "capsule_id": "eb3575bea3fd7e635147d2fe3b8789c849de0d7df3d53847175eb346d2cb370c",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "provenance_mode": {
+    "import_batch": "import-2026-09",
+    "imported_at": "2026-09-22T00:00:00Z",
+    "mode": "backfilled",
+    "source_asserted_at": "2026-01-01T00:00:00Z",
+    "source_ref": "x-external-ledger-entry"
+  },
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-08-24T00:00:00Z"
+}

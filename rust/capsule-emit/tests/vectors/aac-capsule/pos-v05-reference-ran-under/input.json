@@ -1,0 +1,30 @@
+{
+  "action_id": "v05-ran-under",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "canonicalization_id": "jcs",
+  "capsule_id": "0ce81fdcf17454612a565c7111eeb18c6c9928b14ad45712def049b3c867d680",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "references": [
+    {
+      "citation_purpose": "ran_under",
+      "digest": "5555555555555555555555555555555555555555555555555555555555555555",
+      "digest_alg": "SHA-256",
+      "type": "agent-action-capsule"
+    }
+  ],
+  "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+  "timestamp": "2026-09-26T00:00:00Z"
+}

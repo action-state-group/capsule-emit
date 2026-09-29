@@ -1,0 +1,29 @@
+{
+  "action_id": "cp-ack",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "cross_party_rung": "acknowledged_receipt",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "capsule_id": "138ca49015ec38f298e7e9a60dfc8ac3421cf3a50f287385646640dd7b12d1ad",
+  "cross_party": {
+    "correlator": "exchange-corr-1",
+    "counterparty_ref": "2222222222222222222222222222222222222222222222222222222222222222",
+    "initiator_ref": "1111111111111111111111111111111111111111111111111111111111111111",
+    "substantive": false
+  },
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "human",
+    "decision": "accept",
+    "human_disposed": true,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-06-13T00:00:00Z",
+  "canonicalization_id": "jcs"
+}

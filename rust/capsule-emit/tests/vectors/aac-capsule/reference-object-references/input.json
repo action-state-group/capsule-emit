@@ -1,0 +1,21 @@
+{
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "format_version": "4",
+  "canonicalization_id": "jcs",
+  "action_id": "reference/example",
+  "action_type": "fyi",
+  "operator": "example-org",
+  "developer": "example-agent@v1",
+  "timestamp": "2026-09-07T12:00:00Z",
+  "chain": {
+    "parent_capsule_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "relation": "confirms"
+  },
+  "assurance": {
+    "effect_mode": "not_applicable",
+    "attestation_mode": "self_attested",
+    "ledger_mode": "chained"
+  },
+  "references": {},
+  "capsule_id": "3dbdbe296161e3b2bc88839c3b10f1c2564197419d65c4150ce5224f9e0ff2ee"
+}

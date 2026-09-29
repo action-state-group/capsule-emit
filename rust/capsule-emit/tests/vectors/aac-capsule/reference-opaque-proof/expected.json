@@ -1,0 +1,19 @@
+{
+  "description": "Class 1 preserves opaque inclusion proof contents",
+  "kind": "positive",
+  "ok": true,
+  "derived": {
+    "effect_mode": "not_applicable",
+    "attestation_mode": "self_attested",
+    "ledger_mode": "chained"
+  },
+  "capsule_id_recomputed": "82ac56db218768ae1486125efc465569ccbaf1d32c28705cfb71810de23253a1",
+  "findings": [
+    {
+      "check": 6,
+      "severity": "info",
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (\u00a76); not run without a store"
+    }
+  ]
+}

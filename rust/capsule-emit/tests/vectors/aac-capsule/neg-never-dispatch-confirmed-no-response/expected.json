@@ -1,0 +1,29 @@
+{
+  "capsule_id_recomputed": "988608e744fac29ae45183f4f24e89412880f711acaa0e79ba1a1924567e87cc",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "dispatched_unconfirmed",
+    "ledger_mode": "standalone"
+  },
+  "description": "denied (NEVER_DISPATCH) with effect.status='confirmed' and no response_digest → both check 3 (confirmed-effect binding) and check 4 (verdict/effect conflict).",
+  "findings": [
+    {
+      "check": 3,
+      "code": "confirmed_without_response",
+      "detail": "effect.status 'confirmed' requires a 64-hex response_digest (§5.2)",
+      "severity": "error"
+    },
+    {
+      "check": 4,
+      "code": "verdict_effect_conflict",
+      "detail": "verdict_class 'denied' never dispatches, but derived effect_mode is 'dispatched_unconfirmed' (§5.4.2)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "spec-derived",
+  "canonical_preimages": {
+    "capsule_id": "{\"action_id\":\"neg-nd-002\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"dispatched_unconfirmed\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"policy\",\"decision\":\"reject\",\"human_disposed\":false,\"verdict_class\":\"denied\"},\"effect\":{\"effect_attestation\":\"gate_executed\",\"status\":\"confirmed\",\"type\":\"write_order\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}"
+  }
+}

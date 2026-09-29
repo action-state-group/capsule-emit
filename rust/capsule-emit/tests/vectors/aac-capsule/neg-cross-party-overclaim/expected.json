@@ -1,0 +1,24 @@
+{
+  "capsule_id_recomputed": "6bddc7510b73ee2b0a3b3d4cea9e8aceb3c6786fa6f5a58d56b11723d14bb1e4",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "cross_party_rung": "unilateral_fallback",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "the named overclaim case: full_bilateral claimed with only the initiator's signed half present (no counterparty_ref) -> assurance_overclaim (check 7, info severity, non-gating), derived.cross_party_rung downgraded to unilateral_fallback.",
+  "findings": [
+    {
+      "check": 7,
+      "code": "assurance_overclaim",
+      "detail": "claimed cross_party_rung 'full_bilateral' but verifier derived 'unilateral_fallback' (§5.3 Cross-party assurance)",
+      "severity": "info"
+    }
+  ],
+  "kind": "overclaim",
+  "ok": true,
+  "provenance": "spec-derived",
+  "canonical_preimages": {
+    "capsule_id": "{\"action_id\":\"cp-overclaim\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"cross_party_rung\":\"full_bilateral\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"cross_party\":{\"initiator_ref\":\"1111111111111111111111111111111111111111111111111111111111111111\"},\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"accept\",\"human_disposed\":true,\"verdict_class\":\"executed\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "description": "citation purpose is a non-empty string",
+  "kind": "negative",
+  "ok": false,
+  "derived": {
+    "effect_mode": "not_applicable",
+    "attestation_mode": "self_attested",
+    "ledger_mode": "chained"
+  },
+  "capsule_id_recomputed": "a8db419bcc6f2a95ff79ad55733470b4d9897c47e373585be625fb7475ddfaa7",
+  "findings": [
+    {
+      "check": 1,
+      "severity": "error",
+      "code": "reference_malformed",
+      "detail": "references[0].citation_purpose MUST be a non-empty string (\u00a75.5.5)"
+    },
+    {
+      "check": 6,
+      "severity": "info",
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (\u00a76); not run without a store"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "capsule_id_recomputed": "3d236cd94374bf731443978e494598cd3ff0bc4dbeaa569a29a32311b42722dc",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "backfilled",
+    "provenance_time_rung": "self_attested"
+  },
+  "description": "-05 twin of neg-provenance-mode-source-ref-not-object (only spec_version differs): provenance_mode.source_ref present but a non-object (string) on a backfilled record -> provenance_mode_source_ref_malformed (check 9, gating; the source_ref-MUST-be-object branch). All other backfilled companion fields are present and well-formed.",
+  "findings": [
+    {
+      "check": 9,
+      "code": "provenance_mode_source_ref_malformed",
+      "detail": "provenance_mode.source_ref MUST be a JSON object when present (\u00a75.3(bis) Provenance mode)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false
+}

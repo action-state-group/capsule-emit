@@ -1,0 +1,13 @@
+{
+  "capsule_id_recomputed": "b1f609326c7ba59660b58f813f4fe2ef24e96f7210e3360d62a873b9df90c753",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "confirmed",
+    "ledger_mode": "standalone"
+  },
+  "description": "-05 effect.type 'inference_completion' with effect_attestation 'host_served_observed' (registered, runtime_claimed grade) and a response_digest.",
+  "findings": [],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "reference-derived"
+}

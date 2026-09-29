@@ -1,0 +1,49 @@
+{
+  "description": "two supersedes over one parent: earliest in ledger order is authoritative; the later one surfaces an info finding; both remain ok.",
+  "kind": "store",
+  "results": [
+    {
+      "capsule_id_recomputed": "e0a1ac498236518f6e6869c95410dba84900f7c6c085205f2685b9f7d90c7da9",
+      "derived": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "standalone"
+      },
+      "findings": [],
+      "ok": true
+    },
+    {
+      "capsule_id_recomputed": "00bfc98bd03ed911deac0d0c8a301c1c53367365215ae9daeaa8321a90f7e8e5",
+      "derived": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "chained"
+      },
+      "findings": [],
+      "ok": true
+    },
+    {
+      "capsule_id_recomputed": "4c84c8f60e18ee748a52508dd53a5c4771da58b271d0d81065fa2cf5a0b05111",
+      "derived": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "chained"
+      },
+      "findings": [
+        {
+          "check": 6,
+          "code": "concurrent_supersedes",
+          "detail": "a later supersedes over parent e0a1ac498236518f6e6869c95410dba84900f7c6c085205f2685b9f7d90c7da9; the earliest is authoritative (§5.4.4)",
+          "severity": "info"
+        }
+      ],
+      "ok": true
+    }
+  ],
+  "provenance": "spec-derived",
+  "canonical_preimages": {
+    "ledger[0].capsule_id": "{\"action_id\":\"po-parent2\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"needs_input\",\"human_disposed\":false,\"verdict_class\":\"hitl_dispatched\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}",
+    "ledger[1].capsule_id": "{\"action_id\":\"po-res-a\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"chained\"},\"canonicalization_id\":\"jcs\",\"chain\":{\"parent_capsule_id\":\"e0a1ac498236518f6e6869c95410dba84900f7c6c085205f2685b9f7d90c7da9\",\"relation\":\"supersedes\"},\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"reject\",\"human_disposed\":true,\"verdict_class\":\"resolved\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}",
+    "ledger[2].capsule_id": "{\"action_id\":\"po-res-b\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"chained\"},\"canonicalization_id\":\"jcs\",\"chain\":{\"parent_capsule_id\":\"e0a1ac498236518f6e6869c95410dba84900f7c6c085205f2685b9f7d90c7da9\",\"relation\":\"supersedes\"},\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"reject\",\"human_disposed\":true,\"verdict_class\":\"resolved\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}"
+  }
+}

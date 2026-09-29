@@ -1,0 +1,35 @@
+{
+  "description": "a backfilled import of the same logical event a contemporaneous capsule already recorded, chained to it via chain.relation='duplicates': both capsules verify ok; the store-level pass reports duplicate_collapsed (info, check 9) on the backfilled member -- verifiers and downstream evidence evaluators count the pair once, the contemporaneous record governing, never twice.",
+  "kind": "store",
+  "results": [
+    {
+      "capsule_id_recomputed": "ed3cdeca453ee37e40bbeeee0f582f579873fa690a6af2d729578595b287d378",
+      "derived": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "standalone"
+      },
+      "findings": [],
+      "ok": true
+    },
+    {
+      "capsule_id_recomputed": "5d7ee9fe6af6391a0a905b3297316bc483d781098d9ceca4fa697fa591f929dd",
+      "derived": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "chained",
+        "provenance_mode": "backfilled",
+        "provenance_time_rung": "self_attested"
+      },
+      "findings": [
+        {
+          "check": 9,
+          "code": "duplicate_collapsed",
+          "detail": "chain.relation='duplicates' over parent ed3cdeca453ee37e40bbeeee0f582f579873fa690a6af2d729578595b287d378; verifiers and downstream evidence evaluators MUST count this pair once, the contemporaneous parent governing (\u00a75.3(bis) Provenance mode)",
+          "severity": "info"
+        }
+      ],
+      "ok": true
+    }
+  ]
+}

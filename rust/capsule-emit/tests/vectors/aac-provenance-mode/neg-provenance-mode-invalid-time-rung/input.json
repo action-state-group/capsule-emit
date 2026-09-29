@@ -1,0 +1,34 @@
+{
+  "action_id": "prov-invalid-time-rung",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "canonicalization_id": "jcs",
+  "capsule_id": "a0dc382d2b1313b264825a34953b550a95d7a201ad7d5540917fb72f0c7063bc",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "provenance_mode": {
+    "import_batch": "import-2026-09",
+    "imported_at": "2026-09-22T00:00:00Z",
+    "mode": "backfilled",
+    "source_asserted_at": "2026-01-01T00:00:00Z",
+    "source_ref": {
+      "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+      "digest_alg": "SHA-256",
+      "type": "x-external-ledger-entry"
+    },
+    "time_rung": "notarized"
+  },
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-08-24T00:00:00Z"
+}

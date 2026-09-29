@@ -1,0 +1,43 @@
+{
+  "description": "a 'duplicates'-linked pair whose parent is ITSELF provenance_mode.mode='backfilled' (not the contemporaneous record 'duplicates' is defined to cite): the store-level pass reports BOTH duplicate_collapsed AND duplicate_parent_not_contemporaneous (both info, check 9) on the child; both members remain ok.",
+  "kind": "store",
+  "results": [
+    {
+      "capsule_id_recomputed": "9e71f9139b7a1e45ffec6b9e665b2bfffca7d42076b361e175030a1c3aa0e86c",
+      "derived": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "standalone",
+        "provenance_mode": "backfilled",
+        "provenance_time_rung": "self_attested"
+      },
+      "findings": [],
+      "ok": true
+    },
+    {
+      "capsule_id_recomputed": "98bbcf46fad51ef5f8afb098d4b13bca4d5d69b56bbc2598e4ce389e150cb07a",
+      "derived": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "chained",
+        "provenance_mode": "backfilled",
+        "provenance_time_rung": "self_attested"
+      },
+      "findings": [
+        {
+          "check": 9,
+          "code": "duplicate_collapsed",
+          "detail": "chain.relation='duplicates' over parent 9e71f9139b7a1e45ffec6b9e665b2bfffca7d42076b361e175030a1c3aa0e86c; verifiers and downstream evidence evaluators MUST count this pair once, the contemporaneous parent governing (\u00a75.3(bis) Provenance mode)",
+          "severity": "info"
+        },
+        {
+          "check": 9,
+          "code": "duplicate_parent_not_contemporaneous",
+          "detail": "chain.relation='duplicates' parent 9e71f9139b7a1e45ffec6b9e665b2bfffca7d42076b361e175030a1c3aa0e86c is itself provenance_mode.mode='backfilled'; 'duplicates' is defined to cite the contemporaneous record (\u00a75.3(bis) Provenance mode)",
+          "severity": "info"
+        }
+      ],
+      "ok": true
+    }
+  ]
+}

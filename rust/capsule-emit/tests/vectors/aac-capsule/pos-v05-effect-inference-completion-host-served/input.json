@@ -1,0 +1,30 @@
+{
+  "action_id": "v05-inference",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "confirmed",
+    "ledger_mode": "standalone"
+  },
+  "canonicalization_id": "jcs",
+  "capsule_id": "b1f609326c7ba59660b58f813f4fe2ef24e96f7210e3360d62a873b9df90c753",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "effect": {
+    "effect_attestation": "host_served_observed",
+    "irreversibility_class": "two_way",
+    "request_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "response_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+    "status": "confirmed",
+    "type": "inference_completion"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+  "timestamp": "2026-09-26T00:00:00Z"
+}

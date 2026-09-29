@@ -30,7 +30,8 @@ let capsule = seal(&input)?; // `capsule["capsule_id"]` is set
 | `checkpoint` | signed checkpoints on a cadence, optional witness registration |
 | `padding` | padding records, so a checkpoint's size falls on a bucket boundary |
 | `anchor` | an optional SCITT transparency service client |
-| `verify` | offline verification (id, signature, chain parent) |
+| `structure` | the Class 1 checks on a capsule's own bytes (§6, no store): the reference verifier's gating checks |
+| `verify` | offline verification (the `structure` checks, id, signature, chain parent) |
 | `sequence` | per-counterparty sequence numbers and the gap check |
 
 The `verify_capsule` binary verifies one capsule and statement offline.
@@ -45,8 +46,10 @@ in the order given, never interpreted by this crate.
 cargo test
 ```
 
-`tests/jcs_vectors.rs` runs the pinned conformance vectors in
-`tests/vectors/` (see `tests/vectors/SOURCES.md`). The cross-language tests
+`tests/jcs_vectors.rs` and `tests/structure_vectors.rs` run the pinned
+conformance vectors in `tests/vectors/` (see `tests/vectors/SOURCES.md`):
+every Class 1 capsule and provenance-mode case gets the reference verifier's
+verdict and error and warning findings. The cross-language tests
 (`cross_language_conformance`, `chain_ledger_conformance`,
 `checkpoint_invariance`, `anchor_conformance`) are ignored by default and
 need the Python reference installed; each file's header gives the command.
