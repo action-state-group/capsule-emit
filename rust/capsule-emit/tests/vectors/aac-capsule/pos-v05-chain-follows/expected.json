@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "912e96095fa9906fe6cf08708c4ae823a3ccf11f6dd21e5f8321946914b0a651",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "chained"
+  },
+  "description": "-05 chain.relation 'follows' (the bare next-link) is a registered value.",
+  "findings": [
+    {
+      "check": 6,
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (\u00a76); not run without a store",
+      "severity": "info"
+    }
+  ],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "reference-derived"
+}

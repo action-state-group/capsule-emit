@@ -1,0 +1,13 @@
+{
+  "capsule_id_recomputed": "0ce81fdcf17454612a565c7111eeb18c6c9928b14ad45712def049b3c867d680",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "-05 citation_purpose 'ran_under': the Capsule cites, by digest, a record stating the runtime environment and authority its action executed under.",
+  "findings": [],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "reference-derived"
+}

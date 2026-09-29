@@ -1,0 +1,29 @@
+{
+  "action_id": "cp-full",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "cross_party_rung": "full_bilateral",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "capsule_id": "2eb2f2973df2f3fc19887e3be680590cafb3d0a61bd105d76b1a6089c09e6df0",
+  "cross_party": {
+    "correlator": "exchange-corr-1",
+    "counterparty_ref": "2222222222222222222222222222222222222222222222222222222222222222",
+    "initiator_ref": "1111111111111111111111111111111111111111111111111111111111111111",
+    "substantive": true
+  },
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "human",
+    "decision": "accept",
+    "human_disposed": true,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-06-13T00:00:00Z",
+  "canonicalization_id": "jcs"
+}

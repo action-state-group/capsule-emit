@@ -1,0 +1,58 @@
+{
+  "ledger": [
+    {
+      "action_id": "po-parent-hitl",
+      "action_type": "decide",
+      "assurance": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "standalone"
+      },
+      "capsule_id": "7af44dadf6d5303f7ec75c7c761933740dee4c8a88598238ec9df6cb40623854",
+      "developer": "agent@v1",
+      "disposition": {
+        "approver": "human",
+        "decision": "needs_input",
+        "human_disposed": false,
+        "verdict_class": "hitl_dispatched"
+      },
+      "format_version": "4",
+      "operator": "ACME-CO",
+      "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+      "timestamp": "2026-06-13T00:00:00Z",
+      "canonicalization_id": "jcs"
+    },
+    {
+      "action_id": "po-resolution",
+      "action_type": "decide",
+      "assurance": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "confirmed",
+        "ledger_mode": "chained"
+      },
+      "capsule_id": "7de5b036ec83e98f3d4f21398dae8c35f272ecfd60ba2dbc97ad038fd64aa388",
+      "chain": {
+        "parent_capsule_id": "7af44dadf6d5303f7ec75c7c761933740dee4c8a88598238ec9df6cb40623854",
+        "relation": "supersedes"
+      },
+      "developer": "agent@v1",
+      "disposition": {
+        "approver": "human",
+        "decision": "accept",
+        "human_disposed": true,
+        "verdict_class": "executed"
+      },
+      "effect": {
+        "effect_attestation": "gate_executed",
+        "response_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+        "status": "confirmed",
+        "type": "write_order"
+      },
+      "format_version": "4",
+      "operator": "ACME-CO",
+      "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+      "timestamp": "2026-06-13T00:00:00Z",
+      "canonicalization_id": "jcs"
+    }
+  ]
+}

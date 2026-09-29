@@ -1,0 +1,23 @@
+{
+  "capsule_id_recomputed": "821610024342348fa58d1a8b8878ac2f27d782407dfc098c4b9c5519f818bde9",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "planned (not_applicable) with effect_attestation present -> matrix failure (check 5).",
+  "findings": [
+    {
+      "check": 5,
+      "code": "effect_attestation_present",
+      "detail": "effect_attestation MUST be absent for effect_mode 'not_applicable' (§5.2)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "spec-derived",
+  "canonical_preimages": {
+    "capsule_id": "{\"action_id\":\"neg-planned-att\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"accept\",\"human_disposed\":true,\"verdict_class\":\"needs_decision\"},\"effect\":{\"effect_attestation\":\"gate_executed\",\"status\":\"planned\",\"type\":\"write_order\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}"
+  }
+}

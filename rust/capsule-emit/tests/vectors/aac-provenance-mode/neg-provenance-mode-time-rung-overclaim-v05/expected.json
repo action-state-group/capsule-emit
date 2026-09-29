@@ -1,0 +1,21 @@
+{
+  "capsule_id_recomputed": "53845c5af7455f4573d7ac31eada479aba8127346732e88c8144347a5822854a",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "backfilled",
+    "provenance_time_rung": "self_attested"
+  },
+  "description": "-05 twin of neg-provenance-mode-time-rung-overclaim (only spec_version differs): provenance_mode.time_rung='witnessed' claimed with no references[] entry citing citation_purpose='corroborates_source_time' -> provenance_time_rung_overclaim (check 9, gating \u2014 unlike the informational overclaim treatment check 7 gives attestation_mode/ledger_mode/cross_party_rung, this profile treats an unsupported provenance_mode time claim as a falsifiable dishonesty claim); derived.provenance_time_rung stays 'self_attested', the rederived value, never the claim.",
+  "findings": [
+    {
+      "check": 9,
+      "code": "provenance_time_rung_overclaim",
+      "detail": "provenance_mode.time_rung='witnessed' claimed without a well-formed references[] entry citing citation_purpose='corroborates_source_time' (\u00a75.3(bis) Provenance mode)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false
+}

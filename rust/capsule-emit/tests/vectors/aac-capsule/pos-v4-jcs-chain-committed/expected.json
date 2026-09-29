@@ -1,0 +1,19 @@
+{
+  "capsule_id_recomputed": "862024869f00481bb4f59d9528a45c2d4885f64c5222a9324a38ac2c2cd119f2",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "chained"
+  },
+  "description": "Format 4 plain JCS commits the chain block and a present empty array to capsule_id.",
+  "findings": [
+    {
+      "check": 6,
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (\u00a76); not run without a store",
+      "severity": "info"
+    }
+  ],
+  "kind": "positive",
+  "ok": true
+}

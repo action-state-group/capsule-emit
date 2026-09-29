@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": null,
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "Format 4 with an empty canonicalization_id fails closed.",
+  "findings": [
+    {
+      "check": 1,
+      "code": "canonicalization_profile_mismatch",
+      "detail": "format_version '4' REQUIRES canonicalization_id='jcs' (§5.1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "spec-derived"
+}

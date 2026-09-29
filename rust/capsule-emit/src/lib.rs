@@ -22,8 +22,10 @@
 //! - [`padding`]: padding records, so a checkpoint's leaf count falls on a
 //!   bucket boundary (Evidence Layer -00 §12.1).
 //! - [`anchor`]: an optional client for a SCITT transparency service.
-//! - [`verify`]: offline verification: `capsule_id` recomputation, the COSE
-//!   signature and chain-parent membership.
+//! - [`structure`]: the Class 1 checks a capsule's own bytes must pass
+//!   (§6), without a store: the reference verifier's gating checks.
+//! - [`verify`]: offline verification: those checks, `capsule_id`
+//!   recomputation, the COSE signature and chain-parent membership.
 //! - [`sequence`]: per-counterparty monotone sequence numbers and the
 //!   gap/regression check over a pair's records.
 //! - [`timestamp`]: minute-granular timestamps.
@@ -37,5 +39,6 @@ pub mod keys;
 pub mod ledger;
 pub mod padding;
 pub mod sequence;
+pub mod structure;
 pub mod timestamp;
 pub mod verify;

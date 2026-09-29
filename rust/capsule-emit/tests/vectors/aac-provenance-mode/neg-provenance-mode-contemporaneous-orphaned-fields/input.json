@@ -1,0 +1,30 @@
+{
+  "action_id": "prov-contemporaneous-orphaned",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "canonicalization_id": "jcs",
+  "capsule_id": "f528665049ec537f745add365e9b36dc9592e31ba3b1750cb6bf4ff29a8c6e75",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "provenance_mode": {
+    "mode": "contemporaneous",
+    "source_ref": {
+      "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+      "digest_alg": "SHA-256",
+      "type": "x-external-ledger-entry"
+    }
+  },
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-08-24T00:00:00Z"
+}

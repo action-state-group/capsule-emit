@@ -1,0 +1,21 @@
+{
+  "capsule_id_recomputed": "9dbb97d6c1f7caf9b57a3a672ad82a294509376960920ed5c705adf3f99b9027",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "backfilled",
+    "provenance_time_rung": "self_attested"
+  },
+  "description": "provenance_mode.imported_at equals source_asserted_at on a backfilled record -- the shape a laundering producer would construct to make an import look contemporaneous -> provenance_time_laundering_shape (check 9, gating); equality is never treated as corroboration, regardless of any other assurance value the record carries.",
+  "findings": [
+    {
+      "check": 9,
+      "code": "provenance_time_laundering_shape",
+      "detail": "provenance_mode.imported_at equals source_asserted_at on a backfilled record; this is the shape a laundering producer would construct to make an import look contemporaneous (\u00a75.3(bis) Provenance mode)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false
+}

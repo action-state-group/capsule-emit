@@ -1,0 +1,28 @@
+{
+  "action_id": "po-reverted",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "dispatched_unconfirmed",
+    "ledger_mode": "standalone"
+  },
+  "capsule_id": "8fe9c7e7f5ba408752bf03feaf0cf58e96aa1e6330e60ee531f2c2757fee3cc8",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "human",
+    "decision": "accept",
+    "human_disposed": true,
+    "verdict_class": "errored"
+  },
+  "effect": {
+    "effect_attestation": "runtime_claimed",
+    "external_ref": "payment:42",
+    "status": "reverted",
+    "type": "send_payment"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-06-13T00:00:00Z",
+  "canonicalization_id": "jcs"
+}

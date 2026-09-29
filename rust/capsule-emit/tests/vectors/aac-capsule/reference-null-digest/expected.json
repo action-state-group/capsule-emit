@@ -1,0 +1,25 @@
+{
+  "description": "reference digest is a string",
+  "kind": "negative",
+  "ok": false,
+  "derived": {
+    "effect_mode": "not_applicable",
+    "attestation_mode": "self_attested",
+    "ledger_mode": "chained"
+  },
+  "capsule_id_recomputed": "49a309777d8ffb55011d50bf2886bc8c7a8d92824974f2981c08353ad470a574",
+  "findings": [
+    {
+      "check": 1,
+      "severity": "error",
+      "code": "reference_malformed",
+      "detail": "references[0].digest MUST be a non-empty string (\u00a75.5.5)"
+    },
+    {
+      "check": 6,
+      "severity": "info",
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (\u00a76); not run without a store"
+    }
+  ]
+}

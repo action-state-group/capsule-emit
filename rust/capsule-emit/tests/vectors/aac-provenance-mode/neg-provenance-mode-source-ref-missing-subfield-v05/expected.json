@@ -1,0 +1,21 @@
+{
+  "capsule_id_recomputed": "d4ff902a440bbf0b87a81a40ee51d9d4a8a3951817fd3ce1429922c7843ed24a",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "backfilled",
+    "provenance_time_rung": "self_attested"
+  },
+  "description": "-05 twin of neg-provenance-mode-source-ref-missing-subfield (only spec_version differs): provenance_mode.source_ref is a well-formed object but MISSING the REQUIRED 'digest' subfield on a backfilled record -> provenance_mode_source_ref_malformed (check 9, gating; the per-subfield branch). type and digest_alg are present.",
+  "findings": [
+    {
+      "check": 9,
+      "code": "provenance_mode_source_ref_malformed",
+      "detail": "provenance_mode.source_ref.digest MUST be a non-empty string (\u00a75.3(bis) Provenance mode)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false
+}

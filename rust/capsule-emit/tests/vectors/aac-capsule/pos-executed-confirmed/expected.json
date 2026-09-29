@@ -1,0 +1,16 @@
+{
+  "capsule_id_recomputed": "c1dec035b2f9b4b668d71bfb9f15720f73c60dff28a5b5cd49fd3255b3b84020",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "confirmed",
+    "ledger_mode": "standalone"
+  },
+  "description": "Clean executed capsule: confirmed effect (gate_executed), full identity, no verdict_class reason.",
+  "findings": [],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "spec-derived",
+  "canonical_preimages": {
+    "capsule_id": "{\"action_id\":\"po-001\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"confirmed\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"accept\",\"human_disposed\":true},\"effect\":{\"effect_attestation\":\"gate_executed\",\"irreversibility_class\":\"two_way\",\"response_digest\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"status\":\"confirmed\",\"type\":\"write_order\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}"
+  }
+}

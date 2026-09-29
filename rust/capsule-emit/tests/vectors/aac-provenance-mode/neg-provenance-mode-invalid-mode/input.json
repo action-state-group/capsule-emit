@@ -1,0 +1,25 @@
+{
+  "action_id": "prov-invalid-mode",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "canonicalization_id": "jcs",
+  "capsule_id": "fccdbfc114293fe6343620951698cd588f10bec64b1e1ae054555e3b18feeaa8",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "provenance_mode": {
+    "mode": "fabricated"
+  },
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-08-24T00:00:00Z"
+}

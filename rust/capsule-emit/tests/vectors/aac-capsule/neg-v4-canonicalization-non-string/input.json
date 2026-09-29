@@ -1,0 +1,27 @@
+{
+  "action_id": "v4-chain",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "chained"
+  },
+  "canonicalization_id": 7,
+  "capsule_id": "862024869f00481bb4f59d9528a45c2d4885f64c5222a9324a38ac2c2cd119f2",
+  "chain": {
+    "parent_capsule_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "relation": "confirms"
+  },
+  "constraints": [],
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-08-24T00:00:00Z"
+}

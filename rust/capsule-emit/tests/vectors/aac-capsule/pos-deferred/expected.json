@@ -1,0 +1,16 @@
+{
+  "capsule_id_recomputed": "e296b7569a4051e3fbfc0e47b97885db4de8f41387de5be993e08e00d96a32f9",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "deferred: a human postponed the decision; human_disposed true, not_applicable.",
+  "findings": [],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "spec-derived",
+  "canonical_preimages": {
+    "capsule_id": "{\"action_id\":\"po-deferred\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"deferred\",\"human_disposed\":true,\"verdict_class\":\"deferred\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}"
+  }
+}

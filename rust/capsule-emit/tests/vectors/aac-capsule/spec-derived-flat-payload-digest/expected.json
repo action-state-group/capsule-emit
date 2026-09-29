@@ -1,0 +1,13 @@
+{
+  "canonical_preimages": {
+    "agent_input_digest": "{\"kind\":\"flat\",\"value\":\"alpha\"}",
+    "capsule_id": "{\"action_id\":\"spec-flat-digest\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"policy\",\"decision\":\"accept\",\"human_disposed\":false,\"verdict_class\":\"executed\"},\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"agent_input_digest\":\"969cf777e386949bebb2b3ba2da5010e3c68e597bffa16530de9e0a05d735de0\"}},\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-09-13T00:00:01Z\"}"
+  },
+  "capsule_id_recomputed": "15bbcad01ad06196d030ba5f927e73c85e953a8f26e2740cf650841bf2d45555",
+  "derived": {"attestation_mode": "self_attested", "effect_mode": "not_applicable", "ledger_mode": "standalone"},
+  "description": "Format 4 commits a flat agent_input value with SHA-256(JCS(value)).",
+  "findings": [],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "spec-derived"
+}

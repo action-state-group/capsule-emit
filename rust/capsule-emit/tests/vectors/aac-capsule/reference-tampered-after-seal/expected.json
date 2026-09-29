@@ -1,0 +1,25 @@
+{
+  "description": "changing a format-4 reference after sealing causes Capsule ID mismatch",
+  "kind": "negative",
+  "ok": false,
+  "derived": {
+    "effect_mode": "not_applicable",
+    "attestation_mode": "self_attested",
+    "ledger_mode": "chained"
+  },
+  "capsule_id_recomputed": "f651121f788b96677705c5a50b4de376a72f5dd585d4dd13d208eec5db1505cf",
+  "findings": [
+    {
+      "check": 2,
+      "severity": "error",
+      "code": "capsule_id_mismatch",
+      "detail": "recomputed f651121f788b96677705c5a50b4de376a72f5dd585d4dd13d208eec5db1505cf != carried 2727a6f4f3c559bcf6aa4dd6930f6103afb2a755e93959db3cebcfbe623eff9f"
+    },
+    {
+      "check": 6,
+      "severity": "info",
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (\u00a76); not run without a store"
+    }
+  ]
+}

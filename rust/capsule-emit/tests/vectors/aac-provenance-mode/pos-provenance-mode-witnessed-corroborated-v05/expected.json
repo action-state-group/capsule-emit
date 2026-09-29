@@ -1,0 +1,14 @@
+{
+  "capsule_id_recomputed": "e886195c5ff8c3dd79b0ec1dc77323c8ec2b76690b083ba80812c5d40311dd31",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "backfilled",
+    "provenance_time_rung": "witnessed"
+  },
+  "description": "-05 twin of pos-provenance-mode-witnessed-corroborated (only spec_version differs): a backfilled record claiming provenance_mode.time_rung='witnessed' WITH a well-formed references[] entry citing citation_purpose='corroborates_source_time' (all of type/digest_alg/digest non-empty) -> verifies clean; this is the ONLY case where derived.provenance_time_rung='witnessed' (the cap rederived from cited evidence, not from the claim).",
+  "findings": [],
+  "kind": "positive",
+  "ok": true
+}

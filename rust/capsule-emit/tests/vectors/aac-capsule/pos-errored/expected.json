@@ -1,0 +1,16 @@
+{
+  "capsule_id_recomputed": "f1b0e6e073de20832c3c72a5a3361deb413e387bb98d55219f3343187c88be76",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "dispatched_unconfirmed",
+    "ledger_mode": "standalone"
+  },
+  "description": "errored: action ran and threw, state unknown; effect dispatched -> dispatched_unconfirmed, attestation present.",
+  "findings": [],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "spec-derived",
+  "canonical_preimages": {
+    "capsule_id": "{\"action_id\":\"po-errored\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"dispatched_unconfirmed\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"accept\",\"human_disposed\":true,\"verdict_class\":\"errored\"},\"effect\":{\"effect_attestation\":\"runtime_claimed\",\"request_digest\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"status\":\"dispatched\",\"type\":\"write_order\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}"
+  }
+}

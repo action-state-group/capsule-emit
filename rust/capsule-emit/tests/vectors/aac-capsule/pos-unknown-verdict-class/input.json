@@ -1,0 +1,22 @@
+{
+  "action_id": "po-unk-vc",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "capsule_id": "1ee1dae24bc05de1e439547ef50bbec977eb5207858b75c615e70c374d274901",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "needs_input",
+    "human_disposed": false,
+    "verdict_class": "custom_review"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-06-13T00:00:00Z",
+  "canonicalization_id": "jcs"
+}

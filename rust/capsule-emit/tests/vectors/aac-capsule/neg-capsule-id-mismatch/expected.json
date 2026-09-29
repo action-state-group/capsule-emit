@@ -1,0 +1,23 @@
+{
+  "capsule_id_recomputed": "87934d0f5b09e29ab0ea570574b9e94d07f58b861b53b491c848d7b1bdb6e528",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "confirmed",
+    "ledger_mode": "standalone"
+  },
+  "description": "a field mutated after sealing: capsule_id no longer recomputes over the canonical form (check 2).",
+  "findings": [
+    {
+      "check": 2,
+      "code": "capsule_id_mismatch",
+      "detail": "recomputed 87934d0f5b09e29ab0ea570574b9e94d07f58b861b53b491c848d7b1bdb6e528 != carried 5b7c4ff1bcf4364e0dd8c8b65eddddbb1d6102f27bed3ad1a3595cba51d3502a",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "spec-derived",
+  "canonical_preimages": {
+    "capsule_id": "{\"action_id\":\"po-001\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"confirmed\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"accept\",\"human_disposed\":true},\"effect\":{\"effect_attestation\":\"gate_executed\",\"irreversibility_class\":\"two_way\",\"response_digest\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"status\":\"confirmed\",\"type\":\"write_order\"},\"format_version\":\"4\",\"operator\":\"TAMPERED-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}"
+  }
+}

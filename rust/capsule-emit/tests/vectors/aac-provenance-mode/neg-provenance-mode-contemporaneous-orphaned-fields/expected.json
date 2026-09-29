@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "f528665049ec537f745add365e9b36dc9592e31ba3b1750cb6bf4ff29a8c6e75",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "contemporaneous"
+  },
+  "description": "provenance_mode.mode='contemporaneous' carrying a backfilled-only companion field (source_ref present and non-null) -> provenance_mode_invalid (check 9, gating; the orphaned-fields branch, presence-and-non-null). derived.provenance_mode='contemporaneous' is still recorded; no provenance_time_rung cap is derived for a contemporaneous record.",
+  "findings": [
+    {
+      "check": 9,
+      "code": "provenance_mode_invalid",
+      "detail": "provenance_mode fields ['source_ref'] are meaningful only when mode='backfilled' (\u00a75.3(bis) Provenance mode)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false
+}

@@ -1,0 +1,126 @@
+{
+  "spec": "draft-mih-scitt-agent-action-capsule-05",
+  "count": 24,
+  "cases": [
+    {
+      "name": "pos-provenance-mode-backfilled",
+      "kind": "positive",
+      "description": "a well-formed backfilled record: provenance_mode.mode='backfilled' with all four REQUIRED companion fields present and well-formed, time_rung absent (implies self_attested) -> verifies clean; derived.provenance_mode='backfilled' and derived.provenance_time_rung='self_attested' are always reported (check 9)."
+    },
+    {
+      "name": "neg-provenance-mode-time-rung-overclaim",
+      "kind": "negative",
+      "description": "provenance_mode.time_rung='witnessed' claimed with no references[] entry citing citation_purpose='corroborates_source_time' -> provenance_time_rung_overclaim (check 9, gating \u2014 unlike the informational overclaim treatment check 7 gives attestation_mode/ledger_mode/cross_party_rung, this profile treats an unsupported provenance_mode time claim as a falsifiable dishonesty claim); derived.provenance_time_rung stays 'self_attested', the rederived value, never the claim."
+    },
+    {
+      "name": "neg-provenance-mode-backfilled-missing-fields",
+      "kind": "negative",
+      "description": "provenance_mode.mode='backfilled' with none of the four REQUIRED companion fields (source_ref, source_asserted_at, import_batch, imported_at) present -> four provenance_mode_missing_required_field failures (check 9)."
+    },
+    {
+      "name": "neg-provenance-mode-time-laundering",
+      "kind": "negative",
+      "description": "provenance_mode.imported_at equals source_asserted_at on a backfilled record -- the shape a laundering producer would construct to make an import look contemporaneous -> provenance_time_laundering_shape (check 9, gating); equality is never treated as corroboration, regardless of any other assurance value the record carries."
+    },
+    {
+      "name": "pos-chain-duplicates-collapsed-once",
+      "kind": "store",
+      "description": "a backfilled import of the same logical event a contemporaneous capsule already recorded, chained to it via chain.relation='duplicates': both capsules verify ok; the store-level pass reports duplicate_collapsed (info, check 9) on the backfilled member -- verifiers and downstream evidence evaluators count the pair once, the contemporaneous record governing, never twice."
+    },
+    {
+      "name": "neg-provenance-mode-invalid-mode",
+      "kind": "negative",
+      "description": "provenance_mode.mode='fabricated' is outside the closed {backfilled, contemporaneous} enum -> provenance_mode_invalid (check 9, gating); derived.provenance_mode is left UNSET (only a recognized mode is ever recorded) and no backfilled/contemporaneous sub-checks run."
+    },
+    {
+      "name": "neg-provenance-mode-invalid-time-rung",
+      "kind": "negative",
+      "description": "provenance_mode.time_rung='notarized' is outside the closed {self_attested, witnessed} enum on an otherwise well-formed backfilled record -> a single provenance_mode_invalid (check 9, gating); the unrecognized value is reset (time_rung=None) so it is NOT also treated as a witnessed overclaim, and derived.provenance_time_rung stays 'self_attested'."
+    },
+    {
+      "name": "neg-provenance-mode-source-ref-not-object",
+      "kind": "negative",
+      "description": "provenance_mode.source_ref present but a non-object (string) on a backfilled record -> provenance_mode_source_ref_malformed (check 9, gating; the source_ref-MUST-be-object branch). All other backfilled companion fields are present and well-formed."
+    },
+    {
+      "name": "neg-provenance-mode-source-ref-missing-subfield",
+      "kind": "negative",
+      "description": "provenance_mode.source_ref is a well-formed object but MISSING the REQUIRED 'digest' subfield on a backfilled record -> provenance_mode_source_ref_malformed (check 9, gating; the per-subfield branch). type and digest_alg are present."
+    },
+    {
+      "name": "neg-provenance-mode-contemporaneous-orphaned-fields",
+      "kind": "negative",
+      "description": "provenance_mode.mode='contemporaneous' carrying a backfilled-only companion field (source_ref present and non-null) -> provenance_mode_invalid (check 9, gating; the orphaned-fields branch, presence-and-non-null). derived.provenance_mode='contemporaneous' is still recorded; no provenance_time_rung cap is derived for a contemporaneous record."
+    },
+    {
+      "name": "pos-provenance-mode-witnessed-corroborated",
+      "kind": "positive",
+      "description": "a backfilled record claiming provenance_mode.time_rung='witnessed' WITH a well-formed references[] entry citing citation_purpose='corroborates_source_time' (all of type/digest_alg/digest non-empty) -> verifies clean; this is the ONLY case where derived.provenance_time_rung='witnessed' (the cap rederived from cited evidence, not from the claim)."
+    },
+    {
+      "name": "pos-chain-duplicates-parent-backfilled",
+      "kind": "store",
+      "description": "a 'duplicates'-linked pair whose parent is ITSELF provenance_mode.mode='backfilled' (not the contemporaneous record 'duplicates' is defined to cite): the store-level pass reports BOTH duplicate_collapsed AND duplicate_parent_not_contemporaneous (both info, check 9) on the child; both members remain ok."
+    },
+    {
+      "name": "pos-provenance-mode-backfilled-v05",
+      "kind": "positive",
+      "description": "-05 twin of pos-provenance-mode-backfilled (only spec_version differs): a well-formed backfilled record: provenance_mode.mode='backfilled' with all four REQUIRED companion fields present and well-formed, time_rung absent (implies self_attested) -> verifies clean; derived.provenance_mode='backfilled' and derived.provenance_time_rung='self_attested' are always reported (check 9)."
+    },
+    {
+      "name": "neg-provenance-mode-time-rung-overclaim-v05",
+      "kind": "negative",
+      "description": "-05 twin of neg-provenance-mode-time-rung-overclaim (only spec_version differs): provenance_mode.time_rung='witnessed' claimed with no references[] entry citing citation_purpose='corroborates_source_time' -> provenance_time_rung_overclaim (check 9, gating \u2014 unlike the informational overclaim treatment check 7 gives attestation_mode/ledger_mode/cross_party_rung, this profile treats an unsupported provenance_mode time claim as a falsifiable dishonesty claim); derived.provenance_time_rung stays 'self_attested', the rederived value, never the claim."
+    },
+    {
+      "name": "neg-provenance-mode-backfilled-missing-fields-v05",
+      "kind": "negative",
+      "description": "-05 twin of neg-provenance-mode-backfilled-missing-fields (only spec_version differs): provenance_mode.mode='backfilled' with none of the four REQUIRED companion fields (source_ref, source_asserted_at, import_batch, imported_at) present -> four provenance_mode_missing_required_field failures (check 9)."
+    },
+    {
+      "name": "neg-provenance-mode-time-laundering-v05",
+      "kind": "negative",
+      "description": "-05 twin of neg-provenance-mode-time-laundering (only spec_version differs): provenance_mode.imported_at equals source_asserted_at on a backfilled record -- the shape a laundering producer would construct to make an import look contemporaneous -> provenance_time_laundering_shape (check 9, gating); equality is never treated as corroboration, regardless of any other assurance value the record carries."
+    },
+    {
+      "name": "pos-chain-duplicates-collapsed-once-v05",
+      "kind": "store",
+      "description": "-05 twin of pos-chain-duplicates-collapsed-once (only spec_version differs): a backfilled import of the same logical event a contemporaneous capsule already recorded, chained to it via chain.relation='duplicates': both capsules verify ok; the store-level pass reports duplicate_collapsed (info, check 9) on the backfilled member -- verifiers and downstream evidence evaluators count the pair once, the contemporaneous record governing, never twice."
+    },
+    {
+      "name": "neg-provenance-mode-invalid-mode-v05",
+      "kind": "negative",
+      "description": "-05 twin of neg-provenance-mode-invalid-mode (only spec_version differs): provenance_mode.mode='fabricated' is outside the closed {backfilled, contemporaneous} enum -> provenance_mode_invalid (check 9, gating); derived.provenance_mode is left UNSET (only a recognized mode is ever recorded) and no backfilled/contemporaneous sub-checks run."
+    },
+    {
+      "name": "neg-provenance-mode-invalid-time-rung-v05",
+      "kind": "negative",
+      "description": "-05 twin of neg-provenance-mode-invalid-time-rung (only spec_version differs): provenance_mode.time_rung='notarized' is outside the closed {self_attested, witnessed} enum on an otherwise well-formed backfilled record -> a single provenance_mode_invalid (check 9, gating); the unrecognized value is reset (time_rung=None) so it is NOT also treated as a witnessed overclaim, and derived.provenance_time_rung stays 'self_attested'."
+    },
+    {
+      "name": "neg-provenance-mode-source-ref-not-object-v05",
+      "kind": "negative",
+      "description": "-05 twin of neg-provenance-mode-source-ref-not-object (only spec_version differs): provenance_mode.source_ref present but a non-object (string) on a backfilled record -> provenance_mode_source_ref_malformed (check 9, gating; the source_ref-MUST-be-object branch). All other backfilled companion fields are present and well-formed."
+    },
+    {
+      "name": "neg-provenance-mode-source-ref-missing-subfield-v05",
+      "kind": "negative",
+      "description": "-05 twin of neg-provenance-mode-source-ref-missing-subfield (only spec_version differs): provenance_mode.source_ref is a well-formed object but MISSING the REQUIRED 'digest' subfield on a backfilled record -> provenance_mode_source_ref_malformed (check 9, gating; the per-subfield branch). type and digest_alg are present."
+    },
+    {
+      "name": "neg-provenance-mode-contemporaneous-orphaned-fields-v05",
+      "kind": "negative",
+      "description": "-05 twin of neg-provenance-mode-contemporaneous-orphaned-fields (only spec_version differs): provenance_mode.mode='contemporaneous' carrying a backfilled-only companion field (source_ref present and non-null) -> provenance_mode_invalid (check 9, gating; the orphaned-fields branch, presence-and-non-null). derived.provenance_mode='contemporaneous' is still recorded; no provenance_time_rung cap is derived for a contemporaneous record."
+    },
+    {
+      "name": "pos-provenance-mode-witnessed-corroborated-v05",
+      "kind": "positive",
+      "description": "-05 twin of pos-provenance-mode-witnessed-corroborated (only spec_version differs): a backfilled record claiming provenance_mode.time_rung='witnessed' WITH a well-formed references[] entry citing citation_purpose='corroborates_source_time' (all of type/digest_alg/digest non-empty) -> verifies clean; this is the ONLY case where derived.provenance_time_rung='witnessed' (the cap rederived from cited evidence, not from the claim)."
+    },
+    {
+      "name": "pos-chain-duplicates-parent-backfilled-v05",
+      "kind": "store",
+      "description": "-05 twin of pos-chain-duplicates-parent-backfilled (only spec_version differs): a 'duplicates'-linked pair whose parent is ITSELF provenance_mode.mode='backfilled' (not the contemporaneous record 'duplicates' is defined to cite): the store-level pass reports BOTH duplicate_collapsed AND duplicate_parent_not_contemporaneous (both info, check 9) on the child; both members remain ok."
+    }
+  ]
+}

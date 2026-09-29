@@ -1,0 +1,26 @@
+{
+  "action_id": "cp-uni",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "cross_party_rung": "unilateral_fallback",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "capsule_id": "a7c9cad839fb424a40bf0c078a3ad99ad7cc8b9f1bd95c1de130658a2b3cba18",
+  "cross_party": {
+    "initiator_ref": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "human",
+    "decision": "accept",
+    "human_disposed": true,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-06-13T00:00:00Z",
+  "canonicalization_id": "jcs"
+}

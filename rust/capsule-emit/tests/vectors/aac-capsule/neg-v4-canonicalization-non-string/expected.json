@@ -1,0 +1,26 @@
+{
+  "capsule_id_recomputed": null,
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "chained"
+  },
+  "description": "Format 4 declaring a non-string canonicalization identifier is rejected.",
+  "findings": [
+    {
+      "check": 1,
+      "code": "canonicalization_id_not_string",
+      "detail": "canonicalization_id MUST be a string (§5.1)",
+      "severity": "error"
+    },
+    {
+      "check": 6,
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (§6); not run without a store",
+      "severity": "info"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "spec-derived"
+}

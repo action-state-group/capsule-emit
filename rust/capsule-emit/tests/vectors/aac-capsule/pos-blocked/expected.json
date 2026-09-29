@@ -1,0 +1,16 @@
+{
+  "capsule_id_recomputed": "458c873cae5f830b7cf3b5457cb8e50b1c0425a4e43fda0aa33484a8d4e1d70e",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "blocked: a blocking constraint stopped it pre-dispatch; no effect, effect_mode not_applicable.",
+  "findings": [],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "spec-derived",
+  "canonical_preimages": {
+    "capsule_id": "{\"action_id\":\"po-blocked\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"policy\",\"decision\":\"reject\",\"human_disposed\":false,\"verdict_class\":\"blocked\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}"
+  }
+}

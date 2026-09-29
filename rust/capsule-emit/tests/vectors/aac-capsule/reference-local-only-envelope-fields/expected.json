@@ -1,0 +1,19 @@
+{
+  "description": "local Producer Envelope fields are excluded from format-4 Capsule ID",
+  "kind": "positive",
+  "ok": true,
+  "derived": {
+    "effect_mode": "not_applicable",
+    "attestation_mode": "self_attested",
+    "ledger_mode": "chained"
+  },
+  "capsule_id_recomputed": "8e6fc40e4da1da44be288d4be8ab735c43e786697e1317ed095b93bda75b9094",
+  "findings": [
+    {
+      "check": 6,
+      "severity": "info",
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (\u00a76); not run without a store"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": null,
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "Format 4 with canonicalization_id null fails closed.",
+  "findings": [
+    {
+      "check": 1,
+      "code": "canonicalization_id_not_string",
+      "detail": "canonicalization_id MUST be a string (§5.1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "spec-derived"
+}

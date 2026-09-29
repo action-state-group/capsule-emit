@@ -1,0 +1,21 @@
+{
+  "capsule_id_recomputed": "a0dc382d2b1313b264825a34953b550a95d7a201ad7d5540917fb72f0c7063bc",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "backfilled",
+    "provenance_time_rung": "self_attested"
+  },
+  "description": "provenance_mode.time_rung='notarized' is outside the closed {self_attested, witnessed} enum on an otherwise well-formed backfilled record -> a single provenance_mode_invalid (check 9, gating); the unrecognized value is reset (time_rung=None) so it is NOT also treated as a witnessed overclaim, and derived.provenance_time_rung stays 'self_attested'.",
+  "findings": [
+    {
+      "check": 9,
+      "code": "provenance_mode_invalid",
+      "detail": "provenance_mode.time_rung MUST be one of ['self_attested', 'witnessed'] (\u00a75.3(bis) Provenance mode); got 'notarized'",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false
+}

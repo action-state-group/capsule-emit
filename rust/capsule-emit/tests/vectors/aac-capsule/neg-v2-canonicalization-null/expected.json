@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": null,
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "confirmed",
+    "ledger_mode": "standalone"
+  },
+  "description": "Format 2 with null canonicalization_id is abandoned and must fail closed; there is no vintage null-selection path.",
+  "findings": [
+    {
+      "check": 1,
+      "code": "unsupported_format_version",
+      "detail": "format_version '2' is not supported; only \"4\" is defined (§5.1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "spec-derived"
+}

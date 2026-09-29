@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": null,
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "format_version '1' is abandoned and must fail closed; format 4 is the only supported format.",
+  "findings": [
+    {
+      "check": 1,
+      "code": "unsupported_format_version",
+      "detail": "format_version '1' is not supported; only \"4\" is defined (§5.1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "spec-derived"
+}

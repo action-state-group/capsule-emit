@@ -1,0 +1,13 @@
+{
+  "canonical_preimages": {
+    "agent_input_digest": "{\"control\":\"\\u0001\",\"emoji\":\"😀\",\"solidus\":\"a/b\"}",
+    "capsule_id": "{\"action_id\":\"spec-unicode-digest\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"policy\",\"decision\":\"accept\",\"human_disposed\":false,\"verdict_class\":\"executed\"},\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"agent_input_digest\":\"29378296a10fd1cba53d35f02920005d127579615eba22492fcac3bdf22433ba\"}},\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-09-13T00:00:03Z\"}"
+  },
+  "capsule_id_recomputed": "0cd5e280cdfce4f47237c020f25c3943076865f9be8642ba78464a43ee5508ba",
+  "derived": {"attestation_mode": "self_attested", "effect_mode": "not_applicable", "ledger_mode": "standalone"},
+  "description": "RFC 8785 string serialization preserves non-BMP and solidus characters while escaping U+0001.",
+  "findings": [],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "spec-derived"
+}

@@ -1,4 +1,5 @@
-//! Offline verification: recompute `capsule_id`, verify the COSE_Sign1
+//! Offline verification: run the Class 1 checks on the capsule's own bytes
+//! ([`crate::structure`]), recompute `capsule_id`, verify the COSE_Sign1
 //! signature, check the COSE payload matches the supplied capsule bytes, and
 //! (when a store of known `capsule_id`s is given) check chain-parent
 //! membership -- entirely local, no network calls. Mirrors the composition
@@ -20,6 +21,9 @@ use std::collections::HashSet;
 
 #[derive(Debug)]
 pub struct VerifyReport {
+    /// The capsule passes the Class 1 checks on its own bytes
+    /// ([`crate::structure`]); each failing one is also in `findings`.
+    pub structure_ok: bool,
     pub capsule_id_ok: bool,
     pub cose_ok: bool,
     pub payload_matches_capsule: bool,
@@ -35,7 +39,8 @@ pub struct VerifyReport {
 
 impl VerifyReport {
     pub fn ok(&self) -> bool {
-        self.capsule_id_ok
+        self.structure_ok
+            && self.capsule_id_ok
             && self.cose_ok
             && self.payload_matches_capsule
             && self.subject_matches_capsule_id
@@ -122,7 +127,18 @@ pub fn verify_offline(
         }
     }
 
+    let structure = crate::structure::check_structure(capsule);
+    for finding in structure.errors() {
+        findings.push(format!(
+            "check {}: {}: {}",
+            finding.check.unwrap_or(0),
+            finding.code,
+            finding.detail
+        ));
+    }
+
     VerifyReport {
+        structure_ok: structure.ok(),
         capsule_id_ok,
         cose_ok,
         payload_matches_capsule,
@@ -149,6 +165,10 @@ mod tests {
         body.insert("format_version".into(), json!("4"));
         body.insert("canonicalization_id".into(), json!("jcs"));
         body.insert("action_id".into(), json!(format!("verify-test/{seed}")));
+        body.insert("action_type".into(), json!("fyi"));
+        body.insert("operator".into(), json!("verify-test"));
+        body.insert("developer".into(), json!("verify-test@v1"));
+        body.insert("timestamp".into(), json!("2026-09-29T00:00:00Z"));
         body.insert("seed".into(), json!(seed));
         let capsule_id = compute_capsule_id(&Value::Object(body.clone())).unwrap();
         body.insert("capsule_id".into(), json!(capsule_id));

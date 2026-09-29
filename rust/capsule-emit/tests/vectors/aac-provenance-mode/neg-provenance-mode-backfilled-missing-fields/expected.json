@@ -1,0 +1,39 @@
+{
+  "capsule_id_recomputed": "e59414931d13cc91a2650482e6b3d27a9e0851c3eb6706c26996a28a19244804",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "backfilled",
+    "provenance_time_rung": "self_attested"
+  },
+  "description": "provenance_mode.mode='backfilled' with none of the four REQUIRED companion fields (source_ref, source_asserted_at, import_batch, imported_at) present -> four provenance_mode_missing_required_field failures (check 9).",
+  "findings": [
+    {
+      "check": 9,
+      "code": "provenance_mode_missing_required_field",
+      "detail": "provenance_mode.source_ref is REQUIRED when mode='backfilled' (\u00a75.3(bis) Provenance mode)",
+      "severity": "error"
+    },
+    {
+      "check": 9,
+      "code": "provenance_mode_missing_required_field",
+      "detail": "provenance_mode.source_asserted_at is REQUIRED when mode='backfilled' (\u00a75.3(bis) Provenance mode)",
+      "severity": "error"
+    },
+    {
+      "check": 9,
+      "code": "provenance_mode_missing_required_field",
+      "detail": "provenance_mode.import_batch is REQUIRED when mode='backfilled' (\u00a75.3(bis) Provenance mode)",
+      "severity": "error"
+    },
+    {
+      "check": 9,
+      "code": "provenance_mode_missing_required_field",
+      "detail": "provenance_mode.imported_at is REQUIRED when mode='backfilled' (\u00a75.3(bis) Provenance mode)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false
+}

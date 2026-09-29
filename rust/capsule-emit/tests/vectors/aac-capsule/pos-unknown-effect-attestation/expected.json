@@ -1,0 +1,29 @@
+{
+  "capsule_id_recomputed": "077ed9c78c5b99ad1dc781bd8544788763cadd1e49feaba362f8252b6ab5620b",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "confirmed",
+    "ledger_mode": "standalone"
+  },
+  "description": "unknown effect_attestation value: informational + graded no stronger than runtime_claimed; ok stays true.",
+  "findings": [
+    {
+      "check": 8,
+      "code": "unknown_registry_value",
+      "detail": "effect.effect_attestation='tee_anchored' is not a seeded effect_attestation value; informational, not rejected (§12)",
+      "severity": "info"
+    },
+    {
+      "check": 8,
+      "code": "effect_attestation_graded_floor",
+      "detail": "unknown effect_attestation graded no stronger than 'runtime_claimed' (§5.2)",
+      "severity": "info"
+    }
+  ],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "spec-derived",
+  "canonical_preimages": {
+    "capsule_id": "{\"action_id\":\"po-unk-ea\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"confirmed\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"accept\",\"human_disposed\":true},\"effect\":{\"effect_attestation\":\"tee_anchored\",\"response_digest\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"status\":\"confirmed\",\"type\":\"write_order\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-06-13T00:00:00Z\"}"
+  }
+}

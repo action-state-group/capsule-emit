@@ -1,0 +1,22 @@
+{
+  "action_id": "cp-approver",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "capsule_id": "1e5f28783a2e7df983361b0f98561d5f3c5f1f345b4a96c91cc97327d6534dd7",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "counterparty",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-06-13T00:00:00Z",
+  "canonicalization_id": "jcs"
+}

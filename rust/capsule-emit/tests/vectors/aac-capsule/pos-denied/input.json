@@ -1,0 +1,22 @@
+{
+  "action_id": "po-denied",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "capsule_id": "8d97a421400170e999257ae4d21039b4e4acbee9031723e833472d77eaa05f62",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "human",
+    "decision": "reject",
+    "human_disposed": true,
+    "verdict_class": "denied"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-06-13T00:00:00Z",
+  "canonicalization_id": "jcs"
+}

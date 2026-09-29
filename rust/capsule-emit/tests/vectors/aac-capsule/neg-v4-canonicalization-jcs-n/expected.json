@@ -1,0 +1,26 @@
+{
+  "capsule_id_recomputed": null,
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "chained"
+  },
+  "description": "Format 4 explicitly declaring withdrawn jcs-n is rejected.",
+  "findings": [
+    {
+      "check": 1,
+      "code": "canonicalization_profile_mismatch",
+      "detail": "format_version '4' REQUIRES canonicalization_id='jcs' (§5.1)",
+      "severity": "error"
+    },
+    {
+      "check": 6,
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (§6); not run without a store",
+      "severity": "info"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "spec-derived"
+}

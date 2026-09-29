@@ -1,0 +1,74 @@
+{
+  "ledger": [
+    {
+      "action_id": "prov-backfilled-parent",
+      "action_type": "decide",
+      "assurance": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "standalone"
+      },
+      "canonicalization_id": "jcs",
+      "capsule_id": "e08ac71ad0fe01360df5459adf8011ece0c6009ba11bc631fbdfe711cdd98457",
+      "developer": "agent@v1",
+      "disposition": {
+        "approver": "policy",
+        "decision": "accept",
+        "human_disposed": false,
+        "verdict_class": "executed"
+      },
+      "format_version": "4",
+      "operator": "ACME-CO",
+      "provenance_mode": {
+        "import_batch": "import-2026-09",
+        "imported_at": "2026-09-22T00:00:00Z",
+        "mode": "backfilled",
+        "source_asserted_at": "2026-01-01T00:00:00Z",
+        "source_ref": {
+          "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+          "digest_alg": "SHA-256",
+          "type": "x-external-ledger-entry"
+        }
+      },
+      "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+      "timestamp": "2026-08-24T00:00:00Z"
+    },
+    {
+      "action_id": "prov-backfilled-child",
+      "action_type": "decide",
+      "assurance": {
+        "attestation_mode": "self_attested",
+        "effect_mode": "not_applicable",
+        "ledger_mode": "chained"
+      },
+      "canonicalization_id": "jcs",
+      "capsule_id": "e94134aa8070f305745dac90d5b4a16939384319c39c8c64948263cb7da69202",
+      "chain": {
+        "parent_capsule_id": "e08ac71ad0fe01360df5459adf8011ece0c6009ba11bc631fbdfe711cdd98457",
+        "relation": "duplicates"
+      },
+      "developer": "agent@v1",
+      "disposition": {
+        "approver": "policy",
+        "decision": "accept",
+        "human_disposed": false,
+        "verdict_class": "executed"
+      },
+      "format_version": "4",
+      "operator": "ACME-CO",
+      "provenance_mode": {
+        "import_batch": "import-2026-09",
+        "imported_at": "2026-09-22T00:00:00Z",
+        "mode": "backfilled",
+        "source_asserted_at": "2026-01-01T00:00:00Z",
+        "source_ref": {
+          "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+          "digest_alg": "SHA-256",
+          "type": "x-external-ledger-entry"
+        }
+      },
+      "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+      "timestamp": "2026-08-24T00:00:00Z"
+    }
+  ]
+}

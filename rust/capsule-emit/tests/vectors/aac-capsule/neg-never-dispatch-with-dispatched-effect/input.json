@@ -1,0 +1,28 @@
+{
+  "action_id": "neg-nd-001",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "dispatched_unconfirmed",
+    "ledger_mode": "standalone"
+  },
+  "capsule_id": "e1048ec7c21eaf00d1ac516b9a4ef8d9b4524f29f127891b10d1816957e70e61",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "reject",
+    "human_disposed": false,
+    "verdict_class": "blocked"
+  },
+  "effect": {
+    "effect_attestation": "runtime_claimed",
+    "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "status": "dispatched",
+    "type": "write_order"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-06-13T00:00:00Z",
+  "canonicalization_id": "jcs"
+}

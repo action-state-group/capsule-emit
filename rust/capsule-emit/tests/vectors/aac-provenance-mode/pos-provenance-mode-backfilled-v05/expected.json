@@ -1,0 +1,14 @@
+{
+  "capsule_id_recomputed": "60ccc31abd4d364aa3c6497f296b3546d67843045c6eb499a5f8196002aaf167",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "backfilled",
+    "provenance_time_rung": "self_attested"
+  },
+  "description": "-05 twin of pos-provenance-mode-backfilled (only spec_version differs): a well-formed backfilled record: provenance_mode.mode='backfilled' with all four REQUIRED companion fields present and well-formed, time_rung absent (implies self_attested) -> verifies clean; derived.provenance_mode='backfilled' and derived.provenance_time_rung='self_attested' are always reported (check 9).",
+  "findings": [],
+  "kind": "positive",
+  "ok": true
+}

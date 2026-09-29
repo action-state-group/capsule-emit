@@ -1,0 +1,23 @@
+{
+  "canonical_preimages": {
+    "capsule_id": "{\"action_id\":\"spec-v4-chain\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"chained\"},\"canonicalization_id\":\"jcs\",\"chain\":{\"parent_capsule_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"relation\":\"confirms\"},\"developer\":\"agent@v1\",\"disposition\":{\"approver\":\"policy\",\"decision\":\"accept\",\"human_disposed\":false,\"verdict_class\":\"executed\"},\"format_version\":\"4\",\"operator\":\"ACME-CO\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-04\",\"timestamp\":\"2026-09-13T00:00:00Z\"}"
+  },
+  "capsule_id_recomputed": "70950e59764f8ce138b6fe7b591706566a13de48fb2f2724da8daf13150bc20f",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "chained"
+  },
+  "description": "Format 4 plain JCS commits the chain block to capsule_id.",
+  "findings": [
+    {
+      "check": 6,
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (§6); not run without a store",
+      "severity": "info"
+    }
+  ],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "spec-derived"
+}

@@ -1,0 +1,14 @@
+{
+  "action_id": "spec-nested-digest",
+  "action_type": "decide",
+  "assurance": {"attestation_mode": "self_attested", "effect_mode": "not_applicable", "ledger_mode": "standalone"},
+  "canonicalization_id": "jcs",
+  "capsule_id": "4c6fe6bf7e694576a1d53ecef553b9f08e78d0844e2f1acfbbab6e9355afc148",
+  "developer": "agent@v1",
+  "disposition": {"approver": "policy", "decision": "accept", "human_disposed": false, "verdict_class": "executed"},
+  "format_version": "4",
+  "model_attestation": {"compute_attestation": {"agent_output_digest": "5b99081231120bd7b931d13091ff979d3cde268bd52f9f11d3e9fff829ddeb4e"}},
+  "operator": "ACME-CO",
+  "spec_version": "draft-mih-scitt-agent-action-capsule-04",
+  "timestamp": "2026-09-13T00:00:02Z"
+}

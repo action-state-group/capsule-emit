@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "cb28a0a3d346facc43d7db54afb12fc686576a08967bbfd342546e3e6e6f102a",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "chained"
+  },
+  "description": "-05 citation_purpose 'counterparty_half': a record holding a counterparty's half chains to its own head with 'follows' and cites the half by digest.",
+  "findings": [
+    {
+      "check": 6,
+      "code": "chain_check_store_level",
+      "detail": "chain parent-existence and concurrent-supersedes are store-level checks (\u00a76); not run without a store",
+      "severity": "info"
+    }
+  ],
+  "kind": "positive",
+  "ok": true,
+  "provenance": "reference-derived"
+}

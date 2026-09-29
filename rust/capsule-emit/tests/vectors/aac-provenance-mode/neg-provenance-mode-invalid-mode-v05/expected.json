@@ -1,0 +1,19 @@
+{
+  "capsule_id_recomputed": "d4a8154cef1be0c6adfc1cc6640dc244ef54e39c59da0ec07919a13c05fe4874",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "-05 twin of neg-provenance-mode-invalid-mode (only spec_version differs): provenance_mode.mode='fabricated' is outside the closed {backfilled, contemporaneous} enum -> provenance_mode_invalid (check 9, gating); derived.provenance_mode is left UNSET (only a recognized mode is ever recorded) and no backfilled/contemporaneous sub-checks run.",
+  "findings": [
+    {
+      "check": 9,
+      "code": "provenance_mode_invalid",
+      "detail": "provenance_mode.mode MUST be one of ['backfilled', 'contemporaneous'] (\u00a75.3(bis) Provenance mode); got 'fabricated'",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false
+}
