@@ -3,7 +3,9 @@
 //! caller-invariant, and every way a responder (or anyone in between) can
 //! get an answer wrong is caught by `answer::verify`.
 
-use capsule_emit_evidence_request::answer::{self, build, EvidenceLog, Record, VerifyError};
+use capsule_emit_evidence_request::answer::{
+    self, build, BuildError, EvidenceLog, Record, VerifyError, MAX_RECORDS,
+};
 use capsule_emit_evidence_request::digest::request_digest;
 use capsule_emit_evidence_request::registry::SubjectForm;
 use capsule_emit_evidence_request::request::{parse_json, Derivation, Request};
@@ -12,7 +14,8 @@ use capsule_emit_evidence_request::resolve::{
 };
 use cll::checkpoint::{sign_checkpoint_digest, CheckpointRecord};
 use cll::mmr::{
-    add_leaf, leaf_count, leaf_hash, peaks, root_from_peaks, MemoryNodeStore, NodeReader,
+    add_leaf, leaf_count, leaf_hash, node_count, peaks, root_from_peaks, MemoryNodeStore,
+    NodeReader,
 };
 use ed25519_dalek::SigningKey;
 use serde_json::{json, Value};
@@ -193,7 +196,16 @@ fn round_trip(
         panic!("expected the request to resolve to an artifact");
     };
     let digest = request_digest(bytes);
-    let built = build(req, &digest, &anchor, log, &responder_key(), ISSUED_AT).unwrap();
+    let built = build(
+        req,
+        &digest,
+        &anchor,
+        log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
     answer::verify(
         &built.envelope,
         &built.artifact,
@@ -296,6 +308,7 @@ fn artifacts_are_caller_invariant_and_envelopes_are_per_request() {
         &request_digest(&b1),
         &anchor,
         &log,
+        MAX_RECORDS,
         &responder_key(),
         ISSUED_AT,
     )
@@ -305,6 +318,7 @@ fn artifacts_are_caller_invariant_and_envelopes_are_per_request() {
         &request_digest(&b2),
         &anchor,
         &log,
+        MAX_RECORDS,
         &responder_key(),
         "2026-09-29T01:00:00Z",
     )
@@ -349,7 +363,16 @@ fn record_answer(log: &TestLog) -> (answer::Answer, Request, String) {
         panic!()
     };
     (
-        build(&q, &digest, &anchor, log, &responder_key(), ISSUED_AT).unwrap(),
+        build(
+            &q,
+            &digest,
+            &anchor,
+            log,
+            MAX_RECORDS,
+            &responder_key(),
+            ISSUED_AT,
+        )
+        .unwrap(),
         q,
         digest,
     )
@@ -462,7 +485,16 @@ fn a_responder_that_misstates_its_records_is_caught() {
     let Resolution::Artifact(anchor) = resolve(&q, &log) else {
         panic!()
     };
-    let a = build(&q, &digest, &anchor, &log, &responder_key(), ISSUED_AT).unwrap();
+    let a = build(
+        &q,
+        &digest,
+        &anchor,
+        &log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
     let mut art: Value = serde_json::from_slice(&a.artifact).unwrap();
     art["records"].as_array_mut().unwrap().remove(1);
     let artifact = capsule_emit_evidence_request::jcs::to_string(&art)
@@ -514,7 +546,16 @@ fn anchors_must_be_the_pinned_one_fresh_enough_and_the_responders() {
     );
     let digest = request_digest(&b);
     let other = ResolvedAnchor::Anchor(log.anchors()[2].clone());
-    let a = build(&q, &digest, &other, &log, &responder_key(), ISSUED_AT).unwrap();
+    let a = build(
+        &q,
+        &digest,
+        &other,
+        &log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
     assert_eq!(
         verify_parts(&a, &q, &digest),
         Err(VerifyError::CoverageUnmet)
@@ -528,7 +569,16 @@ fn anchors_must_be_the_pinned_one_fresh_enough_and_the_responders() {
     );
     let digest = request_digest(&b);
     let stale = ResolvedAnchor::Anchor(log.anchors()[1].clone());
-    let a = build(&q, &digest, &stale, &log, &responder_key(), ISSUED_AT).unwrap();
+    let a = build(
+        &q,
+        &digest,
+        &stale,
+        &log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
     assert_eq!(
         verify_parts(&a, &q, &digest),
         Err(VerifyError::CoverageUnmet)
@@ -541,7 +591,16 @@ fn anchors_must_be_the_pinned_one_fresh_enough_and_the_responders() {
         json!({}),
     );
     let digest = request_digest(&b);
-    let a = build(&q, &digest, &stale, &log, &responder_key(), ISSUED_AT).unwrap();
+    let a = build(
+        &q,
+        &digest,
+        &stale,
+        &log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
     assert_eq!(
         verify_parts(&a, &q, &digest),
         Err(VerifyError::CoverageUnmet)
@@ -575,6 +634,7 @@ fn proofs_and_checkpoint_chains_are_checked() {
         &request_digest(&b2),
         &anchor,
         &log,
+        MAX_RECORDS,
         &responder_key(),
         ISSUED_AT,
     )
@@ -605,7 +665,16 @@ fn proofs_and_checkpoint_chains_are_checked() {
     let Resolution::Artifact(anchor) = resolve(&q, &broken) else {
         panic!()
     };
-    let a = build(&q, &digest, &anchor, &broken, &responder_key(), ISSUED_AT).unwrap();
+    let a = build(
+        &q,
+        &digest,
+        &anchor,
+        &broken,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
     assert_eq!(
         verify_parts(&a, &q, &digest),
         Err(VerifyError::CheckpointChain)
@@ -627,7 +696,16 @@ fn a_history_card_with_a_false_consistency_proof_is_caught() {
     let Resolution::Artifact(anchor) = resolve(&q, &log) else {
         panic!()
     };
-    let a = build(&q, &digest, &anchor, &log, &responder_key(), ISSUED_AT).unwrap();
+    let a = build(
+        &q,
+        &digest,
+        &anchor,
+        &log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
     assert!(verify_parts(&a, &q, &digest).is_ok());
     let mut art: Value = serde_json::from_slice(&a.artifact).unwrap();
     let proof = &mut art["history"][2]["consistency_from_previous"];
@@ -685,4 +763,315 @@ fn garbage_is_an_error_never_a_panic() {
         )
         .is_err());
     }
+}
+
+// ---------------------------------------------------------------------------
+// Size limits: nothing a responder claims, and no range a requester asks
+// for, makes either side allocate without bound.
+// ---------------------------------------------------------------------------
+
+/// A responder-signed checkpoint claiming `leaves` records, with a made-up
+/// root.
+fn hostile_checkpoint(leaves: u64) -> CheckpointRecord {
+    let mut cp = CheckpointRecord {
+        v: 1,
+        kind: "mmr_checkpoint".into(),
+        log_id: STREAM.into(),
+        mmr_size: node_count(leaves),
+        root: "4".repeat(64),
+        prev_size: 0,
+        prev_root: String::new(),
+        key_id: hex::encode(responder_key().verifying_key().to_bytes()),
+        timestamp: "2026-09-29T00:00:00Z".into(),
+        signature: String::new(),
+        witnesses: Vec::new(),
+    };
+    cp.signature = sign_checkpoint_digest(&cp, &responder_key());
+    cp
+}
+
+/// A hand-made answer (signed by the responder) with these parts.
+fn hand_answer(
+    req_digest: &str,
+    cp: &CheckpointRecord,
+    art: Value,
+    material: Value,
+) -> answer::Answer {
+    let artifact = capsule_emit_evidence_request::jcs::to_string(&art)
+        .unwrap()
+        .into_bytes();
+    let material = capsule_emit_evidence_request::jcs::to_string(&material)
+        .unwrap()
+        .into_bytes();
+    let base = json!({
+        "request_digest": req_digest,
+        "anchor": cp.digest(),
+        "artifact_digest": "0".repeat(64),
+        "issued_at": ISSUED_AT,
+        "key_id": hex::encode(responder_key().verifying_key().to_bytes()),
+    });
+    let envelope = resign(&base, &artifact);
+    answer::Answer {
+        artifact,
+        material,
+        envelope,
+    }
+}
+
+#[test]
+fn a_hostile_checkpoint_size_is_refused_before_any_allocation() {
+    let cp = hostile_checkpoint(1 << 40);
+    let pin = json!({"expected_pin": cp.digest()});
+    for subject in [
+        json!({"full_history": null}),
+        json!({"range": [0, 5_000_000]}),
+    ] {
+        let (b, q) = request(subject.clone(), pin.clone(), json!({}));
+        let digest = request_digest(&b);
+        let art = json!({"anchor": cp.digest(), "evidence_stream": STREAM, "subject": subject, "records": []});
+        let a = hand_answer(
+            &digest,
+            &cp,
+            art,
+            json!({"anchor_checkpoint": serde_json::to_value(&cp).unwrap()}),
+        );
+        assert_eq!(
+            verify_parts(&a, &q, &digest),
+            Err(VerifyError::TooLarge),
+            "{subject}"
+        );
+    }
+}
+
+#[test]
+fn a_range_to_u64_max_is_refused_on_both_sides() {
+    let log = test_log(&responder_key());
+    let (b, q) = request(json!({"range": [0, u64::MAX]}), pin(&log, 2), json!({}));
+    let digest = request_digest(&b);
+    // The responder: beyond the tree, and never enumerated.
+    let anchor = ResolvedAnchor::Anchor(log.anchors()[2].clone());
+    assert_eq!(
+        build(
+            &q,
+            &digest,
+            &anchor,
+            &log,
+            MAX_RECORDS,
+            &responder_key(),
+            ISSUED_AT
+        ),
+        Err(BuildError::RecordNotFound)
+    );
+    // The requester: refused before the records are looked at.
+    let cp = &log.checkpoints[2];
+    let art = json!({"anchor": cp.digest(), "evidence_stream": STREAM, "subject": {"range": [0, u64::MAX]}, "records": []});
+    let a = hand_answer(
+        &digest,
+        cp,
+        art,
+        json!({"anchor_checkpoint": serde_json::to_value(cp).unwrap()}),
+    );
+    assert_eq!(verify_parts(&a, &q, &digest), Err(VerifyError::TooLarge));
+}
+
+#[test]
+fn build_stops_at_the_limit() {
+    let log = test_log(&responder_key());
+    let cases = [
+        (json!({"range": [0, 5]}), json!({}), 5),
+        (json!({"full_history": null}), json!({}), 9),
+        (json!({"correlation": "c-1"}), json!({}), 1),
+        (json!({"checkpoints": null}), json!({}), 2),
+        (
+            json!({"checkpoints": null}),
+            json!({"derivation": "history_card/1"}),
+            2,
+        ),
+    ];
+    for (subject, extra, limit) in cases {
+        let (b, q) = request(subject.clone(), pin(&log, 2), extra);
+        let digest = request_digest(&b);
+        let Resolution::Artifact(anchor) = resolve(&q, &log) else {
+            panic!()
+        };
+        assert_eq!(
+            build(
+                &q,
+                &digest,
+                &anchor,
+                &log,
+                limit,
+                &responder_key(),
+                ISSUED_AT
+            ),
+            Err(BuildError::OverLimit),
+            "{subject} at limit {limit}"
+        );
+        // One more is enough.
+        assert!(
+            build(
+                &q,
+                &digest,
+                &anchor,
+                &log,
+                limit + 1,
+                &responder_key(),
+                ISSUED_AT
+            )
+            .is_ok(),
+            "{subject}"
+        );
+    }
+    // A range beyond the tree is not found, whatever the limit.
+    let (b, q) = request(json!({"range": [8, 12]}), pin(&log, 2), json!({}));
+    let anchor = ResolvedAnchor::Anchor(log.anchors()[2].clone());
+    assert_eq!(
+        build(
+            &q,
+            &request_digest(&b),
+            &anchor,
+            &log,
+            MAX_RECORDS,
+            &responder_key(),
+            ISSUED_AT
+        ),
+        Err(BuildError::RecordNotFound)
+    );
+}
+
+#[test]
+fn verify_refuses_more_records_or_proofs_than_the_cap() {
+    let log = test_log(&responder_key());
+    let (b, q) = request(json!({"correlation": "c-1"}), pin(&log, 2), json!({}));
+    let digest = request_digest(&b);
+    let cp = &log.checkpoints[2];
+    let many = || Value::Array(vec![json!({}); MAX_RECORDS as usize + 1]);
+    let art = json!({"anchor": cp.digest(), "evidence_stream": STREAM, "subject": {"correlation": "c-1"}, "records": many()});
+    let a = hand_answer(
+        &digest,
+        cp,
+        art,
+        json!({"anchor_checkpoint": serde_json::to_value(cp).unwrap()}),
+    );
+    assert_eq!(verify_parts(&a, &q, &digest), Err(VerifyError::TooLarge));
+    let art = json!({"anchor": cp.digest(), "evidence_stream": STREAM, "subject": {"correlation": "c-1"}, "records": []});
+    let a = hand_answer(
+        &digest,
+        cp,
+        art,
+        json!({"anchor_checkpoint": serde_json::to_value(cp).unwrap(), "inclusion": many()}),
+    );
+    assert_eq!(verify_parts(&a, &q, &digest), Err(VerifyError::TooLarge));
+}
+
+// ---------------------------------------------------------------------------
+// Checkpoint lists start at the stream's genesis.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_checkpoint_list_with_its_prefix_left_out_is_refused() {
+    let log = test_log(&responder_key());
+    let anchor = &log.checkpoints[2];
+    let cp_json = |cp: &CheckpointRecord| serde_json::to_value(cp).unwrap();
+    let (b, q) = request(json!({"checkpoints": null}), pin(&log, 2), json!({}));
+    let digest = request_digest(&b);
+    for kept in [vec![2], vec![1, 2]] {
+        let list: Vec<Value> = kept.iter().map(|&i| cp_json(&log.checkpoints[i])).collect();
+        let art = json!({"anchor": anchor.digest(), "evidence_stream": STREAM, "subject": {"checkpoints": null}, "checkpoints": list});
+        let a = hand_answer(
+            &digest,
+            anchor,
+            art,
+            json!({"anchor_checkpoint": cp_json(anchor)}),
+        );
+        assert_eq!(
+            verify_parts(&a, &q, &digest),
+            Err(VerifyError::CheckpointChain),
+            "checkpoints {kept:?}"
+        );
+    }
+
+    let (b, q) = request(
+        json!({"checkpoints": null}),
+        pin(&log, 2),
+        json!({"derivation": "history_card/1"}),
+    );
+    let digest = request_digest(&b);
+    let Resolution::Artifact(resolved) = resolve(&q, &log) else {
+        panic!()
+    };
+    let full = build(
+        &q,
+        &digest,
+        &resolved,
+        &log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
+    let full: Value = serde_json::from_slice(&full.artifact).unwrap();
+    for drop in [1, 2] {
+        let mut art = full.clone();
+        let history = art["history"].as_array_mut().unwrap();
+        history.drain(..drop);
+        // The new first entry claims to be the first: no proof from before.
+        history[0]["consistency_from_previous"] = Value::Null;
+        let a = hand_answer(
+            &digest,
+            anchor,
+            art,
+            json!({"anchor_checkpoint": cp_json(anchor)}),
+        );
+        assert_eq!(
+            verify_parts(&a, &q, &digest),
+            Err(VerifyError::CheckpointChain),
+            "history without {drop} first"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// More envelope and record-order checks.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_changed_issue_time_breaks_the_envelope() {
+    let log = test_log(&responder_key());
+    let (a, q, digest) = record_answer(&log);
+    let mut env = a.envelope.clone();
+    env["issued_at"] = json!("2026-09-30T00:00:00Z");
+    assert_eq!(
+        verify_parts(&answer::Answer { envelope: env, ..a }, &q, &digest),
+        Err(VerifyError::WrongKey)
+    );
+}
+
+#[test]
+fn correlation_records_out_of_log_order_are_refused() {
+    let log = test_log(&responder_key());
+    let (b, q) = request(json!({"correlation": "c-1"}), pin(&log, 2), json!({}));
+    let digest = request_digest(&b);
+    let Resolution::Artifact(resolved) = resolve(&q, &log) else {
+        panic!()
+    };
+    let good = build(
+        &q,
+        &digest,
+        &resolved,
+        &log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
+    let mut art: Value = serde_json::from_slice(&good.artifact).unwrap();
+    let mut mat: Value = serde_json::from_slice(&good.material).unwrap();
+    art["records"].as_array_mut().unwrap().reverse();
+    mat["inclusion"].as_array_mut().unwrap().reverse();
+    let a = hand_answer(&digest, &log.checkpoints[2], art, mat);
+    assert_eq!(
+        verify_parts(&a, &q, &digest),
+        Err(VerifyError::RecordsMismatch)
+    );
 }

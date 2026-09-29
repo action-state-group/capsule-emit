@@ -47,7 +47,15 @@ envelope signature and bindings, the artifact digest, the anchor checkpoint
 constraint, every record against its digest (with your evidence format's
 digest function) and every proof. Which records a `correlation` or
 `exchange` subject should include is format-specific: `verify` proves each
-served record is in the log under the anchor, and you check its content.
+served record is in the log under the anchor, and you check its content (a
+responder can still leave a record out of those subjects; completeness is
+not provable from this answer alone).
+
+An answer carries at most `answer::MAX_RECORDS` (10,000) records or
+checkpoints: `verify` refuses a larger one before parsing anything, and
+`build` takes a limit and returns `OverLimit`, which a responder answers
+with a `policy_declined` refusal. Checkpoint lists start at the stream's
+first checkpoint, so a prefix cannot be left out.
 
 Not in this crate: transport, storage, and any store-and-forward or delivery
 guarantee.

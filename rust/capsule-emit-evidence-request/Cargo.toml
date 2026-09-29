@@ -3,12 +3,12 @@ name = "capsule-emit-evidence-request"
 version = "0.0.2"
 edition = "2021"
 license = "Apache-2.0"
-description = "The evidence request protocol (draft-mih-agent-evidence-request-00): parse and digest requests, resolve them exactly, sign and verify refusals, and classify outcomes, invariance and retention."
+description = "The evidence request protocol (draft-mih-agent-evidence-request-00): parse, digest and resolve requests; sign and verify refusals; build and verify artifact answers over a checkpointed local log; classify outcomes, invariance and retention."
 repository = "https://github.com/action-state-group/capsule-emit"
 readme = "README.md"
 keywords = ["scitt", "evidence", "transparency", "protocol", "agents"]
 categories = ["cryptography", "encoding"]
-include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE", "/NOTICE"]
+include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/CHANGELOG.md", "/LICENSE", "/NOTICE"]
 
 [lib]
 name = "capsule_emit_evidence_request"

@@ -34,6 +34,16 @@
 //! anchor; the caller checks that each carries the identifier or cites its
 //! half ([`VerifiedAnswer::records`]).
 //!
+//! Size: an answer carries at most [`MAX_RECORDS`] records or checkpoints.
+//! [`verify`] refuses a larger one before parsing or enumerating anything,
+//! whatever size the responder's checkpoint claims; [`build`] takes a limit
+//! and stops there ([`BuildError::OverLimit`], answered as
+//! `policy_declined`).
+//!
+//! Checkpoint lists (`checkpoints`, `history_card/1`) must start at the
+//! stream's first checkpoint (`prev_size` 0, empty `prev_root`), so a
+//! responder cannot leave out a prefix of its history.
+//!
 //! Terms: an anchor is a `cll` checkpoint, identified by its digest
 //! ([`CheckpointRecord::digest`], the value registered with a transparency
 //! service). Its "size" for coverage is the number of records it covers,
@@ -53,6 +63,15 @@ use cll::range_proof::{range_proof, verify_range, RangeProof};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+
+/// The most records (or checkpoints) one answer may carry.
+///
+/// [`verify`] refuses a larger answer before it parses any record or proof,
+/// and before it enumerates a range, so a responder cannot make a requester
+/// allocate without bound, whatever size its signed checkpoint claims. A
+/// responder builds with a `limit` of at most this ([`build`]) and answers a
+/// larger subject with a `policy_declined` refusal: ask for a range instead.
+pub const MAX_RECORDS: u64 = 10_000;
 
 /// One record of the responder's evidence stream.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -107,6 +126,10 @@ pub enum BuildError {
     DerivationUnsupported,
     #[error("the request digest or issued_at time is malformed")]
     Malformed,
+    /// The subject covers more records (or checkpoints) than the limit.
+    /// Answer with a `policy_declined` refusal.
+    #[error("the answer would carry more than the limit of records or checkpoints")]
+    OverLimit,
     #[error("proof construction failed: {0}")]
     Proof(String),
 }
@@ -115,11 +138,18 @@ pub enum BuildError {
 /// under `anchor`, as resolved by [`crate::resolve::resolve`]. For an
 /// `exchange` subject pinned by the requester's own half, the records are
 /// proven under the stream's latest checkpoint.
+///
+/// `limit` caps the records (or checkpoints) the answer carries; it is
+/// clamped to [`MAX_RECORDS`], the most a requester accepts. Over the limit,
+/// [`BuildError::OverLimit`]: answer with a `policy_declined` refusal. The
+/// log is never read beyond the limit.
+#[allow(clippy::too_many_arguments)]
 pub fn build<L: EvidenceLog>(
     request: &Request,
     request_digest: &str,
     anchor: &ResolvedAnchor,
     log: &L,
+    limit: u64,
     signing_key: &SigningKey,
     issued_at: &str,
 ) -> Result<Answer, BuildError> {
@@ -135,6 +165,8 @@ pub fn build<L: EvidenceLog>(
     let anchor_cp = &checkpoints[anchor_index];
     let anchor_digest = anchor_cp.digest();
     let covered = leaf_count(anchor_cp.mmr_size).map_err(|e| BuildError::Proof(e.to_string()))?;
+    let limit = limit.min(MAX_RECORDS);
+    let checkpoint_count = anchor_index as u64 + 1;
 
     let mut artifact = Map::new();
     artifact.insert("anchor".into(), json!(anchor_digest));
@@ -145,6 +177,9 @@ pub fn build<L: EvidenceLog>(
 
     match &request.derivation {
         Some(Derivation::Token(t)) if t == DERIVATION_HISTORY_CARD => {
+            if checkpoint_count > limit {
+                return Err(BuildError::OverLimit);
+            }
             artifact.insert("derivation".into(), json!(DERIVATION_HISTORY_CARD));
             let mut history = Vec::new();
             for (i, cp) in checkpoints[..=anchor_index].iter().enumerate() {
@@ -162,6 +197,9 @@ pub fn build<L: EvidenceLog>(
         Some(_) => return Err(BuildError::DerivationUnsupported),
         None => match &request.subject {
             Subject::Checkpoints => {
+                if checkpoint_count > limit {
+                    return Err(BuildError::OverLimit);
+                }
                 let list = checkpoints[..=anchor_index]
                     .iter()
                     .map(checkpoint_json)
@@ -169,7 +207,7 @@ pub fn build<L: EvidenceLog>(
                 artifact.insert("checkpoints".into(), Value::Array(list));
             }
             Subject::Range(a, b) => {
-                let records = range_records(log, *a, *b, covered)?;
+                let records = range_records(log, *a, *b, covered, limit)?;
                 material.insert(
                     "range".into(),
                     range_json(&range_or_err(log, *a, *b, anchor_cp.mmr_size)?),
@@ -180,7 +218,7 @@ pub fn build<L: EvidenceLog>(
                 if covered == 0 {
                     return Err(BuildError::NoRecords);
                 }
-                let records = range_records(log, 0, covered - 1, covered)?;
+                let records = range_records(log, 0, covered - 1, covered, limit)?;
                 material.insert(
                     "range".into(),
                     range_json(&range_or_err(log, 0, covered - 1, anchor_cp.mmr_size)?),
@@ -201,7 +239,7 @@ pub fn build<L: EvidenceLog>(
                 )?;
             }
             Subject::Correlation(id) => {
-                let records = records_under(log, log.correlation(id), covered)?;
+                let records = records_under(log, log.correlation(id), covered, limit)?;
                 serve_records(
                     log,
                     records,
@@ -211,7 +249,7 @@ pub fn build<L: EvidenceLog>(
                 )?;
             }
             Subject::Exchange(half) => {
-                let records = records_under(log, log.citing(half), covered)?;
+                let records = records_under(log, log.citing(half), covered, limit)?;
                 serve_records(
                     log,
                     records,
@@ -254,9 +292,14 @@ fn range_records<L: EvidenceLog>(
     a: u64,
     b: u64,
     covered: u64,
+    limit: u64,
 ) -> Result<Vec<Record>, BuildError> {
     if b >= covered || a > b {
         return Err(BuildError::RecordNotFound);
+    }
+    // b - a + 1 > limit, without overflow.
+    if b - a >= limit {
+        return Err(BuildError::OverLimit);
     }
     (a..=b)
         .map(|i| {
@@ -280,7 +323,11 @@ fn records_under<L: EvidenceLog>(
     log: &L,
     digests: Vec<String>,
     covered: u64,
+    limit: u64,
 ) -> Result<Vec<Record>, BuildError> {
+    if digests.len() as u64 > limit {
+        return Err(BuildError::OverLimit);
+    }
     let mut records: Vec<Record> = digests
         .iter()
         .filter_map(|d| log.record_by_digest(d))
@@ -342,8 +389,12 @@ pub enum VerifyError {
     RecordsMismatch,
     #[error("a proof does not verify against the anchor")]
     ProofInvalid,
-    #[error("a checkpoint in the artifact is malformed, unsigned, or does not chain")]
+    #[error("a checkpoint in the artifact is malformed, unsigned, or does not chain from the stream's first checkpoint")]
     CheckpointChain,
+    /// The answer carries, or its subject spans, more than [`MAX_RECORDS`]
+    /// records or checkpoints; refused before anything is parsed.
+    #[error("the answer is larger than MAX_RECORDS")]
+    TooLarge,
 }
 
 /// A verified answer.
@@ -478,6 +529,9 @@ pub fn verify(
             .get("history")
             .and_then(Value::as_array)
             .ok_or(VerifyError::ArtifactMalformed)?;
+        if history.len() as u64 > MAX_RECORDS {
+            return Err(VerifyError::TooLarge);
+        }
         let checkpoints = verify_history(history, &anchor, responder_key)?;
         return Ok(VerifiedAnswer {
             anchor,
@@ -490,12 +544,37 @@ pub fn verify(
             .get("checkpoints")
             .and_then(Value::as_array)
             .ok_or(VerifyError::ArtifactMalformed)?;
+        if list.len() as u64 > MAX_RECORDS {
+            return Err(VerifyError::TooLarge);
+        }
         let checkpoints = verify_checkpoint_list(list, &anchor, responder_key)?;
         return Ok(VerifiedAnswer {
             anchor,
             records: Vec::new(),
             checkpoints,
         });
+    }
+
+    // Size checks before anything is parsed or enumerated: the range the
+    // subject spans (the checkpoint's size is the responder's claim), the
+    // records and the proofs actually sent.
+    let range = match &request.subject {
+        Subject::Range(a, b) => Some((*a, *b)),
+        Subject::FullHistory => Some((
+            0,
+            covered.checked_sub(1).ok_or(VerifyError::RecordsMismatch)?,
+        )),
+        _ => None,
+    };
+    if range.is_some_and(|(a, b)| b.saturating_sub(a) >= MAX_RECORDS) {
+        return Err(VerifyError::TooLarge);
+    }
+    let sent_records = art.get("records").and_then(Value::as_array);
+    let sent_proofs = mat.get("inclusion").and_then(Value::as_array);
+    if sent_records.is_some_and(|r| r.len() as u64 > MAX_RECORDS)
+        || sent_proofs.is_some_and(|p| p.len() as u64 > MAX_RECORDS)
+    {
+        return Err(VerifyError::TooLarge);
     }
 
     let records = parse_records(art.get("records"))?;
@@ -507,17 +586,8 @@ pub fn verify(
             return Err(VerifyError::RecordsMismatch);
         }
     }
-    let range = match &request.subject {
-        Subject::Range(a, b) => Some((*a, *b)),
-        Subject::FullHistory => Some((
-            0,
-            covered.checked_sub(1).ok_or(VerifyError::RecordsMismatch)?,
-        )),
-        _ => None,
-    };
     if let Some((a, b)) = range {
-        let expected: Vec<u64> = (a..=b).collect();
-        if records.iter().map(|r| r.leaf_index).collect::<Vec<_>>() != expected {
+        if !records.iter().map(|r| r.leaf_index).eq(a..=b) {
             return Err(VerifyError::RecordsMismatch);
         }
         let proof = mat
@@ -578,7 +648,13 @@ fn verify_checkpoint_list(
         .map(|v| checkpoint_from_json(v).filter(|cp| signed_by(cp, key)))
         .collect::<Option<Vec<_>>>()
         .ok_or(VerifyError::CheckpointChain)?;
-    let last = checkpoints.last().ok_or(VerifyError::CheckpointChain)?;
+    let (Some(first), Some(last)) = (checkpoints.first(), checkpoints.last()) else {
+        return Err(VerifyError::CheckpointChain);
+    };
+    // The list starts at the stream's genesis, so no prefix can be left out.
+    if first.prev_size != 0 || !first.prev_root.is_empty() {
+        return Err(VerifyError::CheckpointChain);
+    }
     if last != anchor {
         return Err(VerifyError::CheckpointChain);
     }
