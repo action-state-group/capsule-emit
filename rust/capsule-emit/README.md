@@ -44,7 +44,7 @@ in the order given, never interpreted by this crate.
 
 `structure` gives the reference verifier's (`agent_action_capsule.verify`)
 verdict and findings on every conformance vector. On inputs outside them,
-three differences are known, each pinned by a test in
+two differences are known, each pinned by a test in
 `tests/structure_vectors.rs`:
 
 - **`-0`** parses as a float here (an integer zero in Python), so a record
@@ -52,17 +52,12 @@ three differences are known, each pinned by a test in
 - **An integer above `u64::MAX`** also parses as a float here: refused
   `float_in_digest_field`, where the reference says
   `unsafe_integer_in_digest_field`. Both refuse the record.
-- **A list or object where the reference looks a value up in a closed set**
-  (`disposition.approver`, `verdict_class` or `decision`; `effect.type`,
-  `effect_attestation` or `irreversibility_class`; `assurance.effect_mode`;
-  `provenance_mode.mode`; `chain.relation`) makes the reference (v0.6.0, the
-  version the vectors are pinned to) fail with `verifier_internal_error`,
-  which refuses the record. Here the closed enums refuse it cleanly
-  (`approver_invalid`, `provenance_mode_invalid`) and the registry-only
-  fields are not judged, as for any other unseeded value. The reference's
-  handling of these values is being settled
-  ([agent-action-capsule#147](https://github.com/action-state-group/agent-action-capsule/pull/147));
-  this crate will follow it.
+
+A list or object in a string-typed field is no longer a difference. The
+reference now refuses it in check 1 with `field_not_string`
+([agent-action-capsule#147](https://github.com/action-state-group/agent-action-capsule/pull/147)
+and its follow-up for the `provenance_mode` and `references[].retention`
+members), and so does this crate, for the same fields in the same order.
 
 Also by design: at most 64 float and 64 unsafe-integer findings are
 reported (the reference lists every one), and a finding quotes at most 64

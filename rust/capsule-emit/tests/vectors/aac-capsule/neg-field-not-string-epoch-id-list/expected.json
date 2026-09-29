@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "07a3d3cff3d6ec5690a10d77037a80e717e54e8234d1c78264ed0e0162bdfaac",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "epoch_id is a JSON list, not a string -> field_not_string (check 1).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "field_not_string",
+      "detail": "epoch_id MUST be a string when present (\u00a75.1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

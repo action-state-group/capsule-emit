@@ -1,0 +1,21 @@
+{
+  "capsule_id_recomputed": "2e098cff54b4e49695c647c72e767f633b3ccc7cb45d70ba65e5886291351467",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "cross_party_rung": "unilateral_fallback",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "cross_party.correlator is a JSON list, not a string -> field_not_string (check 1); the derived cross_party_rung is unilateral_fallback.",
+  "findings": [
+    {
+      "check": 1,
+      "code": "field_not_string",
+      "detail": "cross_party.correlator MUST be a string when present (\u00a76 check 1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

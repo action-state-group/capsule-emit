@@ -1,5 +1,5 @@
 //! `structure::check_structure` against the reference verifier's frozen
-//! Class 1 vectors (agent-action-capsule v0.6.0, vendored under
+//! Class 1 vectors (agent-action-capsule, pinned in `tests/vectors/SOURCES.md`; vendored under
 //! `tests/vectors/aac-capsule/` and `tests/vectors/aac-provenance-mode/`,
 //! checksum-gated in CI): for every case, the same `ok`, and the same error
 //! and warning findings, by check and code, in the same order.
@@ -396,40 +396,108 @@ fn an_integer_past_u64_is_refused_as_a_float() {
         .any(|f| f.code == "unsafe_integer_in_digest_field"));
 }
 
-/// A list or object where the reference looks a value up in a closed set
-/// makes the reference fail with `verifier_internal_error`; here the enum
-/// checks refuse cleanly and the registry-only fields are not judged.
+/// A value of the wrong JSON type in a string-typed member fails check 1
+/// with `field_not_string`, as in the reference (agent-action-capsule#147 and
+/// the follow-up for the provenance_mode and references[].retention members).
+/// A well-typed unregistered value is still not judged.
 #[test]
-fn a_container_in_a_closed_set_field_is_refused_or_not_judged_never_a_crash() {
-    for (change, refused) in [
+fn a_non_string_in_a_string_field_fails_check_1() {
+    let retention = |member: &str, value: Value| {
+        let mut retention =
+            json!({"declarant": "ACME-CO", "retained_until": "2027-01-01T00:00:00Z"});
+        retention[member] = value;
+        let reference =
+            json!({"type": "x-artifact", "digest_alg": "SHA-256", "digest": "3".repeat(64)});
+        let mut second = reference.clone();
+        second["retention"] = retention;
+        json!({"references": [reference, second]})
+    };
+    let provenance = |member: &str, value: Value| {
+        let mut pm = json!({
+            "mode": "backfilled",
+            "source_ref": {"type": "t", "digest_alg": "SHA-256", "digest": "d"},
+            "source_asserted_at": "2026-01-01T00:00:00Z",
+            "import_batch": "b",
+            "imported_at": "2026-01-02T00:00:00Z",
+        });
+        pm[member] = value;
+        json!({"provenance_mode": pm})
+    };
+    let mut cases = vec![
         (
             json!({"disposition": {"approver": []}}),
-            Some("approver_invalid"),
+            "disposition.approver MUST be a string (§5.4)".to_string(),
         ),
         (
-            json!({"provenance_mode": {"mode": {}}}),
-            Some("provenance_mode_invalid"),
+            json!({"epoch_id": {}}),
+            "epoch_id MUST be a string when present (§5.1)".to_string(),
         ),
-        (json!({"disposition": {"verdict_class": []}}), None),
-        (json!({"effect": {"type": {}}}), None),
+    ];
+    for (block, member) in [
+        ("disposition", "decision"),
+        ("disposition", "verdict_class"),
+        ("effect", "status"),
+        ("effect", "type"),
+        ("effect", "irreversibility_class"),
+        ("effect", "effect_attestation"),
+        ("effect", "external_ref"),
+        ("chain", "relation"),
+        ("cross_party", "correlator"),
+        ("assurance", "effect_mode"),
+        ("assurance", "attestation_mode"),
+        ("assurance", "ledger_mode"),
+        ("assurance", "cross_party_rung"),
     ] {
+        for value in [json!([]), json!({}), json!(7), Value::Null] {
+            let mut members = serde_json::Map::new();
+            members.insert(member.into(), value);
+            cases.push((
+                json!({ block: members }),
+                format!("{block}.{member} MUST be a string when present (§6 check 1)"),
+            ));
+        }
+    }
+    for member in ["source_asserted_at", "import_batch", "imported_at"] {
+        cases.push((
+            provenance(member, json!(["x"])),
+            format!("provenance_mode.{member} MUST be a string when present (§6 check 1)"),
+        ));
+    }
+    for member in ["declarant", "retained_until", "not_retained_after"] {
+        cases.push((
+            retention(member, json!({"value": "x"})),
+            format!("references[1].retention.{member} MUST be a string when present (§5.5.5)"),
+        ));
+    }
+    for (change, detail) in cases {
         let mut capsule = record();
-        for (block, members) in change.as_object().unwrap() {
-            if capsule.get(block).is_none() {
-                capsule[block] = json!({});
-            }
-            for (k, v) in members.as_object().unwrap() {
-                capsule[block][k] = v.clone();
+        for (key, value) in change.as_object().unwrap() {
+            match (capsule.get(key), value) {
+                (Some(Value::Object(_)), Value::Object(members)) => {
+                    for (k, v) in members {
+                        capsule[key][k] = v.clone();
+                    }
+                }
+                _ => capsule[key] = value.clone(),
             }
         }
         let report = check_structure(&seal(capsule));
-        match refused {
-            Some(code) => assert!(
-                report.errors().any(|f| f.code == code),
-                "{change}: {:?}",
-                report.findings
-            ),
-            None => assert!(report.ok(), "{change}: {:?}", report.findings),
-        }
+        let typed: Vec<_> = report
+            .errors()
+            .filter(|f| f.code == "field_not_string")
+            .map(|f| (f.check, f.detail.as_str()))
+            .collect();
+        assert_eq!(
+            typed,
+            [(Some(1), detail.as_str())],
+            "{change}: {:?}",
+            report.findings
+        );
     }
+
+    // A well-typed unregistered value is informational in the reference, so
+    // not reported here; the record passes.
+    let mut capsule = record();
+    capsule["effect"]["type"] = json!("x-unregistered");
+    assert!(check_structure(&seal(capsule)).ok());
 }

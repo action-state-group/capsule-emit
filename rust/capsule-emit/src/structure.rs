@@ -1,14 +1,15 @@
 //! The Class 1 checks a capsule's own bytes must pass (§6), without a store.
 //!
 //! This is the Rust side of the reference verifier's gating checks
-//! (`agent_action_capsule.verify`, v0.6.0), in the reference's order, with
+//! (`agent_action_capsule.verify`, as pinned in `tests/vectors/SOURCES.md`), in the reference's order, with
 //! its finding codes:
 //!
 //! 1. **Structural**: the REQUIRED members and their types, `capsule_id`
 //!    spelling, `action_type`, the format-4 canonicalization declaration,
 //!    block types, no floats and no integers outside the IEEE-754 safe range
 //!    anywhere, the disposition's closed `approver` enum, `decision` and
-//!    `human_disposed`, and the shape of each `references[]` entry.
+//!    `human_disposed`, the type of every string-typed member
+//!    (`field_not_string`), and the shape of each `references[]` entry.
 //! 2. **Identity**: the `capsule_id` recomputes (only when the format-4
 //!    profile is declared correctly).
 //! 3. **Confirmed-effect binding**: a `confirmed` effect carries a
@@ -74,6 +75,37 @@ pub(crate) const NEVER_DISPATCH_VERDICT_CLASSES: [&str; 9] = [
 
 /// The closed `disposition.approver` enum (§5.4).
 pub(crate) const VALID_APPROVERS: [&str; 3] = ["human", "policy", "counterparty"];
+
+/// String-typed block members, in check-1 emission order (the reference's
+/// `_STRING_MEMBERS`). A value of any other JSON type (a number, a boolean,
+/// null, a list, an object) fails check 1 with `field_not_string`: the
+/// never-reject rule for unregistered values (§4, §12) covers well-typed
+/// strings only. The top-level `epoch_id` is checked the same way, just before
+/// these. `disposition.authority` is not here: §5.4 types it only as "an
+/// opaque reference", not as a string.
+pub(crate) const STRING_MEMBERS: [(&str, &str); 16] = [
+    ("disposition", "decision"),
+    ("disposition", "verdict_class"),
+    ("effect", "status"),
+    ("effect", "type"),
+    ("effect", "irreversibility_class"),
+    ("effect", "effect_attestation"),
+    ("effect", "external_ref"),
+    ("chain", "relation"),
+    ("cross_party", "correlator"),
+    ("assurance", "effect_mode"),
+    ("assurance", "attestation_mode"),
+    ("assurance", "ledger_mode"),
+    ("assurance", "cross_party_rung"),
+    ("provenance_mode", "source_asserted_at"),
+    ("provenance_mode", "import_batch"),
+    ("provenance_mode", "imported_at"),
+];
+
+/// String-typed members of a `references[]` entry's `retention` object
+/// (§5.5.5), checked in this order within each entry's findings.
+pub(crate) const RETENTION_STRING_MEMBERS: [&str; 3] =
+    ["declarant", "retained_until", "not_retained_after"];
 
 /// `provenance_mode.mode` and `time_rung` values (§5.3(bis)).
 pub(crate) const PROVENANCE_MODES: [&str; 2] = ["contemporaneous", "backfilled"];
@@ -270,14 +302,19 @@ pub fn check_structure(record: &Value) -> StructureReport {
                 "missing_required_field",
                 "disposition.approver is REQUIRED (§5.4)".into(),
             ),
-            Some(a) if a.as_str().is_some_and(|a| VALID_APPROVERS.contains(&a)) => {}
-            Some(a) => out.error(
+            Some(Value::String(a)) if VALID_APPROVERS.contains(&a.as_str()) => {}
+            Some(a @ Value::String(_)) => out.error(
                 1,
                 "approver_invalid",
                 format!(
                     "disposition.approver MUST be human|policy|counterparty (§5.4); got {}",
                     shown_value(a)
                 ),
+            ),
+            Some(_) => out.error(
+                1,
+                "field_not_string",
+                "disposition.approver MUST be a string (§5.4)".into(),
             ),
         }
         if !disposition.contains_key("decision") {
@@ -301,6 +338,25 @@ pub fn check_structure(record: &Value) -> StructureReport {
                 "field_not_bool",
                 "disposition.human_disposed is REQUIRED and boolean (§5.4)".into(),
             ),
+        }
+    }
+    if capsule.get("epoch_id").is_some_and(|v| !v.is_string()) {
+        out.error(
+            1,
+            "field_not_string",
+            "epoch_id MUST be a string when present (§5.1)".into(),
+        );
+    }
+    for (block, member) in STRING_MEMBERS {
+        if object(capsule, block)
+            .and_then(|b| b.get(member))
+            .is_some_and(|v| !v.is_string())
+        {
+            out.error(
+                1,
+                "field_not_string",
+                format!("{block}.{member} MUST be a string when present (§6 check 1)"),
+            );
         }
     }
     out.extend(references.iter().filter(|f| f.check == Some(1)).cloned());
@@ -654,6 +710,17 @@ fn reference_findings(
                 "reference_malformed",
                 format!("{path}.citation_purpose MUST be a non-empty string (§5.5.5)"),
             );
+        }
+        if let Some(retention) = reference.get("retention").and_then(Value::as_object) {
+            for field in RETENTION_STRING_MEMBERS {
+                if retention.get(field).is_some_and(|v| !v.is_string()) {
+                    out.error(
+                        1,
+                        "field_not_string",
+                        format!("{path}.retention.{field} MUST be a string when present (§5.5.5)"),
+                    );
+                }
+            }
         }
         if let Some(coordinates) = reference.get("log_coordinates") {
             let Some(coordinates) = coordinates.as_object() else {
