@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "102c34b8400537e6c50a67e1278440572c6ea2324fb9223df8523a93c26908cf",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "references[1].retention is null: present but not an object, so its members are not checked -> field_not_object (check 1, \u00a75.5.5).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "field_not_object",
+      "detail": "references[1].retention MUST be a JSON object when present (\u00a75.5.5)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

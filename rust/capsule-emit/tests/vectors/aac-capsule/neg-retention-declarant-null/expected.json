@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "8eee1da8a10e60787ef079f3bee0dc41eabfe42fabc472524d578c4619861bed",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "references[1].retention has a null declarant, which counts as missing (as for disposition.approver) -> missing_required_field (check 1, \u00a75.5.5).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "missing_required_field",
+      "detail": "references[1].retention.declarant is REQUIRED (\u00a75.5.5)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

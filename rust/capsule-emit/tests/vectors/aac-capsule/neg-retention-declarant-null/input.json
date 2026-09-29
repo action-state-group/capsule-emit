@@ -1,0 +1,38 @@
+{
+  "action_id": "typed-retention-declarant-null",
+  "action_type": "decide",
+  "assurance": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "canonicalization_id": "jcs",
+  "capsule_id": "8eee1da8a10e60787ef079f3bee0dc41eabfe42fabc472524d578c4619861bed",
+  "developer": "agent@v1",
+  "disposition": {
+    "approver": "policy",
+    "decision": "accept",
+    "human_disposed": false,
+    "verdict_class": "executed"
+  },
+  "format_version": "4",
+  "operator": "ACME-CO",
+  "references": [
+    {
+      "digest": "4444444444444444444444444444444444444444444444444444444444444444",
+      "digest_alg": "SHA-256",
+      "type": "agent-action-capsule"
+    },
+    {
+      "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+      "digest_alg": "SHA-256",
+      "retention": {
+        "declarant": null,
+        "retained_until": "2027-01-01T00:00:00Z"
+      },
+      "type": "agent-action-capsule"
+    }
+  ],
+  "spec_version": "draft-mih-scitt-agent-action-capsule-05",
+  "timestamp": "2026-09-26T00:00:00Z"
+}

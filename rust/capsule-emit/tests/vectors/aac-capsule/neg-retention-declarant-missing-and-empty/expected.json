@@ -1,0 +1,26 @@
+{
+  "capsule_id_recomputed": "403993775bf9e132865187f4ee710140738ffb0e625c729c8ac8597b47aea495",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "references[1].retention is an empty object: no declarant and no bound, reported in that order -> missing_required_field, retention_empty (check 1, \u00a75.5.5).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "missing_required_field",
+      "detail": "references[1].retention.declarant is REQUIRED (\u00a75.5.5)",
+      "severity": "error"
+    },
+    {
+      "check": 1,
+      "code": "retention_empty",
+      "detail": "references[1].retention MUST carry retained_until or not_retained_after (\u00a75.5.5)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}
