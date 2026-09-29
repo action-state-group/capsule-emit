@@ -635,8 +635,6 @@ fn shown_value(value: &Value) -> String {
     clip(&value.to_string())
 }
 
-/// `references[]` (§5.5.5), over the raw bytes, without resolving anything:
-/// the findings for checks 1 and 6.
 /// Check-1 findings for a `references[]` entry's `retention` (§5.5.5), in
 /// the reference's order: the object itself (`field_not_object`, and nothing
 /// else), its REQUIRED `declarant` (absent or null is `missing_required_field`,
@@ -675,6 +673,8 @@ fn retention_findings(raw: &Value, path: &str, out: &mut Findings) {
     }
 }
 
+/// `references[]` (§5.5.5), over the raw bytes, without resolving anything:
+/// the findings for checks 1 and 6.
 fn reference_findings(
     capsule: &Map<String, Value>,
     chain: Option<&Map<String, Value>>,
