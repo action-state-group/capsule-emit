@@ -1,8 +1,8 @@
 //! The Class 1 checks a capsule's own bytes must pass (§6), without a store.
 //!
 //! This is the Rust side of the reference verifier's gating checks
-//! (`agent_action_capsule.verify`, as pinned in `tests/vectors/SOURCES.md`), in the reference's order, with
-//! its finding codes:
+//! (`agent_action_capsule.verify`, as pinned in `tests/vectors/SOURCES.md`),
+//! in the reference's order, with its finding codes:
 //!
 //! 1. **Structural**: the REQUIRED members and their types, `capsule_id`
 //!    spelling, `action_type`, the format-4 canonicalization declaration,

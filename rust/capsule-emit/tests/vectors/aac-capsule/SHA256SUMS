@@ -55,6 +55,12 @@ b2d781eb9ac681b68b9819fccbeb0b92d10a879174260d2a80c906a903e7cc7a  neg-field-not-
 0d8c513c3fd610881144d84a46ce70edcc3196d124978d506a18501399f5c3b0  neg-field-not-string-epoch-id-list/input.json
 5feb5dce3993b31dcc5278c069dc4fcdfc03eb7819d8a70ef2f29010736ccd55  neg-field-not-string-external-ref-object/expected.json
 11d6f9908cff692587a2370ae747164e90e3b279b8e1200ffebe28c484f40f0e  neg-field-not-string-external-ref-object/input.json
+1a3b23a90cab6af2b491483327d71b22781bd4e2e4716b2e7c6e19845a2de35b  neg-field-not-string-retention-declarant-list/expected.json
+a8be8d5175f3e9d8d02366f45ce6219f9f553e38bbda633e19fa51383074074e  neg-field-not-string-retention-declarant-list/input.json
+c1908bcd8a14adb9d57c5fcc04598a5aa5ae34203ee34ab52bf83f874b9b163c  neg-field-not-string-retention-not-retained-after-list/expected.json
+cd30c89734808fa5c34f3b9af729e3d9b3a3e00c2ddcf7d3071efd4871636f96  neg-field-not-string-retention-not-retained-after-list/input.json
+e2484b4c66e78230c24e15fec82887e07d94f81e7aeaabe22a066be2de7354f1  neg-field-not-string-retention-retained-until-object/expected.json
+1b159a8450654e6f6c3678c3ede3e2f4c4d87609b37ee8cf7628ef1edcf24da4  neg-field-not-string-retention-retained-until-object/input.json
 dcfbf6a0845488c134ab3498efc647fca57625094ca86918abe4e6611287ba91  neg-float-in-digest-field/expected.json
 4fa0855fee7575cc13a32049c328587149d20ff30dccfb5f794c1a53bdb7ae99  neg-float-in-digest-field/input.json
 b5c100493629d9f641177a0a89ed806521a8255ed9efb5937ccbc1a3dc6ae699  neg-format-version-unknown/expected.json
@@ -205,4 +211,4 @@ e4a835943ac9e4a9854e4cf012a0a5e88ba56211eb6b0341e121429be0612b5c  spec-derived-u
 2eb3808333cbe13bdc9bf3d30906503ed4cbcf809119c7c6fb74c1aa6f148bac  spec-derived-v4-chain/input.json
 160e269a5414e76ef430a60b5d295a7f0d5bbd0c9196f0eeec44fde866083b0c  spec-derived-v4-null-empty-members/expected.json
 b5bc9b36addcc73fa327753f219c256eb2d8b1f30c6d1374100149e9f754e562  spec-derived-v4-null-empty-members/input.json
-c66269f37c67792cd3441c5032fe0cad33777bf9b40a7554938d56634b5a1bcd  vectors.json
+8edf064b98750858dad52ea4ff60207341d6b90ca6dfc1c398b71d17a33a63e7  vectors.json

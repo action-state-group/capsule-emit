@@ -1,6 +1,6 @@
 {
   "spec": "draft-mih-scitt-agent-action-capsule-05",
-  "count": 24,
+  "count": 27,
   "cases": [
     {
       "name": "pos-provenance-mode-backfilled",
@@ -121,6 +121,24 @@
       "name": "pos-chain-duplicates-parent-backfilled-v05",
       "kind": "store",
       "description": "-05 twin of pos-chain-duplicates-parent-backfilled (only spec_version differs): a 'duplicates'-linked pair whose parent is ITSELF provenance_mode.mode='backfilled' (not the contemporaneous record 'duplicates' is defined to cite): the store-level pass reports BOTH duplicate_collapsed AND duplicate_parent_not_contemporaneous (both info, check 9) on the child; both members remain ok."
+    },
+    {
+      "name": "neg-field-not-string-provenance-source-asserted-at-object",
+      "kind": "negative",
+      "description": "provenance_mode.source_asserted_at is a JSON object, not a string, on an otherwise well-formed backfilled record -> field_not_string (check 1).",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-field-not-string-provenance-import-batch-list",
+      "kind": "negative",
+      "description": "provenance_mode.import_batch is a JSON list, not a string, on an otherwise well-formed backfilled record -> field_not_string (check 1).",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-field-not-string-provenance-imported-at-list",
+      "kind": "negative",
+      "description": "provenance_mode.imported_at is a JSON list, not a string, on an otherwise well-formed backfilled record -> field_not_string (check 1).",
+      "provenance": "reference-derived"
     }
   ]
 }

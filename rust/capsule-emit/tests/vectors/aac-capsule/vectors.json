@@ -3,7 +3,7 @@
     "4"
   ],
   "spec": "draft-mih-scitt-agent-action-capsule-05",
-  "count": 103,
+  "count": 106,
   "cases": [
     {
       "name": "pos-v4-jcs-chain-committed",
@@ -593,6 +593,24 @@
       "name": "neg-field-not-string-correlator-list",
       "kind": "negative",
       "description": "cross_party.correlator is a JSON list, not a string -> field_not_string (check 1); the derived cross_party_rung is unilateral_fallback.",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-field-not-string-retention-declarant-list",
+      "kind": "negative",
+      "description": "references[1].retention.declarant is a JSON list, not a string -> field_not_string (check 1).",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-field-not-string-retention-retained-until-object",
+      "kind": "negative",
+      "description": "references[1].retention.retained_until is a JSON object, not a string -> field_not_string (check 1).",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-field-not-string-retention-not-retained-after-list",
+      "kind": "negative",
+      "description": "references[1].retention.not_retained_after is a JSON list, not a string -> field_not_string (check 1).",
       "provenance": "reference-derived"
     }
   ],
