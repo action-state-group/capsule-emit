@@ -59,9 +59,10 @@ three differences are known, each pinned by a test in
   version the vectors are pinned to) fail with `verifier_internal_error`,
   which refuses the record. Here the closed enums refuse it cleanly
   (`approver_invalid`, `provenance_mode_invalid`) and the registry-only
-  fields are not judged, as for any other unseeded value. The reference fix
-  ([agent-action-capsule#147](https://github.com/action-state-group/agent-action-capsule/pull/147))
-  gives these same answers.
+  fields are not judged, as for any other unseeded value. The reference's
+  handling of these values is being settled
+  ([agent-action-capsule#147](https://github.com/action-state-group/agent-action-capsule/pull/147));
+  this crate will follow it.
 
 Also by design: at most 64 float and 64 unsafe-integer findings are
 reported (the reference lists every one), and a finding quotes at most 64
