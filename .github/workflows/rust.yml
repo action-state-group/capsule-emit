@@ -54,8 +54,9 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
 
       - name: Vendored vectors match their checksums (before any test reads them)
-        working-directory: rust/capsule-emit/tests/vectors
-        run: shasum -a 256 -c SHA256SUMS
+        run: |
+          (cd capsule-emit/tests/vectors && shasum -a 256 -c SHA256SUMS)
+          (cd capsule-emit-evidence-request/tests/vectors/evidence-request && shasum -a 256 -c SHA256SUMS)
 
       - name: Format
         run: cargo fmt --all --check
@@ -65,7 +66,6 @@ jobs:
 
       - name: Tests (includes the pinned conformance vectors and the byte-parity fixture)
         run: cargo test --locked
-
 
   # The Rust output verified by the Python reference implementations.
   conformance:
@@ -123,12 +123,18 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - name: Package contents
-        run: cargo package --list -p capsule-emit
+        run: |
+          cargo package --list -p capsule-emit
+          cargo package --list -p capsule-emit-evidence-request
+
+      # capsule-emit-evidence-request depends only on published crates.
+      - name: Publish dry run, capsule-emit-evidence-request (no upload)
+        run: cargo publish --dry-run -p capsule-emit-evidence-request
 
       # `cargo publish --dry-run` resolves dependencies from the crates.io
       # index only (a workspace [patch] does not count), so it cannot pass
       # until checkpointed-local-log 0.2.0 and evidencebook 0.0.1 are
       # published. Set DEPS_ON_CRATES_IO to "true" when they are.
-      - name: Publish dry run (no upload)
+      - name: Publish dry run, capsule-emit (no upload)
         if: env.DEPS_ON_CRATES_IO == 'true'
         run: cargo publish --dry-run -p capsule-emit
