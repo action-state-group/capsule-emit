@@ -478,22 +478,21 @@ enum Level<'a> {
 /// The path to the child being visited (`a.b[2].c`; `<root>` for the root),
 /// at most [`MAX_DETAIL_CHARS`] characters.
 fn current_path(levels: &[Level<'_>]) -> String {
+    // Written at most one character past the limit, so a key of any length
+    // costs only what is kept; `clip` then marks the cut.
+    let budget = MAX_DETAIL_CHARS + 1;
     let mut path = String::new();
     for level in levels {
         match level {
-            Level::Object(_, Some(key)) if path.is_empty() => path.push_str(key),
+            Level::Object(_, Some(key)) if path.is_empty() => push_limited(&mut path, key, budget),
             Level::Object(_, Some(key)) => {
-                path.push('.');
-                path.push_str(key);
+                push_limited(&mut path, ".", budget);
+                push_limited(&mut path, key, budget);
             }
-            Level::Array(_, Some(index)) => {
-                path.push('[');
-                path.push_str(&index.to_string());
-                path.push(']');
-            }
+            Level::Array(_, Some(index)) => push_limited(&mut path, &format!("[{index}]"), budget),
             _ => {}
         }
-        if path.chars().count() > MAX_DETAIL_CHARS {
+        if path.chars().count() >= budget {
             break;
         }
     }
@@ -501,6 +500,12 @@ fn current_path(levels: &[Level<'_>]) -> String {
         path.push_str("<root>");
     }
     clip(&path)
+}
+
+/// Append as much of `text` as keeps `path` within `budget` characters.
+fn push_limited(path: &mut String, text: &str, budget: usize) {
+    let room = budget.saturating_sub(path.chars().count());
+    path.extend(text.chars().take(room));
 }
 
 /// The paths of every float and of every integer outside the safe range, in
