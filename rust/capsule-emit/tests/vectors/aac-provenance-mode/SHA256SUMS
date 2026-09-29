@@ -1,3 +1,9 @@
+2ec9bbe59caa5ce0cb5a1380aa74125389c487e530bba90c2620f00db91dd8a3  neg-field-not-string-provenance-import-batch-list/expected.json
+731fcb8540064b3797010788239c5a9f71ee0b1474da7cecbf5ce1182d5a9f30  neg-field-not-string-provenance-import-batch-list/input.json
+fc2bfd773533f7e63718526219a095e971aff2227a57ac6a7e1608d715436069  neg-field-not-string-provenance-imported-at-list/expected.json
+8a5453d03678f13a62db56fa10bb749c225fff82624a526c55d3ab065747ef98  neg-field-not-string-provenance-imported-at-list/input.json
+f676122f27a902072903fe19cc169df6f801166248a2baeb00ac72ec873b7e48  neg-field-not-string-provenance-source-asserted-at-object/expected.json
+8415710e11844d0b99489fbdf54e5cec2d4d0fb72e0e2c99d7787978f9874e22  neg-field-not-string-provenance-source-asserted-at-object/input.json
 f9b4271231f85e2de03dc2457cabf0d3bee25f1976242656f046c6ad630580c5  neg-provenance-mode-backfilled-missing-fields/expected.json
 efa9e39d76c007631f1676d11d3461f9f309f693f3ae1b8a9de929a31eb142d0  neg-provenance-mode-backfilled-missing-fields/input.json
 972412580428babb78970a898b3bbe68f5f8149a132693286db0a83fcdfd95ad  neg-provenance-mode-backfilled-missing-fields-v05/expected.json

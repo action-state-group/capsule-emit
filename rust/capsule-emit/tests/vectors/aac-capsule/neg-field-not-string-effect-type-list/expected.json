@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "5c906544fe92b555caaacfb7cc25edea18fa64e7e6d5c78c074c9ad5a4d84637",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "confirmed",
+    "ledger_mode": "standalone"
+  },
+  "description": "effect.type is a JSON list, not a string: a type error, not an unregistered value -> field_not_string (check 1).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "field_not_string",
+      "detail": "effect.type MUST be a string when present (\u00a76 check 1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

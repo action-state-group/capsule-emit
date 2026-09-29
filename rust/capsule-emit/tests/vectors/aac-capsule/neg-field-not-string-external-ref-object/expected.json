@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "134ed7398183a0751d6749f3760f8f8ffd00fa32e5943dc5b6280fa8733132d2",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "confirmed",
+    "ledger_mode": "standalone"
+  },
+  "description": "effect.external_ref is a JSON object, not a string -> field_not_string (check 1).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "field_not_string",
+      "detail": "effect.external_ref MUST be a string when present (\u00a76 check 1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

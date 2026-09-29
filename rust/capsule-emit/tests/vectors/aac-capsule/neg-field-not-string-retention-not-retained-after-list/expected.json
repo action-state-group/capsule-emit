@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "aba1776b6b79fefaad1f38a1095e3f649917c4e425c5ce000488361312e1df95",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "references[1].retention.not_retained_after is a JSON list, not a string -> field_not_string (check 1).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "field_not_string",
+      "detail": "references[1].retention.not_retained_after MUST be a string when present (\u00a75.5.5)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

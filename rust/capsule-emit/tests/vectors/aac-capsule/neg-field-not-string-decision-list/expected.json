@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "9f4e4001974255d73efbcc283890596026360e078eb43368e5c2dd67f5cb24d6",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "disposition.decision is a JSON list, not a string: a type error, not an unregistered value -> field_not_string (check 1).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "field_not_string",
+      "detail": "disposition.decision MUST be a string when present (\u00a76 check 1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

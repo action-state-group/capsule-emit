@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "7bf0df993ebf058cdc5408bc2694aa5d3120cbb4a240a6a2b80d54ebb945c473",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "references[1].retention.retained_until is a JSON object, not a string -> field_not_string (check 1).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "field_not_string",
+      "detail": "references[1].retention.retained_until MUST be a string when present (\u00a75.5.5)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

@@ -1,0 +1,22 @@
+{
+  "capsule_id_recomputed": "4f480d0130bc7b2327ef8ec9fa313cd89916a1d1631a354b2ddd81a83711c2d7",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "backfilled",
+    "provenance_time_rung": "self_attested"
+  },
+  "description": "provenance_mode.import_batch is a JSON list, not a string, on an otherwise well-formed backfilled record -> field_not_string (check 1).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "field_not_string",
+      "detail": "provenance_mode.import_batch MUST be a string when present (\u00a76 check 1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

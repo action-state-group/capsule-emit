@@ -1,0 +1,22 @@
+{
+  "capsule_id_recomputed": "2c5e3c8ded5d1e4af4252052aeceaa0417dce943ad84ff7feeb151d968901b78",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone",
+    "provenance_mode": "backfilled",
+    "provenance_time_rung": "self_attested"
+  },
+  "description": "provenance_mode.imported_at is a JSON list, not a string, on an otherwise well-formed backfilled record -> field_not_string (check 1).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "field_not_string",
+      "detail": "provenance_mode.imported_at MUST be a string when present (\u00a76 check 1)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}
