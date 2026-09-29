@@ -25,6 +25,7 @@ defaults:
 env:
   RUST_TOOLCHAIN: "1.97.1"
   CARGO_TERM_COLOR: always
+  DEPS_ON_CRATES_IO: "false"
 
 jobs:
   test:
@@ -123,5 +124,10 @@ jobs:
       - name: Package contents
         run: cargo package --list -p capsule-emit
 
+      # `cargo publish --dry-run` resolves dependencies from the crates.io
+      # index only (a workspace [patch] does not count), so it cannot pass
+      # until checkpointed-local-log 0.2.0 and evidencebook 0.0.1 are
+      # published. Set DEPS_ON_CRATES_IO to "true" when they are.
       - name: Publish dry run (no upload)
+        if: env.DEPS_ON_CRATES_IO == 'true'
         run: cargo publish --dry-run -p capsule-emit
