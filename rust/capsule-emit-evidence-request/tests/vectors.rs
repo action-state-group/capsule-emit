@@ -6,7 +6,7 @@
 use capsule_emit_evidence_request::digest::{identifies_request, request_digest};
 use capsule_emit_evidence_request::invariance::{compare, Observation};
 use capsule_emit_evidence_request::outcome::{record, Received, Window};
-use capsule_emit_evidence_request::refusal::{check, check_cbor, sign};
+use capsule_emit_evidence_request::refusal::{check, check_cbor, sign, verify_for, VerifyError};
 use capsule_emit_evidence_request::registry::{Reason, SubjectForm, SUBPROTOCOL};
 use capsule_emit_evidence_request::request::{parse_cbor, parse_json, Derivation};
 use capsule_emit_evidence_request::resolve::{resolve, Anchor, Resolution, Responder};
@@ -22,7 +22,10 @@ fn dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/evidence-request")
 }
 
+/// Every corpus goes through here, and this checks every pinned file
+/// against the source's `SHA256SUMS` before returning anything.
 fn load(name: &str) -> Value {
+    verify_pinned_checksums();
     let bytes = std::fs::read(dir().join(name)).unwrap_or_else(|e| panic!("read {name}: {e}"));
     serde_json::from_slice(&bytes).unwrap_or_else(|e| panic!("parse {name}: {e}"))
 }
@@ -45,6 +48,10 @@ fn s<'a>(v: &'a Value, key: &str) -> &'a str {
 
 #[test]
 fn pinned_files_match_the_source_checksums() {
+    verify_pinned_checksums();
+}
+
+fn verify_pinned_checksums() {
     let sums = std::fs::read_to_string(dir().join("SHA256SUMS")).expect("SHA256SUMS");
     let mut checked = 0;
     for line in sums.lines().filter(|l| !l.trim().is_empty()) {
@@ -299,9 +306,43 @@ fn refusal_corpus() {
             "{id}: conformant"
         );
 
+        let r = &case["refusal"];
+        // Authentication: a conforming refusal is accepted only for the key
+        // and request it names, and never for the other fixed key.
+        if case["refusal"].is_object() {
+            let other = &corpus["keys"]["other"];
+            let other_key: [u8; 32] = hex::decode(s(other, "public_key_hex"))
+                .unwrap()
+                .try_into()
+                .unwrap();
+            let other_key = ed25519_dalek::VerifyingKey::from_bytes(&other_key).unwrap();
+            if expect["conformant"] == Value::Bool(true) && r["key_id"] == primary["public_key_hex"]
+            {
+                let digest = s(r, "request_digest");
+                assert!(
+                    verify_for(r, &key.verifying_key(), digest).is_ok(),
+                    "{id}: verify_for"
+                );
+                assert_eq!(
+                    verify_for(r, &other_key, digest),
+                    Err(VerifyError::WrongKey),
+                    "{id}"
+                );
+                assert_eq!(
+                    verify_for(r, &key.verifying_key(), &"0".repeat(64)),
+                    Err(VerifyError::WrongRequest),
+                    "{id}"
+                );
+            } else if expect["conformant"] == Value::Bool(false) {
+                assert!(
+                    verify_for(r, &key.verifying_key(), s(r, "request_digest")).is_err(),
+                    "{id}: accepted a non-conforming refusal"
+                );
+            }
+        }
+
         // Every conforming refusal the primary key signed is reproduced byte
         // for byte by `sign` (Ed25519 is deterministic).
-        let r = &case["refusal"];
         if expect["conformant"] == Value::Bool(true) && r["key_id"] == primary["public_key_hex"] {
             let ours = sign(
                 s(r, "request_digest"),
