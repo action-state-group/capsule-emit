@@ -1,0 +1,134 @@
+# SPDX-License-Identifier: Apache-2.0
+# The Rust crates under rust/: format, lint, tests, the Python-reference
+# conformance checks, and the crates.io package check (never a real publish).
+#
+# Actions are pinned to full commit SHAs (tag in the trailing comment); the
+# token is read-only.
+name: rust
+
+on:
+  push:
+    branches: [main]
+    paths: ["rust/**", ".github/workflows/rust.yml"]
+  pull_request:
+    paths: ["rust/**", ".github/workflows/rust.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: rust
+
+env:
+  RUST_TOOLCHAIN: "1.97.1"
+  CARGO_TERM_COLOR: always
+  DEPS_ON_CRATES_IO: "false"
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Vendored vectors match their checksums (before any test reads them)
+        working-directory: rust/capsule-emit/tests/vectors
+        run: shasum -a 256 -c SHA256SUMS
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Tests (includes the pinned conformance vectors and the byte-parity fixture)
+        run: cargo test --locked
+
+
+  # The Rust output verified by the Python reference implementations.
+  conformance:
+    name: conformance (Python reference)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-conformance-${{ hashFiles('rust/Cargo.lock') }}
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the Python reference (this repository's package)
+        working-directory: .
+        run: |
+          python -m venv "$RUNNER_TEMP/ref"
+          "$RUNNER_TEMP/ref/bin/pip" install .
+          echo "AAC_PYTHON=$RUNNER_TEMP/ref/bin/python" >> "$GITHUB_ENV"
+
+      - name: Rust output checked by the reference (fails if a test skipped itself)
+        run: |
+          scripts="$PWD/capsule-emit/tests/scripts"
+          run() { cargo test --locked -p capsule-emit --test "$1" -- --ignored --nocapture 2>&1 | tee -a "$RUNNER_TEMP/conformance.log"; }
+          AAC_VERIFY_LEDGER_SCRIPT="$scripts/verify_rust_ledger.py" run chain_ledger_conformance
+          AAC_CHECKPOINT_VERIFY_SCRIPT="$scripts/checkpoint_invariance_check.py" run checkpoint_invariance
+          if grep -i "skipping" "$RUNNER_TEMP/conformance.log"; then
+            echo "a conformance test skipped itself" >&2
+            exit 1
+          fi
+
+  package:
+    name: crates.io package check (dry run)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Package contents
+        run: cargo package --list -p capsule-emit
+
+      # `cargo publish --dry-run` resolves dependencies from the crates.io
+      # index only (a workspace [patch] does not count), so it cannot pass
+      # until checkpointed-local-log 0.2.0 and evidencebook 0.0.1 are
+      # published. Set DEPS_ON_CRATES_IO to "true" when they are.
+      - name: Publish dry run (no upload)
+        if: env.DEPS_ON_CRATES_IO == 'true'
+        run: cargo publish --dry-run -p capsule-emit
