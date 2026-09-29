@@ -30,18 +30,25 @@
 //! unverifiable overclaims, the store-level note) do not gate anything and
 //! are not reported.
 //!
-//! **Bounded work on untrusted input.** The walks for floats and unsafe
-//! integers use an explicit stack, so nesting depth cannot overflow the call
-//! stack, and they stop after [`MAX_PATH_FINDINGS`] findings of each kind
-//! (the verdict is decided by the first one). Everything else is linear in
-//! the input. Nothing here panics.
+//! **Bounded work on untrusted input.** The walk for floats and unsafe
+//! integers holds one iterator per open array or object, so its memory grows
+//! with nesting depth and never with the number of siblings; it writes a path
+//! only for a number that fails, keeps at most [`MAX_PATH_FINDINGS`] of each
+//! kind (the verdict is decided by the first one), and no finding quotes more
+//! than [`MAX_DETAIL_CHARS`] characters of the capsule. Everything else is
+//! linear in the input, and nothing here panics.
+//!
+//! **Depth.** The walk itself is not recursive, but the identity check's
+//! canonicalization (and dropping a `serde_json::Value`) is. Pass values
+//! parsed by `serde_json::from_slice`/`from_str` with their default nesting
+//! limit (128), as every caller in this crate does.
 
 use serde_json::{Map, Value};
 
 use crate::jcs::{compute_capsule_id, JcsError, MAX_SAFE_INTEGER};
 
 /// The REQUIRED top-level members (§5.1), each a string.
-pub const REQUIRED_FIELDS: [&str; 8] = [
+pub(crate) const REQUIRED_FIELDS: [&str; 8] = [
     "spec_version",
     "format_version",
     "capsule_id",
@@ -53,7 +60,7 @@ pub const REQUIRED_FIELDS: [&str; 8] = [
 ];
 
 /// `verdict_class` values that never dispatch an effect (§5.4.2).
-pub const NEVER_DISPATCH_VERDICT_CLASSES: [&str; 9] = [
+pub(crate) const NEVER_DISPATCH_VERDICT_CLASSES: [&str; 9] = [
     "blocked",
     "hitl_dispatched",
     "denied",
@@ -66,17 +73,22 @@ pub const NEVER_DISPATCH_VERDICT_CLASSES: [&str; 9] = [
 ];
 
 /// The closed `disposition.approver` enum (§5.4).
-pub const VALID_APPROVERS: [&str; 3] = ["human", "policy", "counterparty"];
+pub(crate) const VALID_APPROVERS: [&str; 3] = ["human", "policy", "counterparty"];
 
 /// `provenance_mode.mode` and `time_rung` values (§5.3(bis)).
-pub const PROVENANCE_MODES: [&str; 2] = ["contemporaneous", "backfilled"];
-pub const TIME_RUNGS: [&str; 2] = ["self_attested", "witnessed"];
+pub(crate) const PROVENANCE_MODES: [&str; 2] = ["contemporaneous", "backfilled"];
+pub(crate) const TIME_RUNGS: [&str; 2] = ["self_attested", "witnessed"];
 
 /// At most this many float (and, separately, unsafe-integer) findings are
 /// reported; one is enough to fail the record.
 pub const MAX_PATH_FINDINGS: usize = 64;
 
+/// A finding's detail quotes at most this many characters of any value (or
+/// path) taken from the capsule.
+pub const MAX_DETAIL_CHARS: usize = 64;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Severity {
     /// Fails the record.
     Error,
@@ -85,17 +97,21 @@ pub enum Severity {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Finding {
     /// The §6 check the finding belongs to, or `None` for the defensive
     /// warning, which is not one of the enumerated checks.
     pub check: Option<u8>,
-    /// The reference verifier's stable code for it.
+    /// The reference verifier's stable code for it (`"approver_invalid"`,
+    /// …): the same strings its conformance vectors use, so a caller can
+    /// compare them directly. An open set: a later check adds codes.
     pub code: &'static str,
     pub severity: Severity,
     pub detail: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct StructureReport {
     pub findings: Vec<Finding>,
 }
@@ -185,7 +201,10 @@ pub fn check_structure(record: &Value) -> StructureReport {
         Some(other) => out.error(
             1,
             "unsupported_format_version",
-            format!("format_version {other:?} is not supported; expected \"4\" (§5.1)"),
+            format!(
+                "format_version {} is not supported; expected \"4\" (§5.1)",
+                shown_value(&Value::String(other.to_string()))
+            ),
         ),
         None => {}
     }
@@ -225,14 +244,15 @@ pub fn check_structure(record: &Value) -> StructureReport {
             "constraints MUST be an array when present (§8.1)".into(),
         );
     }
-    for path in number_paths(record, |n| !n.is_i64() && !n.is_u64()) {
+    let (float_paths, unsafe_paths) = number_paths(record);
+    for path in float_paths {
         out.error(
             1,
             "float_in_digest_field",
             format!("floating-point value at {path}; §5.1 forbids it"),
         );
     }
-    for path in number_paths(record, unsafe_integer) {
+    for path in unsafe_paths {
         out.error(
             1,
             "unsafe_integer_in_digest_field",
@@ -254,7 +274,10 @@ pub fn check_structure(record: &Value) -> StructureReport {
             Some(a) => out.error(
                 1,
                 "approver_invalid",
-                format!("disposition.approver MUST be human|policy|counterparty (§5.4); got {a}"),
+                format!(
+                    "disposition.approver MUST be human|policy|counterparty (§5.4); got {}",
+                    shown_value(a)
+                ),
             ),
         }
         if !disposition.contains_key("decision") {
@@ -401,7 +424,7 @@ pub fn check_structure(record: &Value) -> StructureReport {
 }
 
 /// `effect_mode` as the effect supports it (§5.2).
-pub fn derive_effect_mode(effect: Option<&Map<String, Value>>) -> &'static str {
+pub(crate) fn derive_effect_mode(effect: Option<&Map<String, Value>>) -> &'static str {
     let Some(effect) = effect else {
         return "not_applicable";
     };
@@ -442,43 +465,113 @@ fn unsafe_integer(n: &serde_json::Number) -> bool {
     }
 }
 
-/// The paths (`a.b[2].c`, or `<root>`) of numbers matching `hit`, in the
-/// reference's depth-first order, at most [`MAX_PATH_FINDINGS`] of them.
-fn number_paths(root: &Value, hit: impl Fn(&serde_json::Number) -> bool) -> Vec<String> {
-    let mut found = Vec::new();
-    // Children are pushed in reverse so they come off the stack in order.
-    let mut stack: Vec<(String, &Value)> = vec![(String::new(), root)];
-    while let Some((path, value)) = stack.pop() {
-        match value {
-            Value::Number(n) if hit(n) => {
-                found.push(if path.is_empty() {
-                    "<root>".to_string()
-                } else {
-                    path
-                });
-                if found.len() == MAX_PATH_FINDINGS {
-                    break;
-                }
+/// Where the walk stands in one open array or object: its remaining
+/// children, and the key or index of the child being visited.
+enum Level<'a> {
+    Object(serde_json::map::Iter<'a>, Option<&'a str>),
+    Array(
+        std::iter::Enumerate<std::slice::Iter<'a, Value>>,
+        Option<usize>,
+    ),
+}
+
+/// The path to the child being visited (`a.b[2].c`; `<root>` for the root),
+/// at most [`MAX_DETAIL_CHARS`] characters.
+fn current_path(levels: &[Level<'_>]) -> String {
+    let mut path = String::new();
+    for level in levels {
+        match level {
+            Level::Object(_, Some(key)) if path.is_empty() => path.push_str(key),
+            Level::Object(_, Some(key)) => {
+                path.push('.');
+                path.push_str(key);
             }
-            Value::Object(map) => {
-                for (k, v) in map.iter().rev() {
-                    let child = if path.is_empty() {
-                        k.clone()
-                    } else {
-                        format!("{path}.{k}")
-                    };
-                    stack.push((child, v));
-                }
-            }
-            Value::Array(items) => {
-                for (i, v) in items.iter().enumerate().rev() {
-                    stack.push((format!("{path}[{i}]"), v));
-                }
+            Level::Array(_, Some(index)) => {
+                path.push('[');
+                path.push_str(&index.to_string());
+                path.push(']');
             }
             _ => {}
         }
+        if path.chars().count() > MAX_DETAIL_CHARS {
+            break;
+        }
     }
-    found
+    if path.is_empty() {
+        path.push_str("<root>");
+    }
+    clip(&path)
+}
+
+/// The paths of every float and of every integer outside the safe range, in
+/// the reference's depth-first order, at most [`MAX_PATH_FINDINGS`] of each.
+///
+/// One pass, holding one iterator per open array or object: memory grows
+/// with nesting depth, never with how many siblings there are, and a path is
+/// written only for a number that fails.
+fn number_paths(root: &Value) -> (Vec<String>, Vec<String>) {
+    fn judge(
+        n: &serde_json::Number,
+        levels: &[Level<'_>],
+        floats: &mut Vec<String>,
+        unsafe_ints: &mut Vec<String>,
+    ) {
+        if !n.is_i64() && !n.is_u64() {
+            if floats.len() < MAX_PATH_FINDINGS {
+                floats.push(current_path(levels));
+            }
+        } else if unsafe_integer(n) && unsafe_ints.len() < MAX_PATH_FINDINGS {
+            unsafe_ints.push(current_path(levels));
+        }
+    }
+    let mut floats = Vec::new();
+    let mut unsafe_ints = Vec::new();
+    let mut levels: Vec<Level<'_>> = Vec::new();
+    match root {
+        Value::Number(n) => judge(n, &levels, &mut floats, &mut unsafe_ints),
+        Value::Object(map) => levels.push(Level::Object(map.iter(), None)),
+        Value::Array(items) => levels.push(Level::Array(items.iter().enumerate(), None)),
+        _ => {}
+    }
+    while let Some(top) = levels.last_mut() {
+        let child = match top {
+            Level::Object(children, at) => children.next().map(|(k, v)| {
+                *at = Some(k.as_str());
+                v
+            }),
+            Level::Array(children, at) => children.next().map(|(i, v)| {
+                *at = Some(i);
+                v
+            }),
+        };
+        match child {
+            None => {
+                levels.pop();
+            }
+            Some(Value::Number(n)) => judge(n, &levels, &mut floats, &mut unsafe_ints),
+            Some(Value::Object(map)) => levels.push(Level::Object(map.iter(), None)),
+            Some(Value::Array(items)) => levels.push(Level::Array(items.iter().enumerate(), None)),
+            Some(_) => {}
+        }
+        if floats.len() == MAX_PATH_FINDINGS && unsafe_ints.len() == MAX_PATH_FINDINGS {
+            break;
+        }
+    }
+    (floats, unsafe_ints)
+}
+
+/// At most [`MAX_DETAIL_CHARS`] characters of `text`, with `…` when cut:
+/// a finding's detail never echoes a caller's value at full length.
+fn clip(text: &str) -> String {
+    match text.char_indices().nth(MAX_DETAIL_CHARS) {
+        Some((at, _)) => format!("{}…", &text[..at]),
+        None => text.to_string(),
+    }
+}
+
+/// A caller's JSON value, for a finding's detail: clipped.
+fn shown_value(value: &Value) -> String {
+    clip(&value.to_string())
 }
 
 /// `references[]` (§5.5.5), over the raw bytes, without resolving anything:
@@ -655,7 +748,7 @@ fn provenance_mode(capsule: &Map<String, Value>, pm: &Map<String, Value>, out: &
                     out.error(
                         9,
                         "provenance_mode_invalid",
-                        format!("provenance_mode.time_rung MUST be one of {TIME_RUNGS:?} (§5.3(bis)); got {rung}"),
+                        format!("provenance_mode.time_rung MUST be one of {TIME_RUNGS:?} (§5.3(bis)); got {}", shown_value(rung)),
                     );
                     time_rung = None;
                 }
@@ -706,7 +799,7 @@ fn provenance_mode(capsule: &Map<String, Value>, pm: &Map<String, Value>, out: &
 }
 
 fn shown(value: Option<&Value>) -> String {
-    value.map_or_else(|| "nothing".to_string(), Value::to_string)
+    value.map_or_else(|| "nothing".to_string(), shown_value)
 }
 
 #[derive(Default)]
@@ -747,15 +840,49 @@ mod tests {
             // Moved, not serialized: `json!` would recurse through it.
             deep = Value::Array(vec![deep]);
         }
-        let paths = number_paths(&deep, |n| !n.is_i64() && !n.is_u64());
-        assert_eq!(paths.len(), 1);
-        let many = Value::Array(vec![json!(0.5); 10_000]);
-        assert_eq!(
-            number_paths(&many, |n| !n.is_i64() && !n.is_u64()).len(),
-            MAX_PATH_FINDINGS
+        let (floats, unsafe_ints) = number_paths(&deep);
+        assert_eq!(floats.len(), 1);
+        assert!(unsafe_ints.is_empty());
+        assert!(
+            floats[0].chars().count() <= MAX_DETAIL_CHARS + 1,
+            "the path is clipped"
         );
         // Dropping a 100k-deep value is itself recursive in serde_json; leak it.
         std::mem::forget(deep);
+        let many = json!({"a": vec![json!(0.5); 10_000], "b": vec![json!(1u64 << 60); 10_000]});
+        let (floats, unsafe_ints) = number_paths(&many);
+        assert_eq!(
+            (floats.len(), unsafe_ints.len()),
+            (MAX_PATH_FINDINGS, MAX_PATH_FINDINGS)
+        );
+        assert_eq!(floats[0], "a[0]");
+        assert_eq!(unsafe_ints[1], "b[1]");
+    }
+
+    #[test]
+    fn paths_are_spelled_as_the_reference_spells_them() {
+        let value = json!({"x": {"y": [1, {"z": 0.5}]}, "w": [[2.5]]});
+        assert_eq!(number_paths(&value).0, ["x.y[1].z", "w[0][0]"]);
+        assert_eq!(number_paths(&json!(0.5)).0, ["<root>"]);
+        assert_eq!(number_paths(&json!([0.5])).0, ["[0]"]);
+    }
+
+    #[test]
+    fn details_never_quote_a_caller_value_at_full_length() {
+        let long = "x".repeat(10_000);
+        let report = check_structure(
+            &json!({"format_version": long, "disposition": {"approver": long, "decision": "d", "human_disposed": false}}),
+        );
+        for finding in &report.findings {
+            assert!(
+                finding.detail.chars().count() < 300,
+                "{}: {} chars",
+                finding.code,
+                finding.detail.len()
+            );
+        }
+        assert_eq!(clip("abc"), "abc");
+        assert_eq!(clip(&"é".repeat(70)).chars().count(), MAX_DETAIL_CHARS + 1);
     }
 
     #[test]

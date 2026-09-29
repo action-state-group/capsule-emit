@@ -145,7 +145,7 @@ fn record() -> Value {
         "spec_version": "draft-mih-scitt-agent-action-capsule-05",
         "format_version": "4",
         "canonicalization_id": "jcs",
-        "action_id": "a3b/1",
+        "action_id": "example/1",
         "action_type": "decide",
         "operator": "op",
         "developer": "dev@v1",
@@ -351,7 +351,7 @@ fn verify_offline_refuses_a_signed_record_that_fails_the_checks() {
         let statement = build_signed_statement(
             &SignedStatementInput {
                 payload: &payload,
-                issuer: "a3b-test",
+                issuer: "example-issuer",
                 subject: &id,
                 content_type: "application/json",
             },
@@ -361,5 +361,75 @@ fn verify_offline_refuses_a_signed_record_that_fails_the_checks() {
             capsule_emit::verify::verify_offline(&sealed, &statement, &key.verifying_key(), None);
         assert_eq!(report.ok(), want_ok, "{:?}", report.findings);
         assert_eq!(report.structure_ok, want_ok);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Known differences from the reference verifier (README, "Differences from
+// the reference verifier"): pinned, so a change in either is noticed.
+// ---------------------------------------------------------------------------
+
+fn parsed(text: &str) -> Value {
+    serde_json::from_str(text).expect("JSON")
+}
+
+/// `-0` parses as a float in Rust (an integer zero in Python), so it is
+/// refused as a float in a digest field.
+#[test]
+fn negative_zero_is_refused_as_a_float() {
+    let mut text = record().to_string();
+    text.insert_str(text.len() - 1, r#","n":-0"#);
+    let report = check_structure(&parsed(&text));
+    assert!(report.errors().any(|f| f.code == "float_in_digest_field"));
+}
+
+/// An integer above u64::MAX parses as a float in Rust: refused as
+/// `float_in_digest_field` (Python: `unsafe_integer_in_digest_field`).
+#[test]
+fn an_integer_past_u64_is_refused_as_a_float() {
+    let mut text = record().to_string();
+    text.insert_str(text.len() - 1, r#","n":18446744073709551616"#);
+    let report = check_structure(&parsed(&text));
+    assert!(report.errors().any(|f| f.code == "float_in_digest_field"));
+    assert!(!report
+        .errors()
+        .any(|f| f.code == "unsafe_integer_in_digest_field"));
+}
+
+/// A list or object where the reference looks a value up in a closed set
+/// makes the reference fail with `verifier_internal_error`; here the enum
+/// checks refuse cleanly and the registry-only fields are not judged.
+#[test]
+fn a_container_in_a_closed_set_field_is_refused_or_not_judged_never_a_crash() {
+    for (change, refused) in [
+        (
+            json!({"disposition": {"approver": []}}),
+            Some("approver_invalid"),
+        ),
+        (
+            json!({"provenance_mode": {"mode": {}}}),
+            Some("provenance_mode_invalid"),
+        ),
+        (json!({"disposition": {"verdict_class": []}}), None),
+        (json!({"effect": {"type": {}}}), None),
+    ] {
+        let mut capsule = record();
+        for (block, members) in change.as_object().unwrap() {
+            if capsule.get(block).is_none() {
+                capsule[block] = json!({});
+            }
+            for (k, v) in members.as_object().unwrap() {
+                capsule[block][k] = v.clone();
+            }
+        }
+        let report = check_structure(&seal(capsule));
+        match refused {
+            Some(code) => assert!(
+                report.errors().any(|f| f.code == code),
+                "{change}: {:?}",
+                report.findings
+            ),
+            None => assert!(report.ok(), "{change}: {:?}", report.findings),
+        }
     }
 }
