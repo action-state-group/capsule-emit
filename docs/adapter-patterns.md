@@ -8,9 +8,11 @@ See [whats-consequential.md](whats-consequential.md) for the two-signal rule
 that governs *when* a capsule should be produced. This page covers *where* to
 produce it.
 
-> **Design reference:** §6 (mixed fleets / exclusion policy), §9 (effect
-> classifier), §11 (two-signal rule) of
-> `action-state-strategy/docs/design/design-where-capsules-are-produced.md`.
+> **Rules this page applies:** in a mixed fleet, each population is covered
+> by the pattern that sees it, and anything deliberately left out is named in
+> an explicit exclusion policy; an action whose effect is unknown is treated as
+> consequential and gated ("unknown → gated"); and the two-signal rule in
+> [whats-consequential.md](whats-consequential.md) decides when to seal.
 
 ---
 
@@ -115,7 +117,7 @@ For **current MCP** this is safe — `tools/call` is the only method that
 executes tool logic and mutates external state. All other MCP methods
 (`tools/list`, `resources/read`, `prompts/get`, etc.) are read-only.
 
-The allow-list does **not** satisfy the §9 "unknown → gated" principle. A
+The allow-list does **not** satisfy the "unknown → gated" principle. A
 future MCP method that executes consequential logic would be silently unsealed
 unless the operator adds it to `methods:`. **Operators should review their
 `methods:` config whenever the MCP spec adds new methods.**
@@ -138,8 +140,9 @@ In a fully-instrumented deployment both patterns run together:
   and the gateway capsule are chained — the engine proves *what was decided*,
   the gateway proves *what actually went out*.
 
-See the design reference above (§2 "two vantage points") for the full
-Class 1 / Class 2 composition model.
+The two capsules are two vantage points on the same action: Class 1 records
+what the infrastructure saw go out, Class 2 records what the engine decided,
+and chaining on `decision_id` composes them without sealing the action twice.
 
 ---
 
