@@ -396,6 +396,86 @@ fn an_integer_past_u64_is_refused_as_a_float() {
         .any(|f| f.code == "unsafe_integer_in_digest_field"));
 }
 
+/// A `references[]` entry's `retention` (§5.5.5) is checked as the reference
+/// does, in its order: not an object, declarant absent or null, member types,
+/// no bound.
+#[test]
+fn a_malformed_retention_fails_check_1() {
+    let with = |retention: Value| {
+        let reference =
+            json!({"type": "x-artifact", "digest_alg": "SHA-256", "digest": "3".repeat(64)});
+        let mut second = reference.clone();
+        second["retention"] = retention;
+        let mut capsule = record();
+        capsule["references"] = json!([reference, second]);
+        check_structure(&seal(capsule))
+    };
+    let path = "references[1].retention";
+    for (retention, want) in [
+        (
+            json!(null),
+            vec![(
+                "field_not_object",
+                format!("{path} MUST be a JSON object when present (§5.5.5)"),
+            )],
+        ),
+        (
+            json!(["ACME-CO"]),
+            vec![(
+                "field_not_object",
+                format!("{path} MUST be a JSON object when present (§5.5.5)"),
+            )],
+        ),
+        (
+            json!({"retained_until": "2027"}),
+            vec![(
+                "missing_required_field",
+                format!("{path}.declarant is REQUIRED (§5.5.5)"),
+            )],
+        ),
+        (
+            json!({"declarant": null, "not_retained_after": "2030"}),
+            vec![(
+                "missing_required_field",
+                format!("{path}.declarant is REQUIRED (§5.5.5)"),
+            )],
+        ),
+        (
+            json!({"declarant": "ACME-CO"}),
+            vec![(
+                "retention_empty",
+                format!("{path} MUST carry retained_until or not_retained_after (§5.5.5)"),
+            )],
+        ),
+        (
+            json!({}),
+            vec![
+                (
+                    "missing_required_field",
+                    format!("{path}.declarant is REQUIRED (§5.5.5)"),
+                ),
+                (
+                    "retention_empty",
+                    format!("{path} MUST carry retained_until or not_retained_after (§5.5.5)"),
+                ),
+            ],
+        ),
+    ] {
+        let report = with(retention.clone());
+        let got: Vec<_> = report
+            .errors()
+            .map(|f| (f.code, f.detail.clone()))
+            .collect();
+        assert_eq!(got, want, "{retention}");
+    }
+    for retention in [
+        json!({"declarant": "ACME-CO", "retained_until": "2027-01-01T00:00:00Z"}),
+        json!({"declarant": "ACME-CO", "not_retained_after": "2030-01-01T00:00:00Z"}),
+    ] {
+        assert!(with(retention.clone()).ok(), "{retention}");
+    }
+}
+
 /// A value of the wrong JSON type in a string-typed member fails check 1
 /// with `field_not_string`, as in the reference (agent-action-capsule#147 and
 /// the follow-up for the provenance_mode and references[].retention members).

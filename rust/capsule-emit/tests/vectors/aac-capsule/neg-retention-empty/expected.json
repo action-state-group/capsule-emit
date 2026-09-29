@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "99a6768321497846cd9493dc8c200641eaf450c889464cbedb74eeffee3898d2",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "references[1].retention carries neither retained_until nor not_retained_after -> retention_empty (check 1, \u00a75.5.5).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "retention_empty",
+      "detail": "references[1].retention MUST carry retained_until or not_retained_after (\u00a75.5.5)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

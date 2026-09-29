@@ -1,0 +1,20 @@
+{
+  "capsule_id_recomputed": "c2d3971db33cf39725a0b9c43b0f0737a6a9d98806a7d4141136942bb46c01f1",
+  "derived": {
+    "attestation_mode": "self_attested",
+    "effect_mode": "not_applicable",
+    "ledger_mode": "standalone"
+  },
+  "description": "references[1].retention has no declarant, which is REQUIRED -> missing_required_field (check 1, \u00a75.5.5).",
+  "findings": [
+    {
+      "check": 1,
+      "code": "missing_required_field",
+      "detail": "references[1].retention.declarant is REQUIRED (\u00a75.5.5)",
+      "severity": "error"
+    }
+  ],
+  "kind": "negative",
+  "ok": false,
+  "provenance": "reference-derived"
+}

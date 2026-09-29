@@ -635,6 +635,44 @@ fn shown_value(value: &Value) -> String {
     clip(&value.to_string())
 }
 
+/// Check-1 findings for a `references[]` entry's `retention` (§5.5.5), in
+/// the reference's order: the object itself (`field_not_object`, and nothing
+/// else), its REQUIRED `declarant` (absent or null is `missing_required_field`,
+/// as for `disposition.approver`), the type of each member, and at least one
+/// bound (`retention_empty`).
+fn retention_findings(raw: &Value, path: &str, out: &mut Findings) {
+    let Some(retention) = raw.as_object() else {
+        out.error(
+            1,
+            "field_not_object",
+            format!("{path} MUST be a JSON object when present (§5.5.5)"),
+        );
+        return;
+    };
+    for field in RETENTION_STRING_MEMBERS {
+        match retention.get(field) {
+            None | Some(Value::Null) if field == "declarant" => out.error(
+                1,
+                "missing_required_field",
+                format!("{path}.declarant is REQUIRED (§5.5.5)"),
+            ),
+            Some(v) if !v.is_string() => out.error(
+                1,
+                "field_not_string",
+                format!("{path}.{field} MUST be a string when present (§5.5.5)"),
+            ),
+            _ => {}
+        }
+    }
+    if !retention.contains_key("retained_until") && !retention.contains_key("not_retained_after") {
+        out.error(
+            1,
+            "retention_empty",
+            format!("{path} MUST carry retained_until or not_retained_after (§5.5.5)"),
+        );
+    }
+}
+
 /// `references[]` (§5.5.5), over the raw bytes, without resolving anything:
 /// the findings for checks 1 and 6.
 fn reference_findings(
@@ -711,16 +749,8 @@ fn reference_findings(
                 format!("{path}.citation_purpose MUST be a non-empty string (§5.5.5)"),
             );
         }
-        if let Some(retention) = reference.get("retention").and_then(Value::as_object) {
-            for field in RETENTION_STRING_MEMBERS {
-                if retention.get(field).is_some_and(|v| !v.is_string()) {
-                    out.error(
-                        1,
-                        "field_not_string",
-                        format!("{path}.retention.{field} MUST be a string when present (§5.5.5)"),
-                    );
-                }
-            }
+        if let Some(retention) = reference.get("retention") {
+            retention_findings(retention, &format!("{path}.retention"), &mut out);
         }
         if let Some(coordinates) = reference.get("log_coordinates") {
             let Some(coordinates) = coordinates.as_object() else {

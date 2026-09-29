@@ -3,7 +3,7 @@
     "4"
   ],
   "spec": "draft-mih-scitt-agent-action-capsule-05",
-  "count": 106,
+  "count": 112,
   "cases": [
     {
       "name": "pos-v4-jcs-chain-committed",
@@ -611,6 +611,42 @@
       "name": "neg-field-not-string-retention-not-retained-after-list",
       "kind": "negative",
       "description": "references[1].retention.not_retained_after is a JSON list, not a string -> field_not_string (check 1).",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-retention-empty",
+      "kind": "negative",
+      "description": "references[1].retention carries neither retained_until nor not_retained_after -> retention_empty (check 1, §5.5.5).",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-retention-not-object",
+      "kind": "negative",
+      "description": "references[1].retention is a JSON list, not an object -> field_not_object (check 1, §5.5.5).",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-retention-declarant-missing",
+      "kind": "negative",
+      "description": "references[1].retention has no declarant, which is REQUIRED -> missing_required_field (check 1, §5.5.5).",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-retention-declarant-null",
+      "kind": "negative",
+      "description": "references[1].retention has a null declarant, which counts as missing (as for disposition.approver) -> missing_required_field (check 1, §5.5.5).",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-retention-null",
+      "kind": "negative",
+      "description": "references[1].retention is null: present but not an object, so its members are not checked -> field_not_object (check 1, §5.5.5).",
+      "provenance": "reference-derived"
+    },
+    {
+      "name": "neg-retention-declarant-missing-and-empty",
+      "kind": "negative",
+      "description": "references[1].retention is an empty object: no declarant and no bound, reported in that order -> missing_required_field, retention_empty (check 1, §5.5.5).",
       "provenance": "reference-derived"
     }
   ],
