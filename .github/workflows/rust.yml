@@ -53,6 +53,10 @@ jobs:
             rust/target
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
 
+      - name: Vendored vectors match their checksums (before any test reads them)
+        working-directory: rust/capsule-emit/tests/vectors
+        run: shasum -a 256 -c SHA256SUMS
+
       - name: Format
         run: cargo fmt --all --check
 
@@ -62,9 +66,6 @@ jobs:
       - name: Tests (includes the pinned conformance vectors and the byte-parity fixture)
         run: cargo test --locked
 
-      - name: Vendored vectors match their checksums
-        working-directory: rust/capsule-emit/tests/vectors
-        run: shasum -a 256 -c SHA256SUMS
 
   # The Rust output verified by the Python reference implementations.
   conformance:
