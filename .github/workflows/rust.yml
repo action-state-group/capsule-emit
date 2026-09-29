@@ -25,7 +25,7 @@ defaults:
 env:
   RUST_TOOLCHAIN: "1.97.1"
   CARGO_TERM_COLOR: always
-  DEPS_ON_CRATES_IO: "false"
+  DEPS_ON_CRATES_IO: "true"
 
 jobs:
   test:
@@ -138,11 +138,10 @@ jobs:
         run: cargo publish --dry-run -p capsule-emit-evidence-request
 
       # `cargo publish --dry-run` resolves dependencies from the crates.io
-      # index only (a workspace [patch] does not count), so neither crate's
-      # dry run can pass until checkpointed-local-log 0.2.0 and evidencebook
-      # 0.0.1 are published (capsule-emit-evidence-request depends on
-      # checkpointed-local-log since 0.0.2). Set DEPS_ON_CRATES_IO to "true"
-      # when they are.
+      # index only (a workspace [patch] would not count). Both crates' own
+      # dependencies (checkpointed-local-log 0.2.0, evidencebook 0.0.1) are
+      # published, so both dry runs run; DEPS_ON_CRATES_IO stays as the switch
+      # should a dependency ever again be ahead of crates.io.
       - name: Publish dry run, capsule-emit (no upload)
         if: env.DEPS_ON_CRATES_IO == 'true'
         run: cargo publish --dry-run -p capsule-emit
