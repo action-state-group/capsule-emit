@@ -8,7 +8,7 @@ repository = "https://github.com/action-state-group/capsule-emit"
 readme = "README.md"
 keywords = ["scitt", "cose", "transparency", "evidence", "agents"]
 categories = ["cryptography"]
-include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE", "/NOTICE"]
+include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/CHANGELOG.md", "/LICENSE", "/NOTICE"]
 
 [lib]
 name = "capsule_emit"
