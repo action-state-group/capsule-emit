@@ -29,15 +29,21 @@
 //! reading the vectors document (their ambiguity notes A1-A14); the items a
 //! future revision may change are marked in each module.
 //!
-//! **0.0.1 does not build answers**: building the artifact (a record, a
-//! range or a chain segment with its proof under the anchor) is the
-//! responder's; 0.0.2 adds the answer path. To accept a refusal as the
-//! answer to a request, use [`refusal::verify_for`]; [`refusal::check`] is
-//! not authentication.
+//! - [`answer`] (since 0.0.2): build the artifact response over a
+//!   checkpointed local log (records, a range or the full history with
+//!   inclusion or range proofs, the checkpoints, the `history_card/1`
+//!   derivation with consistency proofs), signed by the responder and bound
+//!   to the request; and verify one offline against the responder's key and
+//!   the request sent.
+//!
+//! To accept a refusal as the answer to a request, use
+//! [`refusal::verify_for`]; [`refusal::check`] is not authentication. To
+//! accept an artifact, use [`answer::verify`].
 //!
 //! Out of scope: transport, storage, and any store-and-forward or delivery
 //! guarantee.
 
+pub mod answer;
 pub mod digest;
 pub mod invariance;
 pub mod jcs;

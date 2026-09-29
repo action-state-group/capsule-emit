@@ -2,10 +2,11 @@
 resolver = "2"
 members = ["capsule-emit", "capsule-emit-evidence-request"]
 
-# Until checkpointed-local-log 0.2.0 and evidencebook 0.0.1 are on crates.io,
-# resolve them from their source commit. `cargo publish` never carries a
+# TEMPORARY: until checkpointed-local-log 0.2.0 and evidencebook 0.0.1 are on
+# crates.io, resolve them from checkpointed-local-log main at the commit that
+# made them publishable. `cargo publish` never carries a
 # workspace patch into the published package; remove this section once both
 # crates are published.
 [patch.crates-io]
-checkpointed-local-log = { git = "https://github.com/action-state-group/checkpointed-local-log", rev = "036498b188bda80453776a8153556fb27244b9ec" }
-evidencebook = { git = "https://github.com/action-state-group/checkpointed-local-log", rev = "036498b188bda80453776a8153556fb27244b9ec" }
+checkpointed-local-log = { git = "https://github.com/action-state-group/checkpointed-local-log", rev = "6b1335228a6bc541407800e9e756a66f68f4a639" }
+evidencebook = { git = "https://github.com/action-state-group/checkpointed-local-log", rev = "6b1335228a6bc541407800e9e756a66f68f4a639" }

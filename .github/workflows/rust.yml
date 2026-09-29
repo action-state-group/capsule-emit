@@ -127,14 +127,16 @@ jobs:
           cargo package --list -p capsule-emit
           cargo package --list -p capsule-emit-evidence-request
 
-      # capsule-emit-evidence-request depends only on published crates.
       - name: Publish dry run, capsule-emit-evidence-request (no upload)
+        if: env.DEPS_ON_CRATES_IO == 'true'
         run: cargo publish --dry-run -p capsule-emit-evidence-request
 
       # `cargo publish --dry-run` resolves dependencies from the crates.io
-      # index only (a workspace [patch] does not count), so it cannot pass
-      # until checkpointed-local-log 0.2.0 and evidencebook 0.0.1 are
-      # published. Set DEPS_ON_CRATES_IO to "true" when they are.
+      # index only (a workspace [patch] does not count), so neither crate's
+      # dry run can pass until checkpointed-local-log 0.2.0 and evidencebook
+      # 0.0.1 are published (capsule-emit-evidence-request depends on
+      # checkpointed-local-log since 0.0.2). Set DEPS_ON_CRATES_IO to "true"
+      # when they are.
       - name: Publish dry run, capsule-emit (no upload)
         if: env.DEPS_ON_CRATES_IO == 'true'
         run: cargo publish --dry-run -p capsule-emit

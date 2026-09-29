@@ -87,8 +87,9 @@ dependencies = [
 
 [[package]]
 name = "capsule-emit-evidence-request"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
+ "checkpointed-local-log",
  "ciborium",
  "ed25519-dalek",
  "hex",
@@ -116,7 +117,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 [[package]]
 name = "checkpointed-local-log"
 version = "0.2.0"
-source = "git+https://github.com/action-state-group/checkpointed-local-log?rev=036498b188bda80453776a8153556fb27244b9ec#036498b188bda80453776a8153556fb27244b9ec"
+source = "git+https://github.com/action-state-group/checkpointed-local-log?rev=6b1335228a6bc541407800e9e756a66f68f4a639#6b1335228a6bc541407800e9e756a66f68f4a639"
 dependencies = [
  "coset",
  "ed25519-dalek",
@@ -325,7 +326,7 @@ dependencies = [
 [[package]]
 name = "evidencebook"
 version = "0.0.1"
-source = "git+https://github.com/action-state-group/checkpointed-local-log?rev=036498b188bda80453776a8153556fb27244b9ec#036498b188bda80453776a8153556fb27244b9ec"
+source = "git+https://github.com/action-state-group/checkpointed-local-log?rev=6b1335228a6bc541407800e9e756a66f68f4a639#6b1335228a6bc541407800e9e756a66f68f4a639"
 dependencies = [
  "checkpointed-local-log",
  "ed25519-dalek",
