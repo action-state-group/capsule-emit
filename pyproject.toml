@@ -110,6 +110,10 @@ markers = [
 [tool.ruff]
 line-length = 110
 target-version = "py39"
+# A verbatim copy of checkpointed-local-log's script (see the file's header in
+# that repository); kept byte-identical so the two cannot drift, so it is not
+# reformatted to this repository's import order.
+extend-exclude = [".github/scripts/check_crate_metadata.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

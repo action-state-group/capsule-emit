@@ -9,9 +9,9 @@ name: rust
 on:
   push:
     branches: [main]
-    paths: ["rust/**", ".github/workflows/rust.yml"]
+    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py"]
   pull_request:
-    paths: ["rust/**", ".github/workflows/rust.yml"]
+    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py"]
   workflow_dispatch:
 
 permissions:
@@ -121,6 +121,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      # crates.io checks keywords, categories, description, license and
+      # repository at upload; `cargo publish --dry-run` does not. Copied
+      # verbatim from checkpointed-local-log (d576880).
+      - name: Crate metadata meets crates.io's publish rules
+        run: python3 ../.github/scripts/check_crate_metadata.py capsule-emit/Cargo.toml capsule-emit-evidence-request/Cargo.toml
 
       - name: Package contents
         run: |

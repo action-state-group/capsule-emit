@@ -55,10 +55,14 @@ three differences are known, each pinned by a test in
 - **A list or object where the reference looks a value up in a closed set**
   (`disposition.approver`, `verdict_class` or `decision`; `effect.type`,
   `effect_attestation` or `irreversibility_class`; `assurance.effect_mode`;
-  `provenance_mode.mode`; `chain.relation`) makes the reference fail with
-  `verifier_internal_error`, which refuses the record. Here the closed enums
-  refuse it cleanly (`approver_invalid`, `provenance_mode_invalid`) and the
-  registry-only fields are not judged, as for any other unseeded value.
+  `provenance_mode.mode`; `chain.relation`) makes the reference (v0.6.0, the
+  version the vectors are pinned to) fail with `verifier_internal_error`,
+  which refuses the record. Here the closed enums refuse it cleanly
+  (`approver_invalid`, `provenance_mode_invalid`) and the registry-only
+  fields are not judged, as for any other unseeded value. The reference's
+  handling of these values is being settled
+  ([agent-action-capsule#147](https://github.com/action-state-group/agent-action-capsule/pull/147));
+  this crate will follow it.
 
 Also by design: at most 64 float and 64 unsafe-integer findings are
 reported (the reference lists every one), and a finding quotes at most 64
