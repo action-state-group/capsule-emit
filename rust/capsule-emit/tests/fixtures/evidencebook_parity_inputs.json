@@ -1,0 +1,636 @@
+{
+ "_comment": "The inputs behind evidencebook_parity.json's pinned capsule ids: the header strings and, per record, the compute_attestation extension members, in order, exactly as the producer that wrote the pins committed them. Data only; this crate does not interpret the extensions.",
+ "action_id_prefix": "mesh-poc/evidencebook-parity/",
+ "operator": "capsule-emit-mesh-poc-rust",
+ "developer": "capsule-producer/evidencebook-parity-test",
+ "provider": "mesh-llm",
+ "model_id": "parity-model",
+ "runtime": {
+  "name": "evidencebook-parity-test"
+ },
+ "records": [
+  {
+   "n": 0,
+   "compute_attestation_extensions": [
+    [
+     "invocation",
+     {
+      "requested_model_id": "parity-model",
+      "resolved_model_id": "parity-model",
+      "usage": {
+       "prompt_tokens": 1,
+       "completion_tokens": 1,
+       "total_tokens": 2
+      },
+      "source": {
+       "requested_model_id": "self_reported",
+       "resolved_model_id": "self_reported",
+       "usage": "provider_reported"
+      }
+     }
+    ],
+    [
+     "epistemic_type",
+     "producer_claim"
+    ],
+    [
+     "x-mesh-poc-v1",
+     {
+      "client_nonce": "00000000000000000000000000000000",
+      "client_nonce_source": "client_supplied",
+      "model_name_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "serving_provenance": {
+       "served_by_node_id": "parity-node",
+       "dispatch_path": null,
+       "requesting_party": "parity-client",
+       "exchange_id": "parity-exchange-0",
+       "quantization": "unknown",
+       "model": {
+        "architecture": null,
+        "context_length": null,
+        "parameter_size": null,
+        "layer_count": null,
+        "identity_hash": null,
+        "weights_digest": null,
+        "canonical_ref": null,
+        "revision": null
+       },
+       "hardware": {
+        "gpu": null,
+        "vram_bytes": null,
+        "device": null,
+        "is_soc": null
+       },
+       "usage": {
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+        "total_tokens": 2
+       },
+       "seq": 1,
+       "prev_seq": null,
+       "peer_capsule_id": null,
+       "peer_capsule_id_provenance": null
+      },
+      "role": "served",
+      "observation_point": null,
+      "generation_parameters": {},
+      "latency_ms": "100",
+      "evidence_refs": {
+       "statistical_fingerprint": {
+        "type": "statistical_fingerprint",
+        "digest": null,
+        "context": null
+       },
+       "tee_attestation": {
+        "type": "tee_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "no TEE quote measured (no TDX hardware on this host, or the producer leg has not run here); recorded absent, never fabricated"
+       },
+       "binary_attestation": {
+        "type": "binary_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "binary not measured (path unresolvable or file unreadable); recorded absent, never fabricated"
+       }
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "n": 1,
+   "compute_attestation_extensions": [
+    [
+     "invocation",
+     {
+      "requested_model_id": "parity-model",
+      "resolved_model_id": "parity-model",
+      "usage": {
+       "prompt_tokens": 1,
+       "completion_tokens": 1,
+       "total_tokens": 2
+      },
+      "source": {
+       "requested_model_id": "self_reported",
+       "resolved_model_id": "self_reported",
+       "usage": "provider_reported"
+      }
+     }
+    ],
+    [
+     "epistemic_type",
+     "producer_claim"
+    ],
+    [
+     "x-mesh-poc-v1",
+     {
+      "client_nonce": "00000000000000000000000000000001",
+      "client_nonce_source": "client_supplied",
+      "model_name_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "serving_provenance": {
+       "served_by_node_id": "parity-node",
+       "dispatch_path": null,
+       "requesting_party": "parity-client",
+       "exchange_id": "parity-exchange-1",
+       "quantization": "unknown",
+       "model": {
+        "architecture": null,
+        "context_length": null,
+        "parameter_size": null,
+        "layer_count": null,
+        "identity_hash": null,
+        "weights_digest": null,
+        "canonical_ref": null,
+        "revision": null
+       },
+       "hardware": {
+        "gpu": null,
+        "vram_bytes": null,
+        "device": null,
+        "is_soc": null
+       },
+       "usage": {
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+        "total_tokens": 2
+       },
+       "seq": 2,
+       "prev_seq": 1,
+       "peer_capsule_id": null,
+       "peer_capsule_id_provenance": null
+      },
+      "role": "served",
+      "observation_point": null,
+      "generation_parameters": {},
+      "latency_ms": "100",
+      "evidence_refs": {
+       "statistical_fingerprint": {
+        "type": "statistical_fingerprint",
+        "digest": null,
+        "context": null
+       },
+       "tee_attestation": {
+        "type": "tee_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "no TEE quote measured (no TDX hardware on this host, or the producer leg has not run here); recorded absent, never fabricated"
+       },
+       "binary_attestation": {
+        "type": "binary_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "binary not measured (path unresolvable or file unreadable); recorded absent, never fabricated"
+       }
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "n": 2,
+   "compute_attestation_extensions": [
+    [
+     "invocation",
+     {
+      "requested_model_id": "parity-model",
+      "resolved_model_id": "parity-model",
+      "usage": {
+       "prompt_tokens": 1,
+       "completion_tokens": 1,
+       "total_tokens": 2
+      },
+      "source": {
+       "requested_model_id": "self_reported",
+       "resolved_model_id": "self_reported",
+       "usage": "provider_reported"
+      }
+     }
+    ],
+    [
+     "epistemic_type",
+     "producer_claim"
+    ],
+    [
+     "x-mesh-poc-v1",
+     {
+      "client_nonce": "00000000000000000000000000000002",
+      "client_nonce_source": "client_supplied",
+      "model_name_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "serving_provenance": {
+       "served_by_node_id": "parity-node",
+       "dispatch_path": null,
+       "requesting_party": "parity-client",
+       "exchange_id": "parity-exchange-2",
+       "quantization": "unknown",
+       "model": {
+        "architecture": null,
+        "context_length": null,
+        "parameter_size": null,
+        "layer_count": null,
+        "identity_hash": null,
+        "weights_digest": null,
+        "canonical_ref": null,
+        "revision": null
+       },
+       "hardware": {
+        "gpu": null,
+        "vram_bytes": null,
+        "device": null,
+        "is_soc": null
+       },
+       "usage": {
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+        "total_tokens": 2
+       },
+       "seq": 3,
+       "prev_seq": 2,
+       "peer_capsule_id": null,
+       "peer_capsule_id_provenance": null
+      },
+      "role": "served",
+      "observation_point": null,
+      "generation_parameters": {},
+      "latency_ms": "100",
+      "evidence_refs": {
+       "statistical_fingerprint": {
+        "type": "statistical_fingerprint",
+        "digest": null,
+        "context": null
+       },
+       "tee_attestation": {
+        "type": "tee_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "no TEE quote measured (no TDX hardware on this host, or the producer leg has not run here); recorded absent, never fabricated"
+       },
+       "binary_attestation": {
+        "type": "binary_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "binary not measured (path unresolvable or file unreadable); recorded absent, never fabricated"
+       }
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "n": 3,
+   "compute_attestation_extensions": [
+    [
+     "invocation",
+     {
+      "requested_model_id": "parity-model",
+      "resolved_model_id": "parity-model",
+      "usage": {
+       "prompt_tokens": 1,
+       "completion_tokens": 1,
+       "total_tokens": 2
+      },
+      "source": {
+       "requested_model_id": "self_reported",
+       "resolved_model_id": "self_reported",
+       "usage": "provider_reported"
+      }
+     }
+    ],
+    [
+     "epistemic_type",
+     "producer_claim"
+    ],
+    [
+     "x-mesh-poc-v1",
+     {
+      "client_nonce": "00000000000000000000000000000003",
+      "client_nonce_source": "client_supplied",
+      "model_name_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "serving_provenance": {
+       "served_by_node_id": "parity-node",
+       "dispatch_path": null,
+       "requesting_party": "parity-client",
+       "exchange_id": "parity-exchange-3",
+       "quantization": "unknown",
+       "model": {
+        "architecture": null,
+        "context_length": null,
+        "parameter_size": null,
+        "layer_count": null,
+        "identity_hash": null,
+        "weights_digest": null,
+        "canonical_ref": null,
+        "revision": null
+       },
+       "hardware": {
+        "gpu": null,
+        "vram_bytes": null,
+        "device": null,
+        "is_soc": null
+       },
+       "usage": {
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+        "total_tokens": 2
+       },
+       "seq": 4,
+       "prev_seq": 3,
+       "peer_capsule_id": null,
+       "peer_capsule_id_provenance": null
+      },
+      "role": "served",
+      "observation_point": null,
+      "generation_parameters": {},
+      "latency_ms": "100",
+      "evidence_refs": {
+       "statistical_fingerprint": {
+        "type": "statistical_fingerprint",
+        "digest": null,
+        "context": null
+       },
+       "tee_attestation": {
+        "type": "tee_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "no TEE quote measured (no TDX hardware on this host, or the producer leg has not run here); recorded absent, never fabricated"
+       },
+       "binary_attestation": {
+        "type": "binary_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "binary not measured (path unresolvable or file unreadable); recorded absent, never fabricated"
+       }
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "n": 4,
+   "compute_attestation_extensions": [
+    [
+     "invocation",
+     {
+      "requested_model_id": "parity-model",
+      "resolved_model_id": "parity-model",
+      "usage": {
+       "prompt_tokens": 1,
+       "completion_tokens": 1,
+       "total_tokens": 2
+      },
+      "source": {
+       "requested_model_id": "self_reported",
+       "resolved_model_id": "self_reported",
+       "usage": "provider_reported"
+      }
+     }
+    ],
+    [
+     "epistemic_type",
+     "producer_claim"
+    ],
+    [
+     "x-mesh-poc-v1",
+     {
+      "client_nonce": "00000000000000000000000000000004",
+      "client_nonce_source": "client_supplied",
+      "model_name_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "serving_provenance": {
+       "served_by_node_id": "parity-node",
+       "dispatch_path": null,
+       "requesting_party": "parity-client",
+       "exchange_id": "parity-exchange-4",
+       "quantization": "unknown",
+       "model": {
+        "architecture": null,
+        "context_length": null,
+        "parameter_size": null,
+        "layer_count": null,
+        "identity_hash": null,
+        "weights_digest": null,
+        "canonical_ref": null,
+        "revision": null
+       },
+       "hardware": {
+        "gpu": null,
+        "vram_bytes": null,
+        "device": null,
+        "is_soc": null
+       },
+       "usage": {
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+        "total_tokens": 2
+       },
+       "seq": 5,
+       "prev_seq": 4,
+       "peer_capsule_id": null,
+       "peer_capsule_id_provenance": null
+      },
+      "role": "served",
+      "observation_point": null,
+      "generation_parameters": {},
+      "latency_ms": "100",
+      "evidence_refs": {
+       "statistical_fingerprint": {
+        "type": "statistical_fingerprint",
+        "digest": null,
+        "context": null
+       },
+       "tee_attestation": {
+        "type": "tee_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "no TEE quote measured (no TDX hardware on this host, or the producer leg has not run here); recorded absent, never fabricated"
+       },
+       "binary_attestation": {
+        "type": "binary_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "binary not measured (path unresolvable or file unreadable); recorded absent, never fabricated"
+       }
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "n": 5,
+   "compute_attestation_extensions": [
+    [
+     "invocation",
+     {
+      "requested_model_id": "parity-model",
+      "resolved_model_id": "parity-model",
+      "usage": {
+       "prompt_tokens": 1,
+       "completion_tokens": 1,
+       "total_tokens": 2
+      },
+      "source": {
+       "requested_model_id": "self_reported",
+       "resolved_model_id": "self_reported",
+       "usage": "provider_reported"
+      }
+     }
+    ],
+    [
+     "epistemic_type",
+     "producer_claim"
+    ],
+    [
+     "x-mesh-poc-v1",
+     {
+      "client_nonce": "00000000000000000000000000000005",
+      "client_nonce_source": "client_supplied",
+      "model_name_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "serving_provenance": {
+       "served_by_node_id": "parity-node",
+       "dispatch_path": null,
+       "requesting_party": "parity-client",
+       "exchange_id": "parity-exchange-5",
+       "quantization": "unknown",
+       "model": {
+        "architecture": null,
+        "context_length": null,
+        "parameter_size": null,
+        "layer_count": null,
+        "identity_hash": null,
+        "weights_digest": null,
+        "canonical_ref": null,
+        "revision": null
+       },
+       "hardware": {
+        "gpu": null,
+        "vram_bytes": null,
+        "device": null,
+        "is_soc": null
+       },
+       "usage": {
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+        "total_tokens": 2
+       },
+       "seq": 6,
+       "prev_seq": 5,
+       "peer_capsule_id": null,
+       "peer_capsule_id_provenance": null
+      },
+      "role": "served",
+      "observation_point": null,
+      "generation_parameters": {},
+      "latency_ms": "100",
+      "evidence_refs": {
+       "statistical_fingerprint": {
+        "type": "statistical_fingerprint",
+        "digest": null,
+        "context": null
+       },
+       "tee_attestation": {
+        "type": "tee_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "no TEE quote measured (no TDX hardware on this host, or the producer leg has not run here); recorded absent, never fabricated"
+       },
+       "binary_attestation": {
+        "type": "binary_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "binary not measured (path unresolvable or file unreadable); recorded absent, never fabricated"
+       }
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "n": 6,
+   "compute_attestation_extensions": [
+    [
+     "invocation",
+     {
+      "requested_model_id": "parity-model",
+      "resolved_model_id": "parity-model",
+      "usage": {
+       "prompt_tokens": 1,
+       "completion_tokens": 1,
+       "total_tokens": 2
+      },
+      "source": {
+       "requested_model_id": "self_reported",
+       "resolved_model_id": "self_reported",
+       "usage": "provider_reported"
+      }
+     }
+    ],
+    [
+     "epistemic_type",
+     "producer_claim"
+    ],
+    [
+     "x-mesh-poc-v1",
+     {
+      "client_nonce": "00000000000000000000000000000006",
+      "client_nonce_source": "client_supplied",
+      "model_name_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "serving_provenance": {
+       "served_by_node_id": "parity-node",
+       "dispatch_path": null,
+       "requesting_party": "parity-client",
+       "exchange_id": "parity-exchange-6",
+       "quantization": "unknown",
+       "model": {
+        "architecture": null,
+        "context_length": null,
+        "parameter_size": null,
+        "layer_count": null,
+        "identity_hash": null,
+        "weights_digest": null,
+        "canonical_ref": null,
+        "revision": null
+       },
+       "hardware": {
+        "gpu": null,
+        "vram_bytes": null,
+        "device": null,
+        "is_soc": null
+       },
+       "usage": {
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+        "total_tokens": 2
+       },
+       "seq": 7,
+       "prev_seq": 6,
+       "peer_capsule_id": null,
+       "peer_capsule_id_provenance": null
+      },
+      "role": "served",
+      "observation_point": null,
+      "generation_parameters": {},
+      "latency_ms": "100",
+      "evidence_refs": {
+       "statistical_fingerprint": {
+        "type": "statistical_fingerprint",
+        "digest": null,
+        "context": null
+       },
+       "tee_attestation": {
+        "type": "tee_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "no TEE quote measured (no TDX hardware on this host, or the producer leg has not run here); recorded absent, never fabricated"
+       },
+       "binary_attestation": {
+        "type": "binary_attestation",
+        "measurement_class": null,
+        "digest": null,
+        "context": "binary not measured (path unresolvable or file unreadable); recorded absent, never fabricated"
+       }
+      }
+     }
+    ]
+   ]
+  }
+ ]
+}
