@@ -825,15 +825,29 @@ fn register_with(
         if let Err(err) = &result {
             if let Some((accepted_size, accepted_root)) = continuity_refusal(err) {
                 if accepted_size >= cp.mmr_size {
+                    // Only drop it when the witness's checkpoint is one of
+                    // this log's own: then the witness is simply ahead on
+                    // this chain. A size this log never checkpointed at (or
+                    // a different root) is a different history.
+                    let holds = (accepted_size == cp.mmr_size && accepted_root == cp.root)
+                        || log_holds_checkpoint(checkpoints_path, accepted_size, &accepted_root);
+                    if holds {
+                        eprintln!(
+                            "[checkpoint] {ts_url} already accepted this log's checkpoint at size \
+                             {accepted_size}, at or past this one ({}); it cannot register this \
+                             one, dropping it from pending",
+                            cp.mmr_size
+                        );
+                        continue;
+                    }
                     eprintln!(
-                        "[checkpoint] {ts_url} already accepted a checkpoint at size \
-                         {accepted_size}, at or past this one ({}); it cannot register this one, \
-                         dropping it from pending",
-                        cp.mmr_size
+                        "[checkpoint] {ts_url} holds a checkpoint at size {accepted_size} with root \
+                         {accepted_root}, which this log does not hold (a fork, or a log restarted \
+                         under a reused log id: a node that lost its local state must start a new \
+                         log id); keeping it pending"
                     );
-                    continue;
-                }
-                match catch_up_witness(
+                } else {
+                    match catch_up_witness(
                     client_ref,
                     checkpoints_path,
                     cp.mmr_size,
@@ -851,6 +865,7 @@ fn register_with(
                     Err(reason) => eprintln!(
                         "[checkpoint] could not catch {ts_url} up from size {accepted_size}: {reason}"
                     ),
+                }
                 }
             }
         }
@@ -889,6 +904,15 @@ fn continuity_refusal(err: &AnchorError) -> Option<(u64, String)> {
     let size = detail.get("last_accepted_mmr_size")?.as_u64()?;
     let root = detail.get("last_accepted_root")?.as_str()?.to_string();
     Some((size, root))
+}
+
+/// Whether `checkpoints_path` holds a checkpoint at `size` with `root`.
+fn log_holds_checkpoint(checkpoints_path: &Path, size: u64, root: &str) -> bool {
+    cll::store::read_checkpoints(checkpoints_path).is_ok_and(|lines| {
+        lines
+            .iter()
+            .any(|l| l.record.mmr_size == size && l.record.root == root)
+    })
 }
 
 /// Send the witness every checkpoint in `checkpoints_path` after the one at
@@ -1908,7 +1932,10 @@ mod tests {
     }
 
     #[test]
-    fn a_witness_already_past_the_checkpoint_is_dropped_from_pending() {
+    fn a_witness_at_a_larger_size_this_log_never_held_stays_pending() {
+        // A lost-state or forked node: the witness holds a later checkpoint
+        // under this log id that is not one of this log's own. It must stay
+        // pending (with the new-log-id message), never be silently dropped.
         let witness = continuity_witness(Some((1_000, "cd".repeat(32))));
         let dir = tempfile::tempdir().unwrap();
         let (mut state, _) =
@@ -1919,7 +1946,55 @@ mod tests {
         state.tick(&signer(), &anchor).unwrap();
 
         assert!(witness.accepted.lock().unwrap().is_empty());
-        assert!(state.pending_witness_urls.is_empty());
+        assert_eq!(state.pending_witness_urls, vec![witness.url.clone()]);
+    }
+
+    /// Cut three checkpoints (no witness), return the dir and their lines.
+    fn three_local_checkpoints() -> (tempfile::TempDir, Vec<cll::store::CheckpointLine>) {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg("http://127.0.0.1:1"))
+                .unwrap();
+        let anchor = AnchorClient::new("http://127.0.0.1:1");
+        for seed in ["one", "two", "three"] {
+            let id = write_capsule(dir.path(), seed);
+            state.checkpoint_covering(&id, &signer(), &anchor).unwrap();
+        }
+        let lines = cll::store::read_checkpoints(dir.path().join("checkpoints.jsonl")).unwrap();
+        assert_eq!(lines.len(), 3);
+        (dir, lines)
+    }
+
+    fn register_line(
+        witness: &ContinuityWitness,
+        dir: &Path,
+        line: &cll::store::CheckpointLine,
+    ) -> Vec<String> {
+        let mut cp: CheckpointRecord =
+            serde_json::from_value(serde_json::to_value(&line.record).unwrap()).unwrap();
+        let cose = hex::decode(line.checkpoint_cose_hex.as_ref().unwrap()).unwrap();
+        register_with(
+            &AnchorClient::new(&witness.url),
+            &mut cp,
+            Some(&cose),
+            std::slice::from_ref(&witness.url),
+            &dir.join("checkpoints.jsonl"),
+        )
+    }
+
+    #[test]
+    fn a_witness_ahead_on_this_logs_own_chain_is_dropped_from_pending() {
+        let (dir, lines) = three_local_checkpoints();
+        // The witness already holds this log's own later checkpoint (the
+        // third); offering the second can never register there.
+        let third = &lines[2].record;
+        let witness = continuity_witness(Some((third.mmr_size, third.root.clone())));
+        assert!(register_line(&witness, dir.path(), &lines[1]).is_empty());
+        // The same when it holds exactly the checkpoint offered (its earlier
+        // acceptance's response was lost).
+        let witness = continuity_witness(Some((third.mmr_size, third.root.clone())));
+        assert!(register_line(&witness, dir.path(), &lines[2]).is_empty());
+        assert!(witness.accepted.lock().unwrap().is_empty());
     }
 
     #[test]

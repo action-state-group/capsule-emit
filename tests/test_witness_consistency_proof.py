@@ -155,9 +155,10 @@ class _ContinuityRefused(Exception):
     """Stands in for ``cll.checkpoint.WitnessContinuityRefused`` (cll >= 0.5):
     the drain reads only its ``last_accepted_mmr_size``."""
 
-    def __init__(self, last_accepted_mmr_size: int):
+    def __init__(self, last_accepted_mmr_size: int, last_accepted_root: str = "cd" * 32):
         super().__init__(f"HTTP 409: last accepted {last_accepted_mmr_size}")
         self.last_accepted_mmr_size = last_accepted_mmr_size
+        self.last_accepted_root = last_accepted_root
 
 
 def _two_pending(tmp_path, monkeypatch):
@@ -170,7 +171,7 @@ def _two_pending(tmp_path, monkeypatch):
     return dead_url, ledger_path, pending
 
 
-def test_backlog_skips_a_checkpoint_the_witness_is_already_past(tmp_path, monkeypatch):
+def test_backlog_skips_a_checkpoint_the_witness_is_past_on_this_ledgers_chain(tmp_path, monkeypatch):
     dead_url, ledger_path, pending = _two_pending(tmp_path, monkeypatch)
     older, newer = pending
     calls = []
@@ -179,7 +180,7 @@ def test_backlog_skips_a_checkpoint_the_witness_is_already_past(tmp_path, monkey
         cp = verify_checkpoint_cose_offline(checkpoint_cose).decoded.to_checkpoint_record()
         calls.append(cp.mmr_size)
         if cp.mmr_size == older.mmr_size:
-            raise _ContinuityRefused(last_accepted_mmr_size=older.mmr_size)
+            raise _ContinuityRefused(last_accepted_mmr_size=older.mmr_size, last_accepted_root=older.root)
         entry_hash = checkpoint_entry_hash(cp.to_dict())
         from capsule_emit.checkpoint import WitnessRecord
 
@@ -212,3 +213,25 @@ def test_backlog_stops_and_warns_when_the_witness_is_behind(tmp_path, monkeypatc
         result = witness.retry_pending_witness_stamps(str(ledger_path), ts_url=dead_url)
     assert calls == [1]
     assert result == {dead_url: 0}
+
+
+def test_backlog_keeps_a_witness_past_it_on_a_checkpoint_this_ledger_lacks(tmp_path, monkeypatch):
+    """A lost-state or forked ledger: the witness holds a larger checkpoint
+    under this log_id that is not one of this ledger's stamps. The drain
+    must not skip past it silently; it stops and says to start a new log_id."""
+    dead_url, ledger_path, pending = _two_pending(tmp_path, monkeypatch)
+    older, newer = pending
+    calls = []
+
+    def fake_register(checkpoint_cose, url, **kwargs):
+        calls.append(1)
+        raise _ContinuityRefused(last_accepted_mmr_size=newer.mmr_size + 100, last_accepted_root="cd" * 32)
+
+    import capsule_emit.checkpoint as checkpoint_pkg
+
+    monkeypatch.setattr(checkpoint_pkg, "register_checkpoint", fake_register)
+    with pytest.warns(RuntimeWarning, match="must start a new log_id"):
+        result = witness.retry_pending_witness_stamps(str(ledger_path), ts_url=dead_url)
+    assert calls == [1]
+    assert result == {dead_url: 0}
+    assert len(witness.checkpoint_witness_backlog(str(ledger_path), [dead_url])[dead_url]) == 2

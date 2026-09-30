@@ -1181,23 +1181,33 @@ def retry_pending_witness_stamps(
                 )
             except Exception as exc:  # noqa: BLE001 -- still down; stop this witness's drain for now
                 # A continuity refusal (409) names the witness's own
-                # last-accepted size (cll >= 0.5 ``WitnessContinuityRefused``).
-                # At or past this checkpoint: the witness already holds a
-                # later one, so this one can never register there -- skip it
-                # rather than retry it forever ahead of the rest. Behind it:
-                # the witness is missing a checkpoint this log cannot resend
-                # (it registered one without a proof, or never got one); stop
-                # and say so.
+                # last-accepted checkpoint (cll >= 0.5
+                # ``WitnessContinuityRefused``). When that checkpoint is one
+                # of this ledger's own stamps at or past this one, the
+                # witness is simply ahead on this chain: this checkpoint can
+                # never register there, so skip it rather than retry it
+                # forever ahead of the rest. Otherwise -- the witness is
+                # behind, or holds a checkpoint this ledger does not (a
+                # fork, or a restarted log reusing its log_id) -- stop and
+                # say so.
                 last_accepted = getattr(exc, "last_accepted_mmr_size", None)
-                if last_accepted is not None and last_accepted >= state.checkpoint.mmr_size:
+                last_root = getattr(exc, "last_accepted_root", None)
+                if (
+                    last_accepted is not None
+                    and last_accepted >= state.checkpoint.mmr_size
+                    and any(
+                        s.checkpoint.mmr_size == last_accepted and s.checkpoint.root == last_root
+                        for s in states
+                    )
+                ):
                     continue
                 if last_accepted is not None:
                     warnings.warn(
                         f"capsule-emit: witness {url} refused checkpoint "
                         f"log_id={state.checkpoint.log_id!r} mmr_size={state.checkpoint.mmr_size}: "
-                        f"it last accepted mmr_size={last_accepted}, which this checkpoint does "
-                        f"not chain from ({exc}). If this ledger's local state was lost or "
-                        "rebuilt, it must start a new log_id.",
+                        f"it last accepted mmr_size={last_accepted} root={last_root}, which this "
+                        f"checkpoint does not chain from ({exc}). If this ledger's local state "
+                        "was lost or rebuilt, it must start a new log_id.",
                         RuntimeWarning,
                         stacklevel=1,
                     )

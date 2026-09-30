@@ -16,10 +16,12 @@ All notable changes to `capsule-emit` are documented here. The format follows
   stamp already in the ledger (same `log_id` only; a moved ledger is a new
   `log_id` and starts over).
 - The witness backlog drain no longer stalls on a checkpoint the witness is
-  already past: a 409 naming a last-accepted size at or beyond it (cll >= 0.5
-  `WitnessContinuityRefused`) skips it and drains the rest. When the witness
-  is behind instead, the drain stops and warns that a ledger whose local
-  state was lost must start a new `log_id`.
+  already past on this ledger's own chain: a 409 naming a last-accepted
+  checkpoint that is one of this ledger's stamps, at or beyond the pending one
+  (cll >= 0.5 `WitnessContinuityRefused`), skips it and drains the rest.
+  Otherwise (the witness is behind, or holds a checkpoint this ledger lacks)
+  the drain stops and warns that a ledger whose local state was lost must
+  start a new `log_id`.
 
 ### Fixed — permalinks use the evidence-bundle/v2 §9 codec; oversize ones fall back to a pointer
 

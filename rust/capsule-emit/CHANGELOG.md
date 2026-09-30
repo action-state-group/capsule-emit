@@ -15,10 +15,10 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   offered checkpoint chains from and answer 409. On that 409 the crate reads
   the witness's last-accepted checkpoint from the body, sends every later
   checkpoint in `checkpoints.jsonl` in order, then resends the offered one;
-  nothing is re-signed. A witness already at or past the checkpoint is dropped
-  from pending. A witness holding a checkpoint this log does not have stays
-  pending, and the log says a node that lost its local state must start a new
-  log id.
+  nothing is re-signed. A witness that already holds one of this log's own
+  checkpoints at or past the offered one is dropped from pending. A witness
+  holding a checkpoint this log does not have (at any size) stays pending, and
+  the log says a node that lost its local state must start a new log id.
 
 ## 0.0.2
 
