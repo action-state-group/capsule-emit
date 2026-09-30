@@ -655,9 +655,27 @@ def _get_state(ledger_path: str, signer: _signing.Signer | None = None) -> _Witn
                 signer=_PersistedCheckpointSigner(resolved_signer),
                 log_id=_public_log_id(key),
                 ledger_path=ledger_path,
+                prev=_last_persisted_checkpoint(ledger_path, _public_log_id(key)),
             )
             _states[key] = state
         return state
+
+
+def _last_persisted_checkpoint(ledger_path: str, log_id: str) -> Any:
+    """The newest checkpoint stamp already in ``ledger_path`` for ``log_id``,
+    or ``None``. A fresh process chains its first checkpoint from it, so that
+    checkpoint carries ``prev_size > 0`` and a consistency proof, as every
+    checkpoint after a log's first must: a witness that already accepted a
+    checkpoint for this ``log_id`` refuses (or, in its warn mode, flags) a
+    later one without a proof. Without this, every restart sent
+    ``prev_size = 0`` and no proof for a log the witness already knew.
+
+    A stamp for a different ``log_id`` (the ledger file was moved, so its
+    hashed ``log_id`` changed) is not chained from: that log starts over."""
+    states = checkpoint_witness_states(ledger_path)
+    if states and states[-1].checkpoint.log_id == log_id:
+        return states[-1].checkpoint
+    return None
 
 
 def _build_checkpoint_cose_hex(
@@ -1161,7 +1179,28 @@ def retry_pending_witness_stamps(
                 witness_record = _register_with(
                     bytes.fromhex(state.checkpoint_cose_hex), url, state.checkpoint, sign=sign
                 )
-            except Exception:  # noqa: BLE001 -- still down; stop this witness's drain for now
+            except Exception as exc:  # noqa: BLE001 -- still down; stop this witness's drain for now
+                # A continuity refusal (409) names the witness's own
+                # last-accepted size (cll >= 0.5 ``WitnessContinuityRefused``).
+                # At or past this checkpoint: the witness already holds a
+                # later one, so this one can never register there -- skip it
+                # rather than retry it forever ahead of the rest. Behind it:
+                # the witness is missing a checkpoint this log cannot resend
+                # (it registered one without a proof, or never got one); stop
+                # and say so.
+                last_accepted = getattr(exc, "last_accepted_mmr_size", None)
+                if last_accepted is not None and last_accepted >= state.checkpoint.mmr_size:
+                    continue
+                if last_accepted is not None:
+                    warnings.warn(
+                        f"capsule-emit: witness {url} refused checkpoint "
+                        f"log_id={state.checkpoint.log_id!r} mmr_size={state.checkpoint.mmr_size}: "
+                        f"it last accepted mmr_size={last_accepted}, which this checkpoint does "
+                        f"not chain from ({exc}). If this ledger's local state was lost or "
+                        "rebuilt, it must start a new log_id.",
+                        RuntimeWarning,
+                        stacklevel=1,
+                    )
                 break
             _persist_witness_backfill(state.checkpoint, witness_record, ledger_path)
             backfilled[url] += 1
