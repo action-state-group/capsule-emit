@@ -5,7 +5,7 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## 0.0.2 — unreleased
+## 0.0.3 — unreleased
 
 ### Fixed
 - A witness that missed checkpoints in this log's chain is caught up instead
@@ -19,6 +19,8 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   from pending. A witness holding a checkpoint this log does not have stays
   pending, and the log says a node that lost its local state must start a new
   log id.
+
+## 0.0.2
 
 ### Changed
 - `structure` rejects a malformed `references[].retention` declaration (§5.5.5)
