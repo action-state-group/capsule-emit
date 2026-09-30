@@ -2,8 +2,8 @@
 """``CapsuleOTelSpanExporter`` -- the OTel processor/exporter itself.
 
 **Python reference, not a Go collector-distribution build.** capsule-emit is
-a Python package with no Go code anywhere in this repo (the Go side of this
-build-plan batch, `capsulectl`, lives in the separate `capsule-cli` repo).
+a Python package with no Go code anywhere in this repo (the Go CLI,
+`capsulectl`, lives in the separate `capsule-cli` repo).
 This composes at the OpenTelemetry *Python SDK* level -- a
 ``SpanExporter`` any Python app's ``TracerProvider`` can register -- the same
 way every other capsule-emit adapter plugs into its host framework's own
@@ -148,7 +148,7 @@ def process_span_facts(
     capsule-emit adapter makes.
 
     **The span name never reaches ``action_id``/``effect.type`` in clear
-    unless *clear_trace_context* says so.** A §7b cold review caught this:
+    unless *clear_trace_context* says so.** A review caught this:
     an earlier version of this function passed the raw span name straight
     through as the emitter's ``action`` (and therefore into the sealed
     capsule's ``action_id`` and ``effect.type``, both plain, undigested

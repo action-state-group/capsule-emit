@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Build the ``org.agentactioncapsule.otel`` block and the sibling
 outcome-context block -- draft-palanisamy-scitt-aac-otel-00's "The
-`org.agentactioncapsule.otel` Block" section, plus this task's outcome-context
-tagging requirement kept deliberately OUTSIDE that block (see
+`org.agentactioncapsule.otel` Block" section, plus outcome-context
+tagging, kept deliberately OUTSIDE that block (see
 :func:`build_outcome_context_block`'s docstring for why).
 
 **Where the block lives in v0.** The draft frames `org.agentactioncapsule.otel`
@@ -71,8 +71,8 @@ OTEL_BLOCK_KEY = "org.agentactioncapsule.otel"
 #: A SIBLING key, never nested inside ``OTEL_BLOCK_KEY``. The draft's Privacy
 #: Considerations section is explicit: "no field of `org.agentactioncapsule.otel`
 #: MAY carry: ... OpenTelemetry baggage entries" -- unconditionally, clear or
-#: digested. Outcome-context tagging is baggage-derived by this task's own Do
-#: line, so it cannot live inside that block without violating the draft it
+#: digested. Outcome-context tagging is derived from baggage by
+#: design, so it cannot live inside that block without violating the draft it
 #: is required to conform to. Naming follows this repo's existing `ext.*`
 #: convention for compute_attestation extension keys (`ext.mcp`,
 #: `ext.agentgateway.*`).

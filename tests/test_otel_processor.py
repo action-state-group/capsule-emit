@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for capsule_emit.otel -- the OTel processor v0.
 
-Covers, in order: the allow-list tables and their leak-mutant (the acceptance
-line's "a mutant that leaks one attribute goes red"), Signal 1 read off a
-span (the taxonomy reference implementation this task adds), the
+Covers, in order: the allow-list tables and their leak-mutant ("a mutant that
+leaks one attribute goes red"), Signal 1 read off a
+span (the taxonomy reference implementation this package adds), the
 ``org.agentactioncapsule.otel`` block builder, outcome-context tagging (unit
 level, hand-built facts), the ``process_span_facts`` pipeline,
 ``stamp_reverse_join``, and -- gated on ``opentelemetry.sdk.trace`` being
 installed -- real OpenTelemetry SDK round-trips through
-``CapsuleOTelSpanExporter``: sealing, observation-skip, the acceptance
-line's literal "zero content bytes" ledger scan (both prompt AND
+``CapsuleOTelSpanExporter``: sealing, observation-skip, the literal
+"zero content bytes" ledger scan (both prompt AND
 completion, through a real ``TracerProvider``), and outcome-context tagging
 sourced from real ``opentelemetry.baggage`` rather than a hand-built
 ``SpanFacts``.
@@ -65,7 +65,7 @@ def test_span_id_regex_rejects_wrong_length():
 
 
 def test_never_enters_semconv_keys_are_absent_from_the_allowlist():
-    """R4: the allow-list and the never-enters set must never overlap -- if
+    """The allow-list and the never-enters set must never overlap -- if
     they did, tier_for_semconv_attribute would return a real tier for a
     forbidden key and the whole default-deny posture would be silently
     broken."""
@@ -77,8 +77,7 @@ def test_never_enters_semconv_prefix_family_has_no_matching_allowlist_key():
     family (gen_ai.prompt.variable.*/enduser.*/user.*, allowlist.py's
     NEVER_ENTERS_SEMCONV_PREFIXES) -- a future SEMCONV_ATTRS entry like
     "user.email" would pass the exact-set check above while still being a
-    never-enters row under its prefix form. §7b cold review flagged this
-    exact gap."""
+    never-enters row under its prefix form. This test closes that gap."""
     from capsule_emit.otel.allowlist import NEVER_ENTERS_SEMCONV_PREFIXES
 
     for key in SEMCONV_ATTRS:
@@ -154,7 +153,7 @@ def test_no_recognized_attribute_present_is_fail_safe_effect():
     present" row -- ``classify_span_signal_1`` does not read span kind at
     all (it has no parameter for it); an empty attributes dict is the
     closest this function's own inputs get to that row, and is the actual
-    case this test exercises. R4: the mutant this guards is a future change
+    case this test exercises. The mutant this guards is a future change
     that treats a bare/unrecognized span as evidence of a read. Flip
     commit_step_present's caller to default False instead of None and this
     test goes red."""
@@ -244,8 +243,8 @@ def test_semconv_never_enters_key_is_dropped_by_the_real_allowlist():
 
 
 def test_LEAK_MUTANT_never_enters_key_promoted_to_clear_safe_leaks_through_real_builder():
-    """R4, the acceptance line's own words: 'a mutant that leaks one
-    attribute goes red'. This constructs the mutant allow-list (one of the
+    """Requirement: 'a mutant that leaks one attribute goes red'.
+    This constructs the mutant allow-list (one of the
     draft's own never-enters rows, remapped to CLEAR_SAFE) and runs it
     through the REAL, unmodified build_otel_block -- proving the allow-list
     lookup is actually load-bearing, not a check that could never fail.
@@ -383,7 +382,7 @@ def test_effect_span_is_sealed_with_the_otel_block(tmp_path):
 
 
 def test_REGRESSION_span_name_never_reaches_action_id_or_effect_type_in_clear(tmp_path):
-    """§7b cold review finding: an earlier version passed the raw span name
+    """Regression: an earlier version passed the raw span name
     straight through as action_id/effect.type -- both plain, undigested
     fields -- regardless of clear_trace_context, while the identical name
     was correctly gated inside otel_block["span_name"]. This is exactly the
@@ -516,8 +515,8 @@ def test_exporter_does_not_seal_a_read_only_real_span(tmp_path):
     assert not ledger.exists() or list(read_ledger(ledger)) == []
 
 
-def test_ACCEPTANCE_prompt_and_completion_content_never_reach_the_ledger_bytes(tmp_path):
-    """The acceptance line, verbatim: 'a real trace with prompt/completion
+def test_ZERO_CONTENT_prompt_and_completion_content_never_reach_the_ledger_bytes(tmp_path):
+    """Requirement: 'a real trace with prompt/completion
     content in span attributes yields records with zero content bytes
     (asserted by scanning the ledger for any 12-char substring of the
     prompt)'. Run through a REAL TracerProvider/SimpleSpanProcessor/
@@ -575,7 +574,7 @@ def test_ACCEPTANCE_prompt_and_completion_content_never_reach_the_ledger_bytes(t
 
 
 def test_REGRESSION_exporter_fills_outcome_context_from_real_baggage(tmp_path):
-    """§7c rework finding: process_span_facts.outcome-context tagging was
+    """Regression: process_span_facts.outcome-context tagging was
     provably inert on the real export path -- _facts_from_readable_span
     never populated SpanFacts.baggage, so no deployment could ever have
     triggered it no matter how outcome_context_baggage_keys was configured.
