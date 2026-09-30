@@ -32,6 +32,23 @@ All notable changes to `capsule-emit` are documented here. The format follows
   default, since no design note naming real keys exists yet; wiring the real keys in once they
   do is a one-line config change, not a code change).
 
+### Fixed — the first checkpoint after a restart carries a consistency proof
+
+- A fresh process chained its first checkpoint from nothing: `prev_size = 0`
+  and no `consistency_proof`, for a log the witness already knew. A witness
+  that requires a proof on every checkpoint after a log's first refuses that
+  (or, in its warn mode, flags it), and the witness's continuity view never
+  advanced past it. The witness state now resumes from the newest checkpoint
+  stamp already in the ledger (same `log_id` only; a moved ledger is a new
+  `log_id` and starts over).
+- The witness backlog drain no longer stalls on a checkpoint the witness is
+  already past on this ledger's own chain: a 409 naming a last-accepted
+  checkpoint that is one of this ledger's stamps, at or beyond the pending one
+  (cll >= 0.5 `WitnessContinuityRefused`), skips it and drains the rest.
+  Otherwise (the witness is behind, or holds a checkpoint this ledger lacks)
+  the drain stops and warns that a ledger whose local state was lost must
+  start a new `log_id`.
+
 ### Fixed — permalinks use the evidence-bundle/v2 §9 codec; oversize ones fall back to a pointer
 
 - `capsule-emit permalink` and `capsule_emit.permalink.build_url` encoded the

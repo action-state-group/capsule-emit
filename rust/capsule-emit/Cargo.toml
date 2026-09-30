@@ -1,6 +1,6 @@
 [package]
 name = "capsule-emit"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 license = "Apache-2.0"
 description = "Seal, sign, chain and checkpoint Agent Action Capsule records: JCS capsule ids, COSE_Sign1 signed statements, a durable local ledger, and signed log checkpoints."

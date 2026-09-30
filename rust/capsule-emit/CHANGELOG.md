@@ -5,7 +5,22 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## 0.0.2 — unreleased
+## 0.0.3 — unreleased
+
+### Fixed
+- A witness that missed checkpoints in this log's chain is caught up instead
+  of refusing every later one. Push-time cuts are never offered on their own,
+  and a registration that failed during an outage is superseded by the next
+  checkpoint, so the witness could hold an older checkpoint than the one the
+  offered checkpoint chains from and answer 409. On that 409 the crate reads
+  the witness's last-accepted checkpoint from the body, sends every later
+  checkpoint in `checkpoints.jsonl` in order, then resends the offered one;
+  nothing is re-signed. A witness that already holds one of this log's own
+  checkpoints at or past the offered one is dropped from pending. A witness
+  holding a checkpoint this log does not have (at any size) stays pending, and
+  the log says a node that lost its local state must start a new log id.
+
+## 0.0.2
 
 ### Changed
 - `structure` rejects a malformed `references[].retention` declaration (§5.5.5)

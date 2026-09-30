@@ -31,7 +31,7 @@
 //! implements it) is reused as-is, never a second key.
 //! `tests/evidencebook_parity.rs` pins the output byte for byte.
 
-use crate::anchor::{dispatch_base_for, AnchorClient};
+use crate::anchor::{dispatch_base_for, AnchorClient, AnchorError};
 use evidencebook::substrate::{record_id_from_hex, CllSubstrate, SubstrateError, RECORD_ID_LEN};
 // Re-exported under this module's names so a caller of this crate names
 // them without depending on `evidencebook` directly.
@@ -725,8 +725,13 @@ impl CheckpointState {
         if register {
             let ts_urls = self.cfg.witness_urls.clone();
             let cose = prepared.cose().map(<[u8]>::to_vec);
-            let still_pending =
-                register_with(anchor, &mut prepared.checkpoint, cose.as_deref(), &ts_urls);
+            let still_pending = register_with(
+                anchor,
+                &mut prepared.checkpoint,
+                cose.as_deref(),
+                &ts_urls,
+                &self.checkpoints_path(),
+            );
             self.pending_witness_urls = still_pending;
             self.witness_deferred = false;
         }
@@ -739,6 +744,11 @@ impl CheckpointState {
             self.pending_since = None;
         }
         Ok(cp)
+    }
+
+    /// `checkpoints.jsonl`, next to `capsules.jsonl`.
+    fn checkpoints_path(&self) -> PathBuf {
+        self.capsules_path.with_file_name("checkpoints.jsonl")
     }
 
     /// Retry registering the last checkpoint with whichever witness URLs are
@@ -756,7 +766,13 @@ impl CheckpointState {
         let ts_urls = std::mem::take(&mut self.pending_witness_urls);
         let before = cp.witnesses.len();
         let cose = self.substrate.last_checkpoint_cose().map(<[u8]>::to_vec);
-        let still_pending = register_with(anchor, &mut cp, cose.as_deref(), &ts_urls);
+        let still_pending = register_with(
+            anchor,
+            &mut cp,
+            cose.as_deref(),
+            &ts_urls,
+            &self.checkpoints_path(),
+        );
         self.pending_witness_urls = still_pending;
         let added = cp.witnesses.len() > before;
         if let Some(witnesses) = self.substrate.last_checkpoint_witnesses_mut() {
@@ -770,11 +786,26 @@ impl CheckpointState {
 /// `cp.witnesses` in place. Returns the subset still unregistered. Never
 /// lets a network error propagate -- an unreachable witness leaves this
 /// checkpoint self-checkpointed, retried later.
+///
+/// **Catch-up on a continuity refusal.** A witness refuses (409) a
+/// checkpoint whose `prev_size`/`prev_root` is not the checkpoint IT last
+/// accepted for this log, naming that one in the body. That happens
+/// whenever the witness missed a checkpoint in this log's chain: push-time
+/// cuts are never offered on their own, and a registration that failed
+/// during an outage is superseded by the next checkpoint. When the named
+/// checkpoint is in `checkpoints_path`, every later one is sent in order
+/// (each chains from the one before, with its own consistency proof), then
+/// `cp` again -- so the witness's view catches up to this log without
+/// re-signing anything. A witness already at or past `cp` can never
+/// register it and is dropped from pending; a witness holding a checkpoint
+/// this log does not have stays pending, and the message says a log that
+/// lost its local state must start a new log id.
 fn register_with(
     anchor_default: &AnchorClient,
     cp: &mut CheckpointRecord,
     checkpoint_cose: Option<&[u8]>,
     ts_urls: &[String],
+    checkpoints_path: &Path,
 ) -> Vec<String> {
     let mut still_pending = Vec::new();
     for ts_url in ts_urls {
@@ -790,7 +821,55 @@ fn register_with(
             Some(AnchorClient::new(dispatch_base))
         };
         let client_ref = client.as_ref().unwrap_or(anchor_default);
-        match client_ref.post_checkpoint_cose(cose) {
+        let mut result = client_ref.post_checkpoint_cose(cose);
+        if let Err(err) = &result {
+            if let Some((accepted_size, accepted_root)) = continuity_refusal(err) {
+                if accepted_size >= cp.mmr_size {
+                    // Only drop it when the witness's checkpoint is one of
+                    // this log's own: then the witness is simply ahead on
+                    // this chain. A size this log never checkpointed at (or
+                    // a different root) is a different history.
+                    let holds = (accepted_size == cp.mmr_size && accepted_root == cp.root)
+                        || log_holds_checkpoint(checkpoints_path, accepted_size, &accepted_root);
+                    if holds {
+                        eprintln!(
+                            "[checkpoint] {ts_url} already accepted this log's checkpoint at size \
+                             {accepted_size}, at or past this one ({}); it cannot register this \
+                             one, dropping it from pending",
+                            cp.mmr_size
+                        );
+                        continue;
+                    }
+                    eprintln!(
+                        "[checkpoint] {ts_url} holds a checkpoint at size {accepted_size} with root \
+                         {accepted_root}, which this log does not hold (a fork, or a log restarted \
+                         under a reused log id: a node that lost its local state must start a new \
+                         log id); keeping it pending"
+                    );
+                } else {
+                    match catch_up_witness(
+                    client_ref,
+                    checkpoints_path,
+                    cp.mmr_size,
+                    accepted_size,
+                    &accepted_root,
+                ) {
+                    Ok(sent) => {
+                        eprintln!(
+                            "[checkpoint] caught {ts_url} up from size {accepted_size} with \
+                             {sent} earlier checkpoint(s); resending size {}",
+                            cp.mmr_size
+                        );
+                        result = client_ref.post_checkpoint_cose(cose);
+                    }
+                    Err(reason) => eprintln!(
+                        "[checkpoint] could not catch {ts_url} up from size {accepted_size}: {reason}"
+                    ),
+                }
+                }
+            }
+        }
+        match result {
             Ok(resp) => {
                 cp.witnesses.push(CheckpointWitness {
                     ts_url: ts_url.clone(),
@@ -811,6 +890,71 @@ fn register_with(
         }
     }
     still_pending
+}
+
+/// The witness's own last-accepted `(mmr_size, root)` from a 409
+/// continuity refusal (`{"detail": {"last_accepted_mmr_size",
+/// "last_accepted_root", ...}}`), or `None` for any other error.
+fn continuity_refusal(err: &AnchorError) -> Option<(u64, String)> {
+    let AnchorError::Status { status: 409, body } = err else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let detail = value.get("detail")?;
+    let size = detail.get("last_accepted_mmr_size")?.as_u64()?;
+    let root = detail.get("last_accepted_root")?.as_str()?.to_string();
+    Some((size, root))
+}
+
+/// Whether `checkpoints_path` holds a checkpoint at `size` with `root`.
+fn log_holds_checkpoint(checkpoints_path: &Path, size: u64, root: &str) -> bool {
+    cll::store::read_checkpoints(checkpoints_path).is_ok_and(|lines| {
+        lines
+            .iter()
+            .any(|l| l.record.mmr_size == size && l.record.root == root)
+    })
+}
+
+/// Send the witness every checkpoint in `checkpoints_path` after the one at
+/// `(accepted_size, accepted_root)` and before `up_to_size`, in order,
+/// stopping at the first failure. Returns how many were sent.
+fn catch_up_witness(
+    client: &AnchorClient,
+    checkpoints_path: &Path,
+    up_to_size: u64,
+    accepted_size: u64,
+    accepted_root: &str,
+) -> Result<usize, String> {
+    let lines = cll::store::read_checkpoints(checkpoints_path).map_err(|e| e.to_string())?;
+    let start = lines
+        .iter()
+        .position(|l| l.record.mmr_size == accepted_size && l.record.root == accepted_root)
+        .ok_or_else(|| {
+            format!(
+                "the witness accepted a checkpoint at size {accepted_size} with root \
+                 {accepted_root}, which this log does not hold (a fork, or a log restarted \
+                 under a reused log id: a node that lost its local state must start a new \
+                 log id)"
+            )
+        })?;
+    let mut sent = 0;
+    for line in lines[start + 1..]
+        .iter()
+        .filter(|l| l.record.mmr_size < up_to_size)
+    {
+        let cose_hex = line.checkpoint_cose_hex.as_deref().ok_or_else(|| {
+            format!(
+                "the checkpoint at size {} has no COSE-wire form to send",
+                line.record.mmr_size
+            )
+        })?;
+        let cose = hex::decode(cose_hex).map_err(|e| e.to_string())?;
+        client
+            .post_checkpoint_cose(&cose)
+            .map_err(|e| format!("sending size {}: {e}", line.record.mmr_size))?;
+        sent += 1;
+    }
+    Ok(sent)
 }
 
 /// One newline-terminated `capsules.jsonl` line: its byte span and id.
@@ -1650,5 +1794,235 @@ mod tests {
         assert_eq!(state.sync().unwrap(), 1);
         assert_eq!(state.leaf_count(), 2);
         assert_eq!(state.leaf_index_by_id.get(&id), Some(&1));
+    }
+
+    /// A minimal witness with capsule-anchor's continuity rule: the first
+    /// checkpoint for a log is accepted; a later one only if its
+    /// `prev_size`/`prev_root` equal the last one accepted, else 409 naming
+    /// that one. `tip` seeds the witness's state (a witness that already
+    /// holds some checkpoint). Records the sizes it accepted.
+    struct ContinuityWitness {
+        url: String,
+        accepted: std::sync::Arc<std::sync::Mutex<Vec<u64>>>,
+    }
+
+    fn continuity_witness(tip: Option<(u64, String)>) -> ContinuityWitness {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let accepted = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = accepted.clone();
+        std::thread::spawn(move || {
+            let mut tip = tip;
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { return };
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 8192];
+                let body = loop {
+                    let n = stream.read(&mut chunk).unwrap_or(0);
+                    if n == 0 {
+                        break None;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                    let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") else {
+                        continue;
+                    };
+                    let head = String::from_utf8_lossy(&buf[..end]).to_lowercase();
+                    let len: usize = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .map_or(0, |v| v.trim().parse().unwrap());
+                    if buf.len() >= end + 4 + len {
+                        break Some(buf[end + 4..end + 4 + len].to_vec());
+                    }
+                };
+                let Some(body) = body else { continue };
+                let decoded = verify_checkpoint_cose_offline(&body).decoded.unwrap();
+                let chains = match &tip {
+                    None => true,
+                    Some((size, root)) => decoded.prev_size == *size && decoded.prev_root == *root,
+                };
+                let (status, payload) = if chains {
+                    tip = Some((decoded.mmr_size, decoded.root.clone()));
+                    seen.lock().unwrap().push(decoded.mmr_size);
+                    let entry_hash = "ab".repeat(32);
+                    (
+                        "200 OK",
+                        json!({"receipt_b64": "c3R1Yg==", "entry_hash": entry_hash,
+                               "leaf_index": 0, "tree_size": 1})
+                        .to_string(),
+                    )
+                } else {
+                    let (size, root) = tip.clone().unwrap();
+                    (
+                        "409 Conflict",
+                        json!({"detail": {"error": "does not chain",
+                               "last_accepted_mmr_size": size, "last_accepted_root": root}})
+                        .to_string(),
+                    )
+                };
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+            }
+        });
+        ContinuityWitness { url, accepted }
+    }
+
+    fn witnessed_cfg(url: &str) -> CheckpointCadenceConfig {
+        CheckpointCadenceConfig {
+            cadence_entries: 100,
+            cadence_seconds: 300,
+            witness_urls: vec![url.to_string()],
+            pad_bucket: 0,
+        }
+    }
+
+    #[test]
+    fn a_witness_that_missed_push_cuts_is_caught_up_in_order() {
+        let witness = continuity_witness(None);
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&witness.url)).unwrap();
+        let anchor = AnchorClient::new(&witness.url);
+
+        // A: cut at push, offered on the next tick, accepted (first seen).
+        let one = write_capsule(dir.path(), "one");
+        state.checkpoint_covering(&one, &signer(), &anchor).unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+        let a = state.last_checkpoint().unwrap().mmr_size;
+        assert_eq!(*witness.accepted.lock().unwrap(), vec![a]);
+
+        // B and C: two push cuts; the tick offers only the latest, C, whose
+        // prev is B -- a checkpoint the witness never saw.
+        let two = write_capsule(dir.path(), "two");
+        state.checkpoint_covering(&two, &signer(), &anchor).unwrap();
+        let b = state.last_checkpoint().unwrap().mmr_size;
+        let three = write_capsule(dir.path(), "three");
+        state
+            .checkpoint_covering(&three, &signer(), &anchor)
+            .unwrap();
+        let c = state.last_checkpoint().unwrap().mmr_size;
+        state.tick(&signer(), &anchor).unwrap();
+
+        assert_eq!(*witness.accepted.lock().unwrap(), vec![a, b, c]);
+        assert!(state.pending_witness_urls.is_empty());
+        let latest = state.last_checkpoint().unwrap();
+        assert_eq!(latest.witnesses.len(), 1);
+        assert_eq!(latest.witnesses[0].ts_url, witness.url);
+    }
+
+    #[test]
+    fn a_witness_holding_a_checkpoint_this_log_lacks_stays_pending() {
+        let witness = continuity_witness(Some((1, "cd".repeat(32))));
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&witness.url)).unwrap();
+        let anchor = AnchorClient::new(&witness.url);
+        let one = write_capsule(dir.path(), "one");
+        state.checkpoint_covering(&one, &signer(), &anchor).unwrap();
+        let two = write_capsule(dir.path(), "two");
+        state.checkpoint_covering(&two, &signer(), &anchor).unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+
+        assert!(witness.accepted.lock().unwrap().is_empty());
+        assert_eq!(state.pending_witness_urls, vec![witness.url.clone()]);
+    }
+
+    #[test]
+    fn a_witness_at_a_larger_size_this_log_never_held_stays_pending() {
+        // A lost-state or forked node: the witness holds a later checkpoint
+        // under this log id that is not one of this log's own. It must stay
+        // pending (with the new-log-id message), never be silently dropped.
+        let witness = continuity_witness(Some((1_000, "cd".repeat(32))));
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&witness.url)).unwrap();
+        let anchor = AnchorClient::new(&witness.url);
+        let one = write_capsule(dir.path(), "one");
+        state.checkpoint_covering(&one, &signer(), &anchor).unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+
+        assert!(witness.accepted.lock().unwrap().is_empty());
+        assert_eq!(state.pending_witness_urls, vec![witness.url.clone()]);
+    }
+
+    /// Cut three checkpoints (no witness), return the dir and their lines.
+    fn three_local_checkpoints() -> (tempfile::TempDir, Vec<cll::store::CheckpointLine>) {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg("http://127.0.0.1:1"))
+                .unwrap();
+        let anchor = AnchorClient::new("http://127.0.0.1:1");
+        for seed in ["one", "two", "three"] {
+            let id = write_capsule(dir.path(), seed);
+            state.checkpoint_covering(&id, &signer(), &anchor).unwrap();
+        }
+        let lines = cll::store::read_checkpoints(dir.path().join("checkpoints.jsonl")).unwrap();
+        assert_eq!(lines.len(), 3);
+        (dir, lines)
+    }
+
+    fn register_line(
+        witness: &ContinuityWitness,
+        dir: &Path,
+        line: &cll::store::CheckpointLine,
+    ) -> Vec<String> {
+        let mut cp: CheckpointRecord =
+            serde_json::from_value(serde_json::to_value(&line.record).unwrap()).unwrap();
+        let cose = hex::decode(line.checkpoint_cose_hex.as_ref().unwrap()).unwrap();
+        register_with(
+            &AnchorClient::new(&witness.url),
+            &mut cp,
+            Some(&cose),
+            std::slice::from_ref(&witness.url),
+            &dir.join("checkpoints.jsonl"),
+        )
+    }
+
+    #[test]
+    fn a_witness_ahead_on_this_logs_own_chain_is_dropped_from_pending() {
+        let (dir, lines) = three_local_checkpoints();
+        // The witness already holds this log's own later checkpoint (the
+        // third); offering the second can never register there.
+        let third = &lines[2].record;
+        let witness = continuity_witness(Some((third.mmr_size, third.root.clone())));
+        assert!(register_line(&witness, dir.path(), &lines[1]).is_empty());
+        // The same when it holds exactly the checkpoint offered (its earlier
+        // acceptance's response was lost).
+        let witness = continuity_witness(Some((third.mmr_size, third.root.clone())));
+        assert!(register_line(&witness, dir.path(), &lines[2]).is_empty());
+        assert!(witness.accepted.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn continuity_refusal_reads_only_a_409_with_the_last_accepted_checkpoint() {
+        let body = json!({"detail": {"error": "x", "last_accepted_mmr_size": 7,
+                                     "last_accepted_root": "ef"}})
+        .to_string();
+        assert_eq!(
+            continuity_refusal(&AnchorError::Status {
+                status: 409,
+                body: body.clone()
+            }),
+            Some((7, "ef".to_string()))
+        );
+        assert_eq!(
+            continuity_refusal(&AnchorError::Status { status: 400, body }),
+            None
+        );
+        assert_eq!(
+            continuity_refusal(&AnchorError::Status {
+                status: 409,
+                body: "nope".into()
+            }),
+            None
+        );
+        assert_eq!(
+            continuity_refusal(&AnchorError::Transport("down".into())),
+            None
+        );
     }
 }
