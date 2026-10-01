@@ -6,6 +6,28 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
+
+- `capsule-emit verify --bundle FILE.json [--require-signature] [--json]` checks an evidence file
+  (an AAC Evidence Bundle, `evidence-bundle/v2`, draft-mih-zhang-agent-disclosure-bundle-00) from
+  the file alone: every record's `capsule_id`, every record's producer signature, citation closure
+  to the declared depth, the signed checkpoint, interval coverage under the checkpoint's range
+  root, and each record's inclusion proof. It composes `agent_action_capsule.bundle.verify_bundle`
+  with the producer-signature check that verifier leaves to the substrate.
+- The checkpoint is read only from its signed COSE form (`checkpoint.cose`): log, size, root, key
+  and time come from the verified statement, and a JSON copy that differs from it fails the file.
+  A file with no checkpoint signature is never a plain VALID: its coverage and membership claims
+  are "not shown", since anyone can rebuild a log over a chosen subset of records.
+- Verdicts: `VALID` (exit 0) when everything is proven; `INCOMPLETE` (exit 2) when nothing failed
+  but something the file claims is not shown (no signed checkpoint, declared-missing citations,
+  unsigned records); `INVALID` (exit 1). It states, without gating, whether the signed
+  checkpoint's key signed every record. Proof checks need `checkpointed-local-log>=0.4.0`.
+- `capsule-emit report FILE.json [-o OUT.html]` renders one readable page from the same check:
+  the verdict, each check in a plain sentence, the records, and what the file does not show (the
+  text, records outside its log range, citations it declares missing). No script and no network:
+  the page is self-contained. Library: `capsule_emit.evidence_file.check_evidence_file`,
+  `capsule_emit.evidence_report.render_report_html`.
+
 ### Added — OTel processor v0: digest-only `org.agentactioncapsule.otel` correlation (`capsule_emit.otel`)
 
 - `capsule_emit.otel.CapsuleOTelSpanExporter` — an OpenTelemetry Python SDK `SpanExporter`

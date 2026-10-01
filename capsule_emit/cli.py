@@ -127,12 +127,39 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # verify
     verify_p = sub.add_parser("verify", help="verify capsules")
-    verify_p.add_argument("--store", dest="store_path", metavar="PATH", help="JSONL ledger to verify")
+    verify_src = verify_p.add_mutually_exclusive_group(required=True)
+    verify_src.add_argument("--store", dest="store_path", metavar="PATH", help="JSONL ledger to verify")
+    verify_src.add_argument(
+        "--bundle",
+        dest="bundle_path",
+        metavar="FILE.json",
+        help="evidence file (evidence-bundle/v2) to verify offline: records, signatures, "
+        "citation closure, the signed checkpoint, log coverage and per-record inclusion. "
+        "Exit 0 VALID, 2 INCOMPLETE (nothing failed, something not shown), 1 INVALID",
+    )
+    verify_p.add_argument(
+        "--json", dest="as_json", action="store_true", help="with --bundle: the full result as JSON"
+    )
     verify_p.add_argument(
         "--require-signature",
         action="store_true",
         help="treat a record with no producer signature (producer_signature_unclaimed)  — for ledgers whose producer always signs."
         "as INVALID instead of a non-gating warning",
+    )
+
+    # report
+    report_p = sub.add_parser(
+        "report",
+        help="render one readable HTML page from an evidence file (evidence-bundle/v2), offline",
+    )
+    report_p.add_argument("bundle_path", metavar="FILE.json", help="the evidence file")
+    report_p.add_argument(
+        "-o", "--out", metavar="OUTPUT.html", default=None, help="write the page here (default: stdout)"
+    )
+    report_p.add_argument(
+        "--require-signature",
+        action="store_true",
+        help="treat a record with no producer signature as a failed check",
     )
 
     # status
@@ -362,7 +389,72 @@ def _cmd_evidence(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_verify_bundle(args: argparse.Namespace) -> int:
+    from .evidence_file import check_evidence_file, load_evidence_file
+
+    try:
+        bundle = load_evidence_file(args.bundle_path)
+    except ValueError as err:
+        print(f"verify: {err}")
+        return 1
+    check = check_evidence_file(bundle, require_signature=args.require_signature)
+    if args.as_json:
+        print(json.dumps(check.to_dict(), indent=2))
+        return _VERDICT_EXIT[check.verdict]
+    if not check.kind_ok:
+        print(f"verify: {args.bundle_path} — not an evidence-bundle/v2 file")
+        return 1
+    marks = {"pass": "PASS     ", "withheld": "NOT SHOWN", "fail": "FAIL     "}
+    for c in check.checks:
+        print(f"  {marks.get(c.status, c.status)}  {c.plain}")
+        for finding in c.findings:
+            print(f"               {finding}")
+    if check.checkpoint_authenticated:
+        signer = (
+            "; its key signed every record"
+            if check.signer_matches_checkpoint
+            else "; some records name a different key"
+        )
+        print(
+            f"\n{len(check.records)} record(s) in log {check.checkpoint.get('log_id')}, "
+            f"under a checkpoint signed {check.checkpoint.get('timestamp')}{signer}"
+        )
+    elif any(c.name == "checkpoint" and c.status == "fail" for c in check.checks):
+        print(f"\n{len(check.records)} record(s); the checkpoint does not match its signature: not tied to any log")
+    else:
+        print(f"\n{len(check.records)} record(s); no signed checkpoint: not tied to any committed log")
+    if check.missing:
+        print(f"{len(check.missing)} cited record(s) not in the file (declared by the file)")
+    print(check.verdict)
+    return _VERDICT_EXIT[check.verdict]
+
+
+# VALID: everything proven. INCOMPLETE: nothing failed, something not shown.
+_VERDICT_EXIT = {"VALID": 0, "INVALID": 1, "INCOMPLETE": 2}
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    from .evidence_file import check_evidence_file, load_evidence_file
+    from .evidence_report import render_report_html
+
+    try:
+        bundle = load_evidence_file(args.bundle_path)
+    except ValueError as err:
+        print(f"report: {err}")
+        return 1
+    check = check_evidence_file(bundle, require_signature=args.require_signature)
+    page = render_report_html(bundle, check, source=Path(args.bundle_path).name)
+    if args.out:
+        Path(args.out).write_text(page, encoding="utf-8")
+        print(f"report: {check.verdict} — wrote {args.out}")
+    else:
+        print(page)
+    return _VERDICT_EXIT[check.verdict]
+
+
 def _cmd_verify(args: argparse.Namespace) -> int:
+    if args.bundle_path:
+        return _cmd_verify_bundle(args)
     from .ledger import read_ledger
     from .signing import verify_store_signed
 
@@ -681,6 +773,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "verify":
         return _cmd_verify(args)
+
+    if args.command == "report":
+        return _cmd_report(args)
 
     if args.command == "status":
         return _cmd_status(args)
