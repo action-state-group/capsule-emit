@@ -12,9 +12,16 @@ Offline. Composes two checks that neither does alone:
   (:func:`capsule_emit.signing.verify_capsule_signature_tristate`), which the
   neutral verifier deliberately leaves to the substrate.
 
-It also states, without gating on it, whether every record names the same
-signing key as the checkpoint: the log's own key vouching for records that
-the log's owner signed. A key says who holds it, not who that is.
+The checkpoint is read only from its signed COSE form (``checkpoint.cose``):
+its log, size, root, key and time are taken from the verified statement, and
+a JSON copy that differs from it fails the file. A file with no checkpoint
+signature proves nothing about the log: anyone can rebuild a log over any
+subset of records, so its coverage and membership claims are reported as not
+shown and the file is never a plain VALID.
+
+It also states, without gating on it, whether every record names the signed
+checkpoint's key: the log's own key vouching for records that the log's
+owner signed. A key says who holds it, not who that is.
 
 Public API
 ----------
@@ -23,6 +30,8 @@ load_evidence_file(path) -> dict
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,8 +50,17 @@ __all__ = [
 
 BUNDLE_KIND = "evidence-bundle/v2"
 
+# The checkpoint fields a signed COSE checkpoint states; the JSON copy must
+# match every one.
+_SIGNED_CHECKPOINT_FIELDS = ("log_id", "mmr_size", "root", "key_id", "timestamp", "prev_size", "prev_root")
+
 # One plain sentence per claim status; the CLI and the report both read these.
 _PLAIN: dict[str, dict[str, str]] = {
+    "checkpoint": {
+        "pass": "The log's checkpoint is signed, and the file's copy of it matches what was signed.",
+        "withheld": "The file carries no signed checkpoint, so nothing ties these records to a log anyone committed to.",
+        "fail": "The log's checkpoint signature does not check, or the file's copy differs from what was signed.",
+    },
     "records": {
         "pass": "Every record is intact: its id recomputes from its content.",
         "fail": "At least one record does not match its own id.",
@@ -59,12 +77,12 @@ _PLAIN: dict[str, dict[str, str]] = {
     },
     "interval_coverage": {
         "pass": "The records are one unbroken stretch of the log under the signed checkpoint.",
-        "withheld": "The file carries no proof that its records are one unbroken stretch of a log.",
+        "withheld": "Not proven that these records are one unbroken stretch of a committed log.",
         "fail": "The proof that these records are one unbroken stretch of the log does not check.",
     },
     "per_record_membership": {
         "pass": "Each record is proven to be in the log at the position it claims.",
-        "withheld": "The file carries no per-record proof of being in a log.",
+        "withheld": "Not proven that each record is in a committed log.",
         "fail": "At least one record's proof of being in the log does not check.",
     },
 }
@@ -99,6 +117,8 @@ class EvidenceFileCheck:
     checks: list[Check] = field(default_factory=list)
     records: list[RecordCheck] = field(default_factory=list)
     checkpoint: dict[str, Any] = field(default_factory=dict)
+    """The signed checkpoint's own fields (log_id, mmr_size, root, key_id,
+    timestamp, ...) when it verified; else empty. Never the unsigned JSON copy."""
     checkpoint_authenticated: bool = False
     signer_matches_checkpoint: bool | None = None
     missing: tuple[str, ...] = ()
@@ -117,8 +137,15 @@ class EvidenceFileCheck:
         """Every check passed outright, nothing withheld."""
         return self.ok and all(c.status == "pass" for c in self.checks)
 
+    @property
+    def verdict(self) -> str:
+        """``VALID`` (everything proven), ``INCOMPLETE`` (nothing failed, but
+        something the file claims is not shown) or ``INVALID``."""
+        return "VALID" if self.proven else "INCOMPLETE" if self.ok else "INVALID"
+
     def to_dict(self) -> dict[str, Any]:
         return {
+            "verdict": self.verdict,
             "ok": self.ok,
             "proven": self.proven,
             "bundle_kind_ok": self.kind_ok,
@@ -195,23 +222,25 @@ def check_evidence_file(bundle: Any, *, require_signature: bool = False) -> Evid
         or (() if records else ("no_records",)),
     )
     signatures = _signature_check(records, require_signature)
+    stated = bundle.get("checkpoint") if isinstance(bundle.get("checkpoint"), dict) else {}
+    checkpoint_check, signed = _checkpoint_check(stated)
+    interval = _claim("interval_coverage", result.interval_coverage)
+    membership = _claim("per_record_membership", result.per_record_membership)
+    if checkpoint_check.status != "pass":
+        # Proofs to a checkpoint nobody signed prove nothing about a log.
+        interval, membership = _unanchored(interval), _unanchored(membership)
     checks = [
         identity,
         signatures,
         _claim("graph_closure", result.graph_closure),
-        _claim("interval_coverage", result.interval_coverage),
-        _claim("per_record_membership", result.per_record_membership),
+        checkpoint_check,
+        interval,
+        membership,
     ]
 
-    checkpoint = bundle.get("checkpoint") if isinstance(bundle.get("checkpoint"), dict) else {}
-    authenticated = (
-        result.interval_coverage.status == "pass"
-        and "checkpoint_unverified" not in result.interval_coverage.findings
-    )
-    checkpoint_key = checkpoint.get("key_id") if isinstance(checkpoint.get("key_id"), str) else None
-    signer_match = (
-        all(r.key_id == checkpoint_key for r in records) if checkpoint_key and records else None
-    )
+    authenticated = checkpoint_check.status == "pass"
+    checkpoint_key = signed.get("key_id") if authenticated else None
+    signer_match = all(r.key_id == checkpoint_key for r in records) if checkpoint_key and records else None
     completeness = bundle.get("completeness") if isinstance(bundle.get("completeness"), dict) else {}
     missing = completeness.get("missing") if isinstance(completeness.get("missing"), list) else []
     depth = completeness.get("closure_depth", 2)
@@ -222,7 +251,7 @@ def check_evidence_file(bundle: Any, *, require_signature: bool = False) -> Evid
         root=bundle.get("root") if isinstance(bundle.get("root"), str) else None,
         checks=checks,
         records=records,
-        checkpoint=checkpoint,
+        checkpoint=signed if authenticated else {},
         checkpoint_authenticated=authenticated,
         signer_matches_checkpoint=signer_match,
         missing=tuple(str(m) for m in missing),
@@ -234,6 +263,48 @@ def check_evidence_file(bundle: Any, *, require_signature: bool = False) -> Evid
 
 def _claim(name: str, claim: Any) -> Check:
     return Check(name, claim.status, tuple(claim.findings))
+
+
+def _unanchored(check: Check) -> Check:
+    """A proof claim with no signed checkpoint behind it: a failure stays a
+    failure; anything else is not shown."""
+    if check.status == "fail":
+        return check
+    return Check(check.name, "withheld", tuple(dict.fromkeys((*check.findings, "checkpoint_unverified"))))
+
+
+def _checkpoint_check(stated: dict[str, Any]) -> tuple[Check, dict[str, Any]]:
+    """Verify ``checkpoint.cose`` and hold the JSON copy to it. Returns the
+    check and, when it passed, the signed checkpoint's own fields."""
+    encoded = stated.get("cose")
+    if encoded is None:
+        return Check("checkpoint", "withheld", ("checkpoint_signature_absent",)), {}
+    try:
+        from cll.checkpoint import verify_checkpoint_cose_offline
+    except ImportError:
+        return Check("checkpoint", "withheld", ("checkpoint_verifier_unavailable",)), {}
+    try:
+        if not isinstance(encoded, str):
+            raise ValueError("checkpoint.cose is not a string")
+        raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        result = verify_checkpoint_cose_offline(raw)
+    except (ValueError, TypeError, binascii.Error):
+        return Check("checkpoint", "fail", ("checkpoint_signature_malformed",)), {}
+    if not result.ok or result.decoded is None:
+        return Check("checkpoint", "fail", ("checkpoint_signature_invalid",)), {}
+    signed = {name: getattr(result.decoded, name) for name in _SIGNED_CHECKPOINT_FIELDS}
+    mismatched = tuple(
+        f"checkpoint_field_mismatch:{name}"
+        for name in _SIGNED_CHECKPOINT_FIELDS
+        if name in stated and stated[name] != signed[name]
+    )
+    missing = tuple(
+        f"checkpoint_field_missing:{name}" for name in ("log_id", "mmr_size", "root") if name not in stated
+    )
+    if mismatched or missing:
+        return Check("checkpoint", "fail", mismatched + missing), {}
+    signed["witnesses"] = stated.get("witnesses") if isinstance(stated.get("witnesses"), list) else []
+    return Check("checkpoint", "pass"), signed
 
 
 def _signature_check(records: list[RecordCheck], require_signature: bool) -> Check:

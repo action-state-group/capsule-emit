@@ -134,7 +134,8 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="bundle_path",
         metavar="FILE.json",
         help="evidence file (evidence-bundle/v2) to verify offline: records, signatures, "
-        "citation closure, log coverage and per-record inclusion under its checkpoint",
+        "citation closure, the signed checkpoint, log coverage and per-record inclusion. "
+        "Exit 0 VALID, 2 INCOMPLETE (nothing failed, something not shown), 1 INVALID",
     )
     verify_p.add_argument(
         "--json", dest="as_json", action="store_true", help="with --bundle: the full result as JSON"
@@ -399,32 +400,37 @@ def _cmd_verify_bundle(args: argparse.Namespace) -> int:
     check = check_evidence_file(bundle, require_signature=args.require_signature)
     if args.as_json:
         print(json.dumps(check.to_dict(), indent=2))
-        return 0 if check.ok else 1
+        return _VERDICT_EXIT[check.verdict]
     if not check.kind_ok:
         print(f"verify: {args.bundle_path} — not an evidence-bundle/v2 file")
         return 1
-    marks = {"pass": "PASS    ", "withheld": "NOT SHOWN", "fail": "FAIL    "}
+    marks = {"pass": "PASS     ", "withheld": "NOT SHOWN", "fail": "FAIL     "}
     for c in check.checks:
-        qualifier = " (checkpoint as stated by the producer)" if "checkpoint_unverified" in c.findings else ""
-        print(f"  {marks.get(c.status, c.status)}  {c.plain}{qualifier}")
+        print(f"  {marks.get(c.status, c.status)}  {c.plain}")
         for finding in c.findings:
-            if finding != "checkpoint_unverified":
-                print(f"              {finding}")
-    print(
-        f"\n{len(check.records)} record(s); checkpoint signature "
-        + ("checked" if check.checkpoint_authenticated else "not checked")
-        + (
-            "; the checkpoint's key signed every record"
+            print(f"               {finding}")
+    if check.checkpoint_authenticated:
+        signer = (
+            "; its key signed every record"
             if check.signer_matches_checkpoint
-            else "; records name a different key than the checkpoint"
-            if check.signer_matches_checkpoint is False
-            else ""
+            else "; some records name a different key"
         )
-    )
+        print(
+            f"\n{len(check.records)} record(s) in log {check.checkpoint.get('log_id')}, "
+            f"under a checkpoint signed {check.checkpoint.get('timestamp')}{signer}"
+        )
+    elif any(c.name == "checkpoint" and c.status == "fail" for c in check.checks):
+        print(f"\n{len(check.records)} record(s); the checkpoint does not match its signature: not tied to any log")
+    else:
+        print(f"\n{len(check.records)} record(s); no signed checkpoint: not tied to any committed log")
     if check.missing:
         print(f"{len(check.missing)} cited record(s) not in the file (declared by the file)")
-    print("VALID" if check.ok else "INVALID")
-    return 0 if check.ok else 1
+    print(check.verdict)
+    return _VERDICT_EXIT[check.verdict]
+
+
+# VALID: everything proven. INCOMPLETE: nothing failed, something not shown.
+_VERDICT_EXIT = {"VALID": 0, "INVALID": 1, "INCOMPLETE": 2}
 
 
 def _cmd_report(args: argparse.Namespace) -> int:
@@ -440,10 +446,10 @@ def _cmd_report(args: argparse.Namespace) -> int:
     page = render_report_html(bundle, check, source=Path(args.bundle_path).name)
     if args.out:
         Path(args.out).write_text(page, encoding="utf-8")
-        print(f"report: {'VALID' if check.ok else 'INVALID'} — wrote {args.out}")
+        print(f"report: {check.verdict} — wrote {args.out}")
     else:
         print(page)
-    return 0 if check.ok else 1
+    return _VERDICT_EXIT[check.verdict]
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:

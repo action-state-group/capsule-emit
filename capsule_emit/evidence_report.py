@@ -63,7 +63,14 @@ def _overall(check: EvidenceFileCheck) -> tuple[str, str]:
         return "fail", "This file does not check. The failing items are marked below."
     if check.proven:
         return "pass", "Everything this file claims checks, offline, from the file alone."
-    return "withheld", "What this file carries checks. Some things it does not show; they are marked below."
+    if not check.checkpoint_authenticated:
+        return (
+            "withheld",
+            "Incomplete: this file carries no signed checkpoint, so nothing ties its records to a log "
+            "anyone committed to. Anyone could rebuild a log over a chosen subset of records. Only "
+            "what is marked as checking below is shown.",
+        )
+    return "withheld", "Incomplete: what this file carries checks, but some things it does not show; they are marked below."
 
 
 def _record_fields(record: dict) -> tuple[str, str, str]:
@@ -86,38 +93,45 @@ def render_report_html(bundle: Any, check: EvidenceFileCheck, *, source: str = "
     checks_html = []
     for c in check.checks:
         plain = c.plain
-        if c.status == "pass" and "checkpoint_unverified" in c.findings:
-            plain += " (relative to the checkpoint as the producer stated it: its signature was not checked)"
         finding = f'<div class="find">{_e(", ".join(c.findings))}</div>' if c.findings else ""
         checks_html.append(
             f'<li class="{_e(c.status)}"><span class="mark">{_MARK.get(c.status, "?")}</span>'
             f"<div><strong>{_e(_WORD.get(c.status, c.status))}.</strong> {_e(plain)}{finding}</div></li>"
         )
 
-    facts = [
-        ("Records", f"{len(records)}" + (f" (log positions {min(seqs)}–{max(seqs)})" if seqs else "")),
-        ("Log", _e(checkpoint.get("log_id"))),
-        ("Checkpoint", f"{_e(checkpoint.get('timestamp'))} · root <code>{_e(_short(checkpoint.get('root'), 16))}</code>"),
-        (
-            "Checkpoint signature",
-            "checked (COSE checkpoint in the file)"
-            if check.checkpoint_authenticated
-            else "not checked: the file carries no COSE checkpoint, or no verifier for it ran",
-        ),
-        (
-            "Signer",
-            f"<code>{_e(_short(checkpoint.get('key_id'), 16))}</code>"
-            + (
-                " · signed every record and the checkpoint"
-                if check.signer_matches_checkpoint
-                else " · records name a different key than the checkpoint"
-                if check.signer_matches_checkpoint is False
-                else ""
+    if check.checkpoint_authenticated:
+        facts = [
+            ("Records", f"{len(records)}" + (f" (log positions {min(seqs)}–{max(seqs)})" if seqs else "")),
+            ("Log", _e(checkpoint.get("log_id"))),
+            (
+                "Checkpoint",
+                f"signed {_e(checkpoint.get('timestamp'))} · root <code>{_e(_short(checkpoint.get('root'), 16))}</code>",
             ),
-        ),
-        ("Witness receipts", str(len(checkpoint.get("witnesses") or [])) + " in the file (carried, not re-checked here)"),
-        ("File digest", f"<code>{_e(check.bundle_digest)}</code>"),
-    ]
+            (
+                "Signer",
+                f"<code>{_e(_short(checkpoint.get('key_id'), 16))}</code>"
+                + (
+                    " · signed the checkpoint and every record"
+                    if check.signer_matches_checkpoint
+                    else " · signed the checkpoint; some records name a different key"
+                ),
+            ),
+            (
+                "Witness receipts",
+                str(len(checkpoint.get("witnesses") or [])) + " in the file (carried, not re-checked here)",
+            ),
+        ]
+    else:
+        facts = [
+            ("Records", f"{len(records)}"),
+            (
+                "Checkpoint",
+                "<strong>does not match its signature</strong>: log, positions and time are unproven"
+                if any(c.name == "checkpoint" and c.status == "fail" for c in check.checks)
+                else "<strong>no signed checkpoint</strong>: log, positions and time are unproven",
+            ),
+        ]
+    facts.append(("File digest", f"<code>{_e(check.bundle_digest)}</code>"))
     if source:
         facts.insert(0, ("File", _e(source)))
     facts_html = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in facts)
@@ -149,8 +163,10 @@ def render_report_html(bundle: Any, check: EvidenceFileCheck, *, source: str = "
         )
     if check.closure_depth is not None:
         not_shown.append(f"Anything cited more than {check.closure_depth} step(s) back from the newest record.")
-    if seqs:
+    if seqs and check.checkpoint_authenticated:
         not_shown.append(f"Records outside log positions {min(seqs)}–{max(seqs)}: this file says nothing about them.")
+    if not check.checkpoint_authenticated:
+        not_shown.insert(0, "That these records are in any committed log, or that none were left out between them.")
     if check.countersignatures:
         not_shown.append(f"{check.countersignatures} countersignature(s): carried, not verified.")
     if check.extensions:

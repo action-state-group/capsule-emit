@@ -45,11 +45,12 @@ def _proof(p) -> dict:
     }
 
 
-def build_bundle(tmp_path, *, n=3, cose=True, unsigned_index=None, root_cites=None) -> dict:
+def build_bundle(tmp_path, *, n=3, cose=True, unsigned_index=None, root_cites=None, checkpoint_signer=None) -> dict:
     """A bundle over a whole n-record log, built the way a producer does:
     leaves are capsule ids, the checkpoint is signed by the records' key.
     ``root_cites``: a capsule digest the newest record references."""
     signer = LocalKeypairSigner(tmp_path / "k.pem")
+    log_signer = checkpoint_signer or signer
     caps = [seal({"step": i}, anchor=False, witness=False, signer=signer).capsule for i in range(n - 1)]
     refs = (ReferenceEntry(type="agent-action-capsule", digest_alg="SHA-256", digest=root_cites),) if root_cites else None
     caps.append(seal({"step": n - 1}, references=refs, anchor=False, witness=False, signer=signer).capsule)
@@ -63,11 +64,11 @@ def build_bundle(tmp_path, *, n=3, cose=True, unsigned_index=None, root_cites=No
     root = root_from_peaks(peak_hashes).hex()
     cp = CheckpointRecord(
         v=1, kind="mmr_checkpoint", log_id="test-log", mmr_size=size, root=root, prev_size=0,
-        prev_root="", key_id=signer.key_id, timestamp="2026-10-01T00:00:00Z", signature="",
+        prev_root="", key_id=log_signer.key_id, timestamp="2026-10-01T00:00:00Z", signature="",
     )
     checkpoint = {k: v for k, v in cp.__dict__.items()}
     if cose:
-        raw = checkpoint_to_cose(cp, signer, peak_hashes)
+        raw = checkpoint_to_cose(cp, log_signer, peak_hashes)
         checkpoint["cose"] = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
     rp = core.range_proof(store, 0, n - 1, size)
     ids = [c["capsule_id"] for c in caps]
@@ -103,19 +104,58 @@ def _status(check) -> dict:
 
 def test_a_whole_file_checks_and_the_checkpoint_is_authenticated(tmp_path):
     check = check_evidence_file(build_bundle(tmp_path))
-    assert check.ok and check.proven
+    assert check.ok and check.proven and check.verdict == "VALID"
     assert set(_status(check).values()) == {"pass"}
     assert check.checkpoint_authenticated
     assert check.signer_matches_checkpoint is True
+    assert check.checkpoint["log_id"] == "test-log"
     assert [r.seq for r in check.records] == [1, 2, 3]
 
 
-def test_without_a_cose_checkpoint_the_proofs_are_relative_to_the_stated_checkpoint(tmp_path):
+def test_without_a_signed_checkpoint_the_file_is_incomplete_never_valid(tmp_path):
     check = check_evidence_file(build_bundle(tmp_path, cose=False))
-    assert check.ok
+    assert check.verdict == "INCOMPLETE" and not check.proven
+    status = _status(check)
+    assert status["checkpoint"] == "withheld"
+    assert status["interval_coverage"] == status["per_record_membership"] == "withheld"
     assert not check.checkpoint_authenticated
-    interval = next(c for c in check.checks if c.name == "interval_coverage")
-    assert interval.status == "pass" and "checkpoint_unverified" in interval.findings
+    assert check.signer_matches_checkpoint is None
+    assert check.checkpoint == {}
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("key_id", "ab" * 32),
+        ("log_id", "another-log"),
+        ("timestamp", "2030-01-01T00:00:00Z"),
+        ("mmr_size", 7),
+        ("root", "ef" * 32),
+        ("prev_size", 1),
+        ("prev_root", "01" * 32),
+    ],
+)
+def test_a_checkpoint_field_that_differs_from_the_signed_one_fails(tmp_path, field, value):
+    bundle = build_bundle(tmp_path)
+    bundle["checkpoint"][field] = value
+    check = check_evidence_file(bundle)
+    assert check.verdict == "INVALID"
+    checkpoint = next(c for c in check.checks if c.name == "checkpoint")
+    assert checkpoint.status == "fail"
+    assert f"checkpoint_field_mismatch:{field}" in checkpoint.findings
+    # Nothing is read from a copy that failed: no signer claim, no log facts.
+    assert check.signer_matches_checkpoint is None and check.checkpoint == {}
+    page = render_report_html(bundle, check)
+    assert "does not match its signature" in page and "signed the checkpoint" not in page
+
+
+def test_a_checkpoint_signature_that_does_not_check_fails(tmp_path):
+    bundle = build_bundle(tmp_path)
+    cose = bundle["checkpoint"]["cose"]
+    bundle["checkpoint"]["cose"] = cose[:-6] + ("AAAAAA" if not cose.endswith("AAAAAA") else "BBBBBB")
+    assert _status(check_evidence_file(bundle))["checkpoint"] == "fail"
+    bundle["checkpoint"]["cose"] = "not base64!"
+    assert _status(check_evidence_file(bundle))["checkpoint"] == "fail"
 
 
 def test_an_edited_record_fails_identity_signature_and_membership(tmp_path):
@@ -136,17 +176,18 @@ def test_a_bad_inclusion_proof_fails_membership_only(tmp_path):
     assert status["records"] == status["signatures"] == "pass"
 
 
-def test_a_record_signed_by_another_key_is_reported_not_gated(tmp_path):
-    bundle = build_bundle(tmp_path)
-    bundle["checkpoint"]["key_id"] = "ab" * 32
-    check = check_evidence_file(bundle)
+def test_records_signed_by_another_key_than_the_checkpoint_are_reported_not_gated(tmp_path):
+    other = LocalKeypairSigner(tmp_path / "log.pem")
+    check = check_evidence_file(build_bundle(tmp_path, checkpoint_signer=other))
+    assert check.verdict == "VALID"
     assert check.signer_matches_checkpoint is False
+    assert check.checkpoint["key_id"] == other.key_id
 
 
 def test_an_unsigned_record_is_not_shown_unless_signatures_are_required(tmp_path):
     bundle = build_bundle(tmp_path, unsigned_index=0)
     assert _status(check_evidence_file(bundle))["signatures"] == "withheld"
-    assert check_evidence_file(bundle).ok
+    assert check_evidence_file(bundle).verdict == "INCOMPLETE"
     assert not check_evidence_file(bundle, require_signature=True).ok
 
 
@@ -160,7 +201,7 @@ def test_a_declared_missing_citation_is_not_shown_and_an_undeclared_one_fails(tm
     bundle["completeness"].update(records_mode="declared_incomplete", missing=[absent])
     declared = check_evidence_file(bundle)
     assert _status(declared)["graph_closure"] == "withheld"
-    assert declared.ok and not declared.proven
+    assert declared.verdict == "INCOMPLETE"
     assert declared.missing == (absent,)
 
 
@@ -173,16 +214,23 @@ def test_cli_verify_bundle_exit_codes_and_json(tmp_path, capsys):
     good = tmp_path / "good.json"
     good.write_text(json.dumps(build_bundle(tmp_path)))
     assert main(["verify", "--bundle", str(good)]) == 0
-    assert "VALID" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert out.rstrip().endswith("VALID") and "in log test-log" in out
     assert main(["verify", "--bundle", str(good), "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["proven"] is True
+    assert json.loads(capsys.readouterr().out)["verdict"] == "VALID"
+
+    unanchored = tmp_path / "unanchored.json"
+    unanchored.write_text(json.dumps(build_bundle(tmp_path, cose=False)))
+    assert main(["verify", "--bundle", str(unanchored)]) == 2
+    out = capsys.readouterr().out
+    assert out.rstrip().endswith("INCOMPLETE") and "no signed checkpoint" in out
 
     bad = json.loads(good.read_text())
     bad["records"][0]["timestamp"] = "2020-01-01T00:00:00Z"
     bad_path = tmp_path / "bad.json"
     bad_path.write_text(json.dumps(bad))
     assert main(["verify", "--bundle", str(bad_path)]) == 1
-    assert "INVALID" in capsys.readouterr().out
+    assert capsys.readouterr().out.rstrip().endswith("INVALID")
 
     not_json = tmp_path / "x.json"
     not_json.write_text("{")
@@ -206,3 +254,8 @@ def test_report_is_one_offline_page(tmp_path, capsys):
     assert "Everything this file claims checks" in page
     assert "The request and response text" in page
     assert "capsule-emit verify --bundle b.json" in page
+
+    unanchored = build_bundle(tmp_path, cose=False)
+    page = render_report_html(unanchored, check_evidence_file(unanchored))
+    assert "Incomplete: this file carries no signed checkpoint" in page
+    assert "<dt>Log</dt>" not in page
