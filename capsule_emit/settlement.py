@@ -31,7 +31,7 @@ Sealing:
   seal_observation(observation, ...) -- seal one block as a capsule
 
 Joining (offline, over sealed capsule dicts from both parties):
-  join(capsules) -> list[SettlementJoin]
+  join(capsules, trusted_keys=None) -> (list[SettlementJoin], list[RefusedRecord])
 
 What a join never says: one side's record missing reads ``payer_only`` or
 ``payee_only`` -- "only one side is held here", never "unpaid" or "not
@@ -414,8 +414,11 @@ class SettlementJoin:
     ``state``:
 
     - ``agreed``: a payer-role and a payee-role observed leg are both held,
-      signed under disjoint keys, each side's final status is success, both
-      carry an amount, and every compared field matches.
+      each role signed by exactly one key, the two keys disjoint and both
+      pinned to their role by ``trusted_keys``; each side's final status is
+      success, both carry an amount, and every compared field matches.
+    - ``agreed_untrusted``: the same, but ``join`` was given no
+      ``trusted_keys``, so nothing ties either key to a real party.
     - ``payer_only`` / ``payee_only``: only one side's observed leg is held
       here. Says nothing about the other side's books.
     - ``differs``: both sides are held and at least one compared field
@@ -426,7 +429,9 @@ class SettlementJoin:
 
     Distinct keys are not proof of distinct parties: a role is what the
     sealer claims, and anyone can hold two keys. Pass ``trusted_keys`` to
-    :func:`join` to pin which keys may speak for each role.
+    :func:`join` to pin which keys may speak for each role. More than one
+    key under one role is always a difference (``payer.keys`` /
+    ``payee.keys``), even when every key is trusted.
 
     ``differences`` may be non-empty on a one-sided state too: one party's
     own legs that disagree with each other.
@@ -501,9 +506,16 @@ def join(
     present). A capsule that fails, or carries no valid settlement block, is
     returned in the refused list and takes no part in any join.
 
+    Returns ``(joins, refused)``: one :class:`SettlementJoin` per payment
+    reference, and every capsule that took no part, with the reason.
+
     *trusted_keys* maps a role to the ``key_id`` values allowed to speak for
     it. When given, a record whose role has no entry, or whose key is not
-    listed for its role, is refused.
+    listed for its role, is refused, and a full match reads ``agreed``.
+    Without it, the same match reads ``agreed_untrusted``.
+
+    The same capsule passed more than once (same ``capsule_id`` and
+    ``key_id``) counts once.
 
     Records are grouped on the exact JCS bytes of ``payment_ref``: values
     must match byte for byte (only an EVM transaction hash is lowercased, by
@@ -515,6 +527,7 @@ def join(
     refused: list[RefusedRecord] = []
     groups: dict[bytes, list[dict]] = {}
     order: list[bytes] = []
+    seen: set[tuple[str, str]] = set()
     for item in capsules:
         capsule = item.capsule if isinstance(item, EmitResult) else item
         if not isinstance(capsule, dict):
@@ -537,12 +550,16 @@ def join(
         if trusted is not None and capsule["key_id"] not in trusted.get(block["role"], set()):
             refused.append(RefusedRecord(cid, f"key is not trusted for role {block['role']}"))
             continue
+        identity = (capsule["capsule_id"], capsule["key_id"])
+        if identity in seen:
+            continue
+        seen.add(identity)
         key = _ref_key(block["payment_ref"])
         if key not in groups:
             groups[key] = []
             order.append(key)
         groups[key].append(capsule)
-    return [_join_group(groups[k]) for k in order], refused
+    return [_join_group(groups[k], trusted=trusted is not None) for k in order], refused
 
 
 def _final_statuses(statuses: list[str]) -> set[str]:
@@ -551,7 +568,7 @@ def _final_statuses(statuses: list[str]) -> set[str]:
     return outcomes or set(statuses)
 
 
-def _join_group(capsules: list[dict]) -> SettlementJoin:
+def _join_group(capsules: list[dict], *, trusted: bool) -> SettlementJoin:
     blocks = [(c, _block(c)) for c in capsules]
     ref = blocks[0][1]["payment_ref"]
     differences: list[str] = []
@@ -561,6 +578,10 @@ def _join_group(capsules: list[dict]) -> SettlementJoin:
 
     _compare("terms_digest", [b["terms_digest"] for _, b in blocks], differences)
     _compare("amount", [b.get("amount") for _, b in blocks], differences)
+
+    for side in ROLES:
+        if len(keys_for(side)) > 1:
+            differences.append(f"{side}.keys")
 
     observed = {side: [b for _, b in blocks if b["leg"] == f"{side}_observed"] for side in ROLES}
     final = {side: _final_statuses([b["status"] for b in observed[side]]) for side in ROLES}
@@ -602,7 +623,7 @@ def _join_group(capsules: list[dict]) -> SettlementJoin:
                     differences.append(f"{side}_observed.status=" + ",".join(sorted(final[side])))
                 if any("amount" not in b for b in observed[side]):
                     differences.append(f"{side}_observed.amount missing")
-            state = "differs" if differences else "agreed"
+            state = "differs" if differences else ("agreed" if trusted else "agreed_untrusted")
     elif have_payer:
         state = "payer_only"
     elif have_payee:
