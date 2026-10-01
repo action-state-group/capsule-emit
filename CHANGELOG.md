@@ -9,26 +9,35 @@ All notable changes to `capsule-emit` are documented here. The format follows
 ### Added — `capsule_emit.settlement`: payer and payee each record the same payment
 
 - A reference producer for the agent settlement profile draft (draft-mih-agent-settlement-profile-00,
-  in progress; field names may change with the draft). The payer and the payee seal their own
+  in progress; member names may change with the draft). The payer and the payee seal their own
   observations, in their own logs, under their own keys; nobody signs the other side's claim.
 - Legs `terms`, `payer_observed`, `payee_observed`, `delivered`, chained within each party's log
   (`seal_observation(..., prior=...)`, relation `follows`). Each carries a typed `payment_ref`
   (an open registry: x402 transaction + CAIP-2 network, Lightning and BOLT12 payment hashes, AP2,
-  ACP/UCP, MPP, ISO 20022 UETR/EndToEndId, Open Payments), a `terms_digest`, an exact amount
-  `{value, assetCode, assetScale}` (floats refused), and existing signed objects wrapped by digest
-  (`wrap()`), never re-signed. A `delivered` leg carries a digest of the delivered content, bound
-  to the same `terms_digest`.
-- `join(capsules)` works offline: it verifies every record (content and producer signature),
-  refuses and lists any that fail, groups the rest on the exact `payment_ref`, and reports
-  `agreed`, `agreed_untrusted`, `payer_only`, `payee_only`, `differs` (naming each field),
-  `not_independent` (one key on both sides) or `no_observation`, plus the delivery comparison and the ISO 20022 status codes
-  (ACSC, ACCC, PDNG, RJCT). One side missing reads as one-sided, never as unpaid. `agreed` needs
-  an amount on both observed legs; a `pending` leg is superseded by a later outcome.
-- Two keys are not proof of two parties: a role is what the sealer claims. `join(...,
-  trusted_keys={"payer": [...], "payee": [...]})` refuses any record whose key is not listed
-  for its role. Only then does a full match read `agreed`; without it the same match reads
-  `agreed_untrusted`. Several trusted keys under one role are fine (rotation); any other extra
-  key under a role is a difference. The same capsule passed twice counts once.
+  ACP/UCP, MPP, ISO 20022 UETR/EndToEndId, Open Payments), a `terms_digest`, and existing signed
+  objects wrapped by digest (`wrap()`), never re-signed. A `delivered` leg carries a digest of the
+  delivered content, bound to the same `terms_digest`.
+- Money is exact `{value, assetCode, assetScale}` (floats refused), by leg: `terms` has `amount`
+  and an optional `receive_fee_max`; `payer_observed` has `amount` (sent toward the payee) and
+  `routing_fee` (paid on top); `payee_observed` has `received` and `receive_fee` (deducted before
+  arrival). The join never compares the two sides' amounts for equality: it is consistent when
+  `amount == received + receive_fee` (as exact rationals, so scales may differ), or, when the
+  payee recorded no `receive_fee`, when the gap is within the terms' `receive_fee_max`. A missing
+  fee member with no declared bound is a difference, never a pass. Vectors:
+  `tests/fixtures/settlement/fees.json` (a Lightning receive fee deducted, 1000 msat sent and 995
+  + 5 received, twice; bounds; an x402 payment where gas is not deducted).
+- `join(capsules, trusted_keys=None)` works offline: it verifies every record (content and
+  producer signature), refuses and lists any that fail, groups the rest on the exact
+  `payment_ref`, and reports `agreed`, `agreed_untrusted`, `payer_only`, `payee_only`, `differs`
+  (naming each difference), `not_independent` (one key on both sides) or `no_observation`, plus
+  the delivery comparison and the ISO 20022 status codes (ACSC, ACCC, PDNG, RJCT). One side
+  missing reads as one-sided, never as unpaid. A `pending` leg is superseded by a later outcome.
+- Two keys are not proof of two parties: a role is what the sealer claims. With
+  `trusted_keys={"payer": [...], "payee": [...]}`, a record whose key is not listed for its role
+  is refused and listed and takes no part in the join, and a full match reads `agreed`; several
+  trusted keys under one role are fine (rotation). Without it the same match reads
+  `agreed_untrusted`, and more than one key under one role is a difference. The same capsule
+  passed twice counts once.
 
 ### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
 

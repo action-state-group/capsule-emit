@@ -4,6 +4,7 @@ settlement records sealed independently by a payer and a payee."""
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,7 @@ USDC = "eip155:84532/erc20:0x036cbd53842c5426634e7929541ec2318f3dcf7e"
 TERMS = {"scheme": "exact", "network": NETWORK, "amount": "10000", "asset": USDC, "payTo": "0x" + "11" * 20}
 TERMS_DIGEST = terms_digest(TERMS)
 PRICE = amount(10000, USDC, 6)
+ZERO = amount(0, USDC, 6)
 DELIVERED = "d" * 64
 
 
@@ -42,9 +44,9 @@ def _seal(tmp_path: Path, party: str, obs: dict, **kw) -> dict:
 def _obs(role: str, leg: str, **kw) -> dict:
     base = dict(role=role, leg=leg, payment_ref=REF, terms_digest=TERMS_DIGEST)
     if leg == "payer_observed":
-        base.update(status="settled", amount=PRICE)
+        base.update(status="settled", amount=PRICE, routing_fee=ZERO)
     if leg == "payee_observed":
-        base.update(status="received", amount=PRICE)
+        base.update(status="received", received=PRICE, receive_fee=ZERO)
     if leg == "delivered":
         base.update(delivered_digest=DELIVERED)
     base.update(kw)
@@ -174,16 +176,18 @@ def test_one_side_held_is_one_sided_never_a_failure(tmp_path):
     assert join([payee])[0][0].state == "payee_only"
 
 
-def test_amount_mismatch_differs(tmp_path):
-    joins, _ = join(_two_sided(tmp_path, payee_kw={"amount": amount(9999, USDC, 6)}))
+def test_received_plus_fee_short_of_the_amount_differs(tmp_path):
+    joins, _ = join(_two_sided(tmp_path, payee_kw={"received": amount(9999, USDC, 6)}))
     assert joins[0].state == "differs"
-    assert "amount" in joins[0].differences
+    assert joins[0].differences == ["amount"]
 
 
 def test_asset_mismatch_differs(tmp_path):
-    joins, _ = join(_two_sided(tmp_path, payee_kw={"amount": amount(10000, "eip155:84532/erc20:0x00", 6)}))
+    other = "eip155:84532/erc20:0x00"
+    joins, _ = join(_two_sided(tmp_path, payee_kw={"received": amount(10000, other, 6),
+                                                   "receive_fee": amount(0, other, 6)}))
     assert joins[0].state == "differs"
-    assert "amount" in joins[0].differences
+    assert joins[0].differences == ["asset"]
 
 
 def test_terms_mismatch_differs(tmp_path):
@@ -248,17 +252,26 @@ def test_chained_legs_join_with_or_without_their_parents(tmp_path):
     assert joins[0].state == "agreed_untrusted"
 
 
-def test_missing_amount_on_an_observed_leg_is_never_agreed(tmp_path):
-    joins, _ = join(_two_sided(tmp_path, payee_kw={"amount": None}))
-    assert joins[0].state == "differs"
-    assert "payee_observed.amount missing" in joins[0].differences
-    joins, _ = join(_two_sided(tmp_path / "b", payer_kw={"amount": None}, payee_kw={"amount": None}))
-    assert joins[0].state == "differs"
+def test_a_missing_money_member_is_never_agreed(tmp_path):
+    cases = [
+        ({}, {"received": None}, "payee_observed.received missing"),
+        ({"amount": None}, {}, "payer_observed.amount missing"),
+        ({"routing_fee": None}, {}, "payer_observed.routing_fee missing"),
+        ({}, {"receive_fee": None}, "payee_observed.receive_fee missing"),
+    ]
+    for i, (payer_kw, payee_kw, expected) in enumerate(cases):
+        joins, _ = join(_two_sided(tmp_path / str(i), payer_kw=payer_kw, payee_kw=payee_kw))
+        assert joins[0].state == "differs", expected
+        assert expected in joins[0].differences
 
 
-def test_same_sum_at_another_scale_differs(tmp_path):
-    joins, _ = join(_two_sided(tmp_path, payee_kw={"amount": amount(10000000, USDC, 9)}))
-    assert "amount" in joins[0].differences
+def test_the_same_sum_at_another_scale_reconciles_exactly(tmp_path):
+    payee_kw = {"received": amount(10000000, USDC, 9), "receive_fee": amount(0, USDC, 9)}
+    joins, _ = join(_two_sided(tmp_path, payee_kw=payee_kw))
+    assert joins[0].state == "agreed_untrusted", joins[0].differences
+    payee_kw = {"received": amount(10000001, USDC, 9), "receive_fee": amount(0, USDC, 9)}
+    joins, _ = join(_two_sided(tmp_path / "b", payee_kw=payee_kw))
+    assert joins[0].differences == ["amount"]
 
 
 def test_pending_then_settled_is_agreed_and_pending_alone_is_not(tmp_path):
@@ -285,7 +298,7 @@ def test_duplicate_observed_legs_with_different_amounts_differ(tmp_path):
     extra = _seal(tmp_path, "payer", _obs("payer", "payer_observed", amount=amount(1, USDC, 6)))
     joins, _ = join(_two_sided(tmp_path) + [extra])
     assert joins[0].state == "differs"
-    assert "amount" in joins[0].differences
+    assert "payer_observed.amount" in joins[0].differences
 
 
 def test_one_key_sealing_delivery_for_both_roles_is_not_matched(tmp_path):
@@ -313,8 +326,7 @@ def test_trusted_keys_refuse_a_role_claim_from_another_key(tmp_path):
     joins, refused = join([payer, payee, impostor], trusted_keys=trusted)
     assert [r.capsule_id for r in refused] == [impostor["capsule_id"]]
     assert "not trusted" in refused[0].reason
-    assert joins[0].state == "differs"
-    assert joins[0].differences == ["payee.untrusted_key"]
+    assert (joins[0].state, joins[0].differences) == ("agreed", [])
     _, refused = join([payer, payee], trusted_keys={"payer": [payer["key_id"]]})
     assert [r.capsule_id for r in refused] == [payee["capsule_id"]]
 
@@ -369,15 +381,14 @@ def test_rotated_keys_all_trusted_are_agreed(tmp_path):
     assert "payee.keys" in joins[0].differences
 
 
-def test_an_untrusted_extra_key_beside_trusted_rotated_keys_is_a_difference(tmp_path):
+def test_an_untrusted_extra_key_beside_trusted_rotated_keys_is_refused_and_ignored(tmp_path):
     payer, payee = _two_sided(tmp_path)
     rotated = _seal(tmp_path, "payee-rotated", _obs("payee", "delivered"))
     extra = _seal(tmp_path, "extra", _obs("payee", "payee_observed"))
     trusted = {"payer": [payer["key_id"]], "payee": [payee["key_id"], rotated["key_id"]]}
     joins, refused = join([payer, payee, rotated, extra], trusted_keys=trusted)
     assert [r.capsule_id for r in refused] == [extra["capsule_id"]]
-    assert joins[0].state == "differs"
-    assert joins[0].differences == ["payee.untrusted_key"]
+    assert (joins[0].state, joins[0].differences) == ("agreed", [])
 
 
 def test_the_same_capsule_passed_twice_counts_once(tmp_path):
@@ -391,13 +402,58 @@ def test_the_same_capsule_passed_twice_counts_once(tmp_path):
     assert joins[0].payer_capsule_ids == [payer["capsule_id"], extra["capsule_id"]]
 
 
+FEES = Path(__file__).parent / "fixtures" / "settlement" / "fees.json"
+
+
+@pytest.mark.parametrize("case", json.loads(FEES.read_text())["cases"], ids=lambda c: c["name"])
+def test_fee_vectors(tmp_path, case):
+    records = [
+        _seal(tmp_path, r["party"], build_observation(**r["observation"])) for r in case["records"]
+    ]
+    joins, refused = join(records)
+    assert refused == []
+    got = [{"payment_ref": j.payment_ref, "state": j.state, "differences": j.differences} for j in joins]
+    assert got == case["expect"]
+
+
+def test_payer_amount_must_match_the_terms_price(tmp_path):
+    terms_payer = _seal(tmp_path, "payer", _obs("payer", "terms", amount=PRICE))
+    terms_payee = _seal(tmp_path, "payee", _obs("payee", "terms", amount=PRICE))
+    short = amount(9000, USDC, 6)
+    records = _two_sided(tmp_path, payer_kw={"amount": short}, payee_kw={"received": short})
+    joins, _ = join([terms_payer, terms_payee, *records])
+    assert joins[0].differences == ["payer_observed.amount != terms.amount"]
+
+
+def test_a_fee_on_only_some_payee_legs_is_a_difference(tmp_path):
+    payer, payee = _two_sided(tmp_path, payee_kw={"received": amount(9995, USDC, 6),
+                                                   "receive_fee": amount(5, USDC, 6)})
+    again = _seal(tmp_path, "payee", _obs("payee", "payee_observed", received=amount(9995, USDC, 6),
+                                         receive_fee=None))
+    joins, _ = join([payer, payee, again])
+    assert joins[0].differences == ["payee_observed.receive_fee missing"]
+
+
+def test_money_members_belong_to_their_leg():
+    with pytest.raises(SettlementError, match="carries no received"):
+        _obs("payer", "payer_observed", received=PRICE)
+    with pytest.raises(SettlementError, match="carries no amount"):
+        _obs("payee", "payee_observed", amount=PRICE)
+    with pytest.raises(SettlementError, match="carries no routing_fee"):
+        _obs("payee", "payee_observed", routing_fee=ZERO)
+    with pytest.raises(SettlementError, match="carries no amount"):
+        _obs("payee", "delivered", amount=PRICE)
+    with pytest.raises(SettlementError, match="receive_fee is exactly"):
+        _obs("payee", "payee_observed", receive_fee={"value": "5"})
+
+
 # --- adversarial inputs to the join ----------------------------------------
 
 
 def test_edited_record_is_refused_not_joined(tmp_path):
     payer, payee = _two_sided(tmp_path)
     forged = copy.deepcopy(payee)
-    forged["model_attestation"]["compute_attestation"][SETTLEMENT_EXTENSION_KEY]["amount"]["value"] = "1"
+    forged["model_attestation"]["compute_attestation"][SETTLEMENT_EXTENSION_KEY]["received"]["value"] = "1"
     joins, refused = join([payer, forged])
     assert [r.capsule_id for r in refused] == [forged["capsule_id"]]
     assert joins[0].state == "payer_only"
@@ -406,7 +462,7 @@ def test_edited_record_is_refused_not_joined(tmp_path):
 def test_edited_record_with_recomputed_id_and_stripped_signature_is_refused(tmp_path):
     payer, payee = _two_sided(tmp_path)
     forged = copy.deepcopy(payee)
-    forged["model_attestation"]["compute_attestation"][SETTLEMENT_EXTENSION_KEY]["amount"]["value"] = "1"
+    forged["model_attestation"]["compute_attestation"][SETTLEMENT_EXTENSION_KEY]["received"]["value"] = "1"
     forged.pop("signature")
     forged.pop("key_id")
     forged["capsule_id"] = compute_capsule_id(forged)

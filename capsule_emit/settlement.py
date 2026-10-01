@@ -46,6 +46,7 @@ import hashlib
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from fractions import Fraction
 from typing import Any
 
 from agent_action_capsule.canonical import jcs
@@ -60,6 +61,7 @@ __all__ = [
     "STATUSES",
     "ISO20022_STATUS",
     "PAYMENT_REF_TYPES",
+    "MONEY_MEMBERS",
     "SettlementError",
     "SettlementJoin",
     "RefusedRecord",
@@ -208,8 +210,8 @@ def amount(value: int | str, asset_code: str, asset_scale: int) -> dict:
         raise SettlementError(f"amount value must be a non-negative integer, got {text!r}")
     if not isinstance(asset_code, str) or not asset_code:
         raise SettlementError("assetCode is a non-empty string")
-    if isinstance(asset_scale, bool) or not isinstance(asset_scale, int) or not 0 <= asset_scale <= 36:
-        raise SettlementError("assetScale is an integer from 0 to 36")
+    if isinstance(asset_scale, bool) or not isinstance(asset_scale, int) or not 0 <= asset_scale <= 255:
+        raise SettlementError("assetScale is an integer from 0 to 255")
     return {"value": text, "assetCode": asset_code, "assetScale": asset_scale}
 
 
@@ -230,9 +232,23 @@ def _check_payment_ref(ref: Any) -> None:
     PAYMENT_REF_TYPES.get(rtype, _no_extra_check)(ref)
 
 
-def _check_amount(value: Any) -> None:
+#: The money members each leg may carry. ``terms``: the price and an optional
+#: declared bound on the payee's receive fee. ``payer_observed``: the amount
+#: sent toward the payee and the routing fee paid on top of it.
+#: ``payee_observed``: the amount that arrived and the receive fee deducted
+#: before it arrived. Consistency: payer amount == received + receive_fee.
+MONEY_MEMBERS = {
+    "terms": ("amount", "receive_fee_max"),
+    "payer_observed": ("amount", "routing_fee"),
+    "payee_observed": ("received", "receive_fee"),
+    "delivered": (),
+}
+_ALL_MONEY = ("amount", "routing_fee", "received", "receive_fee", "receive_fee_max")
+
+
+def _check_amount(value: Any, name: str = "amount") -> None:
     if not isinstance(value, dict) or set(value) != {"value", "assetCode", "assetScale"}:
-        raise SettlementError("amount is exactly {value, assetCode, assetScale}")
+        raise SettlementError(f"{name} is exactly {{value, assetCode, assetScale}}")
     amount(value["value"], value["assetCode"], value["assetScale"])
     if not isinstance(value["value"], str):
         raise SettlementError("a sealed amount value is a digit string")
@@ -263,7 +279,7 @@ def _check_bindings(bindings: Any) -> None:
 
 
 _REQUIRED = ("schema", "role", "leg", "payment_ref", "terms_digest")
-_OPTIONAL = ("status", "amount", "wrapped", "delivered_digest", "bindings", "counterparty_capsule_id")
+_OPTIONAL = ("status", *_ALL_MONEY, "wrapped", "delivered_digest", "bindings", "counterparty_capsule_id")
 
 
 def validate_observation(obs: Any) -> None:
@@ -301,8 +317,11 @@ def validate_observation(obs: Any) -> None:
             raise SettlementError("a delivered leg carries delivered_digest (64 lowercase hex)")
     elif "delivered_digest" in obs:
         raise SettlementError("only a delivered leg carries delivered_digest")
-    if "amount" in obs:
-        _check_amount(obs["amount"])
+    for name in _ALL_MONEY:
+        if name in obs:
+            if name not in MONEY_MEMBERS[leg]:
+                raise SettlementError(f"a {leg} leg carries no {name}")
+            _check_amount(obs[name], name)
     if "wrapped" in obs:
         _check_wrapped(obs["wrapped"])
     if "bindings" in obs:
@@ -321,6 +340,10 @@ def build_observation(
     terms_digest: str,
     status: str | None = None,
     amount: dict | None = None,
+    routing_fee: dict | None = None,
+    received: dict | None = None,
+    receive_fee: dict | None = None,
+    receive_fee_max: dict | None = None,
     wrapped: Iterable[dict] = (),
     delivered_digest: str | None = None,
     bindings: dict[str, str] | None = None,
@@ -337,6 +360,13 @@ def build_observation(
 
     *counterparty_capsule_id* cites the other side's record when this side
     has already seen it. It is a citation, not a countersignature.
+
+    Money members (each an :func:`amount` triple) by leg: ``terms`` takes
+    *amount* (the price) and optionally *receive_fee_max*; ``payer_observed``
+    takes *amount* (sent toward the payee) and *routing_fee* (paid on top);
+    ``payee_observed`` takes *received* and *receive_fee* (deducted before
+    arrival). Record a zero fee as a zero amount: a missing fee is unknown,
+    not zero.
     """
     ref = dict(payment_ref)
     if ref.get("type") == "x402.transaction" and isinstance(ref.get("value"), str):
@@ -351,8 +381,10 @@ def build_observation(
     }
     if status is not None:
         obs["status"] = status
-    if amount is not None:
-        obs["amount"] = amount
+    for name, value in (("amount", amount), ("routing_fee", routing_fee), ("received", received),
+                        ("receive_fee", receive_fee), ("receive_fee_max", receive_fee_max)):
+        if value is not None:
+            obs[name] = value
     wrapped = list(wrapped)
     if wrapped:
         obs["wrapped"] = wrapped
@@ -414,9 +446,11 @@ class SettlementJoin:
     ``state``:
 
     - ``agreed``: a payer-role and a payee-role observed leg are both held,
-      the payer and payee keys disjoint and all to their role by ``trusted_keys`` (a role may have several
-      trusted keys, e.g. after rotation); each side's final status is
-      success, both carry an amount, and every compared field matches.
+      the payer and payee keys disjoint and all pinned to their role by
+      ``trusted_keys`` (a role may have several trusted keys, e.g. after
+      rotation); each side's final status is success, the money reconciles
+      (see :func:`join`) with every fee member present, and every compared
+      field matches.
     - ``agreed_untrusted``: the same, but ``join`` was given no
       ``trusted_keys``, so nothing ties either key to a real party.
     - ``payer_only`` / ``payee_only``: only one side's observed leg is held
@@ -429,12 +463,10 @@ class SettlementJoin:
 
     Distinct keys are not proof of distinct parties: a role is what the
     sealer claims, and anyone can hold two keys. Pass ``trusted_keys`` to
-    :func:`join` to pin which keys may speak for each role. Several keys
-    under one role are fine when all of them are trusted (rotation). Any
-    other extra key is a difference: without ``trusted_keys``, more than one
-    key under a role reads ``payer.keys`` / ``payee.keys``; with it, a record
-    for this payment refused because its key is not trusted for its role
-    reads ``payer.untrusted_key`` / ``payee.untrusted_key``.
+    :func:`join` to pin which keys may speak for each role; several trusted
+    keys under one role are fine (rotation). Without ``trusted_keys``, more
+    than one key under a role is a difference (``payer.keys`` /
+    ``payee.keys``).
 
     ``differences`` may be non-empty on a one-sided state too: one party's
     own legs that disagree with each other.
@@ -514,9 +546,9 @@ def join(
 
     *trusted_keys* maps a role to the ``key_id`` values allowed to speak for
     it. When given, a record whose role has no entry, or whose key is not
-    listed for its role, is refused (and, when it names a payment that is
-    joined, recorded on that join as ``<role>.untrusted_key``), and a full
-    match reads ``agreed``.
+    listed for its role, is refused and listed, and takes no part in the
+    join: the trusted records alone decide it, and a full match reads
+    ``agreed``.
     Without it, the same match reads ``agreed_untrusted``.
 
     The same capsule passed more than once (same ``capsule_id`` and
@@ -525,15 +557,19 @@ def join(
     Records are grouped on the exact JCS bytes of ``payment_ref``: values
     must match byte for byte (only an EVM transaction hash is lowercased, by
     :func:`build_observation`). Within a group the compared fields are
-    ``terms_digest``, ``amount`` (exactly, so the same sum at two scales
-    differs), the delivered digests, and each side's final observed status.
+    ``terms_digest``, the delivered digests, each side's final observed
+    status, and the money. Money is compared as exact rationals
+    (``value / 10**assetScale``) within one ``assetCode``, never as raw
+    equality across sides: the payer's ``amount`` must equal the payee's
+    ``received + receive_fee``, or, when the payee recorded no
+    ``receive_fee``, the gap must sit within a ``receive_fee_max`` declared
+    on the terms. A missing fee with no declared bound is a difference.
     """
     trusted = {role: set(keys) for role, keys in trusted_keys.items()} if trusted_keys is not None else None
     refused: list[RefusedRecord] = []
     groups: dict[bytes, list[dict]] = {}
     order: list[bytes] = []
     seen: set[tuple[str, str]] = set()
-    untrusted: dict[bytes, set[str]] = {}
     for item in capsules:
         capsule = item.capsule if isinstance(item, EmitResult) else item
         if not isinstance(capsule, dict):
@@ -555,7 +591,6 @@ def join(
             continue
         if trusted is not None and capsule["key_id"] not in trusted.get(block["role"], set()):
             refused.append(RefusedRecord(cid, f"key is not trusted for role {block['role']}"))
-            untrusted.setdefault(_ref_key(block["payment_ref"]), set()).add(block["role"])
             continue
         identity = (capsule["capsule_id"], capsule["key_id"])
         if identity in seen:
@@ -566,10 +601,7 @@ def join(
             groups[key] = []
             order.append(key)
         groups[key].append(capsule)
-    return [
-        _join_group(groups[k], trusted=trusted is not None, untrusted_roles=untrusted.get(k, set()))
-        for k in order
-    ], refused
+    return [_join_group(groups[k], trusted=trusted is not None) for k in order], refused
 
 
 def _final_statuses(statuses: list[str]) -> set[str]:
@@ -578,7 +610,56 @@ def _final_statuses(statuses: list[str]) -> set[str]:
     return outcomes or set(statuses)
 
 
-def _join_group(capsules: list[dict], *, trusted: bool, untrusted_roles: set[str]) -> SettlementJoin:
+def _qty(triple: dict) -> Fraction:
+    return Fraction(int(triple["value"]), 10 ** triple["assetScale"])
+
+
+def _one(values: list[Fraction], name: str, out: list[str]) -> Fraction | None:
+    """The single value *values* agree on, else None (and a difference if they disagree)."""
+    distinct = set(values)
+    if len(distinct) > 1:
+        out.append(name)
+    return next(iter(distinct)) if len(distinct) == 1 else None
+
+
+def _money(blocks: list[dict], observed: dict[str, list[dict]], out: list[str]) -> None:
+    triples = [b[n] for b in blocks for n in _ALL_MONEY if n in b]
+    if len({t["assetCode"] for t in triples}) > 1:
+        out.append("asset")
+        return
+    terms = [b for b in blocks if b["leg"] == "terms"]
+    price = _one([_qty(b["amount"]) for b in terms if "amount" in b], "terms.amount", out)
+    bound = _one([_qty(b["receive_fee_max"]) for b in terms if "receive_fee_max" in b],
+                 "terms.receive_fee_max", out)
+
+    payer, payee = observed["payer"], observed["payee"]
+    for name, side, legs in (("amount", "payer", payer), ("routing_fee", "payer", payer),
+                             ("received", "payee", payee)):
+        if any(name not in b for b in legs):
+            out.append(f"{side}_observed.{name} missing")
+    sent = _one([_qty(b["amount"]) for b in payer if "amount" in b], "payer_observed.amount", out)
+    got = _one([_qty(b["received"]) for b in payee if "received" in b], "payee_observed.received", out)
+    fees = [_qty(b["receive_fee"]) for b in payee if "receive_fee" in b]
+    fee = _one(fees, "payee_observed.receive_fee", out)
+    if fees and len(fees) < len(payee):
+        out.append("payee_observed.receive_fee missing")
+    if price is not None and sent is not None and sent != price:
+        out.append("payer_observed.amount != terms.amount")
+    if fee is not None and bound is not None and fee > bound:
+        out.append("payee_observed.receive_fee > terms.receive_fee_max")
+    if sent is None or got is None:
+        return
+    if fee is not None:
+        if got + fee != sent:
+            out.append("amount")
+    elif not fees:
+        if bound is None:
+            out.append("payee_observed.receive_fee missing")
+        elif not 0 <= sent - got <= bound:
+            out.append("amount")
+
+
+def _join_group(capsules: list[dict], *, trusted: bool) -> SettlementJoin:
     blocks = [(c, _block(c)) for c in capsules]
     ref = blocks[0][1]["payment_ref"]
     differences: list[str] = []
@@ -587,16 +668,18 @@ def _join_group(capsules: list[dict], *, trusted: bool, untrusted_roles: set[str
         return {c["key_id"] for c, b in blocks if b["role"] == role and (leg is None or b["leg"] == leg)}
 
     _compare("terms_digest", [b["terms_digest"] for _, b in blocks], differences)
-    _compare("amount", [b.get("amount") for _, b in blocks], differences)
 
     for side in ROLES:
         if not trusted and len(keys_for(side)) > 1:
             differences.append(f"{side}.keys")
-        if side in untrusted_roles:
-            differences.append(f"{side}.untrusted_key")
 
     observed = {side: [b for _, b in blocks if b["leg"] == f"{side}_observed"] for side in ROLES}
     final = {side: _final_statuses([b["status"] for b in observed[side]]) for side in ROLES}
+    _money(
+        [b for _, b in blocks],
+        {side: [b for b in observed[side] if b["status"] in final[side]] for side in ROLES},
+        differences,
+    )
     for side in ROLES:
         if len(final[side]) > 1:
             differences.append(f"{side}_observed.status")
@@ -633,8 +716,6 @@ def _join_group(capsules: list[dict], *, trusted: bool, untrusted_roles: set[str
                 success = _SUCCESS[f"{side}_observed"]
                 if final[side] != {success}:
                     differences.append(f"{side}_observed.status=" + ",".join(sorted(final[side])))
-                if any("amount" not in b for b in observed[side]):
-                    differences.append(f"{side}_observed.amount missing")
             state = "differs" if differences else ("agreed" if trusted else "agreed_untrusted")
     elif have_payer:
         state = "payer_only"

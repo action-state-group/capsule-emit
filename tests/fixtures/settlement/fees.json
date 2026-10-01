@@ -1,0 +1,687 @@
+{
+  "description": "Settlement join: amounts reconcile as payer amount == payee received + receive_fee, never by naive equality. Each case's records are sealed by two keys, one per party, then joined without trusted_keys.",
+  "cases": [
+    {
+      "name": "lightning_receive_fee_deducted_two_payments",
+      "note": "The payer sent two payments of 1000 msat each with routing_fee 0. The payee received 995 msat of each, with receive_fee 5. Each reconciles: amount == received + receive_fee.",
+      "records": [
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "terms",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "terms",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "payer_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "settled",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "routing_fee": {
+              "value": "0",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "payee_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "received",
+            "received": {
+              "value": "995",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "receive_fee": {
+              "value": "5",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "terms",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "2222222222222222222222222222222222222222222222222222222222222222"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "terms",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "2222222222222222222222222222222222222222222222222222222222222222"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "payer_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "2222222222222222222222222222222222222222222222222222222222222222"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "settled",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "routing_fee": {
+              "value": "0",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "payee_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "2222222222222222222222222222222222222222222222222222222222222222"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "received",
+            "received": {
+              "value": "995",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "receive_fee": {
+              "value": "5",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        }
+      ],
+      "expect": [
+        {
+          "payment_ref": {
+            "type": "ln.payment_hash",
+            "value": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "state": "agreed_untrusted",
+          "differences": []
+        },
+        {
+          "payment_ref": {
+            "type": "ln.payment_hash",
+            "value": "2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "state": "agreed_untrusted",
+          "differences": []
+        }
+      ]
+    },
+    {
+      "name": "lightning_naive_equality_would_be_wrong",
+      "note": "The same payment if the payee leaves receive_fee out. 995 != 1000, and there is no declared bound, so the missing fee is a difference, not a pass.",
+      "records": [
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "payer_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "settled",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "routing_fee": {
+              "value": "0",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "payee_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "received",
+            "received": {
+              "value": "995",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        }
+      ],
+      "expect": [
+        {
+          "payment_ref": {
+            "type": "ln.payment_hash",
+            "value": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "state": "differs",
+          "differences": [
+            "payee_observed.receive_fee missing"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "lightning_missing_fee_within_declared_bound",
+      "note": "The payee reports received 995 and no receive_fee; the terms declare receive_fee_max 10 msat. The gap of 5 is within the bound.",
+      "records": [
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "terms",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "receive_fee_max": {
+              "value": "10",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "terms",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "receive_fee_max": {
+              "value": "10",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "payer_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "settled",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "routing_fee": {
+              "value": "0",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "payee_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "received",
+            "received": {
+              "value": "995",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        }
+      ],
+      "expect": [
+        {
+          "payment_ref": {
+            "type": "ln.payment_hash",
+            "value": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "state": "agreed_untrusted",
+          "differences": []
+        }
+      ]
+    },
+    {
+      "name": "lightning_missing_fee_outside_declared_bound",
+      "note": "As above with receive_fee_max 3 msat: a gap of 5 is outside the bound.",
+      "records": [
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "terms",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "receive_fee_max": {
+              "value": "3",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "terms",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "receive_fee_max": {
+              "value": "3",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "payer_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "settled",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "routing_fee": {
+              "value": "0",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "payee_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "received",
+            "received": {
+              "value": "995",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        }
+      ],
+      "expect": [
+        {
+          "payment_ref": {
+            "type": "ln.payment_hash",
+            "value": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "state": "differs",
+          "differences": [
+            "amount"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "lightning_stated_fee_above_declared_bound",
+      "note": "The payee states receive_fee 5 against a declared bound of 3. The sum reconciles, but the fee breaks the terms.",
+      "records": [
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "terms",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "receive_fee_max": {
+              "value": "3",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "terms",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "receive_fee_max": {
+              "value": "3",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "payer_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "settled",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "routing_fee": {
+              "value": "0",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "payee_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "received",
+            "received": {
+              "value": "995",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "receive_fee": {
+              "value": "5",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        }
+      ],
+      "expect": [
+        {
+          "payment_ref": {
+            "type": "ln.payment_hash",
+            "value": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "state": "differs",
+          "differences": [
+            "payee_observed.receive_fee > terms.receive_fee_max"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "lightning_payer_routing_fee_paid_on_top",
+      "note": "The payer paid 7 msat of routing on top of the 1000 it sent. The routing fee is not part of what the payee receives.",
+      "records": [
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "payer_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "settled",
+            "amount": {
+              "value": "1000",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "routing_fee": {
+              "value": "7",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "payee_observed",
+            "payment_ref": {
+              "type": "ln.payment_hash",
+              "value": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "received",
+            "received": {
+              "value": "995",
+              "assetCode": "BTC",
+              "assetScale": 11
+            },
+            "receive_fee": {
+              "value": "5",
+              "assetCode": "BTC",
+              "assetScale": 11
+            }
+          }
+        }
+      ],
+      "expect": [
+        {
+          "payment_ref": {
+            "type": "ln.payment_hash",
+            "value": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "state": "agreed_untrusted",
+          "differences": []
+        }
+      ]
+    },
+    {
+      "name": "x402_gas_is_not_deducted",
+      "note": "x402 exact on EVM: the facilitator pays the gas, so the USDC amount arrives whole. Both fees are recorded as zero, explicitly.",
+      "records": [
+        {
+          "party": "payer",
+          "observation": {
+            "role": "payer",
+            "leg": "payer_observed",
+            "payment_ref": {
+              "type": "x402.transaction",
+              "value": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+              "network": "eip155:84532"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "settled",
+            "amount": {
+              "value": "10000",
+              "assetCode": "eip155:84532/erc20:0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+              "assetScale": 6
+            },
+            "routing_fee": {
+              "value": "0",
+              "assetCode": "eip155:84532/erc20:0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+              "assetScale": 6
+            }
+          }
+        },
+        {
+          "party": "payee",
+          "observation": {
+            "role": "payee",
+            "leg": "payee_observed",
+            "payment_ref": {
+              "type": "x402.transaction",
+              "value": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+              "network": "eip155:84532"
+            },
+            "terms_digest": "abababababababababababababababababababababababababababababababab",
+            "status": "received",
+            "received": {
+              "value": "10000",
+              "assetCode": "eip155:84532/erc20:0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+              "assetScale": 6
+            },
+            "receive_fee": {
+              "value": "0",
+              "assetCode": "eip155:84532/erc20:0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+              "assetScale": 6
+            }
+          }
+        }
+      ],
+      "expect": [
+        {
+          "payment_ref": {
+            "type": "x402.transaction",
+            "value": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "network": "eip155:84532"
+          },
+          "state": "agreed_untrusted",
+          "differences": []
+        }
+      ]
+    }
+  ]
+}
