@@ -20,13 +20,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
   to the same `terms_digest`.
 - `join(capsules)` works offline: it verifies every record (content and producer signature),
   refuses and lists any that fail, groups the rest on the exact `payment_ref`, and reports
-  `agreed`, `payer_only`, `payee_only`, `differs` (naming each field), `not_independent` (one key
-  on both sides) or `no_observation`, plus the delivery comparison and the ISO 20022 status codes
+  `agreed`, `agreed_untrusted`, `payer_only`, `payee_only`, `differs` (naming each field),
+  `not_independent` (one key on both sides) or `no_observation`, plus the delivery comparison and the ISO 20022 status codes
   (ACSC, ACCC, PDNG, RJCT). One side missing reads as one-sided, never as unpaid. `agreed` needs
   an amount on both observed legs; a `pending` leg is superseded by a later outcome.
 - Two keys are not proof of two parties: a role is what the sealer claims. `join(...,
   trusted_keys={"payer": [...], "payee": [...]})` refuses any record whose key is not listed
-  for its role.
+  for its role. Only then does a full match read `agreed`; without it the same match reads
+  `agreed_untrusted`. More than one key under one role is always a difference, and the same
+  capsule passed twice counts once.
 
 ### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
 
