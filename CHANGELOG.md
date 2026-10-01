@@ -6,6 +6,24 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added — `capsule_emit.settlement`: payer and payee each record the same payment
+
+- A reference producer for the agent settlement profile draft (draft-mih-agent-settlement-profile-00,
+  in progress; field names may change with the draft). The payer and the payee seal their own
+  observations, in their own logs, under their own keys; nobody signs the other side's claim.
+- Legs `terms`, `payer_observed`, `payee_observed`, `delivered`, chained within each party's log
+  (`seal_observation(..., prior=...)`, relation `follows`). Each carries a typed `payment_ref`
+  (an open registry: x402 transaction + CAIP-2 network, Lightning and BOLT12 payment hashes, AP2,
+  ACP/UCP, MPP, ISO 20022 UETR/EndToEndId, Open Payments), a `terms_digest`, an exact amount
+  `{value, assetCode, assetScale}` (floats refused), and existing signed objects wrapped by digest
+  (`wrap()`), never re-signed. A `delivered` leg carries a digest of the delivered content, bound
+  to the same `terms_digest`.
+- `join(capsules)` works offline: it verifies every record (content and producer signature),
+  refuses and lists any that fail, groups the rest on the exact `payment_ref`, and reports
+  `agreed`, `payer_only`, `payee_only`, `differs` (naming each field), `not_independent` (one key
+  on both sides) or `no_observation`, plus the delivery comparison and the ISO 20022 status codes
+  (ACSC, ACCC, PDNG, RJCT). One side missing reads as one-sided, never as unpaid.
+
 ### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
 
 - `capsule-emit verify --bundle FILE.json [--require-signature] [--json]` checks an evidence file
