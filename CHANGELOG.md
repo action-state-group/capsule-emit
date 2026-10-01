@@ -22,7 +22,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
   refuses and lists any that fail, groups the rest on the exact `payment_ref`, and reports
   `agreed`, `payer_only`, `payee_only`, `differs` (naming each field), `not_independent` (one key
   on both sides) or `no_observation`, plus the delivery comparison and the ISO 20022 status codes
-  (ACSC, ACCC, PDNG, RJCT). One side missing reads as one-sided, never as unpaid.
+  (ACSC, ACCC, PDNG, RJCT). One side missing reads as one-sided, never as unpaid. `agreed` needs
+  an amount on both observed legs; a `pending` leg is superseded by a later outcome.
+- Two keys are not proof of two parties: a role is what the sealer claims. `join(...,
+  trusted_keys={"payer": [...], "payee": [...]})` refuses any record whose key is not listed
+  for its role.
 
 ### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
 

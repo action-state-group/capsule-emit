@@ -36,7 +36,9 @@ Joining (offline, over sealed capsule dicts from both parties):
 What a join never says: one side's record missing reads ``payer_only`` or
 ``payee_only`` -- "only one side is held here", never "unpaid" or "not
 delivered". A record that fails verification is refused and listed, never
-silently dropped and never joined.
+silently dropped and never joined. Two keys are not proof of two parties: a
+role is what the sealer claims. Pin keys to roles with ``join(...,
+trusted_keys=...)`` when the reader knows them.
 """
 from __future__ import annotations
 
@@ -327,8 +329,8 @@ def build_observation(
     """Build and validate one leg's observation block.
 
     *payment_ref* is ``{"type", "value"}`` plus ``"network"`` (CAIP-2) where
-    the type needs one. An EVM transaction hash is lowercased here, so both
-    sides' records join on the same bytes.
+    the type needs one. An EVM transaction hash is lowercased here; every
+    other value is kept exactly as given, and the join compares bytes.
 
     *bindings* names what else this record is bound to, as dotted keys:
     an agent registry id, a request hash, a facilitator id.
@@ -411,21 +413,27 @@ class SettlementJoin:
 
     ``state``:
 
-    - ``agreed``: payer and payee each sealed an observed leg, under two
-      different keys, both report success, and every compared field matches.
+    - ``agreed``: a payer-role and a payee-role observed leg are both held,
+      signed under disjoint keys, each side's final status is success, both
+      carry an amount, and every compared field matches.
     - ``payer_only`` / ``payee_only``: only one side's observed leg is held
       here. Says nothing about the other side's books.
     - ``differs``: both sides are held and at least one compared field
-      disagrees; ``differences`` names each one.
-    - ``not_independent``: both observed legs were signed by the same key,
-      so this is one party's account of both sides.
+      disagrees or is missing; ``differences`` names each one.
+    - ``not_independent``: one key signed records under both roles, so this
+      is one key's account of both sides.
     - ``no_observation``: only terms or delivered legs are held.
+
+    Distinct keys are not proof of distinct parties: a role is what the
+    sealer claims, and anyone can hold two keys. Pass ``trusted_keys`` to
+    :func:`join` to pin which keys may speak for each role.
 
     ``differences`` may be non-empty on a one-sided state too: one party's
     own legs that disagree with each other.
 
-    ``delivery``: ``matched`` (both sides sealed a delivered leg with the same
-    digest), ``payee_only``, ``payer_only``, ``differs``, or ``none``.
+    ``delivery``: ``matched`` (both roles sealed a delivered leg with the
+    same digest, under disjoint keys), ``not_independent`` (one key sealed
+    both), ``payee_only``, ``payer_only``, ``differs``, or ``none``.
     """
 
     payment_ref: dict
@@ -442,11 +450,12 @@ def _ref_key(ref: dict) -> bytes:
 
 
 def _block(capsule: dict) -> Any:
-    return (
-        capsule.get("model_attestation", {})
-        .get("compute_attestation", {})
-        .get(SETTLEMENT_EXTENSION_KEY)
-    )
+    model = capsule.get("model_attestation")
+    compute = model.get("compute_attestation") if isinstance(model, dict) else None
+    return compute.get(SETTLEMENT_EXTENSION_KEY) if isinstance(compute, dict) else None
+
+
+_KEY_ID = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _verify(capsule: dict) -> str | None:
@@ -454,10 +463,14 @@ def _verify(capsule: dict) -> str | None:
 
     Checked one record at a time: a leg's chain parent may be in another
     file, or deliberately left out, and that is not a reason to refuse it.
+    ``key_id`` must be lowercase hex, so that comparing keys as strings is
+    comparing keys.
     """
     from .signing import AuthorshipVerdict, verify_capsule_signature_tristate
     from .verification import verify_capsule
 
+    if not isinstance(capsule.get("key_id"), str) or not _KEY_ID.match(capsule["key_id"]):
+        return "key_id is not 64 lowercase hex"
     try:
         content_ok = verify_capsule(capsule).ok
         authorship, _ = verify_capsule_signature_tristate(capsule)
@@ -476,27 +489,38 @@ def _compare(field_name: str, values: list[Any], out: list[str]) -> None:
         out.append(field_name)
 
 
-def join(capsules: Iterable[dict | EmitResult]) -> tuple[list[SettlementJoin], list[RefusedRecord]]:
+def join(
+    capsules: Iterable[dict | EmitResult],
+    *,
+    trusted_keys: dict[str, Iterable[str]] | None = None,
+) -> tuple[list[SettlementJoin], list[RefusedRecord]]:
     """Join settlement records from both parties, offline.
 
-    Every capsule is verified first, on its own (``capsule_id`` recomputes and
-    the producer signature verifies; a chain parent need not be present). A capsule that fails, or carries no valid
-    settlement block, is returned in the refused list and takes no part in
-    any join.
+    Every capsule is verified first, on its own (``capsule_id`` recomputes
+    and the producer signature verifies; a chain parent need not be
+    present). A capsule that fails, or carries no valid settlement block, is
+    returned in the refused list and takes no part in any join.
 
-    Records are grouped on the exact JCS bytes of ``payment_ref``. Within a
-    group the compared fields are ``terms_digest``, ``amount`` (all legs that
-    carry one), the delivered digests, and the observed statuses.
+    *trusted_keys* maps a role to the ``key_id`` values allowed to speak for
+    it. When given, a record whose role has no entry, or whose key is not
+    listed for its role, is refused.
+
+    Records are grouped on the exact JCS bytes of ``payment_ref``: values
+    must match byte for byte (only an EVM transaction hash is lowercased, by
+    :func:`build_observation`). Within a group the compared fields are
+    ``terms_digest``, ``amount`` (exactly, so the same sum at two scales
+    differs), the delivered digests, and each side's final observed status.
     """
+    trusted = {role: set(keys) for role, keys in trusted_keys.items()} if trusted_keys is not None else None
     refused: list[RefusedRecord] = []
     groups: dict[bytes, list[dict]] = {}
     order: list[bytes] = []
     for item in capsules:
         capsule = item.capsule if isinstance(item, EmitResult) else item
-        cid = capsule.get("capsule_id") if isinstance(capsule, dict) else None
         if not isinstance(capsule, dict):
             refused.append(RefusedRecord(None, "not a capsule object"))
             continue
+        cid = capsule.get("capsule_id")
         reason = _verify(capsule)
         if reason is not None:
             refused.append(RefusedRecord(cid, reason))
@@ -510,6 +534,9 @@ def join(capsules: Iterable[dict | EmitResult]) -> tuple[list[SettlementJoin], l
         except SettlementError as exc:
             refused.append(RefusedRecord(cid, f"settlement block refused: {exc}"))
             continue
+        if trusted is not None and capsule["key_id"] not in trusted.get(block["role"], set()):
+            refused.append(RefusedRecord(cid, f"key is not trusted for role {block['role']}"))
+            continue
         key = _ref_key(block["payment_ref"])
         if key not in groups:
             groups[key] = []
@@ -518,31 +545,39 @@ def join(capsules: Iterable[dict | EmitResult]) -> tuple[list[SettlementJoin], l
     return [_join_group(groups[k]) for k in order], refused
 
 
+def _final_statuses(statuses: list[str]) -> set[str]:
+    """A side's final status: ``pending`` is superseded by any outcome."""
+    outcomes = set(statuses) - {"pending"}
+    return outcomes or set(statuses)
+
+
 def _join_group(capsules: list[dict]) -> SettlementJoin:
     blocks = [(c, _block(c)) for c in capsules]
     ref = blocks[0][1]["payment_ref"]
     differences: list[str] = []
 
+    def keys_for(role: str, leg: str | None = None) -> set[str]:
+        return {c["key_id"] for c, b in blocks if b["role"] == role and (leg is None or b["leg"] == leg)}
+
     _compare("terms_digest", [b["terms_digest"] for _, b in blocks], differences)
     _compare("amount", [b.get("amount") for _, b in blocks], differences)
 
-    observed = {
-        side: [(c, b) for c, b in blocks if b["leg"] == f"{side}_observed"]
-        for side in ROLES
-    }
+    observed = {side: [b for _, b in blocks if b["leg"] == f"{side}_observed"] for side in ROLES}
+    final = {side: _final_statuses([b["status"] for b in observed[side]]) for side in ROLES}
     for side in ROLES:
-        _compare(f"{side}_observed.status", [b["status"] for _, b in observed[side]], differences)
+        if len(final[side]) > 1:
+            differences.append(f"{side}_observed.status")
 
     delivered = {
         side: [b["delivered_digest"] for _, b in blocks if b["leg"] == "delivered" and b["role"] == side]
         for side in ROLES
     }
-    all_delivered = delivered["payer"] + delivered["payee"]
-    if len({*all_delivered}) > 1:
+    if len({*delivered["payer"], *delivered["payee"]}) > 1:
         differences.append("delivered_digest")
         delivery = "differs"
     elif delivered["payer"] and delivered["payee"]:
-        delivery = "matched"
+        shared = keys_for("payer", "delivered") & keys_for("payee", "delivered")
+        delivery = "not_independent" if shared else "matched"
     elif delivered["payee"]:
         delivery = "payee_only"
     elif delivered["payer"]:
@@ -550,23 +585,23 @@ def _join_group(capsules: list[dict]) -> SettlementJoin:
     else:
         delivery = "none"
 
-    iso: dict[str, str] = {}
-    for side in ROLES:
-        statuses = {b["status"] for _, b in observed[side]}
-        if len(statuses) == 1:
-            iso[f"{side}_observed"] = ISO20022_STATUS[(f"{side}_observed", statuses.pop())]
+    iso = {
+        f"{side}_observed": ISO20022_STATUS[(f"{side}_observed", next(iter(final[side])))]
+        for side in ROLES
+        if len(final[side]) == 1
+    }
 
     have_payer, have_payee = bool(observed["payer"]), bool(observed["payee"])
     if have_payer and have_payee:
-        payer_keys = {c.get("key_id") for c, b in blocks if b["role"] == "payer"}
-        payee_keys = {c.get("key_id") for c, b in blocks if b["role"] == "payee"}
-        if payer_keys & payee_keys:
+        if keys_for("payer") & keys_for("payee"):
             state = "not_independent"
         else:
             for side in ROLES:
-                for _, b in observed[side]:
-                    if b["status"] != _SUCCESS[f"{side}_observed"]:
-                        differences.append(f"{side}_observed.status={b['status']}")
+                success = _SUCCESS[f"{side}_observed"]
+                if final[side] != {success}:
+                    differences.append(f"{side}_observed.status=" + ",".join(sorted(final[side])))
+                if any("amount" not in b for b in observed[side]):
+                    differences.append(f"{side}_observed.amount missing")
             state = "differs" if differences else "agreed"
     elif have_payer:
         state = "payer_only"

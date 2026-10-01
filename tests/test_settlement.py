@@ -163,6 +163,7 @@ def test_two_sided_agreed_with_iso20022_codes(tmp_path):
     assert len(joins) == 1
     j = joins[0]
     assert j.state == "agreed", j.differences
+    assert j.differences == []
     assert j.iso20022 == {"payer_observed": "ACSC", "payee_observed": "ACCC"}
     assert len(j.payer_capsule_ids) == 1 and len(j.payee_capsule_ids) == 1
 
@@ -182,6 +183,7 @@ def test_amount_mismatch_differs(tmp_path):
 def test_asset_mismatch_differs(tmp_path):
     joins, _ = join(_two_sided(tmp_path, payee_kw={"amount": amount(10000, "eip155:84532/erc20:0x00", 6)}))
     assert joins[0].state == "differs"
+    assert "amount" in joins[0].differences
 
 
 def test_terms_mismatch_differs(tmp_path):
@@ -193,6 +195,7 @@ def test_terms_mismatch_differs(tmp_path):
 def test_payee_reports_rejected_differs(tmp_path):
     joins, _ = join(_two_sided(tmp_path, payee_kw={"status": "rejected"}))
     assert joins[0].state == "differs"
+    assert "payee_observed.status=rejected" in joins[0].differences
     assert joins[0].iso20022["payee_observed"] == "RJCT"
 
 
@@ -245,6 +248,89 @@ def test_chained_legs_join_with_or_without_their_parents(tmp_path):
     assert joins[0].state == "agreed"
 
 
+def test_missing_amount_on_an_observed_leg_is_never_agreed(tmp_path):
+    joins, _ = join(_two_sided(tmp_path, payee_kw={"amount": None}))
+    assert joins[0].state == "differs"
+    assert "payee_observed.amount missing" in joins[0].differences
+    joins, _ = join(_two_sided(tmp_path / "b", payer_kw={"amount": None}, payee_kw={"amount": None}))
+    assert joins[0].state == "differs"
+
+
+def test_same_sum_at_another_scale_differs(tmp_path):
+    joins, _ = join(_two_sided(tmp_path, payee_kw={"amount": amount(10000000, USDC, 9)}))
+    assert "amount" in joins[0].differences
+
+
+def test_pending_then_settled_is_agreed_and_pending_alone_is_not(tmp_path):
+    pending = _seal(tmp_path, "payer", _obs("payer", "payer_observed", status="pending"))
+    payer, payee = _two_sided(tmp_path)
+    joins, _ = join([pending, payer, payee])
+    assert joins[0].state == "agreed", joins[0].differences
+    assert joins[0].iso20022["payer_observed"] == "ACSC"
+    joins, _ = join([pending, payee])
+    assert joins[0].state == "differs"
+    assert joins[0].iso20022["payer_observed"] == "PDNG"
+
+
+def test_two_outcomes_on_one_side_differ(tmp_path):
+    rejected = _seal(tmp_path, "payer", _obs("payer", "payer_observed", status="rejected"))
+    payer, payee = _two_sided(tmp_path)
+    joins, _ = join([rejected, payer, payee])
+    assert joins[0].state == "differs"
+    assert "payer_observed.status" in joins[0].differences
+    assert "payer_observed" not in joins[0].iso20022
+
+
+def test_duplicate_observed_legs_with_different_amounts_differ(tmp_path):
+    extra = _seal(tmp_path, "payer", _obs("payer", "payer_observed", amount=amount(1, USDC, 6)))
+    joins, _ = join(_two_sided(tmp_path) + [extra])
+    assert joins[0].state == "differs"
+    assert "amount" in joins[0].differences
+
+
+def test_one_key_sealing_delivery_for_both_roles_is_not_matched(tmp_path):
+    a = _seal(tmp_path, "one", _obs("payer", "delivered"))
+    b = _seal(tmp_path, "one", _obs("payee", "delivered"))
+    joins, _ = join([a, b])
+    assert joins[0].delivery == "not_independent"
+    joins, _ = join(_two_sided(tmp_path) + [a, b])
+    assert joins[0].state == "not_independent"
+
+
+def test_one_sided_delivery(tmp_path):
+    payee_d = _seal(tmp_path, "payee", _obs("payee", "delivered"))
+    joins, _ = join(_two_sided(tmp_path) + [payee_d])
+    assert (joins[0].state, joins[0].delivery) == ("agreed", "payee_only")
+    payer_d = _seal(tmp_path, "payer", _obs("payer", "delivered"))
+    joins, _ = join([payer_d])
+    assert (joins[0].state, joins[0].delivery) == ("no_observation", "payer_only")
+
+
+def test_trusted_keys_refuse_a_role_claim_from_another_key(tmp_path):
+    payer, payee = _two_sided(tmp_path)
+    impostor = _seal(tmp_path, "impostor", _obs("payee", "payee_observed"))
+    trusted = {"payer": [payer["key_id"]], "payee": [payee["key_id"]]}
+    joins, refused = join([payer, payee, impostor], trusted_keys=trusted)
+    assert [r.capsule_id for r in refused] == [impostor["capsule_id"]]
+    assert "not trusted" in refused[0].reason
+    assert joins[0].state == "agreed"
+    _, refused = join([payer, payee], trusted_keys={"payer": [payer["key_id"]]})
+    assert [r.capsule_id for r in refused] == [payee["capsule_id"]]
+
+
+def test_non_x402_reference_joins_end_to_end(tmp_path):
+    ref = {"type": "iso20022.uetr", "value": "eb6305c9-1f7f-49de-aed0-16487c27b42d"}
+    joins, _ = join(_two_sided(tmp_path, payer_kw={"payment_ref": ref}, payee_kw={"payment_ref": ref}))
+    assert len(joins) == 1 and joins[0].state == "agreed"
+
+
+def test_references_differing_only_in_case_do_not_join(tmp_path):
+    a = {"type": "ap2.payment_id", "value": "PAY-1"}
+    b = {"type": "ap2.payment_id", "value": "pay-1"}
+    joins, _ = join(_two_sided(tmp_path, payer_kw={"payment_ref": a}, payee_kw={"payment_ref": b}))
+    assert sorted(j.state for j in joins) == ["payee_only", "payer_only"]
+
+
 # --- adversarial inputs to the join ----------------------------------------
 
 
@@ -295,6 +381,30 @@ def test_signed_record_with_malformed_block_is_refused(tmp_path):
     joins, refused = join([capsule])
     assert joins == []
     assert "settlement block refused" in refused[0].reason
+
+
+def test_upper_case_key_id_cannot_pass_as_a_second_key(tmp_path):
+    payer, payee = _two_sided(tmp_path, payee_party="payer")
+    payee["key_id"] = payee["key_id"].upper()
+    joins, refused = join([payer, payee])
+    assert [r.reason for r in refused] == ["key_id is not 64 lowercase hex"]
+    assert joins[0].state == "payer_only"
+
+
+def test_unsigned_record_with_a_correct_id_is_refused(tmp_path):
+    payer, payee = _two_sided(tmp_path)
+    payee.pop("signature")
+    joins, refused = join([payer, payee])
+    assert len(refused) == 1
+    assert joins[0].state == "payer_only"
+
+
+def test_non_dict_inputs_are_refused_not_raised(tmp_path):
+    payer, _ = _two_sided(tmp_path)
+    odd = copy.deepcopy(payer)
+    odd["model_attestation"] = "x"
+    joins, refused = join(["not a capsule", odd])
+    assert joins == [] and len(refused) == 2
 
 
 def test_capsule_without_a_block_is_refused(tmp_path):
