@@ -27,6 +27,8 @@ All notable changes to `capsule-emit` are documented here. The format follows
   text, records outside its log range, citations it declares missing). No script and no network:
   the page is self-contained. Library: `capsule_emit.evidence_file.check_evidence_file`,
   `capsule_emit.evidence_report.render_report_html`.
+- The `checkpointed-local-log` floor is now `>=0.4.0`, which `verify --bundle` needs for the range and
+  inclusion proof checks.
 
 ### Added — OTel processor v0: digest-only `org.agentactioncapsule.otel` correlation (`capsule_emit.otel`)
 
