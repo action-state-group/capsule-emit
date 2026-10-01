@@ -414,8 +414,8 @@ class SettlementJoin:
     ``state``:
 
     - ``agreed``: a payer-role and a payee-role observed leg are both held,
-      each role signed by exactly one key, the two keys disjoint and both
-      pinned to their role by ``trusted_keys``; each side's final status is
+      the payer and payee keys disjoint and all to their role by ``trusted_keys`` (a role may have several
+      trusted keys, e.g. after rotation); each side's final status is
       success, both carry an amount, and every compared field matches.
     - ``agreed_untrusted``: the same, but ``join`` was given no
       ``trusted_keys``, so nothing ties either key to a real party.
@@ -429,9 +429,12 @@ class SettlementJoin:
 
     Distinct keys are not proof of distinct parties: a role is what the
     sealer claims, and anyone can hold two keys. Pass ``trusted_keys`` to
-    :func:`join` to pin which keys may speak for each role. More than one
-    key under one role is always a difference (``payer.keys`` /
-    ``payee.keys``), even when every key is trusted.
+    :func:`join` to pin which keys may speak for each role. Several keys
+    under one role are fine when all of them are trusted (rotation). Any
+    other extra key is a difference: without ``trusted_keys``, more than one
+    key under a role reads ``payer.keys`` / ``payee.keys``; with it, a record
+    for this payment refused because its key is not trusted for its role
+    reads ``payer.untrusted_key`` / ``payee.untrusted_key``.
 
     ``differences`` may be non-empty on a one-sided state too: one party's
     own legs that disagree with each other.
@@ -511,7 +514,9 @@ def join(
 
     *trusted_keys* maps a role to the ``key_id`` values allowed to speak for
     it. When given, a record whose role has no entry, or whose key is not
-    listed for its role, is refused, and a full match reads ``agreed``.
+    listed for its role, is refused (and, when it names a payment that is
+    joined, recorded on that join as ``<role>.untrusted_key``), and a full
+    match reads ``agreed``.
     Without it, the same match reads ``agreed_untrusted``.
 
     The same capsule passed more than once (same ``capsule_id`` and
@@ -528,6 +533,7 @@ def join(
     groups: dict[bytes, list[dict]] = {}
     order: list[bytes] = []
     seen: set[tuple[str, str]] = set()
+    untrusted: dict[bytes, set[str]] = {}
     for item in capsules:
         capsule = item.capsule if isinstance(item, EmitResult) else item
         if not isinstance(capsule, dict):
@@ -549,6 +555,7 @@ def join(
             continue
         if trusted is not None and capsule["key_id"] not in trusted.get(block["role"], set()):
             refused.append(RefusedRecord(cid, f"key is not trusted for role {block['role']}"))
+            untrusted.setdefault(_ref_key(block["payment_ref"]), set()).add(block["role"])
             continue
         identity = (capsule["capsule_id"], capsule["key_id"])
         if identity in seen:
@@ -559,7 +566,10 @@ def join(
             groups[key] = []
             order.append(key)
         groups[key].append(capsule)
-    return [_join_group(groups[k], trusted=trusted is not None) for k in order], refused
+    return [
+        _join_group(groups[k], trusted=trusted is not None, untrusted_roles=untrusted.get(k, set()))
+        for k in order
+    ], refused
 
 
 def _final_statuses(statuses: list[str]) -> set[str]:
@@ -568,7 +578,7 @@ def _final_statuses(statuses: list[str]) -> set[str]:
     return outcomes or set(statuses)
 
 
-def _join_group(capsules: list[dict], *, trusted: bool) -> SettlementJoin:
+def _join_group(capsules: list[dict], *, trusted: bool, untrusted_roles: set[str]) -> SettlementJoin:
     blocks = [(c, _block(c)) for c in capsules]
     ref = blocks[0][1]["payment_ref"]
     differences: list[str] = []
@@ -580,8 +590,10 @@ def _join_group(capsules: list[dict], *, trusted: bool) -> SettlementJoin:
     _compare("amount", [b.get("amount") for _, b in blocks], differences)
 
     for side in ROLES:
-        if len(keys_for(side)) > 1:
+        if not trusted and len(keys_for(side)) > 1:
             differences.append(f"{side}.keys")
+        if side in untrusted_roles:
+            differences.append(f"{side}.untrusted_key")
 
     observed = {side: [b for _, b in blocks if b["leg"] == f"{side}_observed"] for side in ROLES}
     final = {side: _final_statuses([b["status"] for b in observed[side]]) for side in ROLES}

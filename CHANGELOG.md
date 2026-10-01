@@ -27,8 +27,8 @@ All notable changes to `capsule-emit` are documented here. The format follows
 - Two keys are not proof of two parties: a role is what the sealer claims. `join(...,
   trusted_keys={"payer": [...], "payee": [...]})` refuses any record whose key is not listed
   for its role. Only then does a full match read `agreed`; without it the same match reads
-  `agreed_untrusted`. More than one key under one role is always a difference, and the same
-  capsule passed twice counts once.
+  `agreed_untrusted`. Several trusted keys under one role are fine (rotation); any other extra
+  key under a role is a difference. The same capsule passed twice counts once.
 
 ### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
 

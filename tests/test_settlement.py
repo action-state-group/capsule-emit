@@ -313,7 +313,8 @@ def test_trusted_keys_refuse_a_role_claim_from_another_key(tmp_path):
     joins, refused = join([payer, payee, impostor], trusted_keys=trusted)
     assert [r.capsule_id for r in refused] == [impostor["capsule_id"]]
     assert "not trusted" in refused[0].reason
-    assert joins[0].state == "agreed"
+    assert joins[0].state == "differs"
+    assert joins[0].differences == ["payee.untrusted_key"]
     _, refused = join([payer, payee], trusted_keys={"payer": [payer["key_id"]]})
     assert [r.capsule_id for r in refused] == [payee["capsule_id"]]
 
@@ -354,9 +355,29 @@ def test_real_payee_plus_an_impostor_is_a_difference(tmp_path):
     joins, _ = join([payer, payee, impostor])
     assert joins[0].state == "differs"
     assert "payee.keys" in joins[0].differences
-    trusted = {"payer": [payer["key_id"]], "payee": [payee["key_id"], impostor["key_id"]]}
-    joins, _ = join([payer, payee, impostor], trusted_keys=trusted)
+
+
+def test_rotated_keys_all_trusted_are_agreed(tmp_path):
+    payer, payee = _two_sided(tmp_path)
+    rotated = _seal(tmp_path, "payee-rotated", _obs("payee", "delivered"))
+    payer_d = _seal(tmp_path, "payer", _obs("payer", "delivered"))
+    trusted = {"payer": [payer["key_id"]], "payee": [payee["key_id"], rotated["key_id"]]}
+    joins, refused = join([payer, payee, rotated, payer_d], trusted_keys=trusted)
+    assert refused == []
+    assert (joins[0].state, joins[0].delivery) == ("agreed", "matched"), joins[0].differences
+    joins, _ = join([payer, payee, rotated, payer_d])
     assert "payee.keys" in joins[0].differences
+
+
+def test_an_untrusted_extra_key_beside_trusted_rotated_keys_is_a_difference(tmp_path):
+    payer, payee = _two_sided(tmp_path)
+    rotated = _seal(tmp_path, "payee-rotated", _obs("payee", "delivered"))
+    extra = _seal(tmp_path, "extra", _obs("payee", "payee_observed"))
+    trusted = {"payer": [payer["key_id"]], "payee": [payee["key_id"], rotated["key_id"]]}
+    joins, refused = join([payer, payee, rotated, extra], trusted_keys=trusted)
+    assert [r.capsule_id for r in refused] == [extra["capsule_id"]]
+    assert joins[0].state == "differs"
+    assert joins[0].differences == ["payee.untrusted_key"]
 
 
 def test_the_same_capsule_passed_twice_counts_once(tmp_path):
