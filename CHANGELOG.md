@@ -6,6 +6,13 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed — committed record times are whole seconds with no fraction too
+
+A disclosure record's `timestamp`, a signed refusal's `issued_at` and a hold action's `timestamp`
+now use the same whole-second UTC form as checkpoint times (`2026-10-01T23:04:00Z`), not
+`isoformat()` microseconds. A test holds all three to the TypeScript CLL verifier's timestamp rule.
+The ledger lock file's `acquired_at` is local state and keeps full precision.
+
 ### Fixed — checkpoint times are whole seconds with no fraction
 
 The witness path's checkpoints took the checkpoint library's default time, `isoformat()` with

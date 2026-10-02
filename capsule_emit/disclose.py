@@ -353,7 +353,7 @@ def disclose(
 def _now_iso() -> str:
     from datetime import datetime, timezone
 
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _seal_record(record: dict, ledger_path: str, *, signer: Any = None, signing_key_path: Any = None) -> dict:

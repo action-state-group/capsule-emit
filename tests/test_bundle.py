@@ -652,24 +652,9 @@ def test_bundle_reconstructed_mmr_matches_checkpoint(two_checkpoint_ledger):
     assert mmr_core.leaf_count(b.checkpoint.mmr_size) >= b.seq
 
 
-def _cll_ts_accepts_time(t: str) -> bool:
-    """The TypeScript CLL verifier's timestamp rule (``formatTime(t) === t``):
-    an RFC 3339 UTC time ending in ``Z`` whose fraction, if any, has no
-    trailing zero."""
-    import re
-    from datetime import datetime
-
-    match = re.fullmatch(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?Z", t)
-    if match is None or (match.group(2) or "").endswith("0"):
-        return False
-    try:
-        datetime.strptime(match.group(1), "%Y-%m-%dT%H:%M:%S")
-    except ValueError:
-        return False
-    return True
-
-
 def test_the_ported_timestamp_rule_matches_the_typescript_verifier():
+    from _timestamp_rule import cll_ts_accepts_time as _cll_ts_accepts_time
+
     for ok in ("2026-10-01T23:04:00Z", "2026-10-01T23:04:00.5Z", "2026-10-01T23:04:00.123456Z"):
         assert _cll_ts_accepts_time(ok), ok
     for refused in (
@@ -682,6 +667,8 @@ def test_the_ported_timestamp_rule_matches_the_typescript_verifier():
 
 
 def test_checkpoint_times_are_whole_seconds_the_typescript_verifier_accepts(two_checkpoint_ledger):
+    from _timestamp_rule import cll_ts_accepts_time as _cll_ts_accepts_time
+
     from capsule_emit.checkpoint.cose_wire import verify_checkpoint_cose_offline
 
     ledger_path, caps = two_checkpoint_ledger
