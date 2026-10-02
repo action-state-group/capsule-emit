@@ -169,12 +169,14 @@ fn the_cross_language_cose_checkpoint_vectors_hold() {
     }
 }
 
-#[test]
-fn checkpoints_this_crate_cuts_sign_deterministic_claims() {
+/// Two checkpoints cut through this crate's ledger and checkpoint state, the
+/// second chained (it carries a consistency proof), and the records they cover.
+fn cut_two_checkpoints() -> (Vec<cll::store::CheckpointLine>, Vec<Value>) {
     let dir = tempfile::tempdir().unwrap();
     let key = SigningKey::from_bytes(&[7u8; 32]);
     let (mut ledger, _) = Ledger::open(dir.path()).unwrap();
     let anchor = AnchorClient::new("http://127.0.0.1:1");
+    let mut records = Vec::new();
     // Two checkpoints: the second carries a consistency proof (a nested map).
     for round in 0..2 {
         let mut last = String::new();
@@ -197,6 +199,7 @@ fn checkpoints_this_crate_cuts_sign_deterministic_claims() {
             );
             ledger.append(&capsule, &statement).unwrap();
             last = capsule["capsule_id"].as_str().unwrap().to_string();
+            records.push(capsule);
         }
         let (mut state, _) = CheckpointState::load(
             dir.path(),
@@ -209,6 +212,12 @@ fn checkpoints_this_crate_cuts_sign_deterministic_claims() {
     let lines = cll::store::read_checkpoints(dir.path().join("checkpoints.jsonl")).unwrap();
     assert_eq!(lines.len(), 2);
     assert!(lines[1].record.prev_size > 0);
+    (lines, records)
+}
+
+#[test]
+fn checkpoints_this_crate_cuts_sign_deterministic_claims() {
+    let (lines, _) = cut_two_checkpoints();
     for line in &lines {
         let cose = hex::decode(line.checkpoint_cose_hex.as_deref().unwrap()).unwrap();
         let claims = signed_claims(&cose);
@@ -230,5 +239,81 @@ fn checkpoints_this_crate_cuts_sign_deterministic_claims() {
             );
         }
         assert_deterministic_order(&claims, &keys, 0);
+    }
+}
+
+/// The TypeScript CLL verifier's timestamp rule (`formatTime(t) === t`): an
+/// RFC 3339 UTC time ending in `Z`, whose fraction, if any, has no trailing
+/// zero. Ported here so this crate's committed times are held to it.
+fn cll_ts_accepts_time(t: &str) -> bool {
+    let b = t.as_bytes();
+    let digits = |r: std::ops::Range<usize>| {
+        b.get(r.clone())
+            .is_some_and(|s| s.iter().all(u8::is_ascii_digit))
+    };
+    let shape = b.len() >= 20
+        && digits(0..4)
+        && b[4] == b'-'
+        && digits(5..7)
+        && b[7] == b'-'
+        && digits(8..10)
+        && b[10] == b'T'
+        && digits(11..13)
+        && b[13] == b':'
+        && digits(14..16)
+        && b[16] == b':'
+        && digits(17..19)
+        && b[b.len() - 1] == b'Z';
+    let fraction_ok = match &t[19..t.len() - 1] {
+        "" => true,
+        f => {
+            f.len() >= 2
+                && f.len() <= 10
+                && f.starts_with('.')
+                && f[1..].bytes().all(|c| c.is_ascii_digit())
+                && !f.ends_with('0')
+        }
+    };
+    shape && fraction_ok && chrono::DateTime::parse_from_rfc3339(t).is_ok()
+}
+
+#[test]
+fn the_ported_timestamp_rule_matches_the_typescript_verifier() {
+    for ok in [
+        "2026-10-01T23:04:00Z",
+        "2026-10-01T23:04:00.5Z",
+        "2026-10-01T23:04:00.123456Z",
+    ] {
+        assert!(cll_ts_accepts_time(ok), "{ok}");
+    }
+    for refused in [
+        "2026-10-01T23:04:00.000Z",
+        "2026-10-01T23:04:00.120Z",
+        "2026-10-01T23:04:00+00:00",
+        "2026-10-01 23:04:00Z",
+        "2026-13-01T23:04:00Z",
+    ] {
+        assert!(!cll_ts_accepts_time(refused), "{refused}");
+    }
+}
+
+#[test]
+fn committed_times_are_whole_seconds_the_typescript_verifier_accepts() {
+    let (lines, records) = cut_two_checkpoints();
+    let whole_second = |t: &str| t.len() == 20 && cll_ts_accepts_time(t);
+    for line in &lines {
+        let t = &line.record.timestamp;
+        assert!(whole_second(t), "checkpoint time {t}");
+        // The COSE statement's issued_at is the same string, signed.
+        let cose = hex::decode(line.checkpoint_cose_hex.as_deref().unwrap()).unwrap();
+        let mut issued_at = vec![0x60 | 9u8];
+        issued_at.extend_from_slice(b"issued_at");
+        issued_at.push(0x60 | t.len() as u8);
+        issued_at.extend_from_slice(t.as_bytes());
+        assert!(contains(&cose, &issued_at), "issued_at is not {t}");
+    }
+    for record in &records {
+        let t = record["timestamp"].as_str().unwrap();
+        assert!(whole_second(t), "record time {t}");
     }
 }

@@ -1217,6 +1217,17 @@ def retry_pending_witness_stamps(
     return backfilled
 
 
+def _checkpoint_timestamp() -> str:
+    """The current UTC time in whole seconds with no fraction
+    (``2026-10-01T23:04:00Z``): the time a checkpoint commits to, and its COSE
+    statement's ``issued_at``. Verifiers that hold RFC 3339 times to one
+    normalized form (the TypeScript CLL verifier: no trailing-zero fraction)
+    refuse a microsecond time whose last digit is 0."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool = False) -> None:
     from .checkpoint import (
         DEFAULT_TS_URL,
@@ -1246,7 +1257,9 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
         state.mmr.sync()
         prev_before = state.prev
         try:
-            cp = emit_checkpoint(state.mmr, state.signer, log_id=state.log_id, prev=state.prev)
+            cp = emit_checkpoint(
+                state.mmr, state.signer, log_id=state.log_id, prev=state.prev, timestamp=_checkpoint_timestamp()
+            )
         except (CheckpointError, RollbackError) as exc:
             warnings.warn(
                 f"capsule-emit: witness checkpoint build for log_id={state.log_id!r} "
