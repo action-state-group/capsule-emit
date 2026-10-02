@@ -105,6 +105,7 @@ jobs:
           run() { cargo test --locked -p capsule-emit --test "$1" -- --ignored --nocapture 2>&1 | tee -a "$RUNNER_TEMP/conformance.log"; }
           AAC_VERIFY_LEDGER_SCRIPT="$scripts/verify_rust_ledger.py" run chain_ledger_conformance
           AAC_CHECKPOINT_VERIFY_SCRIPT="$scripts/checkpoint_invariance_check.py" run checkpoint_invariance
+          AAC_SETTLEMENT_VERIFY_SCRIPT="$scripts/verify_rust_settlement.py" run settlement_conformance
           if grep -i "skipping" "$RUNNER_TEMP/conformance.log"; then
             echo "a conformance test skipped itself" >&2
             exit 1
