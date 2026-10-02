@@ -3,7 +3,7 @@
 
 This module does NOT implement A2A wire protocol. It provides:
 - Data classes that match the A2A Task JSON shape (so the example reads as real)
-- An AP2 CartMandate structure (A2A Payment Profile v2)
+- An AP2 CartMandate structure (Agent Payments Protocol)
 - A deterministic sandbox payment executor (no Stripe key needed)
 
 To use real Stripe: set STRIPE_API_KEY and DRY_RUN will be False.
@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 # ---------------------------------------------------------------------------
-# AP2 types (subset of A2A Payment Profile v2)
+# AP2 types (subset of the Agent Payments Protocol)
 # ---------------------------------------------------------------------------
 
 @dataclass
