@@ -6,6 +6,43 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added — `capsule_emit.settlement`: payer and payee each record the same payment
+
+- A reference producer and verifier for "Two-Party Settlement Records for Agent Payments",
+  [draft-mih-agent-settlement-records-00](https://datatracker.ietf.org/doc/draft-mih-agent-settlement-records/).
+  The payer and the payee seal their own legs, in their own logs, under their own keys; nobody
+  signs the other side's claim.
+- A leg is an ordinary Capsule with a top-level `settlement` member (`version` `"0"`): `terms`,
+  `payer_observed` (`amount` + `routing_fee`), `payee_observed` (`received` + `receive_fee`) and
+  `delivered` (`delivery.direction` `sent`/`received` + `content_digest`, required unless a
+  `carrier` is given). Every leg but the terms names the terms leg's `capsule_id` in
+  `terms_ref`. `build_leg()` validates a leg, `seal_leg()` seals it, `wrap()` carries an existing
+  signed object by digest over its exact octets (never re-signed), and `counterparty_reference()`
+  cites the other side's leg as `counterparty_half`. `_emit_capsule()` gains `payload_members` for
+  a profile's own top-level member.
+- `verify_settlements(capsules, key_policy=None, wrapped_objects=None)` derives the draft's states
+  offline: payment `terms_only` / `payer_stated` / `payee_stated` / `agreed` / `mismatch` /
+  `unjoined` and delivery `none` / `stated` / `matched` / `mismatch`, with the draft's failure and
+  finding codes. Amounts reconcile as `amount == received + receive_fee`, exactly, never by direct
+  equality; an absent `receive_fee` is read as zero only for x402 `exact` (established from the
+  wrapped offer or payment payload) and otherwise leaves the pair `unjoined` (`fee_unstated`).
+  Lightning `BTC` and on-chain bitcoin are different assets.
+- A record is identified by its `capsule_id` and its authenticated key, so a copy of a genuine
+  leg signed by another key never stands in for it or excludes it, and a `supersedes` link counts
+  only when it is signed by the superseded record's own key (otherwise it is ignored and reported).
+  A pair whose two observed legs share a key is never `agreed`: no state of the draft applies, so its
+  `payment_state` is `null`, and `sealer_conflation` is listed as a failure and a diagnostic.
+- Whether each key belongs to its party is reported separately from the payment state, as the
+  draft asks: `key_policy_applied` (without a `key_policy`, `agreed` means two distinct keys agree)
+  and `keys`. With a policy, a record under a key it does not accept for the role is refused and
+  takes no part; several accepted keys per role (rotation) are fine. What the draft does not make
+  a state goes in `diagnostics`: `several_keys_for_role`, `delivery_sealed_under_one_key`,
+  `supersedes_ignored`, `sealer_conflation`.
+- The draft's 19 conformance vectors run in CI from `test-vectors/settlement-records/`:
+  `cases.json` and `registry.json` copied byte for byte from agent-action-capsule at `565d1f0`,
+  with that repository's BSD-3 `LICENSE` and a README added; the upstream README, manifest and
+  checksum file were not copied, and `SHA256SUMS` here is ours, over the three copied files.
+
 ### Fixed — time bounds compare instants, not strings
 
 `holds.aggregate.active_exposure_minor(..., as_of=...)` compared `timestamp <= as_of` as strings.

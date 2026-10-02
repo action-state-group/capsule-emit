@@ -572,6 +572,7 @@ def _emit_capsule(
     signer: Signer | None = None,
     signing_key_path: str | os.PathLike | None = None,
     references: tuple[ReferenceEntry, ...] | None = None,
+    payload_members: dict[str, Any] | None = None,
 ) -> EmitResult:
     """Emit a sealed, optionally anchored Agent Action Capsule.
 
@@ -719,6 +720,11 @@ def _emit_capsule(
             :class:`~capsule_emit.signing.LocalKeypairSigner` persists its
             key (else ``CAPSULE_SIGNING_KEY_PATH``, else a file next to
             ``ledger``). Ignored when ``signer`` is given.
+        payload_members: Extra top-level members a profile defines (for
+            example a settlement record's ``settlement``). Added before
+            ``capsule_id`` is computed, so they are committed like any other
+            member. A name that would replace a member already written raises
+            ``ValueError``.
         references: Cross-record citations to records outside this Capsule's
             own ``chain`` scope (draft-04 §5.5.5). Each entry is a
             :class:`~agent_action_capsule.contracts.ReferenceEntry` with
@@ -863,6 +869,14 @@ def _emit_capsule(
     # recompute dance is needed to verify: capsule_emit.signing
     # .verify_capsule_signature() just recomputes capsule_id (which already
     # excludes them) and checks the envelope against it directly.
+    # A profile's own top-level member (e.g. a settlement record's
+    # ``settlement``), committed by capsule_id like everything else. Never
+    # replaces a member this function already wrote.
+    for name, value in (payload_members or {}).items():
+        if name in capsule or name in ("canonicalization_id", "capsule_id", "signature", "key_id"):
+            raise ValueError(f"payload member {name!r} would replace a capsule member")
+        capsule[name] = value
+
     capsule["canonicalization_id"] = canonicalization_id
     capsule["capsule_id"] = compute_capsule_id(capsule)
 
