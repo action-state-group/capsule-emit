@@ -174,9 +174,14 @@ def test_two_sided_with_a_key_policy_is_agreed(tmp_path):
     assert s["iso20022"] == {"payer_observed": "ACSC", "payee_observed": "ACCC"}
 
 
-def test_without_a_key_policy_the_same_pair_is_only_agreed_untrusted(tmp_path):
-    terms, p, q, _, _ = _two_sided(tmp_path)
-    assert _state([terms, p, q])["payment_state"] == "agreed_untrusted"
+def test_without_a_key_policy_agreed_says_so_in_the_separate_key_result(tmp_path):
+    terms, p, q, payer, payee = _two_sided(tmp_path)
+    report = verify_settlements([terms, p, q], wrapped_objects=[EXACT_PAYLOAD])
+    assert report.settlements[0]["payment_state"] == "agreed"
+    assert report.key_policy_applied is False
+    assert set(report.keys.values()) == {payer.key, payee.key}
+    with_policy = verify_settlements([terms, p, q], key_policy=_policy(payer, payee), wrapped_objects=[EXACT_PAYLOAD])
+    assert with_policy.key_policy_applied is True
 
 
 def test_one_side_is_a_stated_claim(tmp_path):
@@ -197,7 +202,7 @@ def test_lightning_receive_fee_reconciles_and_naive_equality_would_not(tmp_path)
     terms, p, q, _, _ = _two_sided(
         tmp_path, payer_kw={"amount": _msat(1000), "routing_fee": _msat(0), "payment_ref": LN, "wrapped": None},
         payee_kw={"received": _msat(995), "receive_fee": _msat(5), "payment_ref": LN})
-    assert _state([terms, p, q])["payment_state"] == "agreed_untrusted"
+    assert _state([terms, p, q])["payment_state"] == "agreed"
     short = Party(tmp_path, "payee").seal(_payee_leg(terms["capsule_id"], received=_msat(994),
                                                      receive_fee=_msat(5), payment_ref=LN))
     s = _state([terms, p, short])
@@ -215,7 +220,7 @@ def test_lightning_without_receive_fee_is_unjoined_fee_unstated(tmp_path):
 
 def test_x402_exact_reads_an_absent_receive_fee_as_zero(tmp_path):
     terms, p, q, _, _ = _two_sided(tmp_path, payee_kw={"receive_fee": None})
-    assert _state([terms, p, q])["payment_state"] == "agreed_untrusted"
+    assert _state([terms, p, q])["payment_state"] == "agreed"
 
 
 def test_x402_scheme_other_than_exact_means_a_receive_fee_may_apply(tmp_path):
@@ -265,14 +270,14 @@ def test_status_and_reference_differences_are_named(tmp_path):
 def test_the_same_amount_at_another_scale_is_equal(tmp_path):
     terms, p, q, _, _ = _two_sided(tmp_path, payee_kw={"received": amount(10000000, USDC, 9),
                                                        "receive_fee": amount(0, USDC, 9)})
-    assert _state([terms, p, q])["payment_state"] == "agreed_untrusted"
+    assert _state([terms, p, q])["payment_state"] == "agreed"
 
 
 def test_terms_amount_is_reported_separately(tmp_path):
     terms, p, q, _, _ = _two_sided(tmp_path, payer_kw={"amount": amount(9000, USDC, 6)},
                                    payee_kw={"received": amount(9000, USDC, 6)})
     s = _state([terms, p, q])
-    assert (s["payment_state"], s["terms_amount"]) == ("agreed_untrusted", "differs")
+    assert (s["payment_state"], s["terms_amount"]) == ("agreed", "differs")
 
 
 def test_terms_in_another_asset_is_terms_amount_differs(tmp_path):
@@ -281,7 +286,7 @@ def test_terms_in_another_asset_is_terms_amount_differs(tmp_path):
     p = Party(tmp_path, "payer").seal(_payer_leg(terms["capsule_id"]))
     q = payee.seal(_payee_leg(terms["capsule_id"]))
     s = _state([terms, p, q])
-    assert (s["payment_state"], s["terms_amount"]) == ("agreed_untrusted", "differs")
+    assert (s["payment_state"], s["terms_amount"]) == ("agreed", "differs")
 
 
 def test_pending_superseded_by_settled_uses_the_head(tmp_path):
@@ -290,7 +295,7 @@ def test_pending_superseded_by_settled_uses_the_head(tmp_path):
     pending = payer.seal(_payer_leg(terms["capsule_id"], status="pending"))
     settled = payer.seal(_payer_leg(terms["capsule_id"]), prior=pending["capsule_id"], relation="supersedes")
     q = payee.seal(_payee_leg(terms["capsule_id"]))
-    assert _state([terms, pending, settled, q])["payment_state"] == "agreed_untrusted"
+    assert _state([terms, pending, settled, q])["payment_state"] == "agreed"
     assert _state([terms, pending, q])["differs"] == ["status"]
 
 
@@ -307,8 +312,44 @@ def test_one_key_on_both_observed_legs_is_sealer_conflation(tmp_path):
     terms, p, q, _, _ = _two_sided(tmp_path, payee_party="payer")
     report = verify_settlements([terms, p, q], wrapped_objects=[EXACT_PAYLOAD])
     assert {"records": [p["capsule_id"], q["capsule_id"]], "code": "sealer_conflation"} in report.failures
-    assert report.settlements[0]["payment_state"] not in ("agreed", "agreed_untrusted")
+    assert report.settlements[0]["payment_state"] == "sealer_conflation"
     assert not report.conforming
+
+
+def _resign(capsule: dict, party: Party) -> dict:
+    """The same capsule content, signed by another key (anyone can do this)."""
+    from capsule_emit.signing import resolve_signer, sign_producer_envelope
+
+    copy_ = copy.deepcopy(capsule)
+    copy_["signature"], copy_["key_id"] = sign_producer_envelope(resolve_signer(party.ledger), copy_["capsule_id"])
+    return copy_
+
+
+def test_a_resigned_copy_cannot_knock_out_the_genuine_leg_under_a_key_policy(tmp_path):
+    terms, p, q, payer, payee = _two_sided(tmp_path)
+    spoof = _resign(q, Party(tmp_path, "attacker"))
+    assert spoof["capsule_id"] == q["capsule_id"] and spoof["key_id"] != q["key_id"]
+    for order in ([terms, p, spoof, q], [terms, p, q, spoof]):
+        report = verify_settlements(order, key_policy=_policy(payer, payee), wrapped_objects=[EXACT_PAYLOAD])
+        assert report.failures == [{"records": [q["capsule_id"]], "code": "sealer_not_authorized_for_role"}]
+        assert report.settlements[0]["payment_state"] == "agreed"
+
+
+def test_a_copy_resigned_with_the_payer_key_is_conflation_but_the_genuine_pair_still_agrees(tmp_path):
+    terms, p, q, payer, payee = _two_sided(tmp_path)
+    spoof = _resign(q, payer)
+    for order in ([terms, p, spoof, q], [terms, p, q, spoof]):
+        report = verify_settlements(order, wrapped_objects=[EXACT_PAYLOAD])
+        assert report.failures == [{"records": [p["capsule_id"], q["capsule_id"]], "code": "sealer_conflation"}]
+        assert report.settlements[0]["payment_state"] == "agreed"
+        assert [d["code"] for d in report.diagnostics] == ["several_keys_for_role"]
+
+
+def test_a_resigned_copy_of_the_terms_leg_changes_nothing(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path)
+    spoof = _resign(terms, Party(tmp_path, "attacker"))
+    report = verify_settlements([spoof, terms, p, q], wrapped_objects=[EXACT_PAYLOAD])
+    assert len(report.settlements) == 1 and report.settlements[0]["payment_state"] == "agreed"
 
 
 def test_a_key_policy_refuses_a_role_claim_from_another_key_and_ignores_it(tmp_path):
@@ -330,17 +371,21 @@ def test_rotated_keys_are_fine_when_all_are_in_the_policy(tmp_path):
     assert (s["payment_state"], s["delivery_state"]) == ("agreed", "matched")
 
 
-def test_without_a_policy_two_keys_on_one_side_are_a_difference(tmp_path):
-    terms, p, q, _, _ = _two_sided(tmp_path)
-    impostor = Party(tmp_path, "impostor").seal(_payee_leg(terms["capsule_id"]))
-    s = _state([terms, p, q, impostor])
-    assert (s["payment_state"], s["differs"]) == ("mismatch", ["keys"])
+def test_without_a_policy_two_keys_on_one_side_are_a_diagnostic_not_a_difference(tmp_path):
+    terms, p, q, _, payee = _two_sided(tmp_path)
+    impostor = Party(tmp_path, "impostor")
+    other = impostor.seal(_payee_leg(terms["capsule_id"]))
+    report = verify_settlements([terms, p, q, other], wrapped_objects=[EXACT_PAYLOAD])
+    s = report.settlements[0]
+    assert s["payment_state"] == "agreed" and "differs" not in s
+    assert report.diagnostics == [{"terms": terms["capsule_id"], "code": "several_keys_for_role", "role": "payee",
+                                   "keys": sorted([payee.key, impostor.key]), "key_policy_applied": False}]
 
 
 def test_the_same_capsule_twice_counts_once(tmp_path):
     terms, p, q, _, _ = _two_sided(tmp_path)
     report = verify_settlements([terms, p, p, q, q], wrapped_objects=[EXACT_PAYLOAD])
-    assert report.conforming and report.settlements[0]["payment_state"] == "agreed_untrusted"
+    assert report.conforming and report.settlements[0]["payment_state"] == "agreed"
 
 
 def test_a_forged_record_passed_twice_is_reported_once(tmp_path):
@@ -419,12 +464,15 @@ def test_delivery_is_checked_against_a_pinned_content_digest(tmp_path):
     assert _state([terms, sent])["delivery_state"] == "mismatch"
 
 
-def test_one_key_sealing_both_directions_is_only_stated(tmp_path):
+def test_one_key_sealing_both_directions_is_matched_with_a_diagnostic(tmp_path):
     terms, _, _, _, _ = _two_sided(tmp_path)
     one = Party(tmp_path, "one")
     a = one.seal(_delivered(terms["capsule_id"], "payee"))
     b = one.seal(_delivered(terms["capsule_id"], "payer"))
-    assert _state([terms, a, b])["delivery_state"] == "stated"
+    report = verify_settlements([terms, a, b])
+    assert report.settlements[0]["delivery_state"] == "matched"
+    assert report.diagnostics == [{"terms": terms["capsule_id"], "code": "delivery_sealed_under_one_key",
+                                   "keys": [one.key]}]
 
 
 def test_a_counterparty_citation_is_carried_as_custody(tmp_path):
@@ -432,4 +480,4 @@ def test_a_counterparty_citation_is_carried_as_custody(tmp_path):
     q = payee.seal(_payee_leg(terms["capsule_id"]), references=[counterparty_reference(p["capsule_id"])])
     assert q["references"] == [{"type": "agent-action-capsule", "digest_alg": "SHA-256", "digest": p["capsule_id"],
                                 "citation_purpose": "counterparty_half"}]
-    assert _state([terms, p, q])["payment_state"] == "agreed_untrusted"
+    assert _state([terms, p, q])["payment_state"] == "agreed"

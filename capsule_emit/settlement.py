@@ -34,10 +34,12 @@ Verifying (offline, over both parties' capsules):
 
 The derived states are the draft's: payment ``terms_only`` / ``payer_stated`` /
 ``payee_stated`` / ``agreed`` / ``mismatch`` / ``unjoined``, and delivery
-``none`` / ``stated`` / ``matched`` / ``mismatch``. One addition: without a
-``key_policy`` nothing ties a key to a party, so a pair that would be
-``agreed`` reads ``agreed_untrusted``. A one-sided state says what one sealer
-reported, never that the other side disagrees.
+``none`` / ``stated`` / ``matched`` / ``mismatch``. A pair whose two observed
+legs share a key reads ``sealer_conflation``, never ``agreed``. Whether each
+key belongs to its party is a separate result (``key_policy_applied``): without
+a ``key_policy``, ``agreed`` means two distinct keys agree, nothing more. A
+one-sided state says what one sealer reported, never that the other side
+disagrees.
 """
 from __future__ import annotations
 
@@ -359,9 +361,15 @@ class SettlementReport:
     ``settlements`` has one entry per terms leg: ``terms`` (its capsule_id),
     ``payment_state``, ``delivery_state``, and where they apply
     ``agreed_status``, ``terms_amount`` (``equal`` / ``differs``), ``differs``
-    (``amount`` / ``status`` / ``payment_ref`` / ``keys``) and ``iso20022``.
-    ``keys`` maps each authenticated record to its key, so a caller can apply
-    its own key policy.
+    (``amount`` / ``status`` / ``payment_ref``) and ``iso20022``.
+
+    The key result is separate from the payment state, as the draft asks:
+    ``key_policy_applied`` says whether a key policy bound each leg's key to
+    its party (``False``: ``agreed`` means two distinct keys agree, not that
+    the keys belong to the payer and the payee), and ``keys`` maps each
+    authenticated record (``"<capsule_id>:<key>"``) to its key.
+    ``diagnostics`` carries what the draft does not make a state:
+    ``several_keys_for_role`` and ``delivery_sealed_under_one_key``.
     """
 
     conforming: bool
@@ -370,6 +378,7 @@ class SettlementReport:
     settlements: list[dict] = field(default_factory=list)
     keys: dict[str, str] = field(default_factory=dict)
     key_policy_applied: bool = False
+    diagnostics: list[dict] = field(default_factory=list)
 
 
 def _envelope_key(capsule: dict) -> str | None:
@@ -481,6 +490,11 @@ def verify_settlements(
     that fails is reported and takes no part in any state. Records are
     grouped by ``terms_ref``.
 
+    A record is identified by its ``capsule_id`` AND its authenticated key:
+    the same content signed by another key is a different record (anyone can
+    sign a copy of a genuine leg), and it never stands in for, or excludes,
+    the original.
+
     *wrapped_objects* supplies the octets of wrapped objects the caller holds
     (by digest, or as a list of octets); they are used for the re-signing
     check and to read the x402 scheme. Receive fees are read as zero only for
@@ -500,20 +514,16 @@ def verify_settlements(
     from .verification import verify_capsule
 
     report = SettlementReport(conforming=True, key_policy_applied=policy is not None)
-    legs: dict[str, dict] = {}
-    capsule_by_id: dict[str, dict] = {}
+    legs: dict[str, dict] = {}  # record id ("<capsule_id>:<key>") -> settlement member
+    records: dict[str, dict] = {}  # record id -> capsule
+    cid_of: dict[str, Any] = {}
     excluded: set[str] = set()
-    seen: set[tuple[Any, Any]] = set()
-    for item in capsules:
+    for n, item in enumerate(capsules):
         capsule = item.capsule if isinstance(item, EmitResult) else item
         if not isinstance(capsule, dict):
             report.failures.append({"records": [None], "code": "capsule_invalid"})
             continue
         cid = capsule.get("capsule_id")
-        identity = (cid, capsule.get("signature"))
-        if identity in seen:
-            continue
-        seen.add(identity)
         own: list[str] = []
         kid = None
         try:
@@ -526,6 +536,9 @@ def verify_settlements(
             kid = _envelope_key(capsule)
             if kid is None:
                 own.append("envelope_invalid")
+        rid = f"{cid}:{kid}" if kid is not None else f"{cid}:#{n}"
+        if kid is not None and rid in records:
+            continue  # the same capsule under the same key, passed again
         s = capsule.get(SETTLEMENT_MEMBER)
         structural = structure_failures(s)
         own += structural
@@ -536,57 +549,63 @@ def verify_settlements(
             ref = s.get("payment_ref")
             if isinstance(ref, dict) and ref["type"] not in PAYMENT_REF_TYPES:
                 report.findings.append({"records": [cid], "code": "payment_ref_type_unknown"})
+        if kid is None and any(f["records"] == [cid] and f["code"] in own for f in report.failures):
+            continue  # the same unauthenticated record again: report it once
         for code in own:
             report.failures.append({"records": [cid], "code": code})
-        key = cid if isinstance(cid, str) else f"#{len(legs)}"
         if own:
-            excluded.add(key)
-        legs[key] = s if isinstance(s, dict) else {}
-        capsule_by_id[key] = capsule
+            excluded.add(rid)
+        legs[rid] = s if isinstance(s, dict) else {}
+        records[rid] = capsule
+        cid_of[rid] = cid
         if kid is not None:
-            report.keys[key] = kid
+            report.keys[rid] = kid
 
     # Distinct keys: a payer-observed and a payee-observed leg for one terms leg
     # under the same key are not two sides. Needs no key policy.
-    conflated_terms: set[Any] = set()
-    observed = [(k, s) for k, s in legs.items() if k in report.keys and str(s.get("leg", "")).endswith("_observed")]
+    observed = [(r, s) for r, s in legs.items() if r in report.keys and str(s.get("leg", "")).endswith("_observed")]
     for p, ps in observed:
         for q, qs in observed:
             if (ps["leg"] == "payer_observed" and qs["leg"] == "payee_observed"
                     and report.keys[p] == report.keys[q] and ps.get("terms_ref") == qs.get("terms_ref")):
-                report.failures.append({"records": [p, q], "code": "sealer_conflation"})
-                conflated_terms.add(ps.get("terms_ref"))
+                report.failures.append({"records": [cid_of[p], cid_of[q]], "code": "sealer_conflation"})
 
-    live = {k: s for k, s in legs.items() if k not in excluded}
-    terms_ids = [k for k, s in live.items() if s["leg"] == "terms"]
-    for k, s in live.items():
-        if s["leg"] != "terms" and s["terms_ref"] not in terms_ids:
-            report.failures.append({"records": [k], "code": "terms_ref_unresolved"})
-    for terms_id in terms_ids:
-        answering = {k: s for k, s in live.items() if s.get("terms_ref") == terms_id}
-        report.settlements.append(_settlement(
-            terms_id, live[terms_id], answering, capsule_by_id, report, policy is not None,
-            terms_id in conflated_terms, objects))
+    live = {r: s for r, s in legs.items() if r not in excluded}
+    terms_by_cid: dict[str, str] = {}
+    for r, s in live.items():
+        if s["leg"] == "terms":
+            terms_by_cid.setdefault(cid_of[r], r)  # a re-signed copy of a terms leg is the same terms
+    for r, s in live.items():
+        if s["leg"] != "terms" and s["terms_ref"] not in terms_by_cid:
+            report.failures.append({"records": [cid_of[r]], "code": "terms_ref_unresolved"})
+    for terms_cid, terms_rid in terms_by_cid.items():
+        answering = {r: s for r, s in live.items() if s.get("terms_ref") == terms_cid}
+        report.settlements.append(_settlement(terms_cid, live[terms_rid], answering, records, report,
+                                              policy is not None, objects))
     report.conforming = not report.failures
     return report
 
 
-def _heads(side: list[tuple[str, dict]], capsule_by_id: dict[str, dict]) -> list[tuple[str, dict]]:
+def _heads(side: list[tuple[str, dict]], records: dict[str, dict]) -> list[tuple[str, dict]]:
     """Drop observed legs that a later leg of the same side supersedes."""
     superseded = set()
-    for k, _ in side:
-        chain = capsule_by_id[k].get("chain") or {}
+    for r, _ in side:
+        chain = records[r].get("chain") or {}
         if chain.get("relation") == "supersedes":
             superseded.add(chain.get("parent_capsule_id"))
-    return [(k, s) for k, s in side if k not in superseded]
+    return [(r, s) for r, s in side if records[r]["capsule_id"] not in superseded]
 
 
-def _settlement(terms_id: str, terms: dict, legs: dict[str, dict], capsule_by_id: dict[str, dict],
-                report: SettlementReport, with_policy: bool, conflated: bool,
-                objects: dict[str, bytes]) -> dict:
-    payer = _heads([(k, s) for k, s in legs.items() if s["leg"] == "payer_observed"], capsule_by_id)
-    payee = _heads([(k, s) for k, s in legs.items() if s["leg"] == "payee_observed"], capsule_by_id)
-    result: dict[str, Any] = {"terms": terms_id}
+def _settlement(terms_cid: str, terms: dict, legs: dict[str, dict], records: dict[str, dict],
+                report: SettlementReport, with_policy: bool, objects: dict[str, bytes]) -> dict:
+    payer = _heads([(r, s) for r, s in legs.items() if s["leg"] == "payer_observed"], records)
+    payee = _heads([(r, s) for r, s in legs.items() if s["leg"] == "payee_observed"], records)
+    result: dict[str, Any] = {"terms": terms_cid}
+    for role, side in (("payer", payer), ("payee", payee)):
+        keys = sorted({report.keys[r] for r, _ in side if r in report.keys})
+        if len(keys) > 1:
+            report.diagnostics.append({"terms": terms_cid, "code": "several_keys_for_role", "role": role,
+                                       "keys": keys, "key_policy_applied": with_policy})
     if not payer and not payee:
         result["payment_state"] = "terms_only"
     elif not payee:
@@ -594,7 +613,7 @@ def _settlement(terms_id: str, terms: dict, legs: dict[str, dict], capsule_by_id
     elif not payer:
         result["payment_state"] = "payee_stated"
     else:
-        result.update(_pair(terms, payer, payee, report, with_policy, conflated, objects))
+        result.update(_pair(terms, payer, payee, report, objects))
     iso = {}
     for leg, side in (("payer_observed", payer), ("payee_observed", payee)):
         statuses = {s["status"] for _, s in side}
@@ -604,7 +623,7 @@ def _settlement(terms_id: str, terms: dict, legs: dict[str, dict], capsule_by_id
         result["iso20022"] = iso
 
     pinned = terms.get("deliverable", {}).get("content_digest")
-    delivered = [(k, s["delivery"]) for k, s in legs.items() if s["leg"] == "delivered"]
+    delivered = [(r, s["delivery"]) for r, s in legs.items() if s["leg"] == "delivered"]
     values = {d["content_digest"] for _, d in delivered if "content_digest" in d}
     directions = {d["direction"] for _, d in delivered if "content_digest" in d}
     if not delivered:
@@ -612,18 +631,26 @@ def _settlement(terms_id: str, terms: dict, legs: dict[str, dict], capsule_by_id
     elif (pinned is not None and any(v != pinned for v in values)) or len(values) > 1:
         result["delivery_state"] = "mismatch"
     elif directions == {"sent", "received"}:
-        sent = {report.keys.get(k) for k, d in delivered if d["direction"] == "sent"}
-        received = {report.keys.get(k) for k, d in delivered if d["direction"] == "received"}
-        result["delivery_state"] = "stated" if sent & received else "matched"
+        result["delivery_state"] = "matched"
+        sent = {report.keys.get(r) for r, d in delivered if d["direction"] == "sent"}
+        received = {report.keys.get(r) for r, d in delivered if d["direction"] == "received"}
+        if sent & received:
+            report.diagnostics.append({"terms": terms_cid, "code": "delivery_sealed_under_one_key",
+                                       "keys": sorted(k for k in sent & received if k)})
     else:
         result["delivery_state"] = "stated"
     return result
 
 
 def _pair(terms: dict, payer: list[tuple[str, dict]], payee: list[tuple[str, dict]], report: SettlementReport,
-          with_policy: bool, conflated: bool, objects: dict[str, bytes]) -> dict:
+          objects: dict[str, bytes]) -> dict:
     out: dict[str, Any] = {}
-    a, (b_id, b) = payer[0][1], payee[0]
+    # The pair the state is derived from: one payer head and one payee head under
+    # distinct keys. If every combination shares a key, the pair is conflated.
+    pairs = [(p, q) for p in payer for q in payee if report.keys.get(p[0]) != report.keys.get(q[0])]
+    conflated = not pairs
+    (_, a), (b_rid, b) = pairs[0] if pairs else (payer[0], payee[0])
+    b_id = _cid(b_rid)
     ref_type = b["payment_ref"]["type"]
     receive_fee = b.get("receive_fee")
     if receive_fee is None and _receive_fee_not_applicable(ref_type, terms, a, objects):
@@ -650,7 +677,7 @@ def _pair(terms: dict, payer: list[tuple[str, dict]], payee: list[tuple[str, dic
     if _normal_ref(a["payment_ref"]) != _normal_ref(b["payment_ref"]):
         differs.append("payment_ref")
     # More than one head on a side (no supersedes chain between them): each must
-    # say the same thing, and without a key policy each side speaks with one key.
+    # say the same thing.
     for side in (payer, payee):
         first = side[0][1]
         for _, other in side[1:]:
@@ -661,16 +688,21 @@ def _pair(terms: dict, payer: list[tuple[str, dict]], payee: list[tuple[str, dic
                 differs.append("status")
             if _normal_ref(other["payment_ref"]) != _normal_ref(first["payment_ref"]):
                 differs.append("payment_ref")
-        if not with_policy and len({report.keys.get(k) for k, _ in side}) > 1:
-            differs.append("keys")
     differs = sorted(set(differs), key=differs.index)
     if differs:
         out["payment_state"] = "mismatch"
         out["differs"] = differs
     elif conflated:
-        out["payment_state"] = "unjoined"  # sealer_conflation is already reported; never agreed
+        # The draft: a verifier MUST NOT report agreed for such a pair; it
+        # reports sealer_conflation instead (also listed in failures).
+        out["payment_state"] = "sealer_conflation"
     else:
-        out["payment_state"] = "agreed" if with_policy else "agreed_untrusted"
+        out["payment_state"] = "agreed"
         out["agreed_status"] = a["status"]
         out["terms_amount"] = "equal" if _amounts_equal(a["amount"], terms["amount"]) else "differs"
     return out
+
+
+def _cid(rid: str) -> str:
+    """The capsule_id part of a record id."""
+    return rid.rsplit(":", 1)[0]
