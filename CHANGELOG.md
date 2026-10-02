@@ -16,6 +16,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
   field set, https endpoints, calendar dates, alphabetical order), lists a key at most once across
   both arrays, and refuses a row that declares independence of itself. Independence of a given
   countersignature is never read from the directory; the verifier computes it per entry.
+- `scripts/fill_countersigner_row.py --since YYYY-MM-DD` fills a countersigner row's placeholder
+  `key_ids` and `since` from the operator's `GET /anchor/authority-pubkey` (`pubkey_hex`, the full
+  64-hex Ed25519 key; the short `key_id` there is only cross-checked), rewriting only those two
+  values and refusing a filled row, a bad key, or any result the validator rejects. `--pubkey-file`
+  for offline use, `--dry-run` to preview.
 
 ### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
 
