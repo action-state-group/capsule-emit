@@ -40,6 +40,22 @@ All notable changes to `capsule-emit` are documented here. The format follows
   `agreed_untrusted`, and more than one key under one role is a difference. The same capsule
   passed twice counts once.
 
+### Fixed — committed record times are whole seconds with no fraction too
+
+A disclosure record's `timestamp`, a signed refusal's `issued_at` and a hold action's `timestamp`
+now use the same whole-second UTC form as checkpoint times (`2026-10-01T23:04:00Z`), not
+`isoformat()` microseconds. A test holds all three to the TypeScript CLL verifier's timestamp rule.
+The ledger lock file's `acquired_at` is local state and keeps full precision.
+
+### Fixed — checkpoint times are whole seconds with no fraction
+
+The witness path's checkpoints took the checkpoint library's default time, `isoformat()` with
+microseconds. A COSE checkpoint's `issued_at` is that time, and the TypeScript CLL verifier holds
+RFC 3339 times to one normalized form (no trailing-zero fraction), so it refused about one checkpoint
+in ten (any whose microseconds end in 0). Checkpoints now commit to whole-second UTC with no
+fraction (`2026-10-01T23:04:00Z`). A test holds a freshly cut checkpoint's time, both the JSON copy
+and the signed `issued_at`, to that verifier's rule.
+
 ### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
 
 - `capsule-emit verify --bundle FILE.json [--require-signature] [--json]` checks an evidence file
@@ -61,6 +77,10 @@ All notable changes to `capsule-emit` are documented here. The format follows
   text, records outside its log range, citations it declares missing). No script and no network:
   the page is self-contained. Library: `capsule_emit.evidence_file.check_evidence_file`,
   `capsule_emit.evidence_report.render_report_html`.
+- `test-vectors/evidence-file/`: two evidence files an independent producer saved on a live two-node
+  run (a padded log, the range bound to the checkpoint by a consistency proof), checked by
+  `tests/test_evidence_file_vectors.py` against today's bundle verifier and one that accepts
+  consistency-bound ranges.
 - The `checkpointed-local-log` floor is now `>=0.4.0`, which `verify --bundle` needs for the range and
   inclusion proof checks.
 

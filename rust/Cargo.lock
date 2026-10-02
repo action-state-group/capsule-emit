@@ -116,9 +116,9 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "checkpointed-local-log"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b46aa9265e83360d64307ed29322021a857a921be23d608dfc87ec29552128cb"
+checksum = "e287b976d8caf55d31762c705e865f74ed313a06890694df3a5019ab2f32068b"
 dependencies = [
  "coset",
  "ed25519-dalek",

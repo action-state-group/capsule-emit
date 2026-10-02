@@ -168,7 +168,7 @@ fn pinned(cp: &CheckpointRecord, key: &SigningKey) -> Value {
         "key_id": cp.key_id,
         "digest_at_fixed_timestamp": digest,
         "signature_at_fixed_timestamp": signature,
-        "timestamp_is_minute_granular": cp.timestamp.ends_with(":00.000Z"),
+        "timestamp_is_minute_granular": capsule_emit::timestamp::is_minute_granular(&cp.timestamp),
     })
 }
 

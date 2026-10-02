@@ -650,3 +650,31 @@ def test_bundle_reconstructed_mmr_matches_checkpoint(two_checkpoint_ledger):
     b = bundle(ledger_path, caps[2]["capsule_id"])
     assert b.inclusion_proof.size == b.checkpoint.mmr_size
     assert mmr_core.leaf_count(b.checkpoint.mmr_size) >= b.seq
+
+
+def test_the_ported_timestamp_rule_matches_the_typescript_verifier():
+    from _timestamp_rule import cll_ts_accepts_time as _cll_ts_accepts_time
+
+    for ok in ("2026-10-01T23:04:00Z", "2026-10-01T23:04:00.5Z", "2026-10-01T23:04:00.123456Z"):
+        assert _cll_ts_accepts_time(ok), ok
+    for refused in (
+        "2026-10-01T23:04:00.000Z",
+        "2026-10-01T23:04:00.123450Z",
+        "2026-10-01T23:04:00+00:00",
+        "2026-13-01T23:04:00Z",
+    ):
+        assert not _cll_ts_accepts_time(refused), refused
+
+
+def test_checkpoint_times_are_whole_seconds_the_typescript_verifier_accepts(two_checkpoint_ledger):
+    from _timestamp_rule import cll_ts_accepts_time as _cll_ts_accepts_time
+
+    from capsule_emit.checkpoint.cose_wire import verify_checkpoint_cose_offline
+
+    ledger_path, caps = two_checkpoint_ledger
+    for capsule in (caps[0], caps[2]):
+        b = bundle(ledger_path, capsule["capsule_id"])
+        t = b.checkpoint.timestamp
+        assert len(t) == 20 and _cll_ts_accepts_time(t), t
+        decoded = verify_checkpoint_cose_offline(b.checkpoint_cose).decoded
+        assert decoded is not None and decoded.timestamp == t
