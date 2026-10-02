@@ -4,6 +4,7 @@ seconds (``...23:59:59Z``, how this package commits times) and one stamped
 with microseconds (``...23:59:59.999999Z``, older records) both fall inside a
 bound that ends at the period's last microsecond; compared as strings, the
 first sorts after it ('Z' > '.') and would drop out."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -62,3 +63,36 @@ def test_period_bounds_are_the_first_and_last_microsecond(period):
     # an instant (the comparison a store must make).
     last_second = end.replace(microsecond=0)
     assert start <= last_second <= end
+
+
+def test_a_period_scan_of_the_ledger_store_keeps_the_last_second(tmp_path):
+    """End to end through the ledger store (checkpointed-local-log >= 0.4.1):
+    a whole-second record in the period's last second is inside the period."""
+    import importlib
+    from unittest import mock
+
+    from cll.ledger.store import LedgerStore
+
+    from capsule_emit import seal
+    from capsule_emit.ledger_io import ScanQuery
+
+    emit = importlib.import_module("agent_action_capsule.emit")
+    since, until = period_bounds("month", anchor=datetime(2026, 8, 15, tzinfo=timezone.utc))
+    stamps = ["2026-08-01T00:00:00Z", "2026-08-31T23:59:59Z", "2026-09-01T00:00:00Z"]
+    store = LedgerStore(root=tmp_path / "store", rotate_at_checkpoint=True)
+    try:
+        for n, stamp in enumerate(stamps):
+            with mock.patch.object(emit, "_utc_now", return_value=stamp):
+                capsule = seal(
+                    {"n": n},
+                    action=f"act-{n}",
+                    operator="acme",
+                    developer="agent@v1",
+                    anchor=False,
+                    ledger=tmp_path / "scratch.jsonl",
+                ).capsule
+            store.append(capsule, consequential=False)
+        found = [r.capsule["timestamp"] for r in store.scan(ScanQuery(since=since, until=until))]
+    finally:
+        store.close()
+    assert found == stamps[:2]
