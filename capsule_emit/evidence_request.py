@@ -358,7 +358,7 @@ def verify_refusal_offline(refusal: Refusal) -> bool:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _digest(data: bytes) -> str:
