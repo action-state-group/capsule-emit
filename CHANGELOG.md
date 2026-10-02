@@ -6,6 +6,12 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed: the `checkpointed-local-log` floor is now `>=0.4.1`
+
+From 0.4.1, `LedgerStore.scan` compares a record's time with the bounds as instants, not as
+strings. Before it, `report --period` and other period scans dropped a whole-second record
+stamped in the period's last second (`…23:59:59Z` sorts after `…23:59:59.999999Z` as a string).
+
 ### Added — `capsule_emit.settlement`: payer and payee each record the same payment
 
 - A reference producer and verifier for "Two-Party Settlement Records for Agent Payments",
@@ -52,7 +58,7 @@ stamped in that second dropped out. It now compares parsed instants (any fractio
 offset); a record whose time does not parse doesn't count, and an unreadable `as_of` is refused.
 `period.py`'s comment no longer says bounds must string-match one format. Its bounds stay the period's
 first and last microsecond, which are right when compared as instants, the comparison the ledger
-store makes from checkpointed-local-log's release that includes that fix. Boundary tests in
+store makes from checkpointed-local-log 0.4.1 on (the floor is now `>=0.4.1`). Boundary tests in
 `tests/test_time_bounds.py`.
 
 ### Fixed — committed record times are whole seconds with no fraction too
