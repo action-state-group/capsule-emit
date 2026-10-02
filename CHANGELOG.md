@@ -19,8 +19,10 @@ All notable changes to `capsule-emit` are documented here. The format follows
 - `scripts/fill_countersigner_row.py --since YYYY-MM-DD` fills a countersigner row's placeholder
   `key_ids` and `since` from the operator's `GET /anchor/authority-pubkey` (`pubkey_hex`, the full
   64-hex Ed25519 key; the short `key_id` there is only cross-checked), rewriting only those two
-  values and refusing a filled row, a bad key, or any result the validator rejects. `--pubkey-file`
-  for offline use, `--dry-run` to preview.
+  values and refusing a filled row, a bad key, or any result the validator rejects. It also requires
+  the pinned countersigner list (`--list`, `--list-sha256`): the list must hash to the pin and its
+  `Action State Group` row must list exactly the key being written. `--pubkey-file` for offline use,
+  `--dry-run` to preview.
 
 ### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
 

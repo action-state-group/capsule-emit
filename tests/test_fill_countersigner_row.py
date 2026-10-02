@@ -82,8 +82,28 @@ def pubkey_file(tmp_path) -> Path:
     return path
 
 
-def _run(directory: Path, pubkey_file: Path, *extra: str) -> int:
-    return fill.main(["--since", SINCE, "--pubkey-file", str(pubkey_file), "--directory", str(directory), *extra])
+def _step6_list(*key_ids: str, name: str = "Action State Group") -> bytes:
+    # Byte for byte the published list's form:
+    #   printf '[{"name":"Action State Group","key_ids":["%s"]}]\n' "$pubkey_hex"
+    keys = ",".join(f'"{k}"' for k in key_ids)
+    return ('[{"name":"' + name + '","key_ids":[' + keys + "]}]\n").encode()
+
+
+def _run(directory: Path, pubkey_file: Path, *extra: str, list_bytes: bytes | None = None, pin: str | None = None) -> int:
+    list_bytes = _step6_list(PUBKEY_HEX) if list_bytes is None else list_bytes
+    list_path = directory.parent / "countersigners-v1.json"
+    list_path.write_bytes(list_bytes)
+    pin = hashlib.sha256(list_bytes).hexdigest() if pin is None else pin
+    return fill.main(
+        [
+            "--since", SINCE,
+            "--pubkey-file", str(pubkey_file),
+            "--list", str(list_path),
+            "--list-sha256", pin,
+            "--directory", str(directory),
+            *extra,
+        ]
+    )
 
 
 def test_fills_exactly_the_two_fields_and_validates(directory, pubkey_file):
@@ -165,14 +185,18 @@ def test_refuses_a_key_already_listed_elsewhere(directory, tmp_path, capsys):
     reused = tmp_path / "reused.json"
     reused.write_text(_response(witness_key, key_id=None), encoding="utf-8")
     before = directory.read_text(encoding="utf-8")
-    assert _run(directory, reused) == 1
+    assert _run(directory, reused, list_bytes=_step6_list(witness_key)) == 1
     assert "already listed at witnesses[0]" in capsys.readouterr().err
     assert directory.read_text(encoding="utf-8") == before
 
 
 @pytest.mark.parametrize("since", ["2026-13-01", "2026-9-1", "today"])
 def test_rejects_a_bad_since(directory, pubkey_file, since):
-    assert fill.main(["--since", since, "--pubkey-file", str(pubkey_file), "--directory", str(directory)]) == 1
+    list_path = directory.parent / "l.json"
+    list_path.write_bytes(_step6_list(PUBKEY_HEX))
+    pin = hashlib.sha256(_step6_list(PUBKEY_HEX)).hexdigest()
+    args = ["--since", since, "--pubkey-file", str(pubkey_file), "--list", str(list_path), "--list-sha256", pin]
+    assert fill.main([*args, "--directory", str(directory)]) == 1
 
 
 def test_rejects_a_future_since():
@@ -208,3 +232,57 @@ def test_fills_the_committed_directory_while_its_placeholders_remain(tmp_path, p
     assert after == text.replace(
         '"PLACEHOLDER-countersign-instance-key-not-yet-generated"', f'"{PUBKEY_HEX}"'
     ).replace('"PLACEHOLDER-date-of-first-live-countersignature"', f'"{SINCE}"')
+
+
+# -- the pinned countersigner list ----------------------------------------------
+
+
+def test_a_matching_list_fills(directory, pubkey_file, capsys):
+    assert _run(directory, pubkey_file) == 0
+    assert json.loads(directory.read_text())["countersigners"][0]["key_ids"] == [PUBKEY_HEX]
+    assert "lists this key only" in capsys.readouterr().out
+
+
+def test_a_list_digest_mismatch_refuses(directory, pubkey_file, capsys):
+    before = directory.read_text(encoding="utf-8")
+    assert _run(directory, pubkey_file, pin="0" * 64) == 1
+    assert "not the pinned" in capsys.readouterr().err
+    assert directory.read_text(encoding="utf-8") == before
+
+
+def test_a_list_reformatted_after_pinning_refuses(directory, pubkey_file, capsys):
+    # Same JSON value, different bytes: the pin is over the bytes.
+    pin = hashlib.sha256(_step6_list(PUBKEY_HEX)).hexdigest()
+    pretty = json.dumps(json.loads(_step6_list(PUBKEY_HEX)), indent=2).encode()
+    assert _run(directory, pubkey_file, list_bytes=pretty, pin=pin) == 1
+    assert "not the pinned" in capsys.readouterr().err
+
+
+def test_a_list_whose_key_differs_refuses(directory, pubkey_file, capsys):
+    before = directory.read_text(encoding="utf-8")
+    assert _run(directory, pubkey_file, list_bytes=_step6_list("ab" * 32)) == 1
+    assert "not the authority key" in capsys.readouterr().err
+    assert directory.read_text(encoding="utf-8") == before
+
+
+def test_a_list_missing_our_row_refuses(directory, pubkey_file, capsys):
+    before = directory.read_text(encoding="utf-8")
+    assert _run(directory, pubkey_file, list_bytes=_step6_list(PUBKEY_HEX, name="Someone Else")) == 1
+    assert "0 rows named 'Action State Group'" in capsys.readouterr().err
+    assert directory.read_text(encoding="utf-8") == before
+
+
+def test_a_list_row_with_extra_keys_refuses_and_names_them(directory, pubkey_file, capsys):
+    assert _run(directory, pubkey_file, list_bytes=_step6_list(PUBKEY_HEX, "cd" * 32)) == 1
+    err = capsys.readouterr().err
+    assert "lists 2 keys" in err and "cd" * 32 in err
+
+
+def test_a_bad_pin_is_refused(directory, pubkey_file, capsys):
+    assert _run(directory, pubkey_file, pin="LIST_SHA") == 1
+    assert "--list-sha256" in capsys.readouterr().err
+
+
+def test_list_and_pin_are_required(directory, pubkey_file):
+    with pytest.raises(SystemExit):
+        fill.main(["--since", SINCE, "--pubkey-file", str(pubkey_file), "--directory", str(directory)])
