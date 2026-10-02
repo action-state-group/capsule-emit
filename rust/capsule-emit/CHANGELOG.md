@@ -7,6 +7,16 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## 0.0.3 — unreleased
 
+### Changed
+- Requires `checkpointed-local-log` 0.2.1. 0.2.0 encoded a COSE checkpoint's
+  claims map in insertion order, which verifiers that require deterministic
+  CBOR (the TypeScript CLL verifier) refuse. 0.2.1 encodes it in RFC 8949
+  §4.2.1 order, byte-identical to the Python reference. Checkpoints this crate
+  signed before stay valid for the Python verifier, and need re-signing for the
+  TypeScript one. New tests pin the cross-language checkpoint vectors
+  (`tests/vectors/cll-checkpoint/`) and check that the checkpoints this crate
+  cuts, chained ones included, sign their claims in that order.
+
 ### Fixed
 - A witness that missed checkpoints in this log's chain is caught up instead
   of refusing every later one. Push-time cuts are never offered on their own,
