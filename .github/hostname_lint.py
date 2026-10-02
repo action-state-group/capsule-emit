@@ -2,15 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """hostname-lint — fail the build if a stale verify.*/witness.*actionstate.* reference appears.
 
-Canonical hosts (2026-09-23, corrected same day by Steven): verify and witness are NEUTRAL and
-live on agentactioncapsule.org; countersign is OPERATED and stays on actionstate -- see
-_work/countersign-service-deploy-plan-2026-09-17.md, section "Money-path / boundary", in the
-action-state-ops workspace. `skills/openclaw/SKILL.md` carried a stale verify.actionstate.ai
-link; this check exists so a recurrence, here or elsewhere in the repo, fails CI instead of
-shipping.
+Canonical hosts: verify and witness live on agentactioncapsule.org.
+`skills/openclaw/SKILL.md` carried a stale verify.actionstate.ai link; this check exists so a
+recurrence, here or elsewhere in the repo, fails CI instead of shipping.
 
 Disallowed: verify.actionstate.<tld>, witness.actionstate.<tld> (case-insensitive, any TLD).
-Exempt: countersign.actionstate.<tld> (correct -- the operated layer), and any
+Not matched: countersign.actionstate.<tld>, and any
 @actionstate.<tld> mailto address (spec@, steven@, conduct@, security@, opensource@ -- all
 correct, unrelated to which host serves which service).
 
@@ -83,7 +80,7 @@ def main() -> int:
             "hostname-lint: stale verify.actionstate.*/witness.actionstate.* reference(s) found."
         )
         print("Canonical: verify.agentactioncapsule.org / witness.agentactioncapsule.org.")
-        print("(countersign.actionstate.* is correct and exempt -- it is the operated layer.)")
+        print("(countersign.actionstate.* is not matched by this check.)")
         print(
             "If a hit is a genuine historical record (not live drift), add its exact stripped "
             "line text to .github/hostname_lint_allowlist.txt."
