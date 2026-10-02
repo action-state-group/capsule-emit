@@ -35,7 +35,8 @@ Verifying (offline, over both parties' capsules):
 The derived states are the draft's: payment ``terms_only`` / ``payer_stated`` /
 ``payee_stated`` / ``agreed`` / ``mismatch`` / ``unjoined``, and delivery
 ``none`` / ``stated`` / ``matched`` / ``mismatch``. A pair whose two observed
-legs share a key reads ``sealer_conflation``, never ``agreed``. Whether each
+legs share a key is never ``agreed``: its state is ``None`` (no state of the
+draft applies) and ``sealer_conflation`` is listed as a failure. Whether each
 key belongs to its party is a separate result (``key_policy_applied``): without
 a ``key_policy``, ``agreed`` means two distinct keys agree, nothing more. A
 one-sided state says what one sealer reported, never that the other side
@@ -586,20 +587,34 @@ def verify_settlements(
     return report
 
 
-def _heads(side: list[tuple[str, dict]], records: dict[str, dict]) -> list[tuple[str, dict]]:
-    """Drop observed legs that a later leg of the same side supersedes."""
-    superseded = set()
+def _heads(side: list[tuple[str, dict]], records: dict[str, dict], report: SettlementReport,
+           terms_cid: str) -> list[tuple[str, dict]]:
+    """Drop observed legs that a later leg of the same side supersedes.
+
+    A ``supersedes`` link counts only when the superseding record is signed by
+    the superseded record's own key: a sealer can replace its own observation,
+    never someone else's. Any other link is ignored and reported.
+    """
+    superseded: set[str] = set()
     for r, _ in side:
         chain = records[r].get("chain") or {}
-        if chain.get("relation") == "supersedes":
-            superseded.add(chain.get("parent_capsule_id"))
-    return [(r, s) for r, s in side if records[r]["capsule_id"] not in superseded]
+        if chain.get("relation") != "supersedes":
+            continue
+        parent = chain.get("parent_capsule_id")
+        key = report.keys.get(r)
+        targets = [t for t, _ in side if records[t]["capsule_id"] == parent and t != r]
+        own = [t for t in targets if key is not None and report.keys.get(t) == key]
+        superseded.update(own)
+        if targets and not own:
+            report.diagnostics.append({"terms": terms_cid, "code": "supersedes_ignored",
+                                       "record": records[r]["capsule_id"], "key": key, "parent": parent})
+    return [(r, s) for r, s in side if r not in superseded]
 
 
 def _settlement(terms_cid: str, terms: dict, legs: dict[str, dict], records: dict[str, dict],
                 report: SettlementReport, with_policy: bool, objects: dict[str, bytes]) -> dict:
-    payer = _heads([(r, s) for r, s in legs.items() if s["leg"] == "payer_observed"], records)
-    payee = _heads([(r, s) for r, s in legs.items() if s["leg"] == "payee_observed"], records)
+    payer = _heads([(r, s) for r, s in legs.items() if s["leg"] == "payer_observed"], records, report, terms_cid)
+    payee = _heads([(r, s) for r, s in legs.items() if s["leg"] == "payee_observed"], records, report, terms_cid)
     result: dict[str, Any] = {"terms": terms_cid}
     for role, side in (("payer", payer), ("payee", payee)):
         keys = sorted({report.keys[r] for r, _ in side if r in report.keys})
@@ -613,7 +628,7 @@ def _settlement(terms_cid: str, terms: dict, legs: dict[str, dict], records: dic
     elif not payer:
         result["payment_state"] = "payee_stated"
     else:
-        result.update(_pair(terms, payer, payee, report, objects))
+        result.update(_pair(terms_cid, terms, payer, payee, report, objects))
     iso = {}
     for leg, side in (("payer_observed", payer), ("payee_observed", payee)):
         statuses = {s["status"] for _, s in side}
@@ -642,7 +657,7 @@ def _settlement(terms_cid: str, terms: dict, legs: dict[str, dict], records: dic
     return result
 
 
-def _pair(terms: dict, payer: list[tuple[str, dict]], payee: list[tuple[str, dict]], report: SettlementReport,
+def _pair(terms_cid: str, terms: dict, payer: list[tuple[str, dict]], payee: list[tuple[str, dict]], report: SettlementReport,
           objects: dict[str, bytes]) -> dict:
     out: dict[str, Any] = {}
     # The pair the state is derived from: one payer head and one payee head under
@@ -694,8 +709,13 @@ def _pair(terms: dict, payer: list[tuple[str, dict]], payee: list[tuple[str, dic
         out["differs"] = differs
     elif conflated:
         # The draft: a verifier MUST NOT report agreed for such a pair; it
-        # reports sealer_conflation instead (also listed in failures).
-        out["payment_state"] = "sealer_conflation"
+        # reports sealer_conflation instead. sealer_conflation is a failure code,
+        # not a state, and no row of the draft's state table fits a conflated
+        # pair that otherwise matches, so no state is reported (an open question
+        # for the draft); the failure is listed and a diagnostic says why.
+        out["payment_state"] = None
+        report.diagnostics.append({"terms": terms_cid, "code": "sealer_conflation",
+                                   "note": "agreed withheld; no state of the draft applies"})
     else:
         out["payment_state"] = "agreed"
         out["agreed_status"] = a["status"]

@@ -299,6 +299,37 @@ def test_pending_superseded_by_settled_uses_the_head(tmp_path):
     assert _state([terms, pending, q])["differs"] == ["status"]
 
 
+def test_a_supersedes_link_from_another_key_is_ignored_same_values(tmp_path):
+    terms, p, q, payer, _ = _two_sided(tmp_path)
+    attacker = Party(tmp_path, "attacker")
+    spoof = attacker.seal(_payer_leg(terms["capsule_id"]), prior=p["capsule_id"], relation="supersedes")
+    report = verify_settlements([terms, p, spoof, q], wrapped_objects=[EXACT_PAYLOAD])
+    assert report.settlements[0]["payment_state"] == "agreed"
+    codes = [d["code"] for d in report.diagnostics]
+    assert codes == ["supersedes_ignored", "several_keys_for_role"]
+    ignored = report.diagnostics[0]
+    assert (ignored["record"], ignored["key"], ignored["parent"]) == (spoof["capsule_id"], attacker.key,
+                                                                      p["capsule_id"])
+    assert report.diagnostics[1]["keys"] == sorted([payer.key, attacker.key])  # the payer's key is not gone
+
+
+def test_a_supersedes_link_from_another_key_is_ignored_different_values(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path)
+    spoof = Party(tmp_path, "attacker").seal(_payer_leg(terms["capsule_id"], status="failed"),
+                                             prior=p["capsule_id"], relation="supersedes")
+    report = verify_settlements([terms, p, spoof, q], wrapped_objects=[EXACT_PAYLOAD])
+    s = report.settlements[0]
+    assert (s["payment_state"], s["differs"]) == ("mismatch", ["status"])  # the genuine leg still counts
+    assert "supersedes_ignored" in [d["code"] for d in report.diagnostics]
+
+
+def test_a_sealer_superseding_its_own_leg_is_honoured(tmp_path):
+    terms, p, q, payer, _ = _two_sided(tmp_path, payer_kw={"status": "pending"})
+    later = payer.seal(_payer_leg(terms["capsule_id"]), prior=p["capsule_id"], relation="supersedes")
+    report = verify_settlements([terms, p, later, q], wrapped_objects=[EXACT_PAYLOAD])
+    assert report.settlements[0]["payment_state"] == "agreed" and report.diagnostics == []
+
+
 def test_two_unchained_observations_that_disagree_are_a_mismatch(tmp_path):
     terms, p, q, payer, _ = _two_sided(tmp_path)
     other = payer.seal(_payer_leg(terms["capsule_id"], amount=amount(1, USDC, 6)))
@@ -312,7 +343,8 @@ def test_one_key_on_both_observed_legs_is_sealer_conflation(tmp_path):
     terms, p, q, _, _ = _two_sided(tmp_path, payee_party="payer")
     report = verify_settlements([terms, p, q], wrapped_objects=[EXACT_PAYLOAD])
     assert {"records": [p["capsule_id"], q["capsule_id"]], "code": "sealer_conflation"} in report.failures
-    assert report.settlements[0]["payment_state"] == "sealer_conflation"
+    assert report.settlements[0]["payment_state"] is None  # no draft state applies; never agreed
+    assert [d["code"] for d in report.diagnostics] == ["sealer_conflation"]
     assert not report.conforming
 
 

@@ -28,13 +28,16 @@ All notable changes to `capsule-emit` are documented here. The format follows
   wrapped offer or payment payload) and otherwise leaves the pair `unjoined` (`fee_unstated`).
   Lightning `BTC` and on-chain bitcoin are different assets.
 - A record is identified by its `capsule_id` and its authenticated key, so a copy of a genuine
-  leg signed by another key never stands in for it or excludes it. A pair whose two observed legs
-  share a key reads `sealer_conflation`, never `agreed`.
+  leg signed by another key never stands in for it or excludes it, and a `supersedes` link counts
+  only when it is signed by the superseded record's own key (otherwise it is ignored and reported).
+  A pair whose two observed legs share a key is never `agreed`: no state of the draft applies, so its
+  `payment_state` is `null`, and `sealer_conflation` is listed as a failure and a diagnostic.
 - Whether each key belongs to its party is reported separately from the payment state, as the
   draft asks: `key_policy_applied` (without a `key_policy`, `agreed` means two distinct keys agree)
   and `keys`. With a policy, a record under a key it does not accept for the role is refused and
   takes no part; several accepted keys per role (rotation) are fine. What the draft does not make
-  a state goes in `diagnostics`: `several_keys_for_role`, `delivery_sealed_under_one_key`.
+  a state goes in `diagnostics`: `several_keys_for_role`, `delivery_sealed_under_one_key`,
+  `supersedes_ignored`, `sealer_conflation`.
 - The draft's 19 conformance vectors run in CI from `test-vectors/settlement-records/`:
   `cases.json` and `registry.json` copied byte for byte from agent-action-capsule at `565d1f0`,
   with that repository's BSD-3 `LICENSE` and a README added; the upstream README, manifest and
