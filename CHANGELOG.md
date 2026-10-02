@@ -40,6 +40,18 @@ All notable changes to `capsule-emit` are documented here. The format follows
   with that repository's BSD-3 `LICENSE` and a README added; the upstream README, manifest and
   checksum file were not copied, and `SHA256SUMS` here is ours, over the three copied files.
 
+### Fixed — time bounds compare instants, not strings
+
+`holds.aggregate.active_exposure_minor(..., as_of=...)` compared `timestamp <= as_of` as strings.
+With whole-second record times (`…23:59:59Z`) next to microsecond ones and bounds
+(`…23:59:59.999999Z`), string order is wrong at the last second (`Z` sorts after `.`), so a record
+stamped in that second dropped out. It now compares parsed instants (any fraction length, `Z` or an
+offset); a record whose time does not parse doesn't count, and an unreadable `as_of` is refused.
+`period.py`'s comment no longer says bounds must string-match one format. Its bounds stay the period's
+first and last microsecond, which are right when compared as instants, the comparison the ledger
+store makes from checkpointed-local-log's release that includes that fix. Boundary tests in
+`tests/test_time_bounds.py`.
+
 ### Fixed — committed record times are whole seconds with no fraction too
 
 A disclosure record's `timestamp`, a signed refusal's `issued_at` and a hold action's `timestamp`

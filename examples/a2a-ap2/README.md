@@ -6,7 +6,7 @@ Demonstrates how an A2A callee seals a neutral capsule on every payment action u
 
 ## Compose framing
 
-AP2 (A2A Payment Profile) and AAC do not overlap — they compose:
+AP2 (Agent Payments Protocol) and AAC do not overlap — they compose:
 
 | Layer | Protocol | What it proves |
 |-------|----------|----------------|
@@ -91,7 +91,6 @@ curl https://anchor.agentactioncapsule.org/v1/inclusion/<capsule_id>
 
 - No standalone A2A adapter (agentgateway proxies A2A at the wire)
 - No AP2 adapter (map to AP2, don't be AP2)
-- No Authority-layer code (that lives in private repos)
 
 ## Boundary
 
