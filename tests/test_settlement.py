@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for capsule_emit.settlement: building, sealing and joining
-settlement records sealed independently by a payer and a payee."""
+"""capsule_emit.settlement: building, sealing and verifying two-party
+settlement records (draft-mih-agent-settlement-records-00).
+
+The draft's own conformance vectors run in test_settlement_records_vectors.py;
+these tests cover the producer side and the rules case by case."""
 from __future__ import annotations
 
 import copy
@@ -12,529 +15,421 @@ import pytest
 from capsule_emit.canonicalization import compute_capsule_id
 from capsule_emit.core import _emit_capsule
 from capsule_emit.settlement import (
-    SETTLEMENT_EXTENSION_KEY,
+    SETTLEMENT_MEMBER,
     SettlementError,
     amount,
-    build_observation,
-    join,
-    seal_observation,
-    terms_digest,
-    validate_observation,
+    build_leg,
+    counterparty_reference,
+    seal_leg,
+    structure_failures,
+    verify_settlements,
     wrap,
 )
 from capsule_emit.verification import verify_capsule
 
-TX = "0x" + "ab" * 32
 NETWORK = "eip155:84532"
+TX = "0x" + "ab" * 32
 REF = {"type": "x402.transaction", "value": TX, "network": NETWORK}
 USDC = "eip155:84532/erc20:0x036cbd53842c5426634e7929541ec2318f3dcf7e"
-TERMS = {"scheme": "exact", "network": NETWORK, "amount": "10000", "asset": USDC, "payTo": "0x" + "11" * 20}
-TERMS_DIGEST = terms_digest(TERMS)
 PRICE = amount(10000, USDC, 6)
 ZERO = amount(0, USDC, 6)
-DELIVERED = "d" * 64
+AT = "2026-10-02T01:08:30Z"
+DIGEST = "d" * 64
+EXACT_PAYLOAD = json.dumps({"x402Version": 2, "accepted": {"scheme": "exact", "network": NETWORK}}).encode()
 
 
-def _seal(tmp_path: Path, party: str, obs: dict, **kw) -> dict:
-    return seal_observation(
-        obs, operator=party, developer=f"{party}-agent@v1", ledger=tmp_path / party / "ledger.jsonl",
-        witness=False, **kw,
-    ).capsule
+class Party:
+    def __init__(self, tmp_path: Path, name: str):
+        self.name = name
+        self.ledger = tmp_path / name / "ledger.jsonl"
+
+    def seal(self, member: dict, **kw) -> dict:
+        return seal_leg(member, operator=self.name, developer=f"{self.name}-agent@1", ledger=self.ledger,
+                        witness=False, **kw).capsule
+
+    @property
+    def key(self) -> str:
+        from capsule_emit.signing import resolve_signer
+
+        return resolve_signer(self.ledger).key_id
 
 
-def _obs(role: str, leg: str, **kw) -> dict:
-    base = dict(role=role, leg=leg, payment_ref=REF, terms_digest=TERMS_DIGEST)
-    if leg == "payer_observed":
-        base.update(status="settled", amount=PRICE, routing_fee=ZERO)
-    if leg == "payee_observed":
-        base.update(status="received", received=PRICE, receive_fee=ZERO)
-    if leg == "delivered":
-        base.update(delivered_digest=DELIVERED)
+def _terms(party: Party, **kw) -> dict:
+    return party.seal(build_leg("terms", "payee", amount=kw.pop("amount", PRICE), **kw))
+
+
+def _payer_leg(terms_id: str, **kw) -> dict:
+    base = dict(terms_ref=terms_id, amount=PRICE, routing_fee=ZERO, payment_ref=REF, status="settled",
+                observed_at=AT, wrapped=[wrap(EXACT_PAYLOAD, type="x402.payment-payload")])
     base.update(kw)
-    return build_observation(**base)
+    return build_leg("payer_observed", "payer", **base)
 
 
-def _two_sided(tmp_path: Path, payer_kw=None, payee_kw=None, payee_party="payee") -> list[dict]:
-    payer = _seal(tmp_path, "payer", _obs("payer", "payer_observed", **(payer_kw or {})))
-    payee = _seal(tmp_path, payee_party, _obs("payee", "payee_observed", **(payee_kw or {})))
-    return [payer, payee]
+def _payee_leg(terms_id: str, **kw) -> dict:
+    base = dict(terms_ref=terms_id, received=PRICE, receive_fee=ZERO, payment_ref=REF, status="settled",
+                observed_at=AT)
+    base.update(kw)
+    return build_leg("payee_observed", "payee", **base)
 
 
-# --- building ---------------------------------------------------------------
+def _delivered(terms_id: str, role: str, digest: str = DIGEST, **kw) -> dict:
+    direction = "sent" if role == "payee" else "received"
+    delivery = kw.pop("delivery", {"direction": direction, "content_digest": digest})
+    return build_leg("delivered", role, terms_ref=terms_id, observed_at=AT, delivery=delivery, **kw)
 
 
-def test_block_carries_the_draft_version_and_refuses_others():
-    obs = _obs("payer", "terms")
-    assert obs["version"] == "0" and "schema" not in obs
-    with pytest.raises(SettlementError, match="version is"):
-        validate_observation({**obs, "version": "1"})
-    legacy = {k: v for k, v in obs.items() if k != "version"}
-    with pytest.raises(SettlementError, match="missing"):
-        validate_observation({**legacy, "schema": "settlement-profile-00"})
+def _two_sided(tmp_path, payer_kw=None, payee_kw=None, payee_party="payee"):
+    payer, payee = Party(tmp_path, "payer"), Party(tmp_path, payee_party)
+    terms = _terms(Party(tmp_path, "payee"))
+    p = payer.seal(_payer_leg(terms["capsule_id"], **(payer_kw or {})))
+    q = payee.seal(_payee_leg(terms["capsule_id"], **(payee_kw or {})))
+    return terms, p, q, payer, payee
 
 
-def test_amount_refuses_floats_and_fractions():
+def _policy(payer: Party, payee: Party) -> dict:
+    return {"payer": payer.key, "payee": payee.key}
+
+
+def _state(records, **kw) -> dict:
+    report = verify_settlements(records, wrapped_objects=[EXACT_PAYLOAD], **kw)
+    return report.settlements[0] if report.settlements else {}
+
+
+# --- building -----------------------------------------------------------------
+
+
+def test_amounts_are_exact_integers():
+    for bad in (0.01, "0.01", "01", True, -1):
+        with pytest.raises(SettlementError) as e:
+            amount(bad, USDC, 6)
+        assert e.value.codes == ["amount_not_exact"]
     with pytest.raises(SettlementError):
-        amount(0.01, USDC, 6)
+        amount(1, USDC, 256)
+    assert amount(1000, "BTC", 11) == {"value": "1000", "assetCode": "BTC", "assetScale": 11}
+
+
+def test_a_leg_carries_only_its_own_members():
+    with pytest.raises(SettlementError) as e:
+        build_leg("payee_observed", "payee", terms_ref="a" * 64, amount=PRICE, received=PRICE,
+                  payment_ref=REF, status="settled", observed_at=AT)
+    assert e.value.codes == ["settlement_malformed"]
+    with pytest.raises(SettlementError) as e:
+        build_leg("payer_observed", "payee", terms_ref="a" * 64, amount=PRICE, payment_ref=REF,
+                  status="settled", observed_at=AT)
+    assert e.value.codes == ["leg_role_mismatch"]
     with pytest.raises(SettlementError):
-        amount("0.01", USDC, 6)
+        _payee_leg("a" * 64, status="received")  # not one of pending/settled/failed/reversed
     with pytest.raises(SettlementError):
-        amount(True, USDC, 6)
-    assert amount(10000, USDC, 6) == {"value": "10000", "assetCode": USDC, "assetScale": 6}
+        build_leg("terms", "payee", amount=PRICE, receive_fee_max=ZERO)  # the draft defines no fee bounds
 
 
-def test_only_the_payer_seals_payer_observed_and_only_the_payee_payee_observed():
-    with pytest.raises(SettlementError, match="only the payer"):
-        _obs("payee", "payer_observed")
-    with pytest.raises(SettlementError, match="only the payee"):
-        _obs("payer", "payee_observed")
-
-
-def test_status_belongs_to_observed_legs_only():
-    with pytest.raises(SettlementError, match="carries no status"):
-        _obs("payer", "terms", status="settled")
-    with pytest.raises(SettlementError, match="status is one of"):
-        _obs("payer", "payer_observed", status="received")
-
-
-def test_delivered_leg_needs_a_digest_and_only_it_carries_one():
-    with pytest.raises(SettlementError, match="delivered_digest"):
-        _obs("payee", "delivered", delivered_digest=None)
-    with pytest.raises(SettlementError, match="only a delivered leg"):
-        _obs("payee", "terms", delivered_digest=DELIVERED)
-
-
-def test_x402_reference_needs_a_caip2_network_and_an_evm_hash():
-    with pytest.raises(SettlementError, match="CAIP-2"):
-        _obs("payer", "terms", payment_ref={"type": "x402.transaction", "value": TX})
-    with pytest.raises(SettlementError, match="0x"):
-        _obs("payer", "terms", payment_ref={**REF, "value": "0x1234"})
-
-
-def test_evm_hash_is_lowercased_so_both_sides_join():
-    obs = _obs("payer", "terms", payment_ref={**REF, "value": TX.upper().replace("0X", "0x")})
-    assert obs["payment_ref"]["value"] == TX
-
-
-def test_unknown_reference_type_is_accepted_and_unknown_fields_are_not():
-    obs = _obs("payer", "terms", payment_ref={"type": "example.rail_ref", "value": "r-1"})
-    assert obs["payment_ref"]["type"] == "example.rail_ref"
-    with pytest.raises(SettlementError, match="unknown fields"):
-        _obs("payer", "terms", payment_ref={**REF, "memo": "x"})
-
-
-def test_known_reference_types_check_their_values():
+def test_delivered_needs_a_content_digest_unless_a_carrier_is_present():
     with pytest.raises(SettlementError):
-        _obs("payer", "terms", payment_ref={"type": "ln.payment_hash", "value": "zz"})
+        _delivered("a" * 64, "payee", delivery={"direction": "sent"})
     with pytest.raises(SettlementError):
-        _obs("payer", "terms", payment_ref={"type": "iso20022.uetr", "value": "not-a-uuid"})
-    with pytest.raises(SettlementError):
-        _obs("payer", "terms", payment_ref={"type": "open_payments.incoming_payment", "value": "http://x"})
-    _obs("payer", "terms", payment_ref={"type": "iso20022.uetr", "value": "eb6305c9-1f7f-49de-aed0-16487c27b42d"})
+        _delivered("a" * 64, "payee", delivery={"direction": "received", "content_digest": DIGEST})
+    leg = _delivered("a" * 64, "payee", delivery={"direction": "sent", "carrier": "example-carrier"})
+    assert "content_digest" not in leg["delivery"]
+    assert structure_failures(_delivered("a" * 64, "payer")) == []
 
 
-def test_binding_names_keep_upstream_case_but_need_a_namespace():
-    obs = _obs("payer", "terms", bindings={"erc8004.agentId": "7", "x402.requestHash": "0x" + "00" * 32})
-    assert obs["bindings"]["erc8004.agentId"] == "7"
-    with pytest.raises(SettlementError, match="namespace"):
-        _obs("payer", "terms", bindings={"agentId": "7"})
-    with pytest.raises(SettlementError, match="non-empty"):
-        _obs("payer", "terms", bindings={"erc8004.agentId": ""})
+def test_evm_transaction_hash_takes_its_normal_form():
+    leg = _payer_leg("a" * 64, payment_ref={**REF, "value": TX.upper().replace("0X", "0x")})
+    assert leg["payment_ref"]["value"] == TX
 
 
-def test_wrap_digests_bytes_as_given_and_objects_over_jcs():
+def test_wrap_digests_exact_octets_or_the_rfc8785_form():
     import hashlib
 
     raw = b'{"b":1,"a":2}'
-    assert wrap(raw, type="x402.offer")["digest"] == hashlib.sha256(raw).hexdigest()
+    assert wrap(raw, type="x402.payment-payload")["digest"] == hashlib.sha256(raw).hexdigest()
     assert wrap({"b": 1, "a": 2}, type="x402.offer")["digest"] == hashlib.sha256(b'{"a":2,"b":1}').hexdigest()
     with pytest.raises(SettlementError):
-        wrap(raw, type="Offer")
+        wrap(raw, type="x402.unknown")
 
 
-def test_sealed_record_carries_the_block_and_verifies(tmp_path):
-    capsule = _seal(tmp_path, "payer", _obs("payer", "payer_observed"))
-    block = capsule["model_attestation"]["compute_attestation"][SETTLEMENT_EXTENSION_KEY]
-    assert block["payment_ref"] == REF
-    assert capsule["action_type"] == "fyi"
-    assert verify_capsule(capsule).ok
+def test_a_sealed_leg_is_a_capsule_with_a_top_level_settlement_member(tmp_path):
+    terms, p, _, _, _ = _two_sided(tmp_path)
+    assert p[SETTLEMENT_MEMBER]["terms_ref"] == terms["capsule_id"]
+    assert "x-settlement-v0" not in json.dumps(p)
+    assert p["action_type"] == "fyi"
+    assert verify_capsule(p).ok
+    edited = copy.deepcopy(p)
+    edited[SETTLEMENT_MEMBER]["amount"]["value"] = "1"
+    assert compute_capsule_id(edited) != p["capsule_id"]
 
 
-def test_legs_chain_within_one_party(tmp_path):
-    terms = _seal(tmp_path, "payer", _obs("payer", "terms"))
-    observed = _seal(tmp_path, "payer", _obs("payer", "payer_observed"), prior=terms["capsule_id"])
-    assert observed["chain"]["parent_capsule_id"] == terms["capsule_id"]
-    assert observed["chain"]["relation"] == "follows"
+def test_payload_members_never_replace_a_capsule_member(tmp_path):
+    with pytest.raises(ValueError, match="would replace"):
+        _emit_capsule("x", ledger=tmp_path / "l.jsonl", witness=False, payload_members={"operator": "x"})
 
 
-# --- join -------------------------------------------------------------------
+# --- the payment state --------------------------------------------------------
 
 
-def test_two_sided_agreed_with_iso20022_codes(tmp_path):
-    joins, refused = join(_two_sided(tmp_path))
-    assert refused == []
-    assert len(joins) == 1
-    j = joins[0]
-    assert j.state == "agreed_untrusted", j.differences
-    assert j.differences == []
-    assert j.iso20022 == {"payer_observed": "ACSC", "payee_observed": "ACCC"}
-    assert len(j.payer_capsule_ids) == 1 and len(j.payee_capsule_ids) == 1
+def test_two_sided_with_a_key_policy_is_agreed(tmp_path):
+    terms, p, q, payer, payee = _two_sided(tmp_path)
+    s = _state([terms, p, q], key_policy=_policy(payer, payee))
+    assert (s["payment_state"], s["agreed_status"], s["terms_amount"]) == ("agreed", "settled", "equal")
+    assert s["iso20022"] == {"payer_observed": "ACSC", "payee_observed": "ACCC"}
 
 
-def test_one_side_held_is_one_sided_never_a_failure(tmp_path):
-    payer, payee = _two_sided(tmp_path)
-    assert join([payer])[0][0].state == "payer_only"
-    assert join([payee])[0][0].state == "payee_only"
+def test_without_a_key_policy_the_same_pair_is_only_agreed_untrusted(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path)
+    assert _state([terms, p, q])["payment_state"] == "agreed_untrusted"
 
 
-def test_received_plus_fee_short_of_the_amount_differs(tmp_path):
-    joins, _ = join(_two_sided(tmp_path, payee_kw={"received": amount(9999, USDC, 6)}))
-    assert joins[0].state == "differs"
-    assert joins[0].differences == ["amount"]
-
-
-def test_asset_mismatch_differs(tmp_path):
-    other = "eip155:84532/erc20:0x00"
-    joins, _ = join(_two_sided(tmp_path, payee_kw={"received": amount(10000, other, 6),
-                                                   "receive_fee": amount(0, other, 6)}))
-    assert joins[0].state == "differs"
-    assert joins[0].differences == ["asset"]
-
-
-def test_terms_mismatch_differs(tmp_path):
-    joins, _ = join(_two_sided(tmp_path, payee_kw={"terms_digest": "e" * 64}))
-    assert joins[0].state == "differs"
-    assert "terms_digest" in joins[0].differences
+def test_one_side_is_a_stated_claim(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path)
+    assert _state([terms, p])["payment_state"] == "payer_stated"
+    assert _state([terms, q])["payment_state"] == "payee_stated"
+    assert _state([terms])["payment_state"] == "terms_only"
 
-
-def test_payee_reports_rejected_differs(tmp_path):
-    joins, _ = join(_two_sided(tmp_path, payee_kw={"status": "rejected"}))
-    assert joins[0].state == "differs"
-    assert "payee_observed.status=rejected" in joins[0].differences
-    assert joins[0].iso20022["payee_observed"] == "RJCT"
 
+def _msat(v: int) -> dict:
+    return amount(v, "BTC", 11)
 
-def test_same_key_on_both_sides_is_not_independent(tmp_path):
-    joins, _ = join(_two_sided(tmp_path, payee_party="payer"))
-    assert joins[0].state == "not_independent"
-
-
-def test_same_hash_on_another_network_does_not_join(tmp_path):
-    other = {**REF, "network": "eip155:8453"}
-    payer = _seal(tmp_path, "payer", _obs("payer", "payer_observed"))
-    payee = _seal(tmp_path, "payee", _obs("payee", "payee_observed", payment_ref=other))
-    joins, _ = join([payer, payee])
-    assert sorted(j.state for j in joins) == ["payee_only", "payer_only"]
-
-
-def test_delivery_matched_and_differs(tmp_path):
-    base = _two_sided(tmp_path)
-    payee_d = _seal(tmp_path, "payee", _obs("payee", "delivered"))
-    payer_d = _seal(tmp_path, "payer", _obs("payer", "delivered"))
-    joins, _ = join(base + [payee_d, payer_d])
-    assert (joins[0].state, joins[0].delivery) == ("agreed_untrusted", "matched")
-
-    payer_bad = _seal(tmp_path, "payer", _obs("payer", "delivered", delivered_digest="f" * 64))
-    joins, _ = join(base + [payee_d, payer_bad])
-    assert joins[0].delivery == "differs"
-    assert joins[0].state == "differs"
-
-
-def test_delivered_bound_to_other_terms_differs(tmp_path):
-    payee_d = _seal(tmp_path, "payee", _obs("payee", "delivered", terms_digest="e" * 64))
-    joins, _ = join(_two_sided(tmp_path) + [payee_d])
-    assert joins[0].state == "differs"
-    assert "terms_digest" in joins[0].differences
-
-
-def test_chained_legs_join_with_or_without_their_parents(tmp_path):
-    records = []
-    for party in ("payer", "payee"):
-        terms = _seal(tmp_path, party, _obs(party, "terms"))
-        observed = _seal(tmp_path, party, _obs(party, f"{party}_observed"), prior=terms["capsule_id"])
-        delivered = _seal(tmp_path, party, _obs(party, "delivered"), prior=observed["capsule_id"])
-        records += [terms, observed, delivered]
-    joins, refused = join(records)
-    assert refused == []
-    assert (joins[0].state, joins[0].delivery) == ("agreed_untrusted", "matched")
-    observed_only = [records[1], records[4]]
-    joins, refused = join(observed_only)
-    assert refused == []
-    assert joins[0].state == "agreed_untrusted"
-
-
-def test_a_missing_money_member_is_never_agreed(tmp_path):
-    cases = [
-        ({}, {"received": None}, "payee_observed.received missing"),
-        ({"amount": None}, {}, "payer_observed.amount missing"),
-        ({"routing_fee": None}, {}, "payer_observed.routing_fee missing"),
-        ({}, {"receive_fee": None}, "payee_observed.receive_fee missing"),
-    ]
-    for i, (payer_kw, payee_kw, expected) in enumerate(cases):
-        joins, _ = join(_two_sided(tmp_path / str(i), payer_kw=payer_kw, payee_kw=payee_kw))
-        assert joins[0].state == "differs", expected
-        assert expected in joins[0].differences
-
-
-def test_the_same_sum_at_another_scale_reconciles_exactly(tmp_path):
-    payee_kw = {"received": amount(10000000, USDC, 9), "receive_fee": amount(0, USDC, 9)}
-    joins, _ = join(_two_sided(tmp_path, payee_kw=payee_kw))
-    assert joins[0].state == "agreed_untrusted", joins[0].differences
-    payee_kw = {"received": amount(10000001, USDC, 9), "receive_fee": amount(0, USDC, 9)}
-    joins, _ = join(_two_sided(tmp_path / "b", payee_kw=payee_kw))
-    assert joins[0].differences == ["amount"]
-
-
-def test_pending_then_settled_is_agreed_and_pending_alone_is_not(tmp_path):
-    pending = _seal(tmp_path, "payer", _obs("payer", "payer_observed", status="pending"))
-    payer, payee = _two_sided(tmp_path)
-    joins, _ = join([pending, payer, payee])
-    assert joins[0].state == "agreed_untrusted", joins[0].differences
-    assert joins[0].iso20022["payer_observed"] == "ACSC"
-    joins, _ = join([pending, payee])
-    assert joins[0].state == "differs"
-    assert joins[0].iso20022["payer_observed"] == "PDNG"
-
-
-def test_two_outcomes_on_one_side_differ(tmp_path):
-    rejected = _seal(tmp_path, "payer", _obs("payer", "payer_observed", status="rejected"))
-    payer, payee = _two_sided(tmp_path)
-    joins, _ = join([rejected, payer, payee])
-    assert joins[0].state == "differs"
-    assert "payer_observed.status" in joins[0].differences
-    assert "payer_observed" not in joins[0].iso20022
-
-
-def test_duplicate_observed_legs_with_different_amounts_differ(tmp_path):
-    extra = _seal(tmp_path, "payer", _obs("payer", "payer_observed", amount=amount(1, USDC, 6)))
-    joins, _ = join(_two_sided(tmp_path) + [extra])
-    assert joins[0].state == "differs"
-    assert "payer_observed.amount" in joins[0].differences
-
-
-def test_one_key_sealing_delivery_for_both_roles_is_not_matched(tmp_path):
-    a = _seal(tmp_path, "one", _obs("payer", "delivered"))
-    b = _seal(tmp_path, "one", _obs("payee", "delivered"))
-    joins, _ = join([a, b])
-    assert joins[0].delivery == "not_independent"
-    joins, _ = join(_two_sided(tmp_path) + [a, b])
-    assert joins[0].state == "not_independent"
-
-
-def test_one_sided_delivery(tmp_path):
-    payee_d = _seal(tmp_path, "payee", _obs("payee", "delivered"))
-    joins, _ = join(_two_sided(tmp_path) + [payee_d])
-    assert (joins[0].state, joins[0].delivery) == ("agreed_untrusted", "payee_only")
-    payer_d = _seal(tmp_path, "payer", _obs("payer", "delivered"))
-    joins, _ = join([payer_d])
-    assert (joins[0].state, joins[0].delivery) == ("no_observation", "payer_only")
-
-
-def test_trusted_keys_refuse_a_role_claim_from_another_key(tmp_path):
-    payer, payee = _two_sided(tmp_path)
-    impostor = _seal(tmp_path, "impostor", _obs("payee", "payee_observed"))
-    trusted = {"payer": [payer["key_id"]], "payee": [payee["key_id"]]}
-    joins, refused = join([payer, payee, impostor], trusted_keys=trusted)
-    assert [r.capsule_id for r in refused] == [impostor["capsule_id"]]
-    assert "not trusted" in refused[0].reason
-    assert (joins[0].state, joins[0].differences) == ("agreed", [])
-    _, refused = join([payer, payee], trusted_keys={"payer": [payer["key_id"]]})
-    assert [r.capsule_id for r in refused] == [payee["capsule_id"]]
-
-
-def test_non_x402_reference_joins_end_to_end(tmp_path):
-    ref = {"type": "iso20022.uetr", "value": "eb6305c9-1f7f-49de-aed0-16487c27b42d"}
-    joins, _ = join(_two_sided(tmp_path, payer_kw={"payment_ref": ref}, payee_kw={"payment_ref": ref}))
-    assert len(joins) == 1 and joins[0].state == "agreed_untrusted"
-
-
-def test_references_differing_only_in_case_do_not_join(tmp_path):
-    a = {"type": "ap2.payment_id", "value": "PAY-1"}
-    b = {"type": "ap2.payment_id", "value": "pay-1"}
-    joins, _ = join(_two_sided(tmp_path, payer_kw={"payment_ref": a}, payee_kw={"payment_ref": b}))
-    assert sorted(j.state for j in joins) == ["payee_only", "payer_only"]
-
-
-def test_without_trusted_keys_a_full_match_is_only_agreed_untrusted(tmp_path):
-    payer, payee = _two_sided(tmp_path)
-    assert join([payer, payee])[0][0].state == "agreed_untrusted"
-    trusted = {"payer": [payer["key_id"]], "payee": [payee["key_id"]]}
-    assert join([payer, payee], trusted_keys=trusted)[0][0].state == "agreed"
-
-
-def test_a_third_party_key_claiming_the_payee_role_is_not_agreed(tmp_path):
-    payer, _ = _two_sided(tmp_path)
-    stranger = _seal(tmp_path, "stranger", _obs("payee", "payee_observed"))
-    joins, _ = join([payer, stranger])
-    assert joins[0].state == "agreed_untrusted"  # nothing can tell a stranger from the payee
-    trusted = {"payer": [payer["key_id"]], "payee": ["e" * 64]}
-    joins, refused = join([payer, stranger], trusted_keys=trusted)
-    assert joins[0].state == "payer_only" and len(refused) == 1
-
-
-def test_real_payee_plus_an_impostor_is_a_difference(tmp_path):
-    payer, payee = _two_sided(tmp_path)
-    impostor = _seal(tmp_path, "impostor", _obs("payee", "payee_observed"))
-    joins, _ = join([payer, payee, impostor])
-    assert joins[0].state == "differs"
-    assert "payee.keys" in joins[0].differences
-
-
-def test_rotated_keys_all_trusted_are_agreed(tmp_path):
-    payer, payee = _two_sided(tmp_path)
-    rotated = _seal(tmp_path, "payee-rotated", _obs("payee", "delivered"))
-    payer_d = _seal(tmp_path, "payer", _obs("payer", "delivered"))
-    trusted = {"payer": [payer["key_id"]], "payee": [payee["key_id"], rotated["key_id"]]}
-    joins, refused = join([payer, payee, rotated, payer_d], trusted_keys=trusted)
-    assert refused == []
-    assert (joins[0].state, joins[0].delivery) == ("agreed", "matched"), joins[0].differences
-    joins, _ = join([payer, payee, rotated, payer_d])
-    assert "payee.keys" in joins[0].differences
-
-
-def test_an_untrusted_extra_key_beside_trusted_rotated_keys_is_refused_and_ignored(tmp_path):
-    payer, payee = _two_sided(tmp_path)
-    rotated = _seal(tmp_path, "payee-rotated", _obs("payee", "delivered"))
-    extra = _seal(tmp_path, "extra", _obs("payee", "payee_observed"))
-    trusted = {"payer": [payer["key_id"]], "payee": [payee["key_id"], rotated["key_id"]]}
-    joins, refused = join([payer, payee, rotated, extra], trusted_keys=trusted)
-    assert [r.capsule_id for r in refused] == [extra["capsule_id"]]
-    assert (joins[0].state, joins[0].differences) == ("agreed", [])
-
-
-def test_the_same_capsule_passed_twice_counts_once(tmp_path):
-    payer, payee = _two_sided(tmp_path)
-    extra = _seal(tmp_path, "payer", _obs("payer", "payer_observed", amount=amount(1, USDC, 6)))
-    joins, refused = join([payer, payer, payee, payee])
-    assert refused == []
-    assert joins[0].payer_capsule_ids == [payer["capsule_id"]]
-    assert joins[0].state == "agreed_untrusted"
-    joins, _ = join([payer, extra, extra, payee])
-    assert joins[0].payer_capsule_ids == [payer["capsule_id"], extra["capsule_id"]]
-
-
-FEES = Path(__file__).parent / "fixtures" / "settlement" / "fees.json"
-
-
-@pytest.mark.parametrize("case", json.loads(FEES.read_text())["cases"], ids=lambda c: c["name"])
-def test_fee_vectors(tmp_path, case):
-    records = [
-        _seal(tmp_path, r["party"], build_observation(**r["observation"])) for r in case["records"]
-    ]
-    joins, refused = join(records)
-    assert refused == []
-    got = [{"payment_ref": j.payment_ref, "state": j.state, "differences": j.differences} for j in joins]
-    assert got == case["expect"]
-
-
-def test_payer_amount_must_match_the_terms_price(tmp_path):
-    terms_payer = _seal(tmp_path, "payer", _obs("payer", "terms", amount=PRICE))
-    terms_payee = _seal(tmp_path, "payee", _obs("payee", "terms", amount=PRICE))
-    short = amount(9000, USDC, 6)
-    records = _two_sided(tmp_path, payer_kw={"amount": short}, payee_kw={"received": short})
-    joins, _ = join([terms_payer, terms_payee, *records])
-    assert joins[0].differences == ["payer_observed.amount != terms.amount"]
-
-
-def test_a_fee_on_only_some_payee_legs_is_a_difference(tmp_path):
-    payer, payee = _two_sided(tmp_path, payee_kw={"received": amount(9995, USDC, 6),
-                                                   "receive_fee": amount(5, USDC, 6)})
-    again = _seal(tmp_path, "payee", _obs("payee", "payee_observed", received=amount(9995, USDC, 6),
-                                         receive_fee=None))
-    joins, _ = join([payer, payee, again])
-    assert joins[0].differences == ["payee_observed.receive_fee missing"]
-
-
-def test_money_members_belong_to_their_leg():
-    with pytest.raises(SettlementError, match="carries no received"):
-        _obs("payer", "payer_observed", received=PRICE)
-    with pytest.raises(SettlementError, match="carries no amount"):
-        _obs("payee", "payee_observed", amount=PRICE)
-    with pytest.raises(SettlementError, match="carries no routing_fee"):
-        _obs("payee", "payee_observed", routing_fee=ZERO)
-    with pytest.raises(SettlementError, match="carries no amount"):
-        _obs("payee", "delivered", amount=PRICE)
-    with pytest.raises(SettlementError, match="receive_fee is exactly"):
-        _obs("payee", "payee_observed", receive_fee={"value": "5"})
-
-
-# --- adversarial inputs to the join ----------------------------------------
-
-
-def test_edited_record_is_refused_not_joined(tmp_path):
-    payer, payee = _two_sided(tmp_path)
-    forged = copy.deepcopy(payee)
-    forged["model_attestation"]["compute_attestation"][SETTLEMENT_EXTENSION_KEY]["received"]["value"] = "1"
-    joins, refused = join([payer, forged])
-    assert [r.capsule_id for r in refused] == [forged["capsule_id"]]
-    assert joins[0].state == "payer_only"
-
-
-def test_edited_record_with_recomputed_id_and_stripped_signature_is_refused(tmp_path):
-    payer, payee = _two_sided(tmp_path)
-    forged = copy.deepcopy(payee)
-    forged["model_attestation"]["compute_attestation"][SETTLEMENT_EXTENSION_KEY]["received"]["value"] = "1"
-    forged.pop("signature")
-    forged.pop("key_id")
+
+LN = {"type": "ln.payment_hash", "value": "11" * 32}
+
+
+def test_lightning_receive_fee_reconciles_and_naive_equality_would_not(tmp_path):
+    terms, p, q, _, _ = _two_sided(
+        tmp_path, payer_kw={"amount": _msat(1000), "routing_fee": _msat(0), "payment_ref": LN, "wrapped": None},
+        payee_kw={"received": _msat(995), "receive_fee": _msat(5), "payment_ref": LN})
+    assert _state([terms, p, q])["payment_state"] == "agreed_untrusted"
+    short = Party(tmp_path, "payee").seal(_payee_leg(terms["capsule_id"], received=_msat(994),
+                                                     receive_fee=_msat(5), payment_ref=LN))
+    s = _state([terms, p, short])
+    assert (s["payment_state"], s["differs"]) == ("mismatch", ["amount"])
+
+
+def test_lightning_without_receive_fee_is_unjoined_fee_unstated(tmp_path):
+    terms, p, q, _, _ = _two_sided(
+        tmp_path, payer_kw={"amount": _msat(1000), "routing_fee": _msat(0), "payment_ref": LN, "wrapped": None},
+        payee_kw={"received": _msat(1000), "receive_fee": None, "payment_ref": LN})
+    report = verify_settlements([terms, p, q])
+    assert report.settlements[0]["payment_state"] == "unjoined"
+    assert report.findings == [{"records": [q["capsule_id"]], "code": "fee_unstated"}]
+
+
+def test_x402_exact_reads_an_absent_receive_fee_as_zero(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path, payee_kw={"receive_fee": None})
+    assert _state([terms, p, q])["payment_state"] == "agreed_untrusted"
+
+
+def test_x402_scheme_other_than_exact_means_a_receive_fee_may_apply(tmp_path):
+    upto = json.dumps({"x402Version": 2, "accepted": {"scheme": "upto", "network": NETWORK}}).encode()
+    terms, p, q, _, _ = _two_sided(tmp_path, payer_kw={"wrapped": [wrap(upto, type="x402.payment-payload")]},
+                                   payee_kw={"receive_fee": None})
+    report = verify_settlements([terms, p, q], wrapped_objects=[upto])
+    assert report.settlements[0]["payment_state"] == "unjoined"
+    assert [f["code"] for f in report.findings] == ["fee_unstated"]
+
+
+def test_x402_scheme_that_cannot_be_established_means_a_receive_fee_may_apply(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path, payee_kw={"receive_fee": None})
+    report = verify_settlements([terms, p, q])  # the payment payload's octets are not held
+    assert report.settlements[0]["payment_state"] == "unjoined"
+    terms2, p2, q2, _, _ = _two_sided(tmp_path / "b", payer_kw={"wrapped": None}, payee_kw={"receive_fee": None})
+    assert _state([terms2, p2, q2])["payment_state"] == "unjoined"
+
+
+def test_lightning_btc_and_on_chain_btc_are_different_assets(tmp_path):
+    ln = {"type": "ln.payment_hash", "value": "22" * 32}
+    onchain = "bip122:000000000019d6689c085ae165831e93/slip44:0"
+    terms, p, q, _, _ = _two_sided(
+        tmp_path,
+        payer_kw={"amount": _msat(1000), "routing_fee": _msat(0), "payment_ref": ln, "wrapped": None},
+        payee_kw={"received": amount(1000, onchain, 11), "receive_fee": amount(0, onchain, 11), "payment_ref": ln})
+    s = _state([terms, p, q])
+    assert (s["payment_state"], s["differs"]) == ("mismatch", ["amount"])
+
+
+def test_a_fee_in_another_asset_is_unjoined(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path, payee_kw={"receive_fee": amount(0, "USD", 2)})
+    report = verify_settlements([terms, p, q], wrapped_objects=[EXACT_PAYLOAD])
+    assert report.settlements[0]["payment_state"] == "unjoined"
+    assert [f["code"] for f in report.findings] == ["fee_asset_differs"]
+
+
+def test_status_and_reference_differences_are_named(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path, payee_kw={"status": "failed"})
+    s = _state([terms, p, q])
+    assert (s["payment_state"], s["differs"]) == ("mismatch", ["status"])
+    assert s["iso20022"]["payee_observed"] == "RJCT"
+    terms, p, q, _, _ = _two_sided(tmp_path / "b", payee_kw={"payment_ref": {**REF, "value": "0x" + "cd" * 32}})
+    assert _state([terms, p, q])["differs"] == ["payment_ref"]
+
+
+def test_the_same_amount_at_another_scale_is_equal(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path, payee_kw={"received": amount(10000000, USDC, 9),
+                                                       "receive_fee": amount(0, USDC, 9)})
+    assert _state([terms, p, q])["payment_state"] == "agreed_untrusted"
+
+
+def test_terms_amount_is_reported_separately(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path, payer_kw={"amount": amount(9000, USDC, 6)},
+                                   payee_kw={"received": amount(9000, USDC, 6)})
+    s = _state([terms, p, q])
+    assert (s["payment_state"], s["terms_amount"]) == ("agreed_untrusted", "differs")
+
+
+def test_terms_in_another_asset_is_terms_amount_differs(tmp_path):
+    payee = Party(tmp_path, "payee")
+    terms = _terms(payee, amount=amount(10000, "USD", 6))
+    p = Party(tmp_path, "payer").seal(_payer_leg(terms["capsule_id"]))
+    q = payee.seal(_payee_leg(terms["capsule_id"]))
+    s = _state([terms, p, q])
+    assert (s["payment_state"], s["terms_amount"]) == ("agreed_untrusted", "differs")
+
+
+def test_pending_superseded_by_settled_uses_the_head(tmp_path):
+    payer, payee = Party(tmp_path, "payer"), Party(tmp_path, "payee")
+    terms = _terms(payee)
+    pending = payer.seal(_payer_leg(terms["capsule_id"], status="pending"))
+    settled = payer.seal(_payer_leg(terms["capsule_id"]), prior=pending["capsule_id"], relation="supersedes")
+    q = payee.seal(_payee_leg(terms["capsule_id"]))
+    assert _state([terms, pending, settled, q])["payment_state"] == "agreed_untrusted"
+    assert _state([terms, pending, q])["differs"] == ["status"]
+
+
+def test_two_unchained_observations_that_disagree_are_a_mismatch(tmp_path):
+    terms, p, q, payer, _ = _two_sided(tmp_path)
+    other = payer.seal(_payer_leg(terms["capsule_id"], amount=amount(1, USDC, 6)))
+    assert "amount" in _state([terms, p, other, q])["differs"]
+
+
+# --- keys and records ---------------------------------------------------------
+
+
+def test_one_key_on_both_observed_legs_is_sealer_conflation(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path, payee_party="payer")
+    report = verify_settlements([terms, p, q], wrapped_objects=[EXACT_PAYLOAD])
+    assert {"records": [p["capsule_id"], q["capsule_id"]], "code": "sealer_conflation"} in report.failures
+    assert report.settlements[0]["payment_state"] not in ("agreed", "agreed_untrusted")
+    assert not report.conforming
+
+
+def test_a_key_policy_refuses_a_role_claim_from_another_key_and_ignores_it(tmp_path):
+    terms, p, q, payer, payee = _two_sided(tmp_path)
+    impostor = Party(tmp_path, "impostor").seal(_payee_leg(terms["capsule_id"]))
+    report = verify_settlements([terms, p, q, impostor], key_policy=_policy(payer, payee),
+                                wrapped_objects=[EXACT_PAYLOAD])
+    assert report.failures == [{"records": [impostor["capsule_id"]], "code": "sealer_not_authorized_for_role"}]
+    assert report.settlements[0]["payment_state"] == "agreed"
+
+
+def test_rotated_keys_are_fine_when_all_are_in_the_policy(tmp_path):
+    terms, p, q, payer, payee = _two_sided(tmp_path)
+    rotated = Party(tmp_path, "payee-rotated")
+    d = rotated.seal(_delivered(terms["capsule_id"], "payee"))
+    r = payer.seal(_delivered(terms["capsule_id"], "payer"))
+    policy = {"payer": payer.key, "payee": [payee.key, rotated.key]}
+    s = _state([terms, p, q, d, r], key_policy=policy)
+    assert (s["payment_state"], s["delivery_state"]) == ("agreed", "matched")
+
+
+def test_without_a_policy_two_keys_on_one_side_are_a_difference(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path)
+    impostor = Party(tmp_path, "impostor").seal(_payee_leg(terms["capsule_id"]))
+    s = _state([terms, p, q, impostor])
+    assert (s["payment_state"], s["differs"]) == ("mismatch", ["keys"])
+
+
+def test_the_same_capsule_twice_counts_once(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path)
+    report = verify_settlements([terms, p, p, q, q], wrapped_objects=[EXACT_PAYLOAD])
+    assert report.conforming and report.settlements[0]["payment_state"] == "agreed_untrusted"
+
+
+def test_a_forged_record_passed_twice_is_reported_once(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path)
+    forged = copy.deepcopy(q)
+    forged[SETTLEMENT_MEMBER]["received"]["value"] = "1"
+    report = verify_settlements([terms, p, forged, forged])
+    assert report.failures == [{"records": [forged["capsule_id"]], "code": "capsule_invalid"}]
+
+
+def test_an_edited_leg_is_capsule_invalid_and_takes_no_part(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path)
+    forged = copy.deepcopy(q)
+    forged[SETTLEMENT_MEMBER]["received"]["value"] = "1"
+    report = verify_settlements([terms, p, forged], wrapped_objects=[EXACT_PAYLOAD])
+    assert report.failures == [{"records": [forged["capsule_id"]], "code": "capsule_invalid"}]
+    assert report.settlements[0]["payment_state"] == "payer_stated"
+
+
+def test_a_recomputed_id_with_no_valid_envelope_is_envelope_invalid(tmp_path):
+    terms, p, q, _, _ = _two_sided(tmp_path)
+    forged = copy.deepcopy(q)
+    forged[SETTLEMENT_MEMBER]["received"]["value"] = "1"
     forged["capsule_id"] = compute_capsule_id(forged)
-    joins, refused = join([payer, forged])
-    assert len(refused) == 1
-    assert joins[0].state == "payer_only"
-
-
-def test_structurally_invalid_capsule_with_a_valid_signature_is_refused(tmp_path):
-    from capsule_emit.signing import resolve_signer, sign_producer_envelope
-
-    payer, payee = _two_sided(tmp_path)
-    forged = copy.deepcopy(payee)
+    report = verify_settlements([terms, p, forged], wrapped_objects=[EXACT_PAYLOAD])
+    assert report.failures == [{"records": [forged["capsule_id"]], "code": "envelope_invalid"}]
     forged.pop("signature")
-    forged.pop("key_id")
-    forged.pop("operator")  # a required field: the content check, not the signature, catches this
-    forged["capsule_id"] = compute_capsule_id(forged)
-    signer = resolve_signer(tmp_path / "attacker" / "ledger.jsonl")
-    forged["signature"], forged["key_id"] = sign_producer_envelope(signer, forged["capsule_id"])
-    joins, refused = join([payer, forged])
-    assert [r.reason for r in refused] == ["capsule content does not verify"]
-    assert joins[0].state == "payer_only"
+    assert verify_settlements([terms, p, forged]).failures[0]["code"] == "envelope_invalid"
 
 
-def test_signed_record_with_malformed_block_is_refused(tmp_path):
-    bad = dict(_obs("payer", "payer_observed"))
-    bad["amount"] = {"value": "1.5", "assetCode": USDC, "assetScale": 6}
-    capsule = _emit_capsule(
-        "settlement.payer_observed", ledger=tmp_path / "x" / "ledger.jsonl", witness=False,
-        extra_compute={SETTLEMENT_EXTENSION_KEY: bad},
-    ).capsule
-    joins, refused = join([capsule])
-    assert joins == []
-    assert "settlement block refused" in refused[0].reason
+def test_an_unresolved_terms_ref_is_reported(tmp_path):
+    _, p, _, _, _ = _two_sided(tmp_path)
+    report = verify_settlements([p])
+    assert report.failures == [{"records": [p["capsule_id"]], "code": "terms_ref_unresolved"}]
 
 
-def test_upper_case_key_id_cannot_pass_as_a_second_key(tmp_path):
-    payer, payee = _two_sided(tmp_path, payee_party="payer")
-    payee["key_id"] = payee["key_id"].upper()
-    joins, refused = join([payer, payee])
-    assert [r.reason for r in refused] == ["key_id is not 64 lowercase hex"]
-    assert joins[0].state == "payer_only"
+def test_an_unknown_payment_reference_type_never_joins(tmp_path):
+    ref = {"type": "example.rail_ref", "value": "r-1"}
+    terms, p, q, _, _ = _two_sided(tmp_path, payer_kw={"payment_ref": ref}, payee_kw={"payment_ref": ref})
+    report = verify_settlements([terms, p, q])
+    assert report.settlements[0]["payment_state"] == "unjoined"
+    assert [f["code"] for f in report.findings] == ["payment_ref_type_unknown"] * 2
 
 
-def test_unsigned_record_with_a_correct_id_is_refused(tmp_path):
-    payer, payee = _two_sided(tmp_path)
-    payee.pop("signature")
-    joins, refused = join([payer, payee])
-    assert len(refused) == 1
-    assert joins[0].state == "payer_only"
+def test_wrapped_content_must_hash_to_its_digest(tmp_path):
+    entry = wrap(b"receipt octets", type="x402.receipt", include_content=True)
+    entry["digest"] = "0" * 64
+    terms, p, q, _, _ = _two_sided(tmp_path, payee_kw={"wrapped": [entry]})
+    report = verify_settlements([terms, p, q], wrapped_objects=[EXACT_PAYLOAD])
+    assert report.failures == [{"records": [q["capsule_id"]], "code": "wrapped_digest_mismatch"}]
 
 
-def test_non_dict_inputs_are_refused_not_raised(tmp_path):
-    payer, _ = _two_sided(tmp_path)
-    odd = copy.deepcopy(payer)
-    odd["model_attestation"] = "x"
-    joins, refused = join(["not a capsule", odd])
-    assert joins == [] and len(refused) == 2
+def test_non_dict_inputs_are_reported_not_raised():
+    report = verify_settlements(["not a capsule"])
+    assert report.failures == [{"records": [None], "code": "capsule_invalid"}]
 
 
-def test_capsule_without_a_block_is_refused(tmp_path):
-    capsule = _emit_capsule("other", ledger=tmp_path / "x" / "ledger.jsonl", witness=False).capsule
-    joins, refused = join([capsule])
-    assert joins == [] and refused[0].reason == "no settlement block"
+# --- delivery -----------------------------------------------------------------
+
+
+def test_delivery_states(tmp_path):
+    terms, p, q, payer, payee = _two_sided(tmp_path)
+    sent = payee.seal(_delivered(terms["capsule_id"], "payee"))
+    received = payer.seal(_delivered(terms["capsule_id"], "payer"))
+    other = payer.seal(_delivered(terms["capsule_id"], "payer", digest="e" * 64))
+    assert _state([terms, p, q])["delivery_state"] == "none"
+    assert _state([terms, p, q, sent])["delivery_state"] == "stated"
+    assert _state([terms, p, q, sent, received])["delivery_state"] == "matched"
+    assert _state([terms, p, q, sent, other])["delivery_state"] == "mismatch"
+
+
+def test_delivery_is_checked_against_a_pinned_content_digest(tmp_path):
+    payee = Party(tmp_path, "payee")
+    terms = _terms(payee, deliverable={"content_digest": "f" * 64})
+    sent = payee.seal(_delivered(terms["capsule_id"], "payee"))
+    assert _state([terms, sent])["delivery_state"] == "mismatch"
+
+
+def test_one_key_sealing_both_directions_is_only_stated(tmp_path):
+    terms, _, _, _, _ = _two_sided(tmp_path)
+    one = Party(tmp_path, "one")
+    a = one.seal(_delivered(terms["capsule_id"], "payee"))
+    b = one.seal(_delivered(terms["capsule_id"], "payer"))
+    assert _state([terms, a, b])["delivery_state"] == "stated"
+
+
+def test_a_counterparty_citation_is_carried_as_custody(tmp_path):
+    terms, p, _, _, payee = _two_sided(tmp_path)
+    q = payee.seal(_payee_leg(terms["capsule_id"]), references=[counterparty_reference(p["capsule_id"])])
+    assert q["references"] == [{"type": "agent-action-capsule", "digest_alg": "SHA-256", "digest": p["capsule_id"],
+                                "citation_purpose": "counterparty_half"}]
+    assert _state([terms, p, q])["payment_state"] == "agreed_untrusted"

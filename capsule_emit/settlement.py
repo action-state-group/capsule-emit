@@ -1,736 +1,676 @@
 # SPDX-License-Identifier: Apache-2.0
 """Settlement records: two parties each record the same payment.
 
-Reference producer for "Two-Party Settlement Records for Agent Payments"
-(draft-mih-agent-settlement-records-00, in progress). The payer and the payee
-are two independent sealers. Each seals only what its own wallet or system
-observed, in its own log, under its own key. A reader joins the two halves on
-a typed payment reference afterwards. Neither side signs the other's claim.
+Reference producer and verifier for "Two-Party Settlement Records for Agent
+Payments", draft-mih-agent-settlement-records-00
+(https://datatracker.ietf.org/doc/draft-mih-agent-settlement-records/).
 
-The legs, chained by digest within each party's log::
+The payer and the payee are two independent sealers. Each seals only what its
+own wallet or system observed, in its own log, under its own key. A leg record
+is an ordinary Capsule with a top-level ``settlement`` member::
 
-    terms -> payer_observed -> payee_observed -> delivered
+    terms  <-terms_ref-  payer_observed, payee_observed, delivered
 
-- ``terms``: the agreed terms, carried as ``terms_digest`` (and any already
-  signed offer or mandate wrapped by digest, never re-signed).
-- ``payer_observed``: what the payer's wallet returned for the payment.
-- ``payee_observed``: what the payee's wallet or facilitator returned.
-- ``delivered``: a digest of the delivered content, bound to the same
-  ``terms_digest``. Either side may seal one; if both do, the digests must
-  agree.
+- ``terms``: what the payment is for and how much (sealed by the party that
+  set the terms; any signed offer or mandate is wrapped by digest).
+- ``payer_observed``: what the payer's system reported: ``amount`` sent toward
+  the payee, ``routing_fee`` paid on top, ``status``.
+- ``payee_observed``: what the payee's system reported: ``received``,
+  ``receive_fee`` deducted on the receiving side, ``status``.
+- ``delivered``: a ``delivery`` object, ``direction`` ``sent`` (payee) or
+  ``received`` (payer), with the ``content_digest`` of the delivered octets.
 
 Public API
 ----------
-Building (pure, no I/O, validates everything):
-  build_observation(...)  -- one leg's observation block
-  terms_digest(terms)     -- SHA-256 over the RFC 8785 JCS of a terms object
-  wrap(obj, type=...)     -- a digest reference to an existing signed object
+Building and sealing:
   amount(value, asset_code, asset_scale) -- the exact amount triple
+  wrap(obj, type=...)                    -- a digest reference to an existing object
+  counterparty_reference(capsule_id)     -- a ``counterparty_half`` citation
+  build_leg(leg, sealer_role, ...)       -- one leg's ``settlement`` member, validated
+  seal_leg(member, ...)                  -- seal it as a Capsule in the caller's log
 
-Sealing:
-  seal_observation(observation, ...) -- seal one block as a capsule
+Verifying (offline, over both parties' capsules):
+  verify_settlements(capsules, key_policy=..., wrapped_objects=...) -> SettlementReport
 
-Joining (offline, over sealed capsule dicts from both parties):
-  join(capsules, trusted_keys=None) -> (list[SettlementJoin], list[RefusedRecord])
-
-What a join never says: one side's record missing reads ``payer_only`` or
-``payee_only`` -- "only one side is held here", never "unpaid" or "not
-delivered". A record that fails verification is refused and listed, never
-silently dropped and never joined. Two keys are not proof of two parties: a
-role is what the sealer claims. Pin keys to roles with ``join(...,
-trusted_keys=...)`` when the reader knows them.
+The derived states are the draft's: payment ``terms_only`` / ``payer_stated`` /
+``payee_stated`` / ``agreed`` / ``mismatch`` / ``unjoined``, and delivery
+``none`` / ``stated`` / ``matched`` / ``mismatch``. One addition: without a
+``key_policy`` nothing ties a key to a party, so a pair that would be
+``agreed`` reads ``agreed_untrusted``. A one-sided state says what one sealer
+reported, never that the other side disagrees.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from fractions import Fraction
 from typing import Any
 
 from agent_action_capsule.canonical import jcs
+from agent_action_capsule.contracts import ReferenceEntry
 
 from .core import EmitResult, _emit_capsule
 
 __all__ = [
-    "SETTLEMENT_EXTENSION_KEY",
+    "SETTLEMENT_MEMBER",
     "SETTLEMENT_VERSION",
-    "ROLES",
     "LEGS",
+    "ROLES",
     "STATUSES",
-    "ISO20022_STATUS",
+    "DELIVERY_DIRECTIONS",
     "PAYMENT_REF_TYPES",
-    "MONEY_MEMBERS",
+    "WRAPPED_TYPES",
+    "MEMBERS",
+    "ISO20022_STATUS",
     "SettlementError",
-    "SettlementJoin",
-    "RefusedRecord",
+    "SettlementReport",
     "amount",
-    "terms_digest",
     "wrap",
-    "build_observation",
-    "validate_observation",
-    "seal_observation",
-    "join",
+    "counterparty_reference",
+    "build_leg",
+    "structure_failures",
+    "seal_leg",
+    "verify_settlements",
 ]
 
-#: The ``model_attestation.compute_attestation`` key the observation rides
-#: under. Versioned with the draft: renamed when the profile is adopted.
-SETTLEMENT_EXTENSION_KEY = "x-settlement-v0"
-#: The settlement member's ``version`` for this draft (draft-mih-agent-settlement-records-00).
+SETTLEMENT_MEMBER = "settlement"
+#: The settlement member's ``version`` for draft-mih-agent-settlement-records-00.
 SETTLEMENT_VERSION = "0"
 
-ROLES = ("payer", "payee")
 LEGS = ("terms", "payer_observed", "payee_observed", "delivered")
+ROLES = ("payer", "payee")
+STATUSES = ("pending", "settled", "failed", "reversed")
+#: ``delivery.direction`` and the role that seals it.
+DELIVERY_DIRECTIONS = {"sent": "payee", "received": "payer"}
 
-#: Observation status, per observed leg. Terms and delivered legs carry none.
-STATUSES = {
-    "payer_observed": ("pending", "settled", "rejected"),
-    "payee_observed": ("pending", "received", "rejected"),
+#: Initial payment reference types: qualifier members, and whether a receive
+#: fee may apply. ``x402.transaction`` is "not applicable" for the x402
+#: ``exact`` scheme only; see :func:`_receive_fee_not_applicable`.
+PAYMENT_REF_TYPES: dict[str, dict[str, Any]] = {
+    "x402.transaction": {"qualifiers": ("network",), "receive_fee": "not_applicable"},
+    "ln.payment_hash": {"qualifiers": (), "receive_fee": "may_apply"},
+    "bolt12.invoice_payment_hash": {"qualifiers": (), "receive_fee": "may_apply"},
+    "ap2.transaction_id": {"qualifiers": (), "receive_fee": "may_apply"},
+    "ap2.payment_id": {"qualifiers": (), "receive_fee": "may_apply"},
+    "ap2.network_confirmation_id": {"qualifiers": (), "receive_fee": "may_apply"},
+    "acp.order_id": {"qualifiers": (), "receive_fee": "may_apply"},
+    "ucp.order_id": {"qualifiers": (), "receive_fee": "may_apply"},
+    "mpp.reference": {"qualifiers": ("method",), "receive_fee": "may_apply"},
+    "iso20022.uetr": {"qualifiers": (), "receive_fee": "may_apply"},
+    "iso20022.end_to_end_id": {"qualifiers": ("debtor_agent",), "receive_fee": "may_apply"},
+    "open_payments.incoming_payment": {"qualifiers": (), "receive_fee": "may_apply"},
 }
 
-#: The ISO 20022 code a bank or compliance reviewer would read for each
-#: status: pacs.002 TxSts for the payer side, pacs.002 ACCC / camt.054
-#: BOOK for funds credited to the payee.
+#: Initial wrapped object types and their issuer under their own specification.
+WRAPPED_TYPES = {
+    "x402.offer": "payee",
+    "x402.receipt": "payee",
+    "x402.payment-payload": "payer",
+    "x402.settle-response": "other",
+    "ap2.checkout-mandate": "payer",
+    "ap2.payment-mandate": "payer",
+    "ap2.checkout-receipt": "other",
+    "ap2.payment-receipt": "other",
+    "bolt12.invoice": "payee",
+    "bolt12.payer-proof": "payer",
+    "mpp.payment-receipt": "payee",
+    "iso20022.message": "other",
+    "delivery.proof": "other",
+}
+
+#: Required and optional ``settlement`` members per leg. Anything else is
+#: ``settlement_malformed``.
+MEMBERS: dict[str, dict[str, tuple[str, ...]]] = {
+    "terms": {"required": ("version", "leg", "sealer_role", "amount"),
+              "optional": ("payment_ref", "deliverable", "valid_until", "wrapped")},
+    "payer_observed": {"required": ("version", "leg", "sealer_role", "terms_ref", "amount", "payment_ref",
+                                    "status", "observed_at"),
+                       "optional": ("routing_fee", "wrapped")},
+    "payee_observed": {"required": ("version", "leg", "sealer_role", "terms_ref", "received", "payment_ref",
+                                    "status", "observed_at"),
+                       "optional": ("receive_fee", "wrapped")},
+    "delivered": {"required": ("version", "leg", "sealer_role", "terms_ref", "observed_at", "delivery"),
+                  "optional": ("wrapped",)},
+}
+
+#: The ISO 20022 code a reviewer reads for each observed status (pacs.002
+#: ``TxSts``; a reversal is a pacs.004 return).
 ISO20022_STATUS = {
     ("payer_observed", "pending"): "PDNG",
     ("payer_observed", "settled"): "ACSC",
-    ("payer_observed", "rejected"): "RJCT",
+    ("payer_observed", "failed"): "RJCT",
+    ("payer_observed", "reversed"): "pacs.004",
     ("payee_observed", "pending"): "PDNG",
-    ("payee_observed", "received"): "ACCC",
-    ("payee_observed", "rejected"): "RJCT",
+    ("payee_observed", "settled"): "ACCC",
+    ("payee_observed", "failed"): "RJCT",
+    ("payee_observed", "reversed"): "pacs.004",
 }
 
-_SUCCESS = {"payer_observed": "settled", "payee_observed": "received"}
-
+_AMOUNT_MEMBERS = ("amount", "routing_fee", "received", "receive_fee")
+_DELIVERY_MEMBERS = ("direction", "content_digest", "carrier", "tracking_digest", "status", "shipped_at",
+                     "delivered_at", "address_digest")
+_VALUE = re.compile(r"^(0|[1-9][0-9]*)$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
-_EVM_TX = re.compile(r"^0x[0-9a-f]{64}$")
-_CAIP2 = re.compile(r"^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$")
-_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-_TYPE_TOKEN = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*\.[a-z0-9_]+$")
-#: Binding names keep the upstream field's own case (``erc8004.agentId``).
-_BINDING_KEY = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*\.[A-Za-z0-9_]+$")
-_DIGITS = re.compile(r"^(0|[1-9][0-9]*)$")
+_RFC3339_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 
 
 class SettlementError(ValueError):
-    """An observation that the profile does not allow."""
+    """A leg the draft does not allow. ``codes`` lists the draft's failure codes."""
+
+    def __init__(self, codes: list[str], detail: str = "") -> None:
+        self.codes = codes
+        super().__init__(f"{', '.join(codes)}{': ' + detail if detail else ''}")
 
 
-def _check_x402(ref: dict) -> None:
-    network = ref.get("network")
-    if not isinstance(network, str) or not _CAIP2.match(network):
-        raise SettlementError("x402.transaction needs a CAIP-2 network, e.g. eip155:84532")
-    if network.startswith("eip155:") and not _EVM_TX.match(ref["value"]):
-        raise SettlementError("an EVM transaction hash is 0x + 64 lowercase hex")
-
-
-def _check_hex64(ref: dict) -> None:
-    if not _HEX64.match(ref["value"]):
-        raise SettlementError(f"{ref['type']} is 64 lowercase hex")
-
-
-def _check_uetr(ref: dict) -> None:
-    if not _UUID.match(ref["value"]):
-        raise SettlementError("iso20022.uetr is a lowercase UUID")
-
-
-def _check_e2eid(ref: dict) -> None:
-    if len(ref["value"]) > 35:
-        raise SettlementError("iso20022.end_to_end_id is at most 35 characters")
-
-
-def _check_https(ref: dict) -> None:
-    if not ref["value"].startswith("https://"):
-        raise SettlementError(f"{ref['type']} is an https URL")
-
-
-def _no_extra_check(ref: dict) -> None:
-    return None
-
-
-#: The known payment reference types and the check each one's value gets.
-#: The registry is open: any other type token of the same shape is accepted
-#: and joins on exact equality, with no value check.
-PAYMENT_REF_TYPES = {
-    "x402.transaction": _check_x402,
-    "ln.payment_hash": _check_hex64,
-    "bolt12.invoice_payment_hash": _check_hex64,
-    "ap2.transaction_id": _no_extra_check,
-    "ap2.payment_id": _no_extra_check,
-    "ap2.network_confirmation_id": _no_extra_check,
-    "acp.order_id": _no_extra_check,
-    "ucp.order_id": _no_extra_check,
-    "mpp.receipt_reference": _no_extra_check,
-    "iso20022.uetr": _check_uetr,
-    "iso20022.end_to_end_id": _check_e2eid,
-    "open_payments.incoming_payment": _check_https,
-}
-
-
-def _sha256_hex(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def terms_digest(terms: Any) -> str:
-    """SHA-256 (lowercase hex) over the RFC 8785 JCS of *terms*.
-
-    Floats are refused by the JCS step; write amounts as digit strings.
-    """
-    return _sha256_hex(jcs(terms))
-
-
-def wrap(obj: Any, *, type: str) -> dict:
-    """A digest reference to an object someone already signed.
-
-    Bytes are digested as given (a JWS, a COSE object, the raw EIP-712
-    signature payload). Anything else is digested over its JCS. The object
-    itself is not carried and not re-signed.
-    """
-    if not isinstance(type, str) or not _TYPE_TOKEN.match(type):
-        raise SettlementError(f"wrap type must be a dotted token, got {type!r}")
-    if isinstance(obj, (bytes, bytearray, memoryview)):
-        digest = _sha256_hex(bytes(obj))
-        form = "bytes"
-    else:
-        digest = _sha256_hex(jcs(obj))
-        form = "jcs"
-    return {"type": type, "form": form, "digest_alg": "sha-256", "digest": digest}
+# ---------------------------------------------------------------------------
+# Building
+# ---------------------------------------------------------------------------
 
 
 def amount(value: int | str, asset_code: str, asset_scale: int) -> dict:
     """The exact amount triple ``{value, assetCode, assetScale}``.
 
     *value* is an integer count of the smallest unit (1 USDC at scale 6 is
-    ``"1000000"``). Floats are refused.
+    ``"1000000"``; 1000 msat is ``"1000"`` at scale 11). Lightning bitcoin is
+    ``assetCode`` ``BTC``; on-chain bitcoin is its CAIP-19 asset type, and the
+    two are different assets. Floats are refused.
     """
-    if isinstance(value, bool) or not isinstance(value, (int, str)):
-        raise SettlementError("amount value is an integer or a digit string, never a float")
-    text = str(value)
-    if not _DIGITS.match(text):
-        raise SettlementError(f"amount value must be a non-negative integer, got {text!r}")
-    if not isinstance(asset_code, str) or not asset_code:
-        raise SettlementError("assetCode is a non-empty string")
-    if isinstance(asset_scale, bool) or not isinstance(asset_scale, int) or not 0 <= asset_scale <= 255:
-        raise SettlementError("assetScale is an integer from 0 to 255")
-    return {"value": text, "assetCode": asset_code, "assetScale": asset_scale}
+    if isinstance(value, bool) or not isinstance(value, (int, str)) or not _VALUE.match(str(value)):
+        raise SettlementError(["amount_not_exact"], f"value {value!r} is not a non-negative integer")
+    out = {"value": str(value), "assetCode": asset_code, "assetScale": asset_scale}
+    if not _amount_ok(out):
+        raise SettlementError(["amount_not_exact"], "assetCode is a non-empty string, assetScale 0..255")
+    return out
 
 
-def _check_payment_ref(ref: Any) -> None:
-    if not isinstance(ref, dict):
-        raise SettlementError("payment_ref is an object")
-    allowed = {"type", "value", "network"}
-    extra = set(ref) - allowed
-    if extra:
-        raise SettlementError(f"payment_ref has unknown fields {sorted(extra)}")
-    rtype, value = ref.get("type"), ref.get("value")
-    if not isinstance(rtype, str) or not _TYPE_TOKEN.match(rtype):
-        raise SettlementError(f"payment_ref.type must be a dotted token, got {rtype!r}")
-    if not isinstance(value, str) or not value:
-        raise SettlementError("payment_ref.value is a non-empty string")
-    if "network" in ref and (not isinstance(ref["network"], str) or not _CAIP2.match(ref["network"])):
-        raise SettlementError("payment_ref.network is a CAIP-2 chain id")
-    PAYMENT_REF_TYPES.get(rtype, _no_extra_check)(ref)
+def _amount_ok(a: Any) -> bool:
+    return (isinstance(a, dict) and set(a) == {"value", "assetCode", "assetScale"}
+            and isinstance(a["value"], str) and _VALUE.match(a["value"]) is not None
+            and isinstance(a["assetCode"], str) and a["assetCode"] != ""
+            and isinstance(a["assetScale"], int) and not isinstance(a["assetScale"], bool)
+            and 0 <= a["assetScale"] <= 255)
 
 
-#: The money members each leg may carry. ``terms``: the price and an optional
-#: declared bound on the payee's receive fee. ``payer_observed``: the amount
-#: sent toward the payee and the routing fee paid on top of it.
-#: ``payee_observed``: the amount that arrived and the receive fee deducted
-#: before it arrived. Consistency: payer amount == received + receive_fee.
-MONEY_MEMBERS = {
-    "terms": ("amount", "receive_fee_max"),
-    "payer_observed": ("amount", "routing_fee"),
-    "payee_observed": ("received", "receive_fee"),
-    "delivered": (),
-}
-_ALL_MONEY = ("amount", "routing_fee", "received", "receive_fee", "receive_fee_max")
+def _b64u(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def _check_amount(value: Any, name: str = "amount") -> None:
-    if not isinstance(value, dict) or set(value) != {"value", "assetCode", "assetScale"}:
-        raise SettlementError(f"{name} is exactly {{value, assetCode, assetScale}}")
-    amount(value["value"], value["assetCode"], value["assetScale"])
-    if not isinstance(value["value"], str):
-        raise SettlementError("a sealed amount value is a digit string")
+def _b64u_decode(text: str) -> bytes:
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
-def _check_wrapped(items: Any) -> None:
-    if not isinstance(items, list):
-        raise SettlementError("wrapped is a list")
-    for item in items:
-        if not isinstance(item, dict) or set(item) != {"type", "form", "digest_alg", "digest"}:
-            raise SettlementError("each wrapped entry is exactly {type, form, digest_alg, digest}")
-        if not isinstance(item["type"], str) or not _TYPE_TOKEN.match(item["type"]):
-            raise SettlementError(f"wrapped type must be a dotted token, got {item['type']!r}")
-        if item["form"] not in ("bytes", "jcs") or item["digest_alg"] != "sha-256":
-            raise SettlementError("wrapped form is bytes or jcs, digest_alg is sha-256")
-        if not isinstance(item["digest"], str) or not _HEX64.match(item["digest"]):
-            raise SettlementError("wrapped digest is 64 lowercase hex")
+def wrap(obj: Any, *, type: str, include_content: bool = False) -> dict:
+    """A digest reference to an object someone already produced or signed.
+
+    *obj* as ``bytes`` is digested exactly as given: the octets the protocol
+    delivered (a JWS compact string, the decoded ``PAYMENT-SIGNATURE`` header).
+    Any other value is digested over its RFC 8785 form, which is the draft's
+    octet rule for x402 EIP-712 envelopes ``{format, payload, signature}``.
+    *include_content* carries the octets too (base64url, no padding). The
+    object is never re-signed.
+    """
+    if type not in WRAPPED_TYPES:
+        raise SettlementError(["settlement_malformed"], f"unknown wrapped type {type!r}")
+    octets = bytes(obj) if isinstance(obj, (bytes, bytearray, memoryview)) else jcs(obj)
+    out = {"type": type, "digest_alg": "SHA-256", "digest": hashlib.sha256(octets).hexdigest()}
+    if include_content:
+        out["content"] = _b64u(octets)
+    return out
 
 
-def _check_bindings(bindings: Any) -> None:
-    if not isinstance(bindings, dict):
-        raise SettlementError("bindings is an object of string values")
-    for key, value in bindings.items():
-        if not isinstance(key, str) or not _BINDING_KEY.match(key):
-            raise SettlementError(f"binding names are <namespace>.<field>, got {key!r}")
-        if not isinstance(value, str) or not value:
-            raise SettlementError(f"binding {key} is a non-empty string")
+def counterparty_reference(capsule_id: str) -> ReferenceEntry:
+    """Cite the other party's leg: custody of it, not an observation of it."""
+    return ReferenceEntry(type="agent-action-capsule", digest_alg="SHA-256", digest=capsule_id,
+                          citation_purpose="counterparty_half")
 
 
-_REQUIRED = ("version", "role", "leg", "payment_ref", "terms_digest")
-_OPTIONAL = ("status", *_ALL_MONEY, "wrapped", "delivered_digest", "bindings", "counterparty_capsule_id")
+def _normal_ref(ref: dict) -> dict:
+    out = dict(ref)
+    if ref.get("type") == "x402.transaction" and str(ref.get("network", "")).startswith("eip155:"):
+        out["value"] = str(ref.get("value", "")).lower()
+    return out
 
 
-def validate_observation(obs: Any) -> None:
-    """Raise :class:`SettlementError` unless *obs* is a well-formed block."""
-    if not isinstance(obs, dict):
-        raise SettlementError("an observation is an object")
-    missing = [k for k in _REQUIRED if k not in obs]
-    if missing:
-        raise SettlementError(f"observation is missing {missing}")
-    extra = set(obs) - set(_REQUIRED) - set(_OPTIONAL)
-    if extra:
-        raise SettlementError(f"observation has unknown fields {sorted(extra)}")
-    if obs["version"] != SETTLEMENT_VERSION:
-        raise SettlementError(f"version is {SETTLEMENT_VERSION!r}")
-    role, leg = obs["role"], obs["leg"]
-    if role not in ROLES:
-        raise SettlementError(f"role is one of {ROLES}")
-    if leg not in LEGS:
-        raise SettlementError(f"leg is one of {LEGS}")
-    if leg == "payer_observed" and role != "payer":
-        raise SettlementError("only the payer seals payer_observed")
-    if leg == "payee_observed" and role != "payee":
-        raise SettlementError("only the payee seals payee_observed")
-    _check_payment_ref(obs["payment_ref"])
-    if not isinstance(obs["terms_digest"], str) or not _HEX64.match(obs["terms_digest"]):
-        raise SettlementError("terms_digest is 64 lowercase hex")
-    if leg in STATUSES:
-        if obs.get("status") not in STATUSES[leg]:
-            raise SettlementError(f"{leg} status is one of {STATUSES[leg]}")
-    elif "status" in obs:
-        raise SettlementError(f"a {leg} leg carries no status")
+def structure_failures(member: Any) -> list[str]:
+    """The draft's structural failure codes for one ``settlement`` member (empty if none)."""
+    s = member
+    if (not isinstance(s, dict) or s.get("version") != SETTLEMENT_VERSION or s.get("leg") not in LEGS
+            or s.get("sealer_role") not in ROLES):
+        return ["settlement_malformed"]
+    out: list[str] = []
+    leg, role = s["leg"], s["sealer_role"]
+    allowed = MEMBERS[leg]
+    if not set(allowed["required"]) <= set(s) or not set(s) <= set(allowed["required"]) | set(allowed["optional"]):
+        out.append("settlement_malformed")
+    if (leg == "payer_observed" and role != "payer") or (leg == "payee_observed" and role != "payee"):
+        out.append("leg_role_mismatch")
+    if any(m in s and not _amount_ok(s[m]) for m in _AMOUNT_MEMBERS):
+        out.append("amount_not_exact")
+    if leg.endswith("_observed") and s.get("status") not in STATUSES:
+        out.append("settlement_malformed")
+    if "terms_ref" in s and not (isinstance(s["terms_ref"], str) and _HEX64.match(s["terms_ref"])):
+        out.append("settlement_malformed")
+    if "observed_at" in s and not (isinstance(s["observed_at"], str) and _RFC3339_UTC.match(s["observed_at"])):
+        out.append("settlement_malformed")
     if leg == "delivered":
-        digest = obs.get("delivered_digest")
-        if not isinstance(digest, str) or not _HEX64.match(digest):
-            raise SettlementError("a delivered leg carries delivered_digest (64 lowercase hex)")
-    elif "delivered_digest" in obs:
-        raise SettlementError("only a delivered leg carries delivered_digest")
-    for name in _ALL_MONEY:
-        if name in obs:
-            if name not in MONEY_MEMBERS[leg]:
-                raise SettlementError(f"a {leg} leg carries no {name}")
-            _check_amount(obs[name], name)
-    if "wrapped" in obs:
-        _check_wrapped(obs["wrapped"])
-    if "bindings" in obs:
-        _check_bindings(obs["bindings"])
-    if "counterparty_capsule_id" in obs:
-        cid = obs["counterparty_capsule_id"]
-        if not isinstance(cid, str) or not _HEX64.match(cid):
-            raise SettlementError("counterparty_capsule_id is 64 lowercase hex")
+        d = s.get("delivery")
+        if (not isinstance(d, dict) or DELIVERY_DIRECTIONS.get(d.get("direction")) != role
+                or not set(d) <= set(_DELIVERY_MEMBERS)
+                or ("content_digest" not in d and "carrier" not in d)
+                or ("content_digest" in d and not (isinstance(d["content_digest"], str)
+                                                   and _HEX64.match(d["content_digest"])))):
+            out.append("settlement_malformed")
+    if leg == "terms" and "deliverable" in s:
+        dv = s["deliverable"]
+        if (not isinstance(dv, dict) or not dv or not set(dv) <= {"content_digest", "description_digest"}
+                or not all(isinstance(v, str) and _HEX64.match(v) for v in dv.values())):
+            out.append("settlement_malformed")
+    ref = s.get("payment_ref")
+    if ref is not None:
+        if not isinstance(ref, dict) or not isinstance(ref.get("type"), str) or not isinstance(ref.get("value"), str):
+            out.append("settlement_malformed")
+        elif ref["type"] in PAYMENT_REF_TYPES and set(ref) != {
+                "type", "value", *PAYMENT_REF_TYPES[ref["type"]]["qualifiers"]}:
+            out.append("settlement_malformed")
+    for w in s.get("wrapped", []) if isinstance(s.get("wrapped", []), list) else [None]:
+        if (not isinstance(w, dict) or w.get("digest_alg") != "SHA-256" or w.get("type") not in WRAPPED_TYPES
+                or not isinstance(w.get("digest"), str) or not _HEX64.match(w["digest"])
+                or not set(w) <= {"type", "digest_alg", "digest", "content"}):
+            out.append("settlement_malformed")
+            break
+    return sorted(set(out), key=out.index)
 
 
-def build_observation(
-    *,
-    role: str,
-    leg: str,
-    payment_ref: dict,
-    terms_digest: str,
-    status: str | None = None,
-    amount: dict | None = None,
-    routing_fee: dict | None = None,
-    received: dict | None = None,
-    receive_fee: dict | None = None,
-    receive_fee_max: dict | None = None,
-    wrapped: Iterable[dict] = (),
-    delivered_digest: str | None = None,
-    bindings: dict[str, str] | None = None,
-    counterparty_capsule_id: str | None = None,
-) -> dict:
-    """Build and validate one leg's observation block.
+def build_leg(leg: str, sealer_role: str, **members: Any) -> dict:
+    """Build and validate one leg's ``settlement`` member.
 
-    *payment_ref* is ``{"type", "value"}`` plus ``"network"`` (CAIP-2) where
-    the type needs one. An EVM transaction hash is lowercased here; every
-    other value is kept exactly as given, and the join compares bytes.
-
-    *bindings* names what else this record is bound to, as dotted keys:
-    an agent registry id, a request hash, a facilitator id.
-
-    *counterparty_capsule_id* cites the other side's record when this side
-    has already seen it. It is a citation, not a countersignature.
-
-    Money members (each an :func:`amount` triple) by leg: ``terms`` takes
-    *amount* (the price) and optionally *receive_fee_max*; ``payer_observed``
-    takes *amount* (sent toward the payee) and *routing_fee* (paid on top);
-    ``payee_observed`` takes *received* and *receive_fee* (deducted before
-    arrival). Record a zero fee as a zero amount: a missing fee is unknown,
-    not zero.
+    Pass the draft's members by name (``terms_ref``, ``amount``,
+    ``routing_fee``, ``received``, ``receive_fee``, ``payment_ref``,
+    ``status``, ``observed_at``, ``deliverable``, ``valid_until``,
+    ``delivery``, ``wrapped``); ``None`` values are left out. An EVM x402
+    transaction hash is lowercased (its normal form). Record a fee that the
+    system reported as zero as a zero amount: an absent fee states nothing.
+    Raises :class:`SettlementError` with the draft's failure codes.
     """
-    ref = dict(payment_ref)
-    if ref.get("type") == "x402.transaction" and isinstance(ref.get("value"), str):
-        if str(ref.get("network", "")).startswith("eip155:"):
-            ref["value"] = ref["value"].lower()
-    obs: dict[str, Any] = {
-        "version": SETTLEMENT_VERSION,
-        "role": role,
-        "leg": leg,
-        "payment_ref": ref,
-        "terms_digest": terms_digest,
-    }
-    if status is not None:
-        obs["status"] = status
-    for name, value in (("amount", amount), ("routing_fee", routing_fee), ("received", received),
-                        ("receive_fee", receive_fee), ("receive_fee_max", receive_fee_max)):
-        if value is not None:
-            obs[name] = value
-    wrapped = list(wrapped)
-    if wrapped:
-        obs["wrapped"] = wrapped
-    if delivered_digest is not None:
-        obs["delivered_digest"] = delivered_digest
-    if bindings:
-        obs["bindings"] = dict(bindings)
-    if counterparty_capsule_id is not None:
-        obs["counterparty_capsule_id"] = counterparty_capsule_id
-    validate_observation(obs)
-    return obs
+    s: dict[str, Any] = {"version": SETTLEMENT_VERSION, "leg": leg, "sealer_role": sealer_role}
+    for name, value in members.items():
+        if value is None:
+            continue
+        if name == "payment_ref" and isinstance(value, dict):
+            value = _normal_ref(value)
+        if name == "wrapped":
+            value = list(value)
+            if not value:
+                continue
+        s[name] = value
+    codes = structure_failures(s)
+    if codes:
+        raise SettlementError(codes)
+    return s
 
 
-def seal_observation(
-    observation: dict,
+def seal_leg(
+    member: dict,
     *,
     operator: str = "",
     developer: str = "",
     prior: str | None = None,
+    relation: str = "follows",
+    references: Iterable[ReferenceEntry] | None = None,
     **kwargs: Any,
 ) -> EmitResult:
-    """Seal one observation as a capsule in the caller's own log.
+    """Seal one leg as a Capsule in the caller's own log.
 
-    *prior* is the capsule id of this party's previous leg for the same
-    payment; the record chains onto it with relation ``follows``. Other
-    keywords (``ledger``, ``witness``, ``signing_key_path``, ...) pass
-    through to the capsule producer.
+    *prior* chains this leg onto the sealer's previous leg (relation
+    ``follows``, or ``supersedes`` for a later observation of the same
+    payment, e.g. ``pending`` then ``settled``). *references* carries
+    :func:`counterparty_reference` citations. Other keywords (``ledger``,
+    ``witness``, ``signing_key_path``, ...) pass through.
     """
-    validate_observation(observation)
+    codes = structure_failures(member)
+    if codes:
+        raise SettlementError(codes)
     return _emit_capsule(
-        f"settlement.{observation['leg']}",
+        f"settlement.{member['leg']}",
         operator=operator,
         developer=developer,
         action_type="fyi",
         confirms=prior,
-        relation="follows" if prior is not None else None,
-        extra_compute={SETTLEMENT_EXTENSION_KEY: observation},
+        relation=relation if prior is not None else None,
+        references=tuple(references) if references is not None else None,
+        payload_members={SETTLEMENT_MEMBER: member},
         **kwargs,
     )
 
 
 # ---------------------------------------------------------------------------
-# Join
+# Verifying
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class RefusedRecord:
-    """A capsule the join would not use, and why."""
-
-    capsule_id: str | None
-    reason: str
-
-
 @dataclass
-class SettlementJoin:
-    """Both parties' records for one payment reference.
+class SettlementReport:
+    """What :func:`verify_settlements` derived, in the draft's terms.
 
-    ``state``:
-
-    - ``agreed``: a payer-role and a payee-role observed leg are both held,
-      the payer and payee keys disjoint and all pinned to their role by
-      ``trusted_keys`` (a role may have several trusted keys, e.g. after
-      rotation); each side's final status is success, the money reconciles
-      (see :func:`join`) with every fee member present, and every compared
-      field matches.
-    - ``agreed_untrusted``: the same, but ``join`` was given no
-      ``trusted_keys``, so nothing ties either key to a real party.
-    - ``payer_only`` / ``payee_only``: only one side's observed leg is held
-      here. Says nothing about the other side's books.
-    - ``differs``: both sides are held and at least one compared field
-      disagrees or is missing; ``differences`` names each one.
-    - ``not_independent``: one key signed records under both roles, so this
-      is one key's account of both sides.
-    - ``no_observation``: only terms or delivered legs are held.
-
-    Distinct keys are not proof of distinct parties: a role is what the
-    sealer claims, and anyone can hold two keys. Pass ``trusted_keys`` to
-    :func:`join` to pin which keys may speak for each role; several trusted
-    keys under one role are fine (rotation). Without ``trusted_keys``, more
-    than one key under a role is a difference (``payer.keys`` /
-    ``payee.keys``).
-
-    ``differences`` may be non-empty on a one-sided state too: one party's
-    own legs that disagree with each other.
-
-    ``delivery``: ``matched`` (both roles sealed a delivered leg with the
-    same digest, under disjoint keys), ``not_independent`` (one key sealed
-    both), ``payee_only``, ``payer_only``, ``differs``, or ``none``.
+    ``failures`` and ``findings`` are ``{"records": [capsule_id, ...], "code"}``.
+    ``settlements`` has one entry per terms leg: ``terms`` (its capsule_id),
+    ``payment_state``, ``delivery_state``, and where they apply
+    ``agreed_status``, ``terms_amount`` (``equal`` / ``differs``), ``differs``
+    (``amount`` / ``status`` / ``payment_ref`` / ``keys``) and ``iso20022``.
+    ``keys`` maps each authenticated record to its key, so a caller can apply
+    its own key policy.
     """
 
-    payment_ref: dict
-    state: str
-    delivery: str
-    differences: list[str] = field(default_factory=list)
-    payer_capsule_ids: list[str] = field(default_factory=list)
-    payee_capsule_ids: list[str] = field(default_factory=list)
-    iso20022: dict[str, str] = field(default_factory=dict)
+    conforming: bool
+    failures: list[dict] = field(default_factory=list)
+    findings: list[dict] = field(default_factory=list)
+    settlements: list[dict] = field(default_factory=list)
+    keys: dict[str, str] = field(default_factory=dict)
+    key_policy_applied: bool = False
 
 
-def _ref_key(ref: dict) -> bytes:
-    return jcs(ref)
+def _envelope_key(capsule: dict) -> str | None:
+    """The authenticated key of the capsule's Producer Envelope, or None."""
+    from agent_action_capsule.producer_envelope import verify_producer_envelope
 
-
-def _block(capsule: dict) -> Any:
-    model = capsule.get("model_attestation")
-    compute = model.get("compute_attestation") if isinstance(model, dict) else None
-    return compute.get(SETTLEMENT_EXTENSION_KEY) if isinstance(compute, dict) else None
-
-
-_KEY_ID = re.compile(r"^[0-9a-f]{64}$")
-
-
-def _verify(capsule: dict) -> str | None:
-    """None if *capsule*'s content recomputes and its producer signature verifies.
-
-    Checked one record at a time: a leg's chain parent may be in another
-    file, or deliberately left out, and that is not a reason to refuse it.
-    ``key_id`` must be lowercase hex, so that comparing keys as strings is
-    comparing keys.
-    """
-    from .signing import AuthorshipVerdict, verify_capsule_signature_tristate
-    from .verification import verify_capsule
-
-    if not isinstance(capsule.get("key_id"), str) or not _KEY_ID.match(capsule["key_id"]):
-        return "key_id is not 64 lowercase hex"
+    sig = capsule.get("signature")
+    if not isinstance(sig, str):
+        return None
     try:
-        content_ok = verify_capsule(capsule).ok
-        authorship, _ = verify_capsule_signature_tristate(capsule)
-    except Exception as exc:  # a malformed record must be refused, not crash the join
-        return f"verification raised {type(exc).__name__}"
-    if not content_ok:
-        return "capsule content does not verify"
-    if authorship is not AuthorshipVerdict.AUTHORED:
-        return f"producer signature {authorship.name.lower()}"
+        env = verify_producer_envelope(capsule["capsule_id"], bytes.fromhex(sig))
+    except Exception:  # a malformed envelope is a failure, not a crash
+        return None
+    return env.public_key.hex() if env.ok else None
+
+
+def _jws_verifies(octets: bytes, public_hex: str) -> bool:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    parts = octets.rstrip(b"~").split(b".")
+    if len(parts) != 3:
+        return False
+    try:
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_hex)).verify(
+            _b64u_decode(parts[2].decode("ascii")), parts[0] + b"." + parts[1])
+        return True
+    except (InvalidSignature, ValueError, UnicodeDecodeError):
+        return False
+
+
+def _wrapped_failures(s: dict, kid: str | None, objects: dict[str, bytes]) -> list[str]:
+    out: list[str] = []
+    for w in s.get("wrapped", []):
+        octets = objects.get(w["digest"])
+        if "content" in w:
+            try:
+                content = _b64u_decode(w["content"])
+            except (ValueError, TypeError):
+                content = b""
+            if hashlib.sha256(content).hexdigest() != w["digest"]:
+                out.append("wrapped_digest_mismatch")
+                continue
+            octets = content
+        if (octets is not None and kid is not None and WRAPPED_TYPES[w["type"]] != s["sealer_role"]
+                and _jws_verifies(octets, kid)):
+            out.append("wrapped_resigned")
+    return out
+
+
+def _x402_scheme(legs: list[dict], objects: dict[str, bytes]) -> str | None:
+    """The x402 scheme, from a wrapped offer or payment payload whose octets are held."""
+    for s in legs:
+        for w in s.get("wrapped", []):
+            octets = _b64u_decode(w["content"]) if "content" in w else objects.get(w["digest"])
+            if octets is None or hashlib.sha256(octets).hexdigest() != w["digest"]:
+                continue
+            try:
+                if w["type"] == "x402.offer":
+                    if octets.count(b".") == 2 and not octets.lstrip().startswith(b"{"):  # JWS compact
+                        return json.loads(_b64u_decode(octets.split(b".")[1].decode("ascii"))).get("scheme")
+                    payload = json.loads(octets).get("payload", {})  # EIP-712 envelope, RFC 8785 octets
+                    return payload.get("scheme") if isinstance(payload, dict) else None
+                if w["type"] == "x402.payment-payload":
+                    accepted = json.loads(octets).get("accepted", {})
+                    return accepted.get("scheme") if isinstance(accepted, dict) else None
+            except (ValueError, AttributeError, UnicodeDecodeError):
+                continue
     return None
 
 
-def _compare(field_name: str, values: list[Any], out: list[str]) -> None:
-    distinct = {jcs(v) for v in values if v is not None}
-    if len(distinct) > 1:
-        out.append(field_name)
+def _receive_fee_not_applicable(ref_type: str, terms: dict, payer: dict, objects: dict[str, bytes]) -> bool:
+    if PAYMENT_REF_TYPES.get(ref_type, {}).get("receive_fee") != "not_applicable":
+        return False
+    return ref_type != "x402.transaction" or _x402_scheme([terms, payer], objects) == "exact"
 
 
-def join(
+def _scaled(a: dict, scale: int) -> int:
+    return int(a["value"]) * 10 ** (scale - a["assetScale"])
+
+
+def _amounts_equal(a: dict, b: dict) -> bool:
+    if a["assetCode"] != b["assetCode"]:
+        return False
+    scale = max(a["assetScale"], b["assetScale"])
+    return _scaled(a, scale) == _scaled(b, scale)
+
+
+def _amount_rule_holds(payer: dict, payee: dict, receive_fee: dict) -> bool:
+    """payer.amount == payee.received + payee.receive_fee, exactly, one asset. Never direct equality."""
+    if not payer["amount"]["assetCode"] == payee["received"]["assetCode"] == receive_fee["assetCode"]:
+        return False
+    scale = max(payer["amount"]["assetScale"], payee["received"]["assetScale"], receive_fee["assetScale"])
+    return _scaled(payer["amount"], scale) == _scaled(payee["received"], scale) + _scaled(receive_fee, scale)
+
+
+def verify_settlements(
     capsules: Iterable[dict | EmitResult],
     *,
-    trusted_keys: dict[str, Iterable[str]] | None = None,
-) -> tuple[list[SettlementJoin], list[RefusedRecord]]:
-    """Join settlement records from both parties, offline.
+    key_policy: dict[str, str | Iterable[str]] | None = None,
+    wrapped_objects: dict[str, bytes] | Iterable[bytes] | None = None,
+) -> SettlementReport:
+    """Derive settlement states from both parties' leg records, offline.
 
-    Every capsule is verified first, on its own (``capsule_id`` recomputes
-    and the producer signature verifies; a chain parent need not be
-    present). A capsule that fails, or carries no valid settlement block, is
-    returned in the refused list and takes no part in any join.
+    Each record is checked on its own: the Capsule checks, its Producer
+    Envelope (the authenticated key), the ``settlement`` structure and
+    amounts, its wrapped entries, and, with *key_policy* (``{"payer": key or
+    keys, "payee": ...}``), that its key is accepted for its role. A record
+    that fails is reported and takes no part in any state. Records are
+    grouped by ``terms_ref``.
 
-    Returns ``(joins, refused)``: one :class:`SettlementJoin` per payment
-    reference, and every capsule that took no part, with the reason.
-
-    *trusted_keys* maps a role to the ``key_id`` values allowed to speak for
-    it. When given, a record whose role has no entry, or whose key is not
-    listed for its role, is refused and listed, and takes no part in the
-    join: the trusted records alone decide it, and a full match reads
-    ``agreed``.
-    Without it, the same match reads ``agreed_untrusted``.
-
-    The same capsule passed more than once (same ``capsule_id`` and
-    ``key_id``) counts once.
-
-    Records are grouped on the exact JCS bytes of ``payment_ref``: values
-    must match byte for byte (only an EVM transaction hash is lowercased, by
-    :func:`build_observation`). Within a group the compared fields are
-    ``terms_digest``, the delivered digests, each side's final observed
-    status, and the money. Money is compared as exact rationals
-    (``value / 10**assetScale``) within one ``assetCode``, never as raw
-    equality across sides: the payer's ``amount`` must equal the payee's
-    ``received + receive_fee``, or, when the payee recorded no
-    ``receive_fee``, the gap must sit within a ``receive_fee_max`` declared
-    on the terms. A missing fee with no declared bound is a difference.
+    *wrapped_objects* supplies the octets of wrapped objects the caller holds
+    (by digest, or as a list of octets); they are used for the re-signing
+    check and to read the x402 scheme. Receive fees are read as zero only for
+    x402 ``exact``, established from such octets; otherwise an absent
+    ``receive_fee`` leaves the pair ``unjoined`` (``fee_unstated``).
     """
-    trusted = {role: set(keys) for role, keys in trusted_keys.items()} if trusted_keys is not None else None
-    refused: list[RefusedRecord] = []
-    groups: dict[bytes, list[dict]] = {}
-    order: list[bytes] = []
-    seen: set[tuple[str, str]] = set()
+    if wrapped_objects is None:
+        objects: dict[str, bytes] = {}
+    elif isinstance(wrapped_objects, dict):
+        objects = dict(wrapped_objects)
+    else:
+        objects = {hashlib.sha256(o).hexdigest(): bytes(o) for o in wrapped_objects}
+    policy = None
+    if key_policy is not None:
+        policy = {role: {keys} if isinstance(keys, str) else set(keys) for role, keys in key_policy.items()}
+
+    from .verification import verify_capsule
+
+    report = SettlementReport(conforming=True, key_policy_applied=policy is not None)
+    legs: dict[str, dict] = {}
+    capsule_by_id: dict[str, dict] = {}
+    excluded: set[str] = set()
+    seen: set[tuple[Any, Any]] = set()
     for item in capsules:
         capsule = item.capsule if isinstance(item, EmitResult) else item
         if not isinstance(capsule, dict):
-            refused.append(RefusedRecord(None, "not a capsule object"))
+            report.failures.append({"records": [None], "code": "capsule_invalid"})
             continue
         cid = capsule.get("capsule_id")
-        reason = _verify(capsule)
-        if reason is not None:
-            refused.append(RefusedRecord(cid, reason))
-            continue
-        block = _block(capsule)
-        if block is None:
-            refused.append(RefusedRecord(cid, "no settlement block"))
-            continue
-        try:
-            validate_observation(block)
-        except SettlementError as exc:
-            refused.append(RefusedRecord(cid, f"settlement block refused: {exc}"))
-            continue
-        if trusted is not None and capsule["key_id"] not in trusted.get(block["role"], set()):
-            refused.append(RefusedRecord(cid, f"key is not trusted for role {block['role']}"))
-            continue
-        identity = (capsule["capsule_id"], capsule["key_id"])
+        identity = (cid, capsule.get("signature"))
         if identity in seen:
             continue
         seen.add(identity)
-        key = _ref_key(block["payment_ref"])
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append(capsule)
-    return [_join_group(groups[k], trusted=trusted is not None) for k in order], refused
-
-
-def _final_statuses(statuses: list[str]) -> set[str]:
-    """A side's final status: ``pending`` is superseded by any outcome."""
-    outcomes = set(statuses) - {"pending"}
-    return outcomes or set(statuses)
-
-
-def _qty(triple: dict) -> Fraction:
-    return Fraction(int(triple["value"]), 10 ** triple["assetScale"])
-
-
-def _one(values: list[Fraction], name: str, out: list[str]) -> Fraction | None:
-    """The single value *values* agree on, else None (and a difference if they disagree)."""
-    distinct = set(values)
-    if len(distinct) > 1:
-        out.append(name)
-    return next(iter(distinct)) if len(distinct) == 1 else None
-
-
-def _money(blocks: list[dict], observed: dict[str, list[dict]], out: list[str]) -> None:
-    triples = [b[n] for b in blocks for n in _ALL_MONEY if n in b]
-    if len({t["assetCode"] for t in triples}) > 1:
-        out.append("asset")
-        return
-    terms = [b for b in blocks if b["leg"] == "terms"]
-    price = _one([_qty(b["amount"]) for b in terms if "amount" in b], "terms.amount", out)
-    bound = _one([_qty(b["receive_fee_max"]) for b in terms if "receive_fee_max" in b],
-                 "terms.receive_fee_max", out)
-
-    payer, payee = observed["payer"], observed["payee"]
-    for name, side, legs in (("amount", "payer", payer), ("routing_fee", "payer", payer),
-                             ("received", "payee", payee)):
-        if any(name not in b for b in legs):
-            out.append(f"{side}_observed.{name} missing")
-    sent = _one([_qty(b["amount"]) for b in payer if "amount" in b], "payer_observed.amount", out)
-    got = _one([_qty(b["received"]) for b in payee if "received" in b], "payee_observed.received", out)
-    fees = [_qty(b["receive_fee"]) for b in payee if "receive_fee" in b]
-    fee = _one(fees, "payee_observed.receive_fee", out)
-    if fees and len(fees) < len(payee):
-        out.append("payee_observed.receive_fee missing")
-    if price is not None and sent is not None and sent != price:
-        out.append("payer_observed.amount != terms.amount")
-    if fee is not None and bound is not None and fee > bound:
-        out.append("payee_observed.receive_fee > terms.receive_fee_max")
-    if sent is None or got is None:
-        return
-    if fee is not None:
-        if got + fee != sent:
-            out.append("amount")
-    elif not fees:
-        if bound is None:
-            out.append("payee_observed.receive_fee missing")
-        elif not 0 <= sent - got <= bound:
-            out.append("amount")
-
-
-def _join_group(capsules: list[dict], *, trusted: bool) -> SettlementJoin:
-    blocks = [(c, _block(c)) for c in capsules]
-    ref = blocks[0][1]["payment_ref"]
-    differences: list[str] = []
-
-    def keys_for(role: str, leg: str | None = None) -> set[str]:
-        return {c["key_id"] for c, b in blocks if b["role"] == role and (leg is None or b["leg"] == leg)}
-
-    _compare("terms_digest", [b["terms_digest"] for _, b in blocks], differences)
-
-    for side in ROLES:
-        if not trusted and len(keys_for(side)) > 1:
-            differences.append(f"{side}.keys")
-
-    observed = {side: [b for _, b in blocks if b["leg"] == f"{side}_observed"] for side in ROLES}
-    final = {side: _final_statuses([b["status"] for b in observed[side]]) for side in ROLES}
-    _money(
-        [b for _, b in blocks],
-        {side: [b for b in observed[side] if b["status"] in final[side]] for side in ROLES},
-        differences,
-    )
-    for side in ROLES:
-        if len(final[side]) > 1:
-            differences.append(f"{side}_observed.status")
-
-    delivered = {
-        side: [b["delivered_digest"] for _, b in blocks if b["leg"] == "delivered" and b["role"] == side]
-        for side in ROLES
-    }
-    if len({*delivered["payer"], *delivered["payee"]}) > 1:
-        differences.append("delivered_digest")
-        delivery = "differs"
-    elif delivered["payer"] and delivered["payee"]:
-        shared = keys_for("payer", "delivered") & keys_for("payee", "delivered")
-        delivery = "not_independent" if shared else "matched"
-    elif delivered["payee"]:
-        delivery = "payee_only"
-    elif delivered["payer"]:
-        delivery = "payer_only"
-    else:
-        delivery = "none"
-
-    iso = {
-        f"{side}_observed": ISO20022_STATUS[(f"{side}_observed", next(iter(final[side])))]
-        for side in ROLES
-        if len(final[side]) == 1
-    }
-
-    have_payer, have_payee = bool(observed["payer"]), bool(observed["payee"])
-    if have_payer and have_payee:
-        if keys_for("payer") & keys_for("payee"):
-            state = "not_independent"
+        own: list[str] = []
+        kid = None
+        try:
+            ok = isinstance(cid, str) and verify_capsule(capsule).ok
+        except Exception:
+            ok = False
+        if not ok:
+            own.append("capsule_invalid")
         else:
-            for side in ROLES:
-                success = _SUCCESS[f"{side}_observed"]
-                if final[side] != {success}:
-                    differences.append(f"{side}_observed.status=" + ",".join(sorted(final[side])))
-            state = "differs" if differences else ("agreed" if trusted else "agreed_untrusted")
-    elif have_payer:
-        state = "payer_only"
-    elif have_payee:
-        state = "payee_only"
-    else:
-        state = "no_observation"
+            kid = _envelope_key(capsule)
+            if kid is None:
+                own.append("envelope_invalid")
+        s = capsule.get(SETTLEMENT_MEMBER)
+        structural = structure_failures(s)
+        own += structural
+        if not structural:
+            own += _wrapped_failures(s, kid, objects)
+            if policy is not None and kid is not None and kid not in policy.get(s["sealer_role"], set()):
+                own.append("sealer_not_authorized_for_role")
+            ref = s.get("payment_ref")
+            if isinstance(ref, dict) and ref["type"] not in PAYMENT_REF_TYPES:
+                report.findings.append({"records": [cid], "code": "payment_ref_type_unknown"})
+        for code in own:
+            report.failures.append({"records": [cid], "code": code})
+        key = cid if isinstance(cid, str) else f"#{len(legs)}"
+        if own:
+            excluded.add(key)
+        legs[key] = s if isinstance(s, dict) else {}
+        capsule_by_id[key] = capsule
+        if kid is not None:
+            report.keys[key] = kid
 
-    return SettlementJoin(
-        payment_ref=ref,
-        state=state,
-        delivery=delivery,
-        differences=sorted(set(differences)),
-        payer_capsule_ids=[c["capsule_id"] for c, b in blocks if b["role"] == "payer"],
-        payee_capsule_ids=[c["capsule_id"] for c, b in blocks if b["role"] == "payee"],
-        iso20022=iso,
-    )
+    # Distinct keys: a payer-observed and a payee-observed leg for one terms leg
+    # under the same key are not two sides. Needs no key policy.
+    conflated_terms: set[Any] = set()
+    observed = [(k, s) for k, s in legs.items() if k in report.keys and str(s.get("leg", "")).endswith("_observed")]
+    for p, ps in observed:
+        for q, qs in observed:
+            if (ps["leg"] == "payer_observed" and qs["leg"] == "payee_observed"
+                    and report.keys[p] == report.keys[q] and ps.get("terms_ref") == qs.get("terms_ref")):
+                report.failures.append({"records": [p, q], "code": "sealer_conflation"})
+                conflated_terms.add(ps.get("terms_ref"))
+
+    live = {k: s for k, s in legs.items() if k not in excluded}
+    terms_ids = [k for k, s in live.items() if s["leg"] == "terms"]
+    for k, s in live.items():
+        if s["leg"] != "terms" and s["terms_ref"] not in terms_ids:
+            report.failures.append({"records": [k], "code": "terms_ref_unresolved"})
+    for terms_id in terms_ids:
+        answering = {k: s for k, s in live.items() if s.get("terms_ref") == terms_id}
+        report.settlements.append(_settlement(
+            terms_id, live[terms_id], answering, capsule_by_id, report, policy is not None,
+            terms_id in conflated_terms, objects))
+    report.conforming = not report.failures
+    return report
+
+
+def _heads(side: list[tuple[str, dict]], capsule_by_id: dict[str, dict]) -> list[tuple[str, dict]]:
+    """Drop observed legs that a later leg of the same side supersedes."""
+    superseded = set()
+    for k, _ in side:
+        chain = capsule_by_id[k].get("chain") or {}
+        if chain.get("relation") == "supersedes":
+            superseded.add(chain.get("parent_capsule_id"))
+    return [(k, s) for k, s in side if k not in superseded]
+
+
+def _settlement(terms_id: str, terms: dict, legs: dict[str, dict], capsule_by_id: dict[str, dict],
+                report: SettlementReport, with_policy: bool, conflated: bool,
+                objects: dict[str, bytes]) -> dict:
+    payer = _heads([(k, s) for k, s in legs.items() if s["leg"] == "payer_observed"], capsule_by_id)
+    payee = _heads([(k, s) for k, s in legs.items() if s["leg"] == "payee_observed"], capsule_by_id)
+    result: dict[str, Any] = {"terms": terms_id}
+    if not payer and not payee:
+        result["payment_state"] = "terms_only"
+    elif not payee:
+        result["payment_state"] = "payer_stated"
+    elif not payer:
+        result["payment_state"] = "payee_stated"
+    else:
+        result.update(_pair(terms, payer, payee, report, with_policy, conflated, objects))
+    iso = {}
+    for leg, side in (("payer_observed", payer), ("payee_observed", payee)):
+        statuses = {s["status"] for _, s in side}
+        if len(statuses) == 1:
+            iso[leg] = ISO20022_STATUS[(leg, statuses.pop())]
+    if iso:
+        result["iso20022"] = iso
+
+    pinned = terms.get("deliverable", {}).get("content_digest")
+    delivered = [(k, s["delivery"]) for k, s in legs.items() if s["leg"] == "delivered"]
+    values = {d["content_digest"] for _, d in delivered if "content_digest" in d}
+    directions = {d["direction"] for _, d in delivered if "content_digest" in d}
+    if not delivered:
+        result["delivery_state"] = "none"
+    elif (pinned is not None and any(v != pinned for v in values)) or len(values) > 1:
+        result["delivery_state"] = "mismatch"
+    elif directions == {"sent", "received"}:
+        sent = {report.keys.get(k) for k, d in delivered if d["direction"] == "sent"}
+        received = {report.keys.get(k) for k, d in delivered if d["direction"] == "received"}
+        result["delivery_state"] = "stated" if sent & received else "matched"
+    else:
+        result["delivery_state"] = "stated"
+    return result
+
+
+def _pair(terms: dict, payer: list[tuple[str, dict]], payee: list[tuple[str, dict]], report: SettlementReport,
+          with_policy: bool, conflated: bool, objects: dict[str, bytes]) -> dict:
+    out: dict[str, Any] = {}
+    a, (b_id, b) = payer[0][1], payee[0]
+    ref_type = b["payment_ref"]["type"]
+    receive_fee = b.get("receive_fee")
+    if receive_fee is None and _receive_fee_not_applicable(ref_type, terms, a, objects):
+        receive_fee = {"value": "0", "assetCode": b["received"]["assetCode"],
+                       "assetScale": b["received"]["assetScale"]}
+    if (a["payment_ref"]["type"] not in PAYMENT_REF_TYPES or ref_type not in PAYMENT_REF_TYPES
+            or a["payment_ref"]["type"] != ref_type):
+        out["payment_state"] = "unjoined"
+        return out
+    if receive_fee is None:
+        report.findings.append({"records": [b_id], "code": "fee_unstated"})
+        out["payment_state"] = "unjoined"
+        return out
+    if receive_fee["assetCode"] != b["received"]["assetCode"] or (
+            "routing_fee" in a and a["routing_fee"]["assetCode"] != a["amount"]["assetCode"]):
+        report.findings.append({"records": [b_id], "code": "fee_asset_differs"})
+        out["payment_state"] = "unjoined"
+        return out
+    differs: list[str] = []
+    if not _amount_rule_holds(a, b, receive_fee):
+        differs.append("amount")
+    if a["status"] != b["status"]:
+        differs.append("status")
+    if _normal_ref(a["payment_ref"]) != _normal_ref(b["payment_ref"]):
+        differs.append("payment_ref")
+    # More than one head on a side (no supersedes chain between them): each must
+    # say the same thing, and without a key policy each side speaks with one key.
+    for side in (payer, payee):
+        first = side[0][1]
+        for _, other in side[1:]:
+            for name in ("amount", "routing_fee", "received", "receive_fee"):
+                if first.get(name) != other.get(name):
+                    differs.append("amount")
+            if first["status"] != other["status"]:
+                differs.append("status")
+            if _normal_ref(other["payment_ref"]) != _normal_ref(first["payment_ref"]):
+                differs.append("payment_ref")
+        if not with_policy and len({report.keys.get(k) for k, _ in side}) > 1:
+            differs.append("keys")
+    differs = sorted(set(differs), key=differs.index)
+    if differs:
+        out["payment_state"] = "mismatch"
+        out["differs"] = differs
+    elif conflated:
+        out["payment_state"] = "unjoined"  # sealer_conflation is already reported; never agreed
+    else:
+        out["payment_state"] = "agreed" if with_policy else "agreed_untrusted"
+        out["agreed_status"] = a["status"]
+        out["terms_amount"] = "equal" if _amounts_equal(a["amount"], terms["amount"]) else "differs"
+    return out

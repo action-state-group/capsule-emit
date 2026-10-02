@@ -8,37 +8,31 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ### Added — `capsule_emit.settlement`: payer and payee each record the same payment
 
-- A reference producer for "Two-Party Settlement Records for Agent Payments"
-  (draft-mih-agent-settlement-records-00, in progress; member names may change with the draft).
-  Each record's settlement block carries `version: "0"`. The payer and the payee seal their own
-  observations, in their own logs, under their own keys; nobody signs the other side's claim.
-- Legs `terms`, `payer_observed`, `payee_observed`, `delivered`, chained within each party's log
-  (`seal_observation(..., prior=...)`, relation `follows`). Each carries a typed `payment_ref`
-  (an open registry: x402 transaction + CAIP-2 network, Lightning and BOLT12 payment hashes, AP2,
-  ACP/UCP, MPP, ISO 20022 UETR/EndToEndId, Open Payments), a `terms_digest`, and existing signed
-  objects wrapped by digest (`wrap()`), never re-signed. A `delivered` leg carries a digest of the
-  delivered content, bound to the same `terms_digest`.
-- Money is exact `{value, assetCode, assetScale}` (floats refused), by leg: `terms` has `amount`
-  and an optional `receive_fee_max`; `payer_observed` has `amount` (sent toward the payee) and
-  `routing_fee` (paid on top); `payee_observed` has `received` and `receive_fee` (deducted before
-  arrival). The join never compares the two sides' amounts for equality: it is consistent when
-  `amount == received + receive_fee` (as exact rationals, so scales may differ), or, when the
-  payee recorded no `receive_fee`, when the gap is within the terms' `receive_fee_max`. A missing
-  fee member with no declared bound is a difference, never a pass. Vectors:
-  `tests/fixtures/settlement/fees.json` (a Lightning receive fee deducted, 1000 msat sent and 995
-  + 5 received, twice; bounds; an x402 payment where gas is not deducted).
-- `join(capsules, trusted_keys=None)` works offline: it verifies every record (content and
-  producer signature), refuses and lists any that fail, groups the rest on the exact
-  `payment_ref`, and reports `agreed`, `agreed_untrusted`, `payer_only`, `payee_only`, `differs`
-  (naming each difference), `not_independent` (one key on both sides) or `no_observation`, plus
-  the delivery comparison and the ISO 20022 status codes (ACSC, ACCC, PDNG, RJCT). One side
-  missing reads as one-sided, never as unpaid. A `pending` leg is superseded by a later outcome.
-- Two keys are not proof of two parties: a role is what the sealer claims. With
-  `trusted_keys={"payer": [...], "payee": [...]}`, a record whose key is not listed for its role
-  is refused and listed and takes no part in the join, and a full match reads `agreed`; several
-  trusted keys under one role are fine (rotation). Without it the same match reads
-  `agreed_untrusted`, and more than one key under one role is a difference. The same capsule
-  passed twice counts once.
+- A reference producer and verifier for "Two-Party Settlement Records for Agent Payments",
+  [draft-mih-agent-settlement-records-00](https://datatracker.ietf.org/doc/draft-mih-agent-settlement-records/).
+  The payer and the payee seal their own legs, in their own logs, under their own keys; nobody
+  signs the other side's claim.
+- A leg is an ordinary Capsule with a top-level `settlement` member (`version` `"0"`): `terms`,
+  `payer_observed` (`amount` + `routing_fee`), `payee_observed` (`received` + `receive_fee`) and
+  `delivered` (`delivery.direction` `sent`/`received` + `content_digest`, required unless a
+  `carrier` is given). Every leg but the terms names the terms leg's `capsule_id` in
+  `terms_ref`. `build_leg()` validates a leg, `seal_leg()` seals it, `wrap()` carries an existing
+  signed object by digest over its exact octets (never re-signed), and `counterparty_reference()`
+  cites the other side's leg as `counterparty_half`. `_emit_capsule()` gains `payload_members` for
+  a profile's own top-level member.
+- `verify_settlements(capsules, key_policy=None, wrapped_objects=None)` derives the draft's states
+  offline: payment `terms_only` / `payer_stated` / `payee_stated` / `agreed` / `mismatch` /
+  `unjoined` and delivery `none` / `stated` / `matched` / `mismatch`, with the draft's failure and
+  finding codes. Amounts reconcile as `amount == received + receive_fee`, exactly, never by direct
+  equality; an absent `receive_fee` is read as zero only for x402 `exact` (established from the
+  wrapped offer or payment payload) and otherwise leaves the pair `unjoined` (`fee_unstated`).
+  Lightning `BTC` and on-chain bitcoin are different assets.
+- Without a `key_policy` nothing ties a key to a party, so a pair that would be `agreed` reads
+  `agreed_untrusted`, and more than one key on one side is a difference. With one, a record under
+  a key the policy does not accept for its role is refused and takes no part; several accepted
+  keys per role (rotation) are fine.
+- The draft's 19 conformance vectors are vendored unmodified in `test-vectors/settlement-records/`
+  and run in CI.
 
 ### Fixed — committed record times are whole seconds with no fraction too
 
