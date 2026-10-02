@@ -5,6 +5,24 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Added
+- `settlement`: two-party settlement records ("Two-Party Settlement Records for
+  Agent Payments", draft-mih-agent-settlement-records-00). `build_leg` builds and
+  validates a leg's top-level `settlement` member (`terms`, `payer_observed`
+  with `amount` + `routing_fee`, `payee_observed` with `received` +
+  `receive_fee`, `delivered` with `direction` + `content_digest`);
+  `structure_failures` returns the draft's failure codes; `seal_leg` seals a leg
+  as a local record; `counterparty_reference` cites the other party's leg.
+  Deriving the settlement states is the Python reference verifier's job; a
+  conformance test seals the legs of a real two-node Lightning run (1,000 msat
+  sent, 995 credited, 5 fee, four invoices) and checks that the reference
+  derives `agreed` for each.
+- `capsule::seal_local_record_with_members`: a local record with extra
+  top-level members, refusing any that would replace a member this crate
+  writes. `seal_local_record` is unchanged.
+
 ## 0.0.3 — unreleased
 
 ### Fixed

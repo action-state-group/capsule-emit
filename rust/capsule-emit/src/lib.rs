@@ -28,6 +28,8 @@
 //!   recomputation, the COSE signature and chain-parent membership.
 //! - [`sequence`]: per-counterparty monotone sequence numbers and the
 //!   gap/regression check over a pair's records.
+//! - [`settlement`]: two-party settlement records
+//!   (draft-mih-agent-settlement-records-00): build, validate and seal legs.
 //! - [`timestamp`]: minute-granular timestamps.
 
 pub mod anchor;
@@ -39,6 +41,7 @@ pub mod keys;
 pub mod ledger;
 pub mod padding;
 pub mod sequence;
+pub mod settlement;
 pub mod structure;
 pub mod timestamp;
 pub mod verify;

@@ -166,6 +166,9 @@ pub enum SealError {
     /// An extension member would overwrite a member this crate writes.
     #[error("compute_attestation extension {0:?} collides with a core member")]
     ReservedExtensionKey(String),
+    /// A profile's top-level member would replace a member this crate writes.
+    #[error("top-level member {0:?} would replace a capsule member")]
+    ReservedMember(String),
 }
 
 /// AAC-05 §5.2's confirmed-effect invariant and status/digest table.
@@ -445,6 +448,30 @@ pub fn seal_local_record(
     chain: Option<ChainLink>,
     signing_key: &ed25519_dalek::SigningKey,
 ) -> Result<Value, SealError> {
+    seal_local_record_with_members(
+        header,
+        action_id,
+        blocks,
+        Map::new(),
+        references,
+        chain,
+        signing_key,
+    )
+}
+
+/// [`seal_local_record`], plus top-level members a profile defines (for
+/// example a settlement record's `settlement`). They are added before
+/// `capsule_id` is computed, so they are committed like every other member.
+/// A name that would replace a member this function writes is refused.
+pub fn seal_local_record_with_members(
+    header: &LocalRecordHeader<'_>,
+    action_id: String,
+    blocks: Map<String, Value>,
+    members: Map<String, Value>,
+    references: Option<Value>,
+    chain: Option<ChainLink>,
+    signing_key: &ed25519_dalek::SigningKey,
+) -> Result<Value, SealError> {
     if blocks.contains_key(STORE_NONCE_FIELD) {
         return Err(SealError::ReservedExtensionKey(
             STORE_NONCE_FIELD.to_string(),
@@ -497,6 +524,14 @@ pub fn seal_local_record(
     }
     if let Some(references) = references {
         body.insert("references".into(), references);
+    }
+    for (name, value) in members {
+        if body.contains_key(&name)
+            || matches!(name.as_str(), "capsule_id" | "signature" | "key_id")
+        {
+            return Err(SealError::ReservedMember(name));
+        }
+        body.insert(name, value);
     }
 
     let capsule_id = compute_capsule_id(&Value::Object(body.clone()))?;
