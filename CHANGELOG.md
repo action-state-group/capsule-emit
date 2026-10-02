@@ -6,6 +6,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed — checkpoint times are whole seconds with no fraction
+
+The witness path's checkpoints took the checkpoint library's default time, `isoformat()` with
+microseconds. A COSE checkpoint's `issued_at` is that time, and the TypeScript CLL verifier holds
+RFC 3339 times to one normalized form (no trailing-zero fraction), so it refused about one checkpoint
+in ten (any whose microseconds end in 0). Checkpoints now commit to whole-second UTC with no
+fraction (`2026-10-01T23:04:00Z`). A test holds a freshly cut checkpoint's time, both the JSON copy
+and the signed `issued_at`, to that verifier's rule.
+
 ### Added — `capsule-emit verify --bundle` and `capsule-emit report`: check an evidence file offline
 
 - `capsule-emit verify --bundle FILE.json [--require-signature] [--json]` checks an evidence file
