@@ -30,6 +30,30 @@ const STRUCTURAL: &[&str] = &[
     "leg_role_mismatch",
 ];
 
+/// The vendored cases, by id. A case added, dropped or renamed upstream
+/// fails the test until this list is updated with it.
+const CASE_IDS: [&str; 19] = [
+    "pos-x402-two-sided-agreed",
+    "pos-x402-one-sided-payee",
+    "pos-x402-one-sided-payer",
+    "state-x402-mismatch-asset",
+    "pos-x402-amount-equal-across-scales",
+    "pos-bolt12-two-sided-payer-proof",
+    "pos-ap2-receipt-wrapped-by-digest",
+    "neg-wrapped-object-resigned",
+    "neg-wrapped-content-digest-mismatch",
+    "neg-amount-json-float",
+    "neg-amount-decimal-fraction-string",
+    "neg-payment-ref-type-unknown",
+    "neg-payee-leg-sealed-by-payer-key",
+    "state-delivery-mismatch",
+    "pos-ln-receive-fee-two-payments",
+    "state-ln-receive-fee-mismatch",
+    "neg-ln-receive-fee-absent",
+    "pos-amount-decimals-mixed-scales",
+    "state-amount-decimals-off-by-one-unit",
+];
+
 fn vectors() -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../test-vectors/settlement-records/cases.json");
@@ -69,8 +93,10 @@ fn the_rust_producer_reproduces_every_vector_record() {
         .collect();
     let (mut legs, mut refused, mut ids, mut envelopes) = (0, 0, 0, 0);
     let (mut records, mut with_id, mut with_envelope) = (0, 0, 0);
+    let mut seen: Vec<&str> = Vec::new();
     for case in doc["cases"].as_array().unwrap() {
         let id = case["id"].as_str().unwrap();
+        seen.push(id);
         for record in case["records"].as_array().unwrap() {
             let label = record["label"].as_str().unwrap();
             records += 1;
@@ -148,7 +174,15 @@ fn the_rust_producer_reproduces_every_vector_record() {
     }
     eprintln!("legs built {legs}, refused {refused}, ids {ids}, envelopes {envelopes}");
     // Every record went through every check that applies to it, and the set
-    // is the vendored one (19 cases, 67 records).
+    // is the vendored one: exactly the 19 cases above, each once, 67 records.
+    assert_eq!(seen.len(), CASE_IDS.len(), "case count");
+    let mut sorted = seen.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), seen.len(), "a case id appears twice");
+    let mut want = CASE_IDS.to_vec();
+    want.sort_unstable();
+    assert_eq!(sorted, want, "case ids");
     assert_eq!((legs + refused, records), (67, 67));
     assert_eq!((ids, envelopes), (with_id, with_envelope));
     assert!(refused > 0, "the negative cases were exercised");
