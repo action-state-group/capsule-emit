@@ -18,13 +18,16 @@ __all__ = ["PERIOD_CHOICES", "add_period_arg", "period_bounds", "apply_period"]
 
 PERIOD_CHOICES = ("week", "month")
 
-# The exact wire format ledger timestamps use (e.g.
-# tests/fixtures/sample_ledger.jsonl): microsecond-precision UTC with a
-# literal "Z" suffix. ``since``/``until`` are compared as a plain string
-# against this by the underlying store -- a bound in a different but
-# equal-instant format (e.g. Python's default "+00:00" offset suffix) would
-# silently mis-order at the boundary, so the generated bounds MUST match
-# this format exactly, not merely be valid ISO-8601.
+# The bounds are the period's first and last microsecond, as RFC 3339 UTC.
+# Ledger timestamps come in more than one spelling of the same kind of
+# instant (whole seconds, ``...:59Z``, as this package now commits, and
+# microseconds, ``...:59.999999Z``, in older records), so a bound must be
+# compared with a record's time as a parsed instant: compared as strings,
+# ``...23:59:59Z`` sorts after ``...23:59:59.999999Z`` and a record stamped in
+# the period's last second drops out. No single string bound is right under
+# string order for both spellings. ``ScanQuery`` hands these to the ledger
+# store, whose ``scan`` compares instants from checkpointed-local-log's
+# release that includes that fix; older stores compare strings.
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 
