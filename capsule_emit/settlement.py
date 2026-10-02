@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Settlement records: two parties each record the same payment.
 
-Reference producer for the agent settlement profile draft
-(draft-mih-agent-settlement-profile-00, in progress). The payer and the payee
+Reference producer for "Two-Party Settlement Records for Agent Payments"
+(draft-mih-agent-settlement-records-00, in progress). The payer and the payee
 are two independent sealers. Each seals only what its own wallet or system
 observed, in its own log, under its own key. A reader joins the two halves on
 a typed payment reference afterwards. Neither side signs the other's claim.
@@ -55,7 +55,7 @@ from .core import EmitResult, _emit_capsule
 
 __all__ = [
     "SETTLEMENT_EXTENSION_KEY",
-    "SETTLEMENT_SCHEMA",
+    "SETTLEMENT_VERSION",
     "ROLES",
     "LEGS",
     "STATUSES",
@@ -77,7 +77,8 @@ __all__ = [
 #: The ``model_attestation.compute_attestation`` key the observation rides
 #: under. Versioned with the draft: renamed when the profile is adopted.
 SETTLEMENT_EXTENSION_KEY = "x-settlement-v0"
-SETTLEMENT_SCHEMA = "settlement-profile-00"
+#: The settlement member's ``version`` for this draft (draft-mih-agent-settlement-records-00).
+SETTLEMENT_VERSION = "0"
 
 ROLES = ("payer", "payee")
 LEGS = ("terms", "payer_observed", "payee_observed", "delivered")
@@ -278,7 +279,7 @@ def _check_bindings(bindings: Any) -> None:
             raise SettlementError(f"binding {key} is a non-empty string")
 
 
-_REQUIRED = ("schema", "role", "leg", "payment_ref", "terms_digest")
+_REQUIRED = ("version", "role", "leg", "payment_ref", "terms_digest")
 _OPTIONAL = ("status", *_ALL_MONEY, "wrapped", "delivered_digest", "bindings", "counterparty_capsule_id")
 
 
@@ -292,8 +293,8 @@ def validate_observation(obs: Any) -> None:
     extra = set(obs) - set(_REQUIRED) - set(_OPTIONAL)
     if extra:
         raise SettlementError(f"observation has unknown fields {sorted(extra)}")
-    if obs["schema"] != SETTLEMENT_SCHEMA:
-        raise SettlementError(f"schema is {SETTLEMENT_SCHEMA!r}")
+    if obs["version"] != SETTLEMENT_VERSION:
+        raise SettlementError(f"version is {SETTLEMENT_VERSION!r}")
     role, leg = obs["role"], obs["leg"]
     if role not in ROLES:
         raise SettlementError(f"role is one of {ROLES}")
@@ -373,7 +374,7 @@ def build_observation(
         if str(ref.get("network", "")).startswith("eip155:"):
             ref["value"] = ref["value"].lower()
     obs: dict[str, Any] = {
-        "schema": SETTLEMENT_SCHEMA,
+        "version": SETTLEMENT_VERSION,
         "role": role,
         "leg": leg,
         "payment_ref": ref,

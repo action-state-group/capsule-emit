@@ -8,8 +8,9 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ### Added — `capsule_emit.settlement`: payer and payee each record the same payment
 
-- A reference producer for the agent settlement profile draft (draft-mih-agent-settlement-profile-00,
-  in progress; member names may change with the draft). The payer and the payee seal their own
+- A reference producer for "Two-Party Settlement Records for Agent Payments"
+  (draft-mih-agent-settlement-records-00, in progress; member names may change with the draft).
+  Each record's settlement block carries `version: "0"`. The payer and the payee seal their own
   observations, in their own logs, under their own keys; nobody signs the other side's claim.
 - Legs `terms`, `payer_observed`, `payee_observed`, `delivered`, chained within each party's log
   (`seal_observation(..., prior=...)`, relation `follows`). Each carries a typed `payment_ref`

@@ -19,6 +19,7 @@ from capsule_emit.settlement import (
     join,
     seal_observation,
     terms_digest,
+    validate_observation,
     wrap,
 )
 from capsule_emit.verification import verify_capsule
@@ -60,6 +61,16 @@ def _two_sided(tmp_path: Path, payer_kw=None, payee_kw=None, payee_party="payee"
 
 
 # --- building ---------------------------------------------------------------
+
+
+def test_block_carries_the_draft_version_and_refuses_others():
+    obs = _obs("payer", "terms")
+    assert obs["version"] == "0" and "schema" not in obs
+    with pytest.raises(SettlementError, match="version is"):
+        validate_observation({**obs, "version": "1"})
+    legacy = {k: v for k, v in obs.items() if k != "version"}
+    with pytest.raises(SettlementError, match="missing"):
+        validate_observation({**legacy, "schema": "settlement-profile-00"})
 
 
 def test_amount_refuses_floats_and_fractions():
