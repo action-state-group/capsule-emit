@@ -45,6 +45,74 @@ use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+/// Witness receipts obtained after their checkpoint was written, one per line,
+/// next to `checkpoints.jsonl` (which is append-only and holds checkpoints
+/// only). A push-time cut is written before any witness sees it; its receipt
+/// arrives on a later tick and is recorded here. Same role as the Python
+/// ledger's witness-backfill entries: a checkpoint's effective witnesses are
+/// its own plus every backfill for it, one per witness URL, later lines
+/// winning. Read them with [`read_witness_backfills`] and
+/// [`effective_witnesses`].
+pub const WITNESS_BACKFILL_FILE: &str = "witness-backfill.jsonl";
+
+/// One witness receipt for the checkpoint at `mmr_size` with `root`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WitnessBackfill {
+    pub mmr_size: u64,
+    pub root: String,
+    pub witness: CheckpointWitness,
+}
+
+/// Every backfill recorded next to `checkpoints_path`, in file order. A
+/// missing file is no backfills; a line that does not parse (a torn final
+/// write) is skipped.
+pub fn read_witness_backfills(checkpoints_path: &Path) -> Vec<WitnessBackfill> {
+    let path = checkpoints_path.with_file_name(WITNESS_BACKFILL_FILE);
+    let Ok(file) = File::open(path) else {
+        return Vec::new();
+    };
+    BufReader::new(file)
+        .lines()
+        .map_while(Result::ok)
+        .filter_map(|line| serde_json::from_str(&line).ok())
+        .collect()
+}
+
+/// `cp`'s own witnesses merged with every backfill for it (same `mmr_size`
+/// and `root`), one entry per witness URL: a backfill replaces an entry for
+/// the same URL, and a new URL is appended, in file order.
+pub fn effective_witnesses(
+    cp: &CheckpointRecord,
+    backfills: &[WitnessBackfill],
+) -> Vec<CheckpointWitness> {
+    let mut witnesses = cp.witnesses.clone();
+    for b in backfills
+        .iter()
+        .filter(|b| b.mmr_size == cp.mmr_size && b.root == cp.root)
+    {
+        match witnesses.iter_mut().find(|w| w.ts_url == b.witness.ts_url) {
+            Some(existing) => *existing = b.witness.clone(),
+            None => witnesses.push(b.witness.clone()),
+        }
+    }
+    witnesses
+}
+
+fn append_witness_backfill(
+    checkpoints_path: &Path,
+    backfill: &WitnessBackfill,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut line = serde_json::to_string(backfill).map_err(std::io::Error::other)?;
+    line.push('\n');
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(checkpoints_path.with_file_name(WITNESS_BACKFILL_FILE))?;
+    file.write_all(line.as_bytes())?;
+    file.sync_data()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CheckpointStateError {
     #[error("I/O error: {0}")]
@@ -219,6 +287,16 @@ impl Default for CheckpointCadenceConfig {
             pad_bucket: DEFAULT_PAD_BUCKET,
         }
     }
+}
+
+/// The clock leg's allowance for the tick that measures it. A backlog that
+/// arrives between ticks is first seen (and its age clock started) by the
+/// next tick, a little after that tick's scheduled instant; the tick one
+/// interval later then measures an age just short of `cadence_seconds` and,
+/// without this allowance, waits a whole further interval. 5% of the cadence,
+/// at least one second.
+fn tick_slack_seconds(cfg: &CheckpointCadenceConfig) -> f64 {
+    (cfg.cadence_seconds as f64 * 0.05).max(1.0)
 }
 
 /// True once `entries_since_last` reaches `cfg.cadence_entries`, or
@@ -397,6 +475,12 @@ impl CheckpointState {
             .collect();
         let (consumed_bytes, last_line_start) = lines.last().map_or((0, 0), |l| (l.end, l.start));
 
+        if let Some(cp) = substrate.last_checkpoint().cloned() {
+            let merged = effective_witnesses(&cp, &read_witness_backfills(&checkpoints_path));
+            if let Some(witnesses) = substrate.last_checkpoint_witnesses_mut() {
+                *witnesses = merged;
+            }
+        }
         let last_checkpoint_leaf_count = match substrate.last_checkpoint() {
             Some(cp) => cp.leaf_count()?,
             None => 0,
@@ -638,7 +722,9 @@ impl CheckpointState {
             }
             Err(err) => return Err(err),
         }
-        let seconds_since = self.pending_since.map(|t| t.elapsed().as_secs_f64());
+        let seconds_since = self
+            .pending_since
+            .map(|t| t.elapsed().as_secs_f64() + tick_slack_seconds(&self.cfg));
         if due_for_checkpoint(&self.cfg, self.entries_since_checkpoint, seconds_since) {
             return Ok(Some(self.checkpoint_now(signer, anchor, true)?));
         }
@@ -775,6 +861,22 @@ impl CheckpointState {
         );
         self.pending_witness_urls = still_pending;
         let added = cp.witnesses.len() > before;
+        // `checkpoints.jsonl` already holds this checkpoint without these
+        // receipts; record them beside it so a reader (and a restart) sees
+        // them. Best-effort, like registration itself.
+        for witness in &cp.witnesses[before..] {
+            let backfill = WitnessBackfill {
+                mmr_size: cp.mmr_size,
+                root: cp.root.clone(),
+                witness: witness.clone(),
+            };
+            if let Err(err) = append_witness_backfill(&self.checkpoints_path(), &backfill) {
+                eprintln!(
+                    "[checkpoint] could not record the receipt from {} for checkpoint {}: {err}",
+                    witness.ts_url, cp.mmr_size
+                );
+            }
+        }
         if let Some(witnesses) = self.substrate.last_checkpoint_witnesses_mut() {
             *witnesses = cp.witnesses;
         }
@@ -1912,6 +2014,131 @@ mod tests {
         let latest = state.last_checkpoint().unwrap();
         assert_eq!(latest.witnesses.len(), 1);
         assert_eq!(latest.witnesses[0].ts_url, witness.url);
+    }
+
+    #[test]
+    fn a_backlog_first_seen_by_a_tick_is_due_one_interval_later() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = CheckpointCadenceConfig {
+            cadence_entries: 100,
+            cadence_seconds: 300,
+            witness_urls: Vec::new(),
+            pad_bucket: 0,
+        };
+        let (mut state, _) = CheckpointState::load(dir.path(), "test-log", cfg).unwrap();
+        let anchor = AnchorClient::new("http://127.0.0.1:1");
+        write_capsule(dir.path(), "one");
+        // This tick sees the new leaf and starts its age clock.
+        assert!(state.tick(&signer(), &anchor).unwrap().is_none());
+        assert!(state.pending_since.is_some());
+
+        // Clearly younger than the cadence: not due.
+        state.pending_since = Some(Instant::now() - std::time::Duration::from_secs(250));
+        assert!(state.tick(&signer(), &anchor).unwrap().is_none());
+
+        // The next tick fires one interval after the scheduled instant of the
+        // one that started the clock, so the age it measures is a hair short.
+        state.pending_since = Some(Instant::now() - std::time::Duration::from_millis(299_990));
+        let cp = state.tick(&signer(), &anchor).unwrap();
+        assert!(
+            cp.is_some(),
+            "a backlog one interval old must be cut, not left for the next tick"
+        );
+        assert!(state.pending_since.is_none());
+    }
+
+    #[test]
+    fn a_push_cut_receipt_from_a_later_tick_is_kept_beside_the_checkpoint() {
+        let witness = continuity_witness(None);
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&witness.url)).unwrap();
+        let anchor = AnchorClient::new(&witness.url);
+        let one = write_capsule(dir.path(), "one");
+        state.checkpoint_covering(&one, &signer(), &anchor).unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+        let cp = state.last_checkpoint().unwrap().clone();
+        assert_eq!(
+            cp.witnesses.len(),
+            1,
+            "in memory, the receipt is on the checkpoint"
+        );
+
+        // On disk, the checkpoint line predates the receipt...
+        let checkpoints = dir.path().join("checkpoints.jsonl");
+        let on_disk = cll::store::read_last_checkpoint(&checkpoints)
+            .unwrap()
+            .unwrap();
+        assert!(on_disk.record.witnesses.is_empty());
+        // ...and the receipt is recorded beside it, for that checkpoint.
+        let backfills = read_witness_backfills(&checkpoints);
+        assert_eq!(backfills.len(), 1);
+        assert_eq!(
+            (backfills[0].mmr_size, backfills[0].root.as_str()),
+            (cp.mmr_size, cp.root.as_str())
+        );
+        assert_eq!(backfills[0].witness.ts_url, witness.url);
+
+        // A restart sees it, and a later tick does not register again.
+        drop(state);
+        let (mut reloaded, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&witness.url)).unwrap();
+        assert_eq!(reloaded.last_checkpoint().unwrap().witnesses.len(), 1);
+        reloaded.tick(&signer(), &anchor).unwrap();
+        assert_eq!(*witness.accepted.lock().unwrap(), vec![cp.mmr_size]);
+        assert_eq!(read_witness_backfills(&checkpoints).len(), 1);
+    }
+
+    #[test]
+    fn effective_witnesses_merges_only_this_checkpoints_backfills() {
+        let entry = |url: &str, receipt: &str| CheckpointWitness {
+            ts_url: url.to_string(),
+            entry_hash: "ab".repeat(32),
+            receipt_b64: receipt.to_string(),
+            leaf_index: 0,
+            tree_size: 1,
+            is_stub: false,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let one = write_capsule(dir.path(), "one");
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", CheckpointCadenceConfig::default())
+                .unwrap();
+        let anchor = AnchorClient::new("http://127.0.0.1:1");
+        state.checkpoint_covering(&one, &signer(), &anchor).unwrap();
+        let mut cp = state.last_checkpoint().unwrap().clone();
+        cp.witnesses = vec![entry("https://a.example", "old")];
+        let backfills = vec![
+            WitnessBackfill {
+                mmr_size: cp.mmr_size,
+                root: cp.root.clone(),
+                witness: entry("https://a.example", "new"),
+            },
+            WitnessBackfill {
+                mmr_size: cp.mmr_size,
+                root: cp.root.clone(),
+                witness: entry("https://b.example", "b"),
+            },
+            WitnessBackfill {
+                mmr_size: cp.mmr_size + 1,
+                root: cp.root.clone(),
+                witness: entry("https://c.example", "other size"),
+            },
+            WitnessBackfill {
+                mmr_size: cp.mmr_size,
+                root: "00".repeat(32),
+                witness: entry("https://d.example", "other root"),
+            },
+        ];
+        let merged = effective_witnesses(&cp, &backfills);
+        let got: Vec<(&str, &str)> = merged
+            .iter()
+            .map(|w| (w.ts_url.as_str(), w.receipt_b64.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![("https://a.example", "new"), ("https://b.example", "b")]
+        );
     }
 
     #[test]
