@@ -240,6 +240,23 @@ def test_genuine_receipt_replayed_from_another_checkpoint_has_no_grade_under_pin
     assert _receipt_grade(CHECKPOINT, replayed, ts_pubkey_pem=WITNESS_PUB) is None
 
 
+def test_genuine_observed_only_receipt_keeps_its_grade_under_pinned_key() -> None:
+    genuine = _witness("https://witness.example", WITNESS_PRIV, "observed-only")
+    assert _receipt_grade(CHECKPOINT, genuine, ts_pubkey_pem=WITNESS_PUB) == "observed-only"
+
+
+def test_receipt_issued_under_the_pre_rename_label_reads_as_observed_only() -> None:
+    # Receipts signed before the rename keep "countersigned-observed" in their
+    # bytes; the label still verifies and means the same as observed-only.
+    issued = _witness("https://witness.example", WITNESS_PRIV, "countersigned-observed")
+    assert _receipt_grade(CHECKPOINT, issued, ts_pubkey_pem=WITNESS_PUB) == "observed-only"
+
+
+def test_pre_rename_label_signed_by_another_key_has_no_grade() -> None:
+    forged = _witness("https://witness.example", ATTACKER_PRIV, "countersigned-observed")
+    assert _receipt_grade(CHECKPOINT, forged, ts_pubkey_pem=WITNESS_PUB) is None
+
+
 def test_genuine_receipt_without_label_has_no_grade() -> None:
     unlabelled = _witness("https://witness.example", WITNESS_PRIV, None)
     assert _receipt_grade(CHECKPOINT, unlabelled, ts_pubkey_pem=WITNESS_PUB) is None
@@ -279,9 +296,9 @@ def test_genuine_receipt_at_an_unpinned_non_default_ts_url_has_no_grade(
 ) -> None:
     # Even the real witness key served at ts_url is not trusted: the server
     # is not what makes the key trustworthy. Pinning it is.
-    genuine = _witness(witness_server.url, WITNESS_PRIV, "countersigned-observed")
+    genuine = _witness(witness_server.url, WITNESS_PRIV, "observed-only")
     assert _receipt_grade(CHECKPOINT, genuine) is None
-    assert _receipt_grade(CHECKPOINT, genuine, ts_pubkey_pem=WITNESS_PUB) == "countersigned-observed"
+    assert _receipt_grade(CHECKPOINT, genuine, ts_pubkey_pem=WITNESS_PUB) == "observed-only"
     assert witness_server.requests == 0
 
 

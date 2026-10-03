@@ -6,6 +6,17 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed — receipt grade `observed-only` (was `countersigned-observed`)
+
+- The existence-and-time receipt grade is now named `observed-only`. A witness registers
+  and timestamps a checkpoint; it does not countersign it. `witness.normalize_receipt_grade`
+  reads a receipt's label, and a receipt issued before the rename that carries
+  `countersigned-observed` still verifies and is reported as `observed-only`, its same
+  meaning. `CheckpointWitnessState.receipt_grades()` and `witness_bindings.verify_witnesses()`
+  report `observed-only` for both labels, and for a Rekor receipt or an unlabeled SCRAPI
+  receipt. A caller that compared a reported grade to the string `"countersigned-observed"`
+  should compare to `"observed-only"`.
+
 ### Changed — OTel processor: conformance with the OTel mapping profile
 
 - `gen_ai.usage.cache_creation.input_tokens` is now admitted; the table listed
