@@ -141,6 +141,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json", dest="as_json", action="store_true", help="with --bundle: the full result as JSON"
     )
     verify_p.add_argument(
+        "--witness-directory",
+        metavar="WITNESSES.json",
+        default=None,
+        help="with --bundle: the witnesses (and keys) whose receipts to check "
+        "(default: the checkpoint library's default witness, under its built-in key)",
+    )
+    verify_p.add_argument(
         "--require-signature",
         action="store_true",
         help="treat a record with no producer signature (producer_signature_unclaimed)  — for ledgers whose producer always signs."
@@ -153,6 +160,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="render one readable HTML page from an evidence file (evidence-bundle/v2), offline",
     )
     report_p.add_argument("bundle_path", metavar="FILE.json", help="the evidence file")
+    report_p.add_argument(
+        "--witness-directory",
+        metavar="WITNESSES.json",
+        default=None,
+        help="the witnesses (and keys) whose receipts to check "
+        "(default: the checkpoint library's default witness, under its built-in key)",
+    )
     report_p.add_argument(
         "-o", "--out", metavar="OUTPUT.html", default=None, help="write the page here (default: stdout)"
     )
@@ -389,15 +403,25 @@ def _cmd_evidence(args: argparse.Namespace) -> int:
     return 0
 
 
+def _witness_directory_arg(args: argparse.Namespace) -> dict | None:
+    """``--witness-directory``, read and validated; ``None`` when not given.
+    Raises ``ValueError`` naming every problem."""
+    from .witness_directory import load_directory
+
+    path = getattr(args, "witness_directory", None)
+    return load_directory(path) if path else None
+
+
 def _cmd_verify_bundle(args: argparse.Namespace) -> int:
     from .evidence_file import check_evidence_file, load_evidence_file
 
     try:
         bundle = load_evidence_file(args.bundle_path)
-    except ValueError as err:
+        directory = _witness_directory_arg(args)
+    except (ValueError, OSError) as err:
         print(f"verify: {err}")
         return 1
-    check = check_evidence_file(bundle, require_signature=args.require_signature)
+    check = check_evidence_file(bundle, require_signature=args.require_signature, witness_directory=directory)
     if args.as_json:
         print(json.dumps(check.to_dict(), indent=2))
         return _VERDICT_EXIT[check.verdict]
@@ -409,6 +433,13 @@ def _cmd_verify_bundle(args: argparse.Namespace) -> int:
         print(f"  {marks.get(c.status, c.status)}  {c.plain}")
         for finding in c.findings:
             print(f"               {finding}")
+    if check.witness is not None:
+        print(f"  {marks.get(check.witness.status, check.witness.status)}  {check.witness.plain}")
+        for receipt in check.witness_receipts:
+            print(f"               {receipt['ts_url']}: {receipt['reason']}")
+        for finding in check.witness.findings:
+            if not finding.startswith(("witness_unverified:", "witness_receipt_invalid:")):
+                print(f"               {finding}")
     if check.checkpoint_authenticated:
         signer = (
             "; its key signed every record"
@@ -439,10 +470,11 @@ def _cmd_report(args: argparse.Namespace) -> int:
 
     try:
         bundle = load_evidence_file(args.bundle_path)
-    except ValueError as err:
+        directory = _witness_directory_arg(args)
+    except (ValueError, OSError) as err:
         print(f"report: {err}")
         return 1
-    check = check_evidence_file(bundle, require_signature=args.require_signature)
+    check = check_evidence_file(bundle, require_signature=args.require_signature, witness_directory=directory)
     page = render_report_html(bundle, check, source=Path(args.bundle_path).name)
     if args.out:
         Path(args.out).write_text(page, encoding="utf-8")
