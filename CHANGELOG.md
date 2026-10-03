@@ -6,6 +6,12 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed: the first-use witness notice says witnessing, not countersigning
+
+- The notice printed before the first checkpoint goes out said the checkpoint is POSTed "for
+  independent countersigning". Posting a checkpoint to a witness is witnessing, and countersigning
+  is a different rung of the ladder. The notice now says "for independent witnessing".
+
 ### Added: `verify --bundle` and `report` check witness receipts
 
 - An evidence file's checkpoint can carry witness receipts (`checkpoint.witnesses`). They are now
