@@ -9,6 +9,7 @@ per QUEUE_PROTOCOL §7.
 from __future__ import annotations
 
 import json
+import warnings
 
 import pytest
 
@@ -17,13 +18,18 @@ from capsule_emit import seal, witness
 from capsule_emit.adjudication import VERDICT_CORROBORATED, contradicted, seal_adjudication
 from capsule_emit.bundle import bundle as _bundle_fn
 from capsule_emit.evidence_request import (
+    LEGACY_REFUSAL_REASON_ALIASES,
     REASON_COVERAGE_UNSATISFIABLE,
+    REASON_DERIVATION_UNSUPPORTED,
     REASON_NO_SUCH_RECORD,
+    REASON_NO_SUCH_SUBJECT,
     REASON_REQUEST_MALFORMED,
+    REFUSAL_REASONS,
     Artifact,
     Refusal,
     RequestMalformedError,
     answer,
+    normalize_refusal_reason,
     parse_request,
     verify_refusal_offline,
 )
@@ -136,11 +142,11 @@ def test_answer_record_returns_artifact_matching_bundle(covered_ledger):
     assert result.bundles[0].to_dict() == expected.to_dict()
 
 
-def test_answer_no_such_record_is_recorded_absence(covered_ledger):
+def test_answer_missing_record_is_no_such_subject(covered_ledger):
     ledger_path, _caps = covered_ledger
     result = answer(_record_request("ff" * 32), ledger=ledger_path)
     assert isinstance(result, Refusal)
-    assert result.reason == REASON_NO_SUCH_RECORD
+    assert result.reason == REASON_NO_SUCH_SUBJECT
     assert verify_refusal_offline(result)
 
 
@@ -564,13 +570,13 @@ def test_correlation_by_counterparty_matches_exchange_and_adjudication(tmp_path,
     assert unrelated_adjudication["capsule_id"] not in matched
 
 
-def test_correlation_no_match_is_signed_no_such_record_not_empty_artifact(covered_ledger):
+def test_correlation_no_match_is_signed_no_such_subject_not_empty_artifact(covered_ledger):
     """The mutant this subject must catch: a value matching nothing is a
     SIGNED refusal, never a bare/empty Artifact."""
     ledger_path, _caps = covered_ledger
     result = answer(_correlation_request("nonce", "no-such-nonce-anywhere"), ledger=ledger_path)
     assert isinstance(result, Refusal)
-    assert result.reason == REASON_NO_SUCH_RECORD
+    assert result.reason == REASON_NO_SUCH_SUBJECT
     assert verify_refusal_offline(result)
 
 
@@ -663,3 +669,66 @@ def test_refusal_carries_signed_shape_not_a_bare_dict(covered_ledger):
     d = result.to_dict()
     assert set(d.keys()) == {"request_digest", "reason", "issued_at", "key_id", "sig"}
     assert d["sig"] and d["key_id"]
+
+
+# ---------------------------------------------------------------------------
+# derivation — this responder supports none itself; any named derivation is
+# refused rather than silently served as a plain bundle
+# ---------------------------------------------------------------------------
+
+
+def test_answer_with_derivation_refuses_derivation_unsupported(covered_ledger):
+    ledger_path, caps = covered_ledger
+    cid = caps[0]["capsule_id"]
+    request = json.dumps(
+        {"subject": {"kind": "record", "capsule_id": cid}, "coverage": {}, "derivation": "some/1"}
+    ).encode()
+    result = answer(request, ledger=ledger_path)
+    assert isinstance(result, Refusal)
+    assert result.reason == REASON_DERIVATION_UNSUPPORTED
+    assert verify_refusal_offline(result)
+
+
+def test_answer_without_derivation_is_unaffected(covered_ledger):
+    """The mutant this test exists to catch: adding the derivation check
+    must not refuse a request that never named one."""
+    ledger_path, caps = covered_ledger
+    cid = caps[0]["capsule_id"]
+    result = answer(_record_request(cid), ledger=ledger_path)
+    assert isinstance(result, Artifact)
+
+
+# ---------------------------------------------------------------------------
+# Refusal-reason registry alignment (draft-mih-agent-evidence-request-00)
+# ---------------------------------------------------------------------------
+
+
+def test_refusal_reasons_match_the_draft_registry_subset():
+    assert REFUSAL_REASONS == {
+        REASON_REQUEST_MALFORMED,
+        REASON_COVERAGE_UNSATISFIABLE,
+        REASON_NO_SUCH_SUBJECT,
+        REASON_DERIVATION_UNSUPPORTED,
+    }
+
+
+def test_refusal_reasons_no_longer_contains_the_pre_registry_spelling():
+    """The mutant this test exists to catch: reverting the rename would put
+    the deprecated ``no_such_record`` spelling back into the emitted set."""
+    assert REASON_NO_SUCH_RECORD not in REFUSAL_REASONS
+
+
+def test_normalize_refusal_reason_translates_legacy_spelling_with_warning():
+    with pytest.deprecated_call():
+        assert normalize_refusal_reason(REASON_NO_SUCH_RECORD) == REASON_NO_SUCH_SUBJECT
+
+
+def test_normalize_refusal_reason_passes_through_current_tokens_unchanged():
+    for reason in REFUSAL_REASONS:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert normalize_refusal_reason(reason) == reason
+
+
+def test_legacy_refusal_reason_aliases_maps_only_the_one_known_rename():
+    assert LEGACY_REFUSAL_REASON_ALIASES == {REASON_NO_SUCH_RECORD: REASON_NO_SUCH_SUBJECT}
