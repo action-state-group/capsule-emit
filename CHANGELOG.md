@@ -6,6 +6,19 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed — OTel processor: conformance with the OTel mapping profile
+
+- `gen_ai.usage.cache_creation.input_tokens` is now admitted; the table listed
+  `gen_ai.usage.cache_write.input_tokens`, which is not an attribute at the pinned
+  `open-telemetry/semantic-conventions-genai@8c1b98a`.
+- The six "clear-safe, conditional" semconv rows (`gen_ai.workflow.name`,
+  `gen_ai.tool.call.id`, `gen_ai.data_source.id`, `gen_ai.memory.store.id`,
+  `gen_ai.prompt.name`, `gen_ai.prompt.version`) are omitted unless named in the new
+  `admit_conditional` parameter. They were previously carried clear unconditionally.
+- `span_name` is carried only with `clear_trace_context=True`; it is no longer replaced by
+  its SHA-256 by default, because the profile defines no digest form for it.
+- All-zero trace and span IDs are rejected as W3C-invalid.
+
 ### Changed — evidence-request refusal reasons aligned to `draft-mih-agent-evidence-request-00`
 
 - `evidence_request.answer()`'s "I hold nothing for this subject" refusal now emits

@@ -11,11 +11,13 @@ table below never leaves this process, full stop — see
 incoming attribute in these tables and drops anything not found, no
 exceptions.
 
-Three tiers, transcribed from the draft's own vocabulary (not this
+Four tiers, transcribed from the draft's own vocabulary (not this
 extension's invention — see `I-D.mih-scitt-agent-action-capsule`,
 "Data-Admission Tiers"):
 
 - ``CLEAR_SAFE`` — the value MAY leave the process as-is.
+- ``CLEAR_SAFE_CONDITIONAL`` — clear, but only for keys the caller admits by
+  name after checking the row's condition; omitted otherwise.
 - ``DIGEST_ONLY`` — only ``SHA-256(value)`` may leave; the raw value never
   does.
 - ``NEVER_ENTERS`` — the key is named here ONLY so the leak-mutant test
@@ -45,6 +47,7 @@ __all__ = [
     "NEVER_ENTERS_SEMCONV",
     "NEVER_ENTERS_SEMCONV_PREFIXES",
     "DEFAULT_SEMCONV_SOURCE",
+    "BLOCK_FIELDS",
     "TRACE_ID_RE",
     "SPAN_ID_RE",
     "TRACE_FLAGS_RE",
@@ -54,6 +57,13 @@ __all__ = [
 
 class Tier(str, Enum):
     CLEAR_SAFE = "clear_safe"
+    #: "clear-safe, conditional" in the mapping profile: clear only after the
+    #: producer has checked a condition this module cannot check (a fixed,
+    #: never user-derived name; a non-identifying id; a deployment-constant
+    #: store). Omitted unless the caller names the key in
+    #: ``admit_conditional`` -- the same opt-in posture as
+    #: ``clear_trace_context`` for trace/span identifiers.
+    CLEAR_SAFE_CONDITIONAL = "clear_safe_conditional"
     DIGEST_ONLY = "digest_only"
     NEVER_ENTERS = "never_enters"
 
@@ -93,20 +103,15 @@ SEMCONV_ATTRS: dict[str, Tier] = {
     "gen_ai.agent.id": Tier.CLEAR_SAFE,
     "gen_ai.agent.name": Tier.CLEAR_SAFE,
     "gen_ai.agent.version": Tier.CLEAR_SAFE,
-    # clear-safe, conditional (producer-hygiene conditions the draft states
-    # in prose — "fixed workflow names only", "tool identity, not
-    # arguments", "non-identifying" — not mechanically checkable here; see
-    # the module docstring for the one condition this module DOES enforce
-    # mechanically, trace/span identifiers).
-    "gen_ai.workflow.name": Tier.CLEAR_SAFE,
     "gen_ai.tool.name": Tier.CLEAR_SAFE,
     "gen_ai.tool.type": Tier.CLEAR_SAFE,
-    "gen_ai.tool.call.id": Tier.CLEAR_SAFE,
+    # Usage counts. The ``cache_*`` row names the two cache counters that
+    # exist at the pinned commit: ``cache_read`` and ``cache_creation``.
     "gen_ai.usage.input_tokens": Tier.CLEAR_SAFE,
     "gen_ai.usage.output_tokens": Tier.CLEAR_SAFE,
     "gen_ai.usage.reasoning.output_tokens": Tier.CLEAR_SAFE,
     "gen_ai.usage.cache_read.input_tokens": Tier.CLEAR_SAFE,
-    "gen_ai.usage.cache_write.input_tokens": Tier.CLEAR_SAFE,
+    "gen_ai.usage.cache_creation.input_tokens": Tier.CLEAR_SAFE,
     "gen_ai.request.temperature": Tier.CLEAR_SAFE,
     "gen_ai.request.top_p": Tier.CLEAR_SAFE,
     "gen_ai.request.top_k": Tier.CLEAR_SAFE,
@@ -118,10 +123,17 @@ SEMCONV_ATTRS: dict[str, Tier] = {
     "gen_ai.response.finish_reasons": Tier.CLEAR_SAFE,
     "gen_ai.response.status": Tier.CLEAR_SAFE,
     "gen_ai.output.type": Tier.CLEAR_SAFE,
-    "gen_ai.data_source.id": Tier.CLEAR_SAFE,
-    "gen_ai.memory.store.id": Tier.CLEAR_SAFE,
-    "gen_ai.prompt.name": Tier.CLEAR_SAFE,
-    "gen_ai.prompt.version": Tier.CLEAR_SAFE,
+    # clear-safe, conditional -- "fixed workflow names only; never
+    # user-derived", "carry only if non-identifying", "only when a deployment
+    # constant naming a store", "small value spaces". None of these is
+    # mechanically checkable here, so each row is omitted unless the caller
+    # admits it by name (``admit_conditional``).
+    "gen_ai.workflow.name": Tier.CLEAR_SAFE_CONDITIONAL,
+    "gen_ai.tool.call.id": Tier.CLEAR_SAFE_CONDITIONAL,
+    "gen_ai.data_source.id": Tier.CLEAR_SAFE_CONDITIONAL,
+    "gen_ai.memory.store.id": Tier.CLEAR_SAFE_CONDITIONAL,
+    "gen_ai.prompt.name": Tier.CLEAR_SAFE_CONDITIONAL,
+    "gen_ai.prompt.version": Tier.CLEAR_SAFE_CONDITIONAL,
     # digest-only — provider-assigned correlation handles into provider logs.
     "gen_ai.response.id": Tier.DIGEST_ONLY,
     "gen_ai.request.previous_response.id": Tier.DIGEST_ONLY,
@@ -157,6 +169,21 @@ NEVER_ENTERS_SEMCONV_PREFIXES: tuple[str, ...] = (
     "gen_ai.prompt.variable.",
     "enduser.",
     "user.",
+)
+
+#: The field set of the block itself. Anything else under the block would
+#: have to be namespaced; this module emits nothing else.
+BLOCK_FIELDS: frozenset[str] = frozenset(
+    {
+        "trace_id",
+        "span_id",
+        "parent_span_id",
+        "trace_flags",
+        "tracestate_digest",
+        "span_name",
+        "resource",
+        "semconv",
+    }
 )
 
 TRACE_ID_RE = re.compile(r"^[0-9a-f]{32}$")

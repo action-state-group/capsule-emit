@@ -51,11 +51,11 @@ draft (see [Why v0 defaults every ID to a digest](#why-v0-defaults-every-id-to-a
 | `trace_id` | `SHA-256(trace_id)` | raw 32-hex |
 | `span_id` | `SHA-256(span_id)` | raw 16-hex |
 | `parent_span_id` | `SHA-256(parent_span_id)` | raw 16-hex |
-| `span_name` | `SHA-256(span_name)` | raw string |
+| `span_name` | omitted (the mapping profile defines no digest form for it) | raw string |
 | `trace_flags` | raw 2-hex (no privacy concern named in the draft) | — |
 | `tracestate_digest` | always `SHA-256(tracestate)` | never clear — the draft is unconditional here |
 | `resource.*` | only `service.name`/`service.version`/`service.namespace`/`deployment.environment.name`/`telemetry.sdk.{name,version}`, clear | — |
-| `semconv.*` | draft's own per-attribute tier (`capsule_emit.otel.allowlist.SEMCONV_ATTRS`) | — |
+| `semconv.*` | per-attribute tier (`capsule_emit.otel.allowlist.SEMCONV_ATTRS`); conditional rows omitted | conditional rows: see below |
 
 **Allow-list, default-deny.** Any attribute not in `SEMCONV_ATTRS` — including everything the
 draft marks `never-enters` (prompt/completion content, tool arguments/results, memory/retrieval
@@ -64,6 +64,24 @@ never touched, full stop. `tests/test_otel_processor.py`'s
 `test_LEAK_MUTANT_never_enters_key_promoted_to_clear_safe_leaks_through_real_builder` proves
 this by running the REAL block builder against a deliberately-poisoned allow-list and showing
 the leak, then the same call against the real table showing none.
+
+**Conditional attributes are opt-in by name.** Six semconv rows are clear-safe only under a
+condition this library cannot check: `gen_ai.workflow.name` (fixed names only, never
+user-derived), `gen_ai.tool.call.id` (only if non-identifying), `gen_ai.data_source.id` and
+`gen_ai.memory.store.id` (only a deployment constant naming a store), and
+`gen_ai.prompt.name`/`gen_ai.prompt.version` (small value spaces). They are omitted unless the
+deployment admits each one it has checked:
+
+```python
+CapsuleOTelSpanExporter(
+    operator="acme-co", developer="my-agent@v1",
+    admit_conditional=frozenset({"gen_ai.workflow.name", "gen_ai.tool.call.id"}),
+)
+```
+
+The semconv table is pinned to `open-telemetry/semantic-conventions-genai@8c1b98a`
+(`semconv.source`). Attribute names that do not exist at that commit are not in the table, and
+registry attributes the mapping does not classify are dropped.
 
 ## Where the block lives in v0
 
@@ -118,9 +136,8 @@ allow-list of its own, unlike `semconv`.
 
 ## The reverse join: `aac.capsule_id` on the span
 
-Provisional attribute name per the draft — expect a rename to `gen_ai.evidence.*` once the
-OpenTelemetry semantic-conventions registry assigns one; `capsule_emit.otel.REVERSE_JOIN_ATTRIBUTE`
-is the one place that rename lands.
+`aac.capsule_id` is a placeholder name until the OpenTelemetry semantic-conventions registry
+assigns one; `capsule_emit.otel.REVERSE_JOIN_ATTRIBUTE` is the one place that rename lands.
 
 **`CapsuleOTelSpanExporter` does not attempt this attribute itself, and that is an
 OpenTelemetry SDK constraint, not a missing feature.** `SpanExporter.export()` receives
