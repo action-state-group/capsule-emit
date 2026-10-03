@@ -1,17 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
-"""The `org.agentactioncapsule.otel` allow-list — draft-palanisamy-scitt-aac-otel-00.
+"""The `org.agentactioncapsule.otel` allow-list — the OTel mapping profile.
 
-Every table here is transcribed field-for-field from the draft's "The
-`org.agentactioncapsule.otel` Block", "Resource attributes", and "GenAI
-semantic conventions" sections (draft-palanisamy-scitt-aac-otel-00 — the
-draft is "under review", not yet an RFC, so this module cites section titles
-rather than a stable URL). **Allow-list, default-deny**: a key absent from a
+Every table here is transcribed field-for-field from the profile's block
+field table, its resource-attribute subset, and its GenAI semantic-convention
+admission table. **Allow-list, default-deny**: a key absent from a
 table below never leaves this process, full stop — see
 :func:`capsule_emit.otel.block.build_otel_block`, which looks up every
 incoming attribute in these tables and drops anything not found, no
 exceptions.
 
-Four tiers, transcribed from the draft's own vocabulary (not this
+Four tiers, transcribed from the profile's own vocabulary (not this
 extension's invention — see `I-D.mih-scitt-agent-action-capsule`,
 "Data-Admission Tiers"):
 
@@ -26,14 +24,14 @@ extension's invention — see `I-D.mih-scitt-agent-action-capsule`,
   permission to emit anything — :func:`capsule_emit.otel.block.build_otel_block`
   only ever emits a ``CLEAR_SAFE`` or ``DIGEST_ONLY`` key.
 
-**v0's own conservative choice, on top of the draft.** The draft leaves
+**v0's own conservative choice, on top of the profile.** The profile leaves
 ``trace_id``/``span_id``/``parent_span_id``/``span_name`` as clear-safe
 *conditional on a producer privacy assessment* it cannot verify mechanically
 (are the systems these IDs index into free of end-user data?). This module
 does not attempt that assessment; the block builder defaults every one of
 those fields to ``DIGEST_ONLY`` and only emits them clear when the caller
 passes ``clear_trace_context=True`` — an explicit, per-deployment opt-in
-after doing the draft's own required assessment, never a default.
+after doing the profile's own required assessment, never a default.
 """
 from __future__ import annotations
 
@@ -68,18 +66,18 @@ class Tier(str, Enum):
     NEVER_ENTERS = "never_enters"
 
 
-#: The draft's "GenAI semantic conventions" commit this table was transcribed
-#: against — carried in the block's ``semconv.source`` field per the draft's
+#: The profile's "GenAI semantic conventions" commit this table was transcribed
+#: against — carried in the block's ``semconv.source`` field per the profile's
 #: own requirement ("MUST name the repository and the commit or release").
 DEFAULT_SEMCONV_SOURCE = "open-telemetry/semantic-conventions-genai@8c1b98a"
 
-#: Resource attributes table (draft, "Resource attributes"). Deliberately
-#: narrower than the draft's own ceiling: the draft lists
+#: Resource attributes table (the profile's resource-attribute subset). Deliberately
+#: narrower than the profile's own ceiling: the profile lists
 #: ``service.instance.id``/``host.name``/``host.id``/``container.id`` as
 #: "digest-only at most and SHOULD be omitted" (small effective entropy,
 #: hashing is not anonymization). v0 takes the SHOULD literally and omits
 #: them outright rather than shipping a digest-only path for values the
-#: draft itself recommends never emitting.
+#: profile itself recommends never emitting.
 RESOURCE_ATTRS: dict[str, Tier] = {
     "service.name": Tier.CLEAR_SAFE,
     "service.version": Tier.CLEAR_SAFE,
@@ -89,9 +87,9 @@ RESOURCE_ATTRS: dict[str, Tier] = {
     "telemetry.sdk.version": Tier.CLEAR_SAFE,
 }
 
-#: GenAI semantic-convention attributes table (draft, "GenAI semantic
-#: conventions"). Every CLEAR_SAFE/DIGEST_ONLY row here is transcribed from
-#: the draft's disposition column; rows the draft marks "out of scope" or
+#: GenAI semantic-convention attributes table (the profile's GenAI semantic
+#: convention admission table). Every CLEAR_SAFE/DIGEST_ONLY row here is transcribed from
+#: the profile's disposition column; rows the profile marks "out of scope" or
 #: leaves unclassified are simply absent (default-deny already covers them —
 #: they do not need a tier).
 SEMCONV_ATTRS: dict[str, Tier] = {
@@ -139,7 +137,7 @@ SEMCONV_ATTRS: dict[str, Tier] = {
     "gen_ai.request.previous_response.id": Tier.DIGEST_ONLY,
 }
 
-#: The draft's "never-enters" semconv rows, transcribed verbatim as their own
+#: The profile's "never-enters" semconv rows, transcribed verbatim as their own
 #: table — NOT consulted by the allow-list lookup (absence from
 #: ``SEMCONV_ATTRS`` already denies them). Exists so a test can plant one of
 #: these keys into a *copy* of ``SEMCONV_ATTRS`` and prove the real
@@ -163,7 +161,7 @@ NEVER_ENTERS_SEMCONV: frozenset[str] = frozenset(
     }
 )
 
-#: Prefix form of the draft's ``gen_ai.prompt.variable.*``/``enduser.*``/
+#: Prefix form of the profile's ``gen_ai.prompt.variable.*``/``enduser.*``/
 #: ``user.*`` never-enters rows (arbitrary suffixes, not enumerable keys).
 NEVER_ENTERS_SEMCONV_PREFIXES: tuple[str, ...] = (
     "gen_ai.prompt.variable.",

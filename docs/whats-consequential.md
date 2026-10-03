@@ -147,7 +147,7 @@ span's attributes into the same `ConnectorEvent` shape above
 `commit_step_present`) and calls `classify_signal_1` directly, so the rule
 lives in exactly one place. See `docs/extensions/otel-correlation.md` for
 the full OTel processor this feeds (digest-only `org.agentactioncapsule.otel`
-correlation block, draft-palanisamy-scitt-aac-otel-00).
+correlation block, per the OTel mapping profile).
 
 ---
 

@@ -56,7 +56,7 @@ PARENT_SPAN_ID = "0102030405060708"
 # ---------------------------------------------------------------------------
 
 
-def test_trace_id_regex_accepts_the_draft_example():
+def test_trace_id_regex_accepts_the_profile_example():
     assert TRACE_ID_RE.match(TRACE_ID)
 
 
@@ -86,7 +86,7 @@ def test_never_enters_semconv_prefix_family_has_no_matching_allowlist_key():
         )
 
 
-def test_resource_attrs_never_include_the_drafts_should_omit_identifiers():
+def test_resource_attrs_never_include_the_profiles_should_omit_identifiers():
     for identifier in ("service.instance.id", "host.name", "host.id", "container.id"):
         assert identifier not in RESOURCE_ATTRS
 
@@ -245,7 +245,7 @@ def test_semconv_never_enters_key_is_dropped_by_the_real_allowlist():
 def test_LEAK_MUTANT_never_enters_key_promoted_to_clear_safe_leaks_through_real_builder():
     """Requirement: 'a mutant that leaks one attribute goes red'.
     This constructs the mutant allow-list (one of the
-    draft's own never-enters rows, remapped to CLEAR_SAFE) and runs it
+    profile's own never-enters rows, remapped to CLEAR_SAFE) and runs it
     through the REAL, unmodified build_otel_block -- proving the allow-list
     lookup is actually load-bearing, not a check that could never fail.
 
@@ -312,11 +312,11 @@ def test_outcome_context_key_shape_is_structurally_separate_from_the_block():
 
 
 def test_outcome_context_never_appears_inside_the_real_otel_block(tmp_path):
-    """The draft's own privacy rule, proven on the REAL merge path
+    """The profile's own privacy rule, proven on the REAL merge path
     (process_span_facts assembling extra_compute from both
     build_otel_block and build_outcome_context_block): a baggage value
     tagged into ext.otel.outcome_context must never also show up inside
-    org.agentactioncapsule.otel, the block the draft forbids baggage from
+    org.agentactioncapsule.otel, the block the profile forbids baggage from
     entering at all."""
     ledger = tmp_path / "l.jsonl"
     baggage_value = "MARKER-VALUE-THAT-MUST-STAY-OUT-OF-THE-OTEL-BLOCK"
@@ -386,7 +386,7 @@ def test_REGRESSION_span_name_never_reaches_action_id_or_effect_type_in_clear(tm
     straight through as action_id/effect.type -- both plain, undigested
     fields -- regardless of clear_trace_context, while the identical name
     was correctly gated inside otel_block["span_name"]. This is exactly the
-    draft's "clear-safe, conditional ... never user-derived" span-name
+    profile's "clear-safe, conditional ... never user-derived" span-name
     warning: real OTel instrumentations do put dynamic data in span names
     (e.g. an unrendered HTTP route). Fixed in processor.py's action_label;
     this pins the fix."""
