@@ -58,10 +58,10 @@ sends, so it never produces an absence at all — that outcome belongs to the
 requester side, not here.
 
 Every refusal shape is the SAME signed object — ``{request_digest, reason,
-issued_at, key_id, sig}`` — because the point of a signed ``no_such_subject``
-is exactly what a signed shape gives an absence that a 404 never could: it
-verifies OFFLINE, against the node's own key, so "I asked and it was gone"
-is citable (frozen surface's "requests are evidence").
+issued_at, key_id, sig}`` — because a signed ``no_such_subject`` gives the
+requester a REFUSAL, which a 404 never could: it verifies OFFLINE, against
+the node's own key, so "I asked and it was gone" is citable (frozen
+surface's "requests are evidence").
 
 **Caller invariance by construction.** The answer is a pure function of
 ``request_bytes`` — this module has no requester-identity parameter at all.
