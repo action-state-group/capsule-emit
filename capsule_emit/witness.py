@@ -788,9 +788,29 @@ def _persist_checkpoint_stamp(
 # section for why that is deliberate, not an omission.
 
 
-#: The two receipt grades register row 5 defines. A label value outside this
-#: set is not reported as a grade, even from a receipt that verifies.
-_RECEIPT_GRADES = frozenset({"countersigned-observed", "mmr-verified"})
+#: The two receipt grades register row 5 defines: existence and time only,
+#: and consistency checked.
+GRADE_OBSERVED_ONLY = "observed-only"
+GRADE_MMR_VERIFIED = "mmr-verified"
+
+#: The label witnesses emitted for ``observed-only`` before it was renamed (a
+#: witness registers and timestamps; it does not countersign). Receipts already
+#: issued keep these signed bytes, so a verifier still accepts the label, with
+#: the same meaning, and reports it as ``observed-only``.
+GRADE_COUNTERSIGNED_OBSERVED_LEGACY = "countersigned-observed"
+
+_RECEIPT_GRADE_ALIASES = {
+    GRADE_OBSERVED_ONLY: GRADE_OBSERVED_ONLY,
+    GRADE_COUNTERSIGNED_OBSERVED_LEGACY: GRADE_OBSERVED_ONLY,
+    GRADE_MMR_VERIFIED: GRADE_MMR_VERIFIED,
+}
+
+
+def normalize_receipt_grade(label: Any) -> str | None:
+    """The receipt grade a label means, under its current name, or ``None``
+    for a value that is not a known grade. A label outside the vocabulary is
+    not reported as a grade, even from a receipt that verifies."""
+    return _RECEIPT_GRADE_ALIASES.get(label) if isinstance(label, str) else None
 
 
 @dataclass(frozen=True)
@@ -858,8 +878,9 @@ def _receipt_grade(
 ) -> str | None:
     """The RECEIPT grade this one witness put on its stamp for ``checkpoint``
     -- decoded from the COSE Receipt's protected header, private-use label
-    ``-65537`` (register row 5: ``countersigned-observed`` = existence +
-    time, ``mmr-verified`` = consistency checked). This is NOT
+    ``-65537`` (register row 5: ``observed-only`` = existence + time,
+    ``mmr-verified`` = consistency checked; the pre-rename label
+    ``countersigned-observed`` is read as ``observed-only``). This is NOT
     :class:`CheckpointWitnessState`'s ``Grade`` (``witnessed`` /
     ``self-attested``) -- that is the CLIENT state, derived from whether
     ANY receipt exists at all, never a claim about what was checked. See
@@ -926,8 +947,7 @@ def _receipt_grade(
         return None
     if not result.ok:
         return None
-    grade = result.protected_header_ext.get(-65537)
-    return grade if grade in _RECEIPT_GRADES else None
+    return normalize_receipt_grade(result.protected_header_ext.get(-65537))
 
 
 @dataclass(frozen=True)
@@ -942,14 +962,14 @@ class CheckpointWitnessState:
     exist, since those only ever see the original registration.
 
     **Two vocabularies, never conflated (register row 5 vs this module):**
-    the RECEIPT grade (``countersigned-observed`` / ``mmr-verified``, in
+    the RECEIPT grade (``observed-only`` / ``mmr-verified``, in
     each receipt's own COSE protected header) is what THAT witness verified
     -- a per-witness fact, read via :meth:`receipt_grades`. The CLIENT
     state (:meth:`grade`, ``Grade.SELF_ATTESTED`` / ``Grade.WITNESSED``) is
     DERIVED and never a claim: ``witnessed`` means only "at least one
     receipt exists," independent of what any of them graded themselves. A
     checkpoint whose only receipt is existence-and-time
-    (``countersigned-observed``) is still ``witnessed`` here -- correctly,
+    (``observed-only``) is still ``witnessed`` here -- correctly,
     since that is what ``witnessed`` means -- but it must never be
     RENDERED as consistency-verified on that basis; a surface showing
     ``grade()`` must show :meth:`receipt_grades` beside it, not instead of
@@ -989,7 +1009,7 @@ class CheckpointWitnessState:
 
     def receipt_grades(self, *, ts_pubkey_pem: bytes | str | None = None) -> dict[str, str | None]:
         """Each effective witness's OWN receipt grade for this checkpoint,
-        keyed by ``ts_url`` -- ``countersigned-observed`` / ``mmr-verified``,
+        keyed by ``ts_url`` -- ``observed-only`` / ``mmr-verified``,
         or ``None`` when that witness has no receipt that is bound to this
         checkpoint and verifies under a key this process already trusts (see
         :func:`_receipt_grade`). This is the per-witness fact a surface lists
