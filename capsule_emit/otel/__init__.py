@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """OTel processor v0 -- digest-only export of the ``org.agentactioncapsule.otel``
-correlation block (the OTel mapping profile) plus taxonomy-driven
+correlation block (draft-palanisamy-scitt-aac-otel-00) plus taxonomy-driven
 observation/effect classification of spans. See ``capsule_emit.otel.processor``
 for the module docstring covering the design (Python SpanExporter, not a Go
 collector build; the reverse-join attribute's best-effort nature) and
