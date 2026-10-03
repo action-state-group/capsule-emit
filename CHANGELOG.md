@@ -6,6 +6,22 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added: `verify --bundle` and `report` check witness receipts
+
+- An evidence file's checkpoint can carry witness receipts (`checkpoint.witnesses`). They are now
+  checked against the **signed** checkpoint, under the keys of a witness directory the verifier
+  supplies: `--witness-directory WITNESSES.json` (the `witnesses.json` format). No witness is
+  trusted by default: without a directory, no receipt is checked.
+- The result is `witnesses` (`check_evidence_file(...).witness`, and `witnesses` in `--json`), with
+  one entry per receipt:
+  - `pass`: a receipt verifies under a known key;
+  - `withheld`: the file carries none, no directory was given, the directory has no row or no key
+    for its witness, or the checkpoint itself did not verify;
+  - `fail`: a receipt does not verify, or is malformed.
+- The bundle draft defines no witness member, so only a failing receipt changes the verdict (to
+  INVALID). A file without receipts gets the verdict it got before. The report's "Witness receipts"
+  line says which witness each receipt is from and whether it verified.
+
 ### Changed: the `checkpointed-local-log` floor is now `>=0.4.1`
 
 From 0.4.1, `LedgerStore.scan` compares a record's time with the bounds as instants, not as

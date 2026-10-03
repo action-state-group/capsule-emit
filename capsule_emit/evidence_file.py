@@ -23,9 +23,19 @@ It also states, without gating on it, whether every record names the signed
 checkpoint's key: the log's own key vouching for records that the log's
 owner signed. A key says who holds it, not who that is.
 
+Witness receipts the checkpoint carries (``checkpoint.witnesses``) are
+checked against the signed checkpoint under the keys of a witness directory
+(:mod:`capsule_emit.witness_directory`) the verifier supplies; no witness is
+trusted by default, so without one no receipt is checked. The result is
+reported as ``witnesses``: ``pass`` when a receipt verifies under a key in
+the directory, ``withheld`` when the file carries none or the directory has
+no row or no key for its witness, ``fail`` when one does not verify. The draft defines no witness member, so
+only a failing receipt changes the verdict (to INVALID); a file without one
+is judged as before.
+
 Public API
 ----------
-check_evidence_file(bundle, *, require_signature=False) -> EvidenceFileCheck
+check_evidence_file(bundle, *, require_signature=False, witness_directory=None) -> EvidenceFileCheck
 load_evidence_file(path) -> dict
 """
 from __future__ import annotations
@@ -80,6 +90,11 @@ _PLAIN: dict[str, dict[str, str]] = {
         "withheld": "Not proven that these records are one unbroken stretch of a committed log.",
         "fail": "The proof that these records are one unbroken stretch of the log does not check.",
     },
+    "witnesses": {
+        "pass": "A witness's receipt shows the checkpoint was registered with it, under a key this verifier knows.",
+        "withheld": "No witness receipt is checked: the file carries none, or no key is known for its witness.",
+        "fail": "A witness receipt in the file does not verify against the signed checkpoint.",
+    },
     "per_record_membership": {
         "pass": "Each record is proven to be in the log at the position it claims.",
         "withheld": "Not proven that each record is in a committed log.",
@@ -125,12 +140,21 @@ class EvidenceFileCheck:
     closure_depth: int | None = None
     countersignatures: int = 0
     extensions: tuple[str, ...] = ()
+    witness: Check | None = None
+    """The witness-receipt check. Outside ``checks``: only a failing receipt
+    gates the verdict (see the module docstring)."""
+    witness_receipts: list[dict[str, Any]] = field(default_factory=list)
+    """One entry per receipt: ``ts_url``, ``binding``, ``status``, ``reason``."""
 
     @property
     def ok(self) -> bool:
         """No check failed. ``withheld`` is not a failure: the file says what
         it does not prove, and the report says it too."""
-        return self.kind_ok and all(c.status != "fail" for c in self.checks)
+        return (
+            self.kind_ok
+            and all(c.status != "fail" for c in self.checks)
+            and (self.witness is None or self.witness.status != "fail")
+        )
 
     @property
     def proven(self) -> bool:
@@ -172,6 +196,14 @@ class EvidenceFileCheck:
             "closure_depth": self.closure_depth,
             "countersignatures_unverified": self.countersignatures,
             "extensions_uninterpreted": list(self.extensions),
+            "witnesses": None
+            if self.witness is None
+            else {
+                "status": self.witness.status,
+                "findings": list(self.witness.findings),
+                "plain": self.witness.plain,
+                "receipts": list(self.witness_receipts),
+            },
         }
 
 
@@ -183,9 +215,13 @@ def load_evidence_file(path: str | Path) -> Any:
         raise ValueError(f"{path}: not a readable JSON file ({err})") from err
 
 
-def check_evidence_file(bundle: Any, *, require_signature: bool = False) -> EvidenceFileCheck:
+def check_evidence_file(
+    bundle: Any, *, require_signature: bool = False, witness_directory: Any = None
+) -> EvidenceFileCheck:
     """Check ``bundle`` offline. Never raises; a malformed file is a failed
-    check, not an exception."""
+    check, not an exception. ``witness_directory`` is a parsed
+    ``witnesses.json`` naming the witnesses and keys to accept; ``None``
+    accepts none, so every receipt is ``withheld``."""
     from agent_action_capsule.bundle import verify_bundle
 
     if not isinstance(bundle, dict) or bundle.get("bundle_kind") != BUNDLE_KIND or bundle.get("bundle_version") != "2":
@@ -239,6 +275,7 @@ def check_evidence_file(bundle: Any, *, require_signature: bool = False) -> Evid
     ]
 
     authenticated = checkpoint_check.status == "pass"
+    witness, witness_receipts = _witness_check(stated, signed if authenticated else None, witness_directory)
     checkpoint_key = signed.get("key_id") if authenticated else None
     signer_match = all(r.key_id == checkpoint_key for r in records) if checkpoint_key and records else None
     completeness = bundle.get("completeness") if isinstance(bundle.get("completeness"), dict) else {}
@@ -258,7 +295,76 @@ def check_evidence_file(bundle: Any, *, require_signature: bool = False) -> Evid
         closure_depth=depth if isinstance(depth, int) and not isinstance(depth, bool) else None,
         countersignatures=len(result.countersignatures),
         extensions=tuple(sorted(str(k) for k in extensions)),
+        witness=witness,
+        witness_receipts=witness_receipts,
     )
+
+
+def _witness_check(
+    stated: dict[str, Any], signed: dict[str, Any] | None, directory: Any
+) -> tuple[Check, list[dict[str, Any]]]:
+    """Every receipt in ``checkpoint.witnesses``, verified against the SIGNED
+    checkpoint (``signed``; ``None`` when it did not verify) under
+    ``directory``'s keys."""
+    import dataclasses
+
+    raw = stated.get("witnesses")
+    if not isinstance(raw, list) or not raw:
+        return Check("witnesses", "withheld", ("witness_receipt_absent",)), []
+    if signed is None:
+        return Check("witnesses", "withheld", ("checkpoint_unverified",)), []
+    from cll.checkpoint import CheckpointRecord, WitnessRecord
+
+    from .witness_bindings import binding_of, verify_witnesses
+
+    names = {f.name for f in dataclasses.fields(WitnessRecord)}
+    receipts: list[Any] = []
+    malformed: list[str] = []
+    for index, entry in enumerate(raw):
+        try:
+            if not isinstance(entry, dict) or not isinstance(entry.get("ts_url"), str):
+                raise TypeError("not a receipt")
+            receipts.append(WitnessRecord(**{k: v for k, v in entry.items() if k in names}))
+        except (TypeError, ValueError):
+            malformed.append(f"witness_receipt_malformed:{index}")
+    checkpoint = CheckpointRecord(
+        v=1,
+        kind="mmr_checkpoint",
+        signature="",
+        witnesses=[],
+        **{k: signed[k] for k in ("log_id", "mmr_size", "root", "prev_size", "prev_root", "key_id", "timestamp")},
+    )
+    cose = stated.get("cose")
+    cose_hex = base64.urlsafe_b64decode(cose + "=" * (-len(cose) % 4)).hex()
+    result = verify_witnesses(
+        checkpoint,
+        receipts,
+        directory={"witnesses": []} if directory is None else directory,
+        checkpoint_cose_hex=cose_hex,
+    )
+    entries: list[dict[str, Any]] = []
+    findings = list(malformed)
+    for verdict in result.receipts:
+        reason = verdict.reason or "not checked: no key in the directory row for this witness"
+        if verdict.verified:
+            status = "pass"
+        elif not verdict.reason or reason.startswith(("not checked", "stub receipt")):
+            status = "withheld"
+            findings.append(f"witness_unverified:{verdict.ts_url}")
+        else:
+            status = "fail"
+            findings.append(f"witness_receipt_invalid:{verdict.ts_url}")
+        entries.append(
+            {"ts_url": verdict.ts_url, "binding": binding_of(verdict.ts_url), "status": status, "reason": reason}
+        )
+    statuses = {e["status"] for e in entries}
+    if malformed or "fail" in statuses:
+        overall = "fail"
+    elif "pass" in statuses:
+        overall = "pass"
+    else:
+        overall = "withheld"
+    return Check("witnesses", overall, tuple(findings)), entries
 
 
 def _claim(name: str, claim: Any) -> Check:

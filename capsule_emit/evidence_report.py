@@ -82,6 +82,16 @@ def _record_fields(record: dict) -> tuple[str, str, str]:
     return str(record.get("timestamp") or ""), str(action) + (f" · {effect_type}" if effect_type else ""), str(model or "")
 
 
+def _witness_fact(check: EvidenceFileCheck) -> str:
+    """The witness line: each receipt's witness and whether it checked."""
+    if not check.witness_receipts:
+        return "none checked: " + _e(check.witness.plain if check.witness else "no receipt in the file")
+    words = {"pass": "verified", "withheld": "not checked (no key known)", "fail": "<strong>does not verify</strong>"}
+    return " · ".join(
+        f"{_e(r['ts_url'].split('://', 1)[-1])}: {words.get(r['status'], _e(r['status']))}" for r in check.witness_receipts
+    )
+
+
 def render_report_html(bundle: Any, check: EvidenceFileCheck, *, source: str = "") -> str:
     """The report page for ``bundle`` given its ``check``."""
     status, headline = _overall(check)
@@ -116,10 +126,7 @@ def render_report_html(bundle: Any, check: EvidenceFileCheck, *, source: str = "
                     else " · signed the checkpoint; some records name a different key"
                 ),
             ),
-            (
-                "Witness receipts",
-                str(len(checkpoint.get("witnesses") or [])) + " in the file (carried, not re-checked here)",
-            ),
+            ("Witness receipts", _witness_fact(check)),
         ]
     else:
         facts = [
