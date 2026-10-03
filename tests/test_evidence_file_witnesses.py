@@ -33,7 +33,7 @@ from cryptography.hazmat.primitives.serialization import (  # noqa: E402
     load_pem_public_key,
 )
 
-from capsule_emit.evidence_file import check_evidence_file, default_witness_directory  # noqa: E402
+from capsule_emit.evidence_file import check_evidence_file  # noqa: E402
 from capsule_emit.evidence_report import render_report_html  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,22 +79,30 @@ def test_a_receipt_verifies_under_a_known_witness_key():
     assert check.verdict == without.verdict
 
 
-def test_no_known_key_is_withheld_not_failed():
-    # The default directory knows only the default witness, not this one.
+def test_no_directory_trusts_no_witness():
+    # No witness is privileged: without a directory nothing is checked.
     check = check_evidence_file(_witnessed())
     assert check.witness.status == "withheld"
     assert check.witness.findings == (f"witness_unverified:{WITNESS}",)
     assert check.witness_receipts[0]["reason"].startswith("not checked")
 
 
-def test_the_default_directory_is_the_committed_row_for_the_default_witness():
-    from cll.checkpoint import emit
+def test_a_directory_without_a_row_for_the_witness_is_withheld():
+    directory = _directory("https://other.example")
+    check = check_evidence_file(_witnessed(), witness_directory=directory)
+    assert check.witness.status == "withheld"
+    assert check.witness.findings == (f"witness_unverified:{WITNESS}",)
+    assert check.witness_receipts[0]["reason"] == "not checked: no directory row for this witness"
 
-    committed = json.loads((ROOT / "witnesses.json").read_text())
-    endpoint = emit.DEFAULT_TS_URL.rstrip("/")
-    row = next(r for r in committed["witnesses"] if r["endpoint"] == endpoint)
-    (default,) = default_witness_directory()["witnesses"]
-    assert (default["endpoint"], default["key_ids"]) == (endpoint, row["key_ids"])
+
+def test_a_row_with_no_keys_is_withheld_not_failed():
+    directory = _directory()
+    directory["witnesses"][0]["key_ids"] = []
+    check = check_evidence_file(_witnessed(), witness_directory=directory)
+    assert check.witness.status == "withheld"
+    assert check.witness.findings == (f"witness_unverified:{WITNESS}",)
+    assert check.witness_receipts[0]["reason"] == "not checked: no key in the directory row for this witness"
+    assert check.verdict == check_evidence_file(json.loads(VECTOR.read_text())).verdict
 
 
 def test_a_file_without_receipts_is_judged_as_before():

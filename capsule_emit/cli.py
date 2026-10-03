@@ -145,7 +145,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="WITNESSES.json",
         default=None,
         help="with --bundle: the witnesses (and keys) whose receipts to check "
-        "(default: the checkpoint library's default witness, under its built-in key)",
+        "(default: none, so no receipt is checked)",
     )
     verify_p.add_argument(
         "--require-signature",
@@ -165,7 +165,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="WITNESSES.json",
         default=None,
         help="the witnesses (and keys) whose receipts to check "
-        "(default: the checkpoint library's default witness, under its built-in key)",
+        "(default: none, so no receipt is checked)",
     )
     report_p.add_argument(
         "-o", "--out", metavar="OUTPUT.html", default=None, help="write the page here (default: stdout)"

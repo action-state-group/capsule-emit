@@ -25,11 +25,11 @@ owner signed. A key says who holds it, not who that is.
 
 Witness receipts the checkpoint carries (``checkpoint.witnesses``) are
 checked against the signed checkpoint under the keys of a witness directory
-(:mod:`capsule_emit.witness_directory`): the verifier's own, or by default
-the one witness whose key ships with the checkpoint library. The result is
-reported as ``witnesses``: ``pass`` when a receipt verifies under a known
-key, ``withheld`` when the file carries none or no key is known for it,
-``fail`` when one does not verify. The draft defines no witness member, so
+(:mod:`capsule_emit.witness_directory`) the verifier supplies; no witness is
+trusted by default, so without one no receipt is checked. The result is
+reported as ``witnesses``: ``pass`` when a receipt verifies under a key in
+the directory, ``withheld`` when the file carries none or the directory has
+no row or no key for its witness, ``fail`` when one does not verify. The draft defines no witness member, so
 only a failing receipt changes the verdict (to INVALID); a file without one
 is judged as before.
 
@@ -55,7 +55,6 @@ __all__ = [
     "EvidenceFileCheck",
     "RecordCheck",
     "check_evidence_file",
-    "default_witness_directory",
     "load_evidence_file",
 ]
 
@@ -222,8 +221,7 @@ def check_evidence_file(
     """Check ``bundle`` offline. Never raises; a malformed file is a failed
     check, not an exception. ``witness_directory`` is a parsed
     ``witnesses.json`` naming the witnesses and keys to accept; ``None``
-    accepts only the checkpoint library's default witness, under its
-    built-in key."""
+    accepts none, so every receipt is ``withheld``."""
     from agent_action_capsule.bundle import verify_bundle
 
     if not isinstance(bundle, dict) or bundle.get("bundle_kind") != BUNDLE_KIND or bundle.get("bundle_version") != "2":
@@ -302,19 +300,6 @@ def check_evidence_file(
     )
 
 
-def default_witness_directory() -> dict:
-    """A one-row witness directory: the checkpoint library's default witness
-    and its built-in key, the same row ``witnesses.json`` lists for it."""
-    from cll.checkpoint import emit
-    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
-
-    pem = emit.DEFAULT_TS_PUBLIC_KEY_PEM
-    key = load_pem_public_key(pem if isinstance(pem, bytes) else pem.encode())
-    raw = key.public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
-    endpoint = emit.DEFAULT_TS_URL.rstrip("/")
-    return {"witnesses": [{"name": endpoint.split("://", 1)[-1], "endpoint": endpoint, "key_ids": [raw]}]}
-
-
 def _witness_check(
     stated: dict[str, Any], signed: dict[str, Any] | None, directory: Any
 ) -> tuple[Check, list[dict[str, Any]]]:
@@ -354,22 +339,23 @@ def _witness_check(
     result = verify_witnesses(
         checkpoint,
         receipts,
-        directory=default_witness_directory() if directory is None else directory,
+        directory={"witnesses": []} if directory is None else directory,
         checkpoint_cose_hex=cose_hex,
     )
     entries: list[dict[str, Any]] = []
     findings = list(malformed)
     for verdict in result.receipts:
+        reason = verdict.reason or "not checked: no key in the directory row for this witness"
         if verdict.verified:
             status = "pass"
-        elif verdict.reason.startswith("not checked") or verdict.reason.startswith("stub receipt"):
+        elif not verdict.reason or reason.startswith(("not checked", "stub receipt")):
             status = "withheld"
             findings.append(f"witness_unverified:{verdict.ts_url}")
         else:
             status = "fail"
             findings.append(f"witness_receipt_invalid:{verdict.ts_url}")
         entries.append(
-            {"ts_url": verdict.ts_url, "binding": binding_of(verdict.ts_url), "status": status, "reason": verdict.reason}
+            {"ts_url": verdict.ts_url, "binding": binding_of(verdict.ts_url), "status": status, "reason": reason}
         )
     statuses = {e["status"] for e in entries}
     if malformed or "fail" in statuses:
