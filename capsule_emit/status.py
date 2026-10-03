@@ -50,7 +50,7 @@ def _fetch_witness_identity(ts_url: str, *, timeout: float = 15.0) -> dict:
     """Best-effort GET of the witness's own ``/.well-known/did.json``, purely
     for display -- this is NEVER used as a trust anchor (verification stays
     pinned to ``capsule_emit.checkpoint``'s ``DEFAULT_TS_PUBLIC_KEY_PEM`` / a
-    caller-supplied ``trust_anchor``; see [anchor-did-from-host]).
+    caller-supplied ``trust_anchor``).
 
     Returns ``{"kid_tail": str | None, "operator": str}``. Any failure
     (witness offline, no did.json, malformed response) degrades to
@@ -151,7 +151,7 @@ def compute_status(path: str, *, offline: bool = False, ts_url: str | list[str] 
             from urllib.parse import urlsplit
 
             host = urlsplit(w.ts_url).netloc or w.ts_url
-            # [anchor-did-from-host]: display identity defaults to "unknown"
+            # Display identity defaults to "unknown"
             # operator / no key -- never our own brand -- until a live
             # did.json fetch (below) says otherwise.
             info: dict[str, Any] = {
@@ -240,7 +240,7 @@ def render_status(status: dict, *, out: Any = None) -> None:
             else:
                 detail = f" ({w['errors'][0]})" if w.get("errors") else ""
                 state = f"NOT confirmed{detail}"
-            # [anchor-did-from-host]: identify the witness by the host it is
+            # Identify the witness by the host it is
             # actually served from + its self-declared operator (from its own
             # did.json) -- never a hard-coded brand name.
             label = f"witness: {w.get('host', w['ts_url'])}"

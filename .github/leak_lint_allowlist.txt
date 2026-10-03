@@ -1,0 +1,51 @@
+# leak-lint exact-text allowlist.
+#
+# Format: each non-comment, non-blank line is the EXACT stripped text of one line that
+# leak_lint.py would otherwise flag. Never a line number -- line numbers rot the moment the
+# surrounding file is edited. Add an entry only for a genuine historical record (e.g. a
+# completed changelog entry documenting a fix by name), never to silence a live leak -- an
+# allowlist seeded with real drift teaches the next person the lint is advisory.
+
+# --- Historical record: closed CHANGELOG.md entries citing a merged PR/task by name. ---
+# --- Rewriting these would falsify a dated, closed changelog entry, which is worse ---
+# --- practice than the leak itself -- this is the allowlist's stated purpose. ---
+### Fixed — vintage structural-rejection test tracks upstream's format-4-only verifier ([capsule-emit-vintage-format-test])
+### Added — `seal(..., references=...)`: draft-04 §5.5.5 cross-record citations (#166, [emit-references-seal-plumbing])
+### Added — `ledger_io.py`: capsule-ledger's read/verify seam homed here (#160, [emit-ledger-io-home])
+### Added — `strict-tier KAT class`: dup keys, -0, leading zero (#157, [strict-tier-kat-class])
+### Added — `ledger.py` learns the `cll.ledger.store.LedgerStore` layout ([mesh-ledger-store-migration])
+backend (capsule-emit-mesh's `[mesh-ledger-store-migration]` is the first)
+### Added — `correlation` evidence-request subject (#155, E14 addendum, [mesh-e14-correlation-subject])
+### Fixed — three-state entry-authorship; `log()`, the unsigned append verb ([verify-entry-authorship-tristate-and-log])
+### Fixed — evidence-request `range` cap/paging; pull-only checkpoint writes (ADV-10, [adv-evidence-door-caps-and-subjects])
+### Added — fail-closed `require_witness` profile + anti-equivocation docs ([capsule-emit-witness-required-profile])
+### Changed — emit now depends on `cll` (checkpointed-local-log) ([w3-cll-lib-extraction], #139)
+### Added — neutral fold/account core (`capsule_emit.account`) ([account-fold-core] #132)
+### Added — `chain_segment` selection kind ([account-chain-segment] #133)
+### Added / Changed — slot-form composition; `compose()`/`carry()` removed ([v4-surface-complete-050])
+**What changed.** The frozen v4 developer surface (`_work/dev-surface-v4-2026-08-24.md` §1/§3/§9)
+### Fixed — the verify surface authenticates cryptography, not just structure ([verify-authenticates-nothing])
+**What changed.** An adversarial run against `origin/main` (`_work/adv-migration-run-2026-08-24.md`)
+### Fixed — fast-follow hardening on the verify surface ([verify-batch-fastfollow])
+
+# --- Historical record: captured demo run-transcript.md files (examples/). These narrate ---
+# --- what actually happened during a specific, dated, already-executed demo run (worktree ---
+# --- paths, task ids, live anchor state at the time) -- hand-editing them to scrub the ---
+# --- coordination-layer detail would misrepresent what that run actually showed, the same ---
+# --- reasoning as the CHANGELOG entries above. ---
+**Run date:** 2026-08-10 (regenerated for `[goose-demo-pr42-close-and-merge-prep]` — the OMIT
+address (out of this repo's boundary). Reported in the outbox for awareness.
+## Disclosure addendum ([goose-demo-disclose-payloads], 2026-08-11)
+`[aac-disclosure-envelope]` (scitt-cose#27, merged 2026-08-07) — `capsule_emit/permalink.py`
+own stdout — never hand-retyped, per the `[verify-bundle-mismatch-fix]` postmortem): Integrity
+`scitt-cose`/hosted-verifier gap (see "Needs decision" in the outbox report for this task);
+library default — set in the original `[goose-demo-pr42-close-and-merge-prep]` task, per
+## Bundle disclosure lift addendum ([capsule-emit-lift-bundle-disclosure-block], 2026-08-11)
+never hand-retyped, per the `[verify-bundle-mismatch-fix]` postmortem discipline):**
+**[goose-demo-disclose-payloads] (2026-08-11) additions — capsule bytes unchanged, no re-anchor:**
+**[capsule-emit-lift-bundle-disclosure-block] (2026-08-11) additions — same frozen run, no re-anchor:**
+install pointed at a different, already-merged worktree (`_worktrees/capsule-emit/dapr-agents-adapter`)
+that predates the `prior_capsule_id` chaining parameter added in this worktree (commit db08e63).
+not this worktree, so it silently picked up the stale adapter and failed at Step 3 with
+Fixed by re-running `pip install -e .` from this worktree to re-point the editable install here
+same-day redeploy was found in `outbox.md`): a stale browser cache/service worker on the PM's

@@ -108,7 +108,7 @@ proposal text before any demo"):
 ## After posting (for whoever tracks replies)
 
 Per the amendment: **the Issue on `a2aproject/A2A` proper only goes up after
-replies to these four**, not concurrently. Track responses here or in the
-outbox; a reply that says "yes, share point X" should get folded into the
+replies to these four**, not concurrently. Track responses here;
+a reply that says "yes, share point X" should get folded into the
 Issue's own adjacent-work section (proposal §4) before filing, not left only
 in a thread.
