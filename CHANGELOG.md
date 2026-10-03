@@ -170,8 +170,8 @@ and the signed `issued_at`, to that verifier's rule.
   taxonomy above (`classify_span_signal_1`, the OTel-span reference implementation
   `docs/whats-consequential.md` already documented but had no code for), and seals `effect`
   spans as digest-only `org.agentactioncapsule.otel` correlation blocks per
-  draft-palanisamy-scitt-aac-otel-00 — allow-list default-deny, trace/span identifiers digested
-  by default (`clear_trace_context=True` opts in per the draft's own privacy-assessment
+  the OTel mapping profile — allow-list default-deny, trace/span identifiers digested
+  by default (`clear_trace_context=True` opts in per the profile's own privacy-assessment
   requirement) — including the span name everywhere it could otherwise leave the process
   (`otel_block["span_name"]` AND the sealed capsule's own `action_id`/`effect.type`, gated by
   the same flag), never-enters content (prompt/completion, tool args/results, session/end-user
@@ -183,7 +183,7 @@ and the signed `issued_at`, to that verifier's rule.
   by export time that span is typically the parent, not the one being joined; a false join is
   worse than no join, so v0 does not attempt it.
 - Outcome-context tagging (`ext.otel.outcome_context`, a sibling compute_attestation key, never
-  nested inside the OTel block itself per the draft's unconditional "no baggage entries in this
+  nested inside the OTel block itself per the profile's unconditional "no baggage entries in this
   block" rule) reads real OpenTelemetry Baggage via `opentelemetry.baggage.get_all()` inside
   `export()`, tagging only caller-allow-listed keys (`outcome_context_baggage_keys` — empty by
   default, since no design note naming real keys exists yet; wiring the real keys in once they

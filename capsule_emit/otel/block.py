@@ -1,22 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 """Build the ``org.agentactioncapsule.otel`` block and the sibling
-outcome-context block -- draft-palanisamy-scitt-aac-otel-00's "The
-`org.agentactioncapsule.otel` Block" section, plus outcome-context
-tagging, kept deliberately OUTSIDE that block (see
+outcome-context block -- the OTel mapping profile's block definition,
+plus outcome-context tagging, kept deliberately OUTSIDE that block (see
 :func:`build_outcome_context_block`'s docstring for why).
 
-**Where the block lives in v0.** The draft frames `org.agentactioncapsule.otel`
-as "a top-level payload member" of the Capsule, parallel to `action_id` /
+**Where the block lives in v0.** The profile frames `org.agentactioncapsule.otel`
+as a top-level payload member of the Capsule, parallel to `action_id` /
 `operator` / etc. -- but nothing in the currently-installed
 `agent_action_capsule.emit()` (spec -04, format_version "4") accepts an
 arbitrary top-level member; only `compute_attestation` (nested under
 `model_attestation`) is extensible today, exactly the container
 `docs/extensions/mcp-toolset-digest.md`'s `ext.mcp` already uses. v0 places
 this block there too: `model_attestation.compute_attestation
-["org.agentactioncapsule.otel"]`, via `_emit_capsule(extra_compute=...)`. The
-draft's own editor note anticipates this ("AAC -05 is expected to state the
-two extension containers explicitly ... Nothing here changes if it does") --
-the field names, tiers, and shape below are unaffected by which container the
+["org.agentactioncapsule.otel"]`, via `_emit_capsule(extra_compute=...)`.
+The field names, tiers, and shape below are unaffected by which container the
 base profile eventually settles on; only the JSON path changes.
 """
 from __future__ import annotations
@@ -48,8 +45,8 @@ __all__ = [
 
 class OTelBlock(TypedDict, total=False):
     """The ``org.agentactioncapsule.otel`` block's own field set -- the
-    draft's field table, transcribed as keys. ``total=False``: every field is
-    OPTIONAL per the draft except ``trace_id``/``span_id`` (REQUIRED, but
+    profile's field table, transcribed as keys. ``total=False``: every field is
+    OPTIONAL per the profile except ``trace_id``/``span_id`` (REQUIRED, but
     typed the same way here since the required-ness is enforced by
     :func:`build_otel_block` always setting them, not by the type checker).
     """
@@ -63,16 +60,16 @@ class OTelBlock(TypedDict, total=False):
     resource: dict[str, SpanAttributeValue]
     semconv: dict[str, SpanAttributeValue]
 
-#: The draft's namespaced payload-member name, reused here as the
+#: The profile's namespaced payload-member name, reused here as the
 #: `compute_attestation` key -- see the module docstring's "Where the block
 #: lives in v0" note.
 OTEL_BLOCK_KEY = "org.agentactioncapsule.otel"
 
-#: A SIBLING key, never nested inside ``OTEL_BLOCK_KEY``. The draft's Privacy
+#: A SIBLING key, never nested inside ``OTEL_BLOCK_KEY``. The profile's Privacy
 #: Considerations section is explicit: "no field of `org.agentactioncapsule.otel`
 #: MAY carry: ... OpenTelemetry baggage entries" -- unconditionally, clear or
 #: digested. Outcome-context tagging is derived from baggage by
-#: design, so it cannot live inside that block without violating the draft it
+#: design, so it cannot live inside that block without violating the profile it
 #: is required to conform to. Naming follows this repo's existing `ext.*`
 #: convention for compute_attestation extension keys (`ext.mcp`,
 #: `ext.agentgateway.*`).
@@ -80,7 +77,7 @@ OUTCOME_CONTEXT_KEY = "ext.otel.outcome_context"
 
 
 def _sha256_hex(value: SpanAttributeValue) -> str:
-    """SHA-256 over *value* "as received" (the draft's own phrasing for
+    """SHA-256 over *value* "as received" (the profile's own phrasing for
     ``tracestate_digest``) -- raw UTF-8 bytes of ``str(value)``, not this
     library's JCS-canonicalized ``agent_input_digest``/``core._digest``. The
     two digest algorithms are deliberately different: everything in this
@@ -169,7 +166,7 @@ def build_otel_block(
     docstring for why v0 defaults this off) or reduced to
     ``SHA-256(id)``, in which case the field name keeps its `_id` suffix
     (`digest_only` values below are still keyed by the same field
-    name the draft gives the clear form -- there is no separate
+    name the profile gives the clear form -- there is no separate
     `trace_id_digest` field; the shape of the value, not the key, carries
     the tier).
 
@@ -207,7 +204,7 @@ def build_otel_block(
         block["trace_flags"] = _validated_hex(trace_flags, TRACE_FLAGS_RE, "trace_flags")
 
     if tracestate:
-        # The draft is unconditional here: "tracestate MUST NOT be carried in
+        # The profile is unconditional here: "tracestate MUST NOT be carried in
         # clear (vendor entries may carry identifiers)" -- no clear_trace_context
         # escape hatch, unlike the IDs above.
         block["tracestate_digest"] = _sha256_hex(tracestate)

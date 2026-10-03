@@ -1,9 +1,8 @@
 # `org.agentactioncapsule.otel` — OpenTelemetry correlation (v0, digests-only)
 
-**Namespaced payload extension**, per draft-palanisamy-scitt-aac-otel-00 ("OpenTelemetry
-Correlation Extension for Agent Action Capsules", under review). Lives in
+**Namespaced payload extension**, per the OTel mapping profile. Lives in
 `model_attestation.compute_attestation["org.agentactioncapsule.otel"]` — see
-[Where the block lives in v0](#where-the-block-lives-in-v0) for why, not the draft's own
+[Where the block lives in v0](#where-the-block-lives-in-v0) for why, not the profile's own
 top-level-payload-member framing.
 
 ## Why
@@ -44,7 +43,7 @@ build (in `capsule-cli` or a new repo), out of scope here.
 ## The block
 
 Every field below is **digest-only by default** — v0's own conservative choice on top of the
-draft (see [Why v0 defaults every ID to a digest](#why-v0-defaults-every-id-to-a-digest)):
+profile (see [Why v0 defaults every ID to a digest](#why-v0-defaults-every-id-to-a-digest)):
 
 | Field | v0 default | Opt-in clear (`clear_trace_context=True`) |
 |---|---|---|
@@ -52,13 +51,13 @@ draft (see [Why v0 defaults every ID to a digest](#why-v0-defaults-every-id-to-a
 | `span_id` | `SHA-256(span_id)` | raw 16-hex |
 | `parent_span_id` | `SHA-256(parent_span_id)` | raw 16-hex |
 | `span_name` | omitted (the mapping profile defines no digest form for it) | raw string |
-| `trace_flags` | raw 2-hex (no privacy concern named in the draft) | — |
-| `tracestate_digest` | always `SHA-256(tracestate)` | never clear — the draft is unconditional here |
+| `trace_flags` | raw 2-hex (no privacy concern named in the profile) | — |
+| `tracestate_digest` | always `SHA-256(tracestate)` | never clear — the profile is unconditional here |
 | `resource.*` | only `service.name`/`service.version`/`service.namespace`/`deployment.environment.name`/`telemetry.sdk.{name,version}`, clear | — |
 | `semconv.*` | per-attribute tier (`capsule_emit.otel.allowlist.SEMCONV_ATTRS`); conditional rows omitted | conditional rows: see below |
 
 **Allow-list, default-deny.** Any attribute not in `SEMCONV_ATTRS` — including everything the
-draft marks `never-enters` (prompt/completion content, tool arguments/results, memory/retrieval
+profile marks `never-enters` (prompt/completion content, tool arguments/results, memory/retrieval
 text, session/end-user identifiers) — is silently dropped. It is never read into a digest,
 never touched, full stop. `tests/test_otel_processor.py`'s
 `test_LEAK_MUTANT_never_enters_key_promoted_to_clear_safe_leaks_through_real_builder` proves
@@ -85,18 +84,17 @@ registry attributes the mapping does not classify are dropped.
 
 ## Where the block lives in v0
 
-The draft frames `org.agentactioncapsule.otel` as a **top-level payload member**, parallel to
+The profile frames `org.agentactioncapsule.otel` as a **top-level payload member**, parallel to
 `action_id`/`operator`/etc. Nothing in the currently-released `agent_action_capsule.emit()`
 (spec -04, format_version `"4"`) accepts an arbitrary top-level member yet — only
 `compute_attestation` (nested under `model_attestation`) is extensible today, the same
-container [`ext.mcp`](mcp-toolset-digest.md) already uses. v0 places this block there too. The
-draft's own editor note anticipates this ("AAC -05 is expected to state the two extension
-containers explicitly ... Nothing here changes if it does") — only the JSON path moves if/when
-that lands; the field names, tiers, and shape do not.
+container [`ext.mcp`](mcp-toolset-digest.md) already uses. v0 places this block there too. If
+the base profile later names a top-level extension container, only the JSON path moves; the field
+names, tiers, and shape do not.
 
 ## Why v0 defaults every ID to a digest
 
-The draft leaves `trace_id`/`span_id`/`parent_span_id`/`span_name` clear-safe *conditional* on
+The profile leaves `trace_id`/`span_id`/`parent_span_id`/`span_name` clear-safe *conditional* on
 a producer privacy assessment this library cannot perform mechanically: "Producers MUST
 classify trace and span IDs as clear-safe only when the observability systems they index do
 not themselves hold end-user identity ... Otherwise the IDs MUST be carried as digests." v0
@@ -106,7 +104,7 @@ without deciding.
 
 ## Outcome-context tagging — wired to a real Baggage read, empty allow-list by design
 
-`org.agentactioncapsule.otel` can never carry OpenTelemetry Baggage entries — the draft is
+`org.agentactioncapsule.otel` can never carry OpenTelemetry Baggage entries — the profile is
 unconditional: "no field of `org.agentactioncapsule.otel` MAY carry: ... OpenTelemetry baggage
 entries ... clear or as a digest." Outcome-context tagging (tagging a sealed span with a
 baggage-carried exchange/reconciliation state) is therefore a **sibling** compute_attestation
@@ -162,7 +160,7 @@ with tracer.start_as_current_span("write_order") as span:
     stamp_reverse_join(span, result.capsule_id)  # before span.end() (the `with` block's exit)
 ```
 
-The span attribute is advisory either way — the draft is explicit that a verifier MUST
+The span attribute is advisory either way — the profile is explicit that a verifier MUST
 recompute `capsule_id` from the Capsule itself; a disagreeing span attribute is a defect in the
 span, not in the Capsule.
 
