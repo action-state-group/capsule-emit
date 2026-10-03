@@ -219,7 +219,7 @@ def test_one_failing_endpoint_does_not_block_the_others(tmp_path, stub_ts_single
 @pytest.fixture
 def stub_ts_single(monkeypatch):
     # Simulate that this hermetic stub IS the pinned default witness
-    # ([verify-batch-fastfollow] item D) so the "one valid stamp is enough"
+    # so the "one valid stamp is enough"
     # any-of test still gets a WITNESSED stamp via the DEFAULT (no-key)
     # read path. monkeypatch reverts per test.
     base_url, received, stop = _start_stub_ts()

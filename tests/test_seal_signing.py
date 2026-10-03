@@ -74,7 +74,7 @@ def test_tampering_with_signed_content_invalidates_signature(tmp_path, monkeypat
 
 
 def test_capsule_id_is_signer_independent(tmp_path, monkeypatch):
-    """[capsule-cose-sign1] draft-04 reversal: capsule_id is a PURE content
+    """draft-04 reversal: capsule_id is a PURE content
     address again -- computed over the signature-free payload, exactly as
     pre-#94. signature/key_id are added to the dict AFTER capsule_id is
     computed and set, and are permanently excluded from its preimage (see
@@ -96,7 +96,7 @@ def test_capsule_id_is_signer_independent(tmp_path, monkeypatch):
 
 
 def test_two_signers_over_identical_content_share_one_capsule_id(tmp_path, monkeypatch):
-    """[capsule-cose-sign1] MANAGER FLAG 4(b): two signers, same content ->
+    """draft-04 reversal, flagged item 4(b): two signers, same content ->
     ONE shared capsule_id, TWO distinct COSE_Sign1 envelopes, order-
     independent (the content-unique-not-record-unique semantic). Within a
     single producer, behavior is identical to before the reversal (Ed25519
@@ -249,7 +249,7 @@ def test_rotation_landing_between_sign_and_label_cannot_mismatch(tmp_path, monke
     between would mint a capsule enveloped by the OLD key but labeled with
     the NEW key_id -- an honestly-produced capsule that fails verification.
     The frozen §7d atomic `sign_envelope(bytes) -> (envelope, key_id)` return
-    (see `LocalKeypairSigner.sign_envelope`, [capsule-cose-sign1]) closes the
+    (see `LocalKeypairSigner.sign_envelope`) closes the
     window the same way `sign()` always has: both the key and its `key_id`
     are read from ONE lock-protected snapshot inside the same call, so
     `_emit_capsule` can only ever see an envelope and key_id pulled from the

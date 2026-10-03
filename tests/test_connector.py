@@ -59,7 +59,7 @@ def test_commit_step_present_decides_when_it_is_the_only_signal():
 
 
 def test_no_signal_present_defaults_to_effect_fail_safe():
-    """R4: an event with every signal absent must classify as EFFECT, not
+    """An event with every signal absent must classify as EFFECT, not
     silently pass as an observation. This is the mutant this test exists to
     catch — flip the default in classify_signal_1 to OBSERVATION and this
     test goes red."""

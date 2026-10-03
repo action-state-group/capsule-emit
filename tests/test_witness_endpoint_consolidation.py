@@ -5,8 +5,8 @@ surface with no ``witness_url``/``CAPSULE_WITNESS_URL`` override, never by
 reading ``DEFAULT_TS_URL`` off the module (that only proves the constant is
 set correctly, not that the default code path actually resolves to it).
 
-This is the endpoint-consolidation half of
-[emit-anchor-disclosure-and-endpoint-consolidation]'s frozen decision
+This is the endpoint-consolidation half of the anchor-disclosure-and-
+endpoint-consolidation frozen decision
 (witness.agentactioncapsule.org canonical): the anchor.* posting path stays
 configured-but-dormant (see ``_PENDING_CNAME_TARGETS`` in
 ``capsule_emit.checkpoint.emit``) so today's actual HTTP dispatch still lands

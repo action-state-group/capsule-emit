@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""[mesh-ledger-store-migration] capsule_emit.ledger learns the store layout.
+"""capsule_emit.ledger learns the store layout.
 
 ``read_ledger``/``read_ledger_entries`` (and therefore ``view``/``view_chains``/
 ``show``) detect a ``cll.ledger.store.LedgerStore`` directory (``manifest.json``
