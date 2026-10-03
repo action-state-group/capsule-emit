@@ -154,7 +154,7 @@ def process_span_facts(
     capsule's ``action_id`` and ``effect.type``, both plain, undigested
     fields) regardless of *clear_trace_context* -- while the SAME name was
     correctly gated inside ``otel_block["span_name"]``. That is exactly the
-    "clear-safe, conditional ... never user-derived" span name the profile
+    "clear-safe, conditional ... never user-derived" span name the draft
     itself warns about (many real OTel instrumentations DO put dynamic data
     in a span name, e.g. an HTTP client span named with an unrendered
     route). ``action_label`` below applies the identical gate everywhere the
