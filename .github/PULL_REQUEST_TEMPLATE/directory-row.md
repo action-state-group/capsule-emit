@@ -18,7 +18,7 @@
 
 - [ ] One row per operator and endpoint; rotated keys are added to the same row's `key_ids`, not a new row
 - [ ] Row placed in alphabetical order by `name` (case-insensitive)
-- [ ] `key_ids`: an Ed25519 key as its raw 32 bytes in 64 lowercase hex; any other key type as the SHA-256 of its DER SubjectPublicKeyInfo, with the key itself in `public_keys` (base64 DER)
+- [ ] `key_ids`: an Ed25519 key as its raw 32 bytes in 64 lowercase hex; any other key type as the SHA-256 of its DER SubjectPublicKeyInfo, with the key itself in `public_keys` (base64 DER). An Ed25519 row may also list its key in `public_keys`; it must be the same key as the `key_ids` entry
 - [ ] `since` is the date the service began issuing receipts at this endpoint (YYYY-MM-DD)
 - [ ] A receipt from `endpoint` verifies under the listed key
 - [ ] `python -m capsule_emit.witness_directory witnesses.json` prints `ok`
