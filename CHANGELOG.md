@@ -22,6 +22,17 @@ The library no longer sends anything to, or builds links for, a service its call
 - **The legacy anchor channel has no default endpoint.** An opted-in anchor (`anchor=True` /
   `CAPSULE_ANCHOR=legacy-on`) with no `anchor_url=` / `AAC_ANCHOR_URL` sends nothing
   (`anchor_status` `"skipped"`), where the library underneath would have chosen its own.
+- **Verification trusts no built-in witness key.** A witness receipt verifies only under a key the
+  caller supplies (`ts_pubkey_pem=`, a `trust_anchor`, or a witness directory the caller names,
+  such as the public `witnesses.json`); with none it reads `UNVERIFIED`. Before, a receipt from
+  `https://witness.agentactioncapsule.org` was checked under a key built into the library.
+  Applies to `witness.verify_witness_stamp_tristate_keyed`, the new `witness.stamp_verdict`,
+  `CheckpointWitnessState.grade()`, chain-segment verification and `status`.
+  `status.compute_status()` takes `trust_anchor=` / `witness_directory=` (reported as
+  `grade_keys`), and `capsule-emit status` takes `--witness-directory`; with no keys the latest
+  checkpoint grades self-attested and says its receipts were not checked. `bundle.verify_bundle`
+  and `disclose.verify_disclosure` go through cll's log check, which still pins that key until the
+  cll release that drops it.
 - **Permalinks have no default verify surface.** `permalink.DEFAULT_BASE_URL` is removed;
   `build_url()` requires `base_url=`; `capsule-emit permalink` requires `--base-url`;
   `build_evidence_markdown()` and `capsule-emit evidence` require it unless the viewer link is off

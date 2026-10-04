@@ -86,11 +86,11 @@ def verify_bundle(
     """Pure, offline, total verification of a standalone :class:`Bundle` —
     no reader, no network, never raises. ``trust_anchor``
     [verify-threestate-trustanchor] is an optional caller-supplied mapping
-    of ``ts_url -> pubkey_pem`` — one or several pins for Transparency
-    Services the caller trusts beyond the built-in pinned default witness
-    (``capsule_emit.checkpoint.DEFAULT_TS_URL`` /
-    ``DEFAULT_TS_PUBLIC_KEY_PEM``, always consulted regardless of
-    ``trust_anchor``). Confirms every link the two-sided append bracket
+    of ``ts_url -> pubkey_pem`` — the Transparency Services the caller
+    trusts. A verifier should trust no witness its caller did not name; the
+    log check underneath (``cll.checkpoint.bundle``) still pins one built-in
+    key of its own until the cll release that drops it (see CHANGELOG).
+    Confirms every link the two-sided append bracket
     depends on:
 
       1. the receipt's own ``capsule_id`` matches the leaf the inclusion

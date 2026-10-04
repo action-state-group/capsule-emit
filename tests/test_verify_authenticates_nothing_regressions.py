@@ -378,7 +378,9 @@ def test_attack45_positive_control_genuine_stamp_still_grades_witnessed(two_chec
 
     assert cp.grade() == Grade.WITNESSED
 
-    result = status.compute_status(str(ledger_path), offline=True)
+    result = status.compute_status(
+        str(ledger_path), offline=True, trust_anchor={cp.witnesses[0].ts_url: TEST_TS_PUBLIC_KEY_PEM}
+    )
     assert result["latest_checkpoint"]["grade"] == "witnessed"
 
 

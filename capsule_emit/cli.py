@@ -197,12 +197,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="skip the read-only witness re-check; report only what the ledger already holds",
     )
     status_p.add_argument(
+        "--witness-directory",
+        metavar="WITNESSES.json",
+        default=None,
+        help="the witnesses (and keys) whose receipts to check for the grade "
+        "(default: none, so no receipt is checked)",
+    )
+    status_p.add_argument(
         "--witness-url",
         dest="witness_url",
         action="append",
         metavar="URL",
         help="witness endpoint(s) to report backlog for (repeatable); defaults to "
-        "CAPSULE_WITNESS_URL, else the built-in default",
+        "CAPSULE_WITNESS_URL (no built-in default)",
     )
     status_p.add_argument("--json", dest="as_json", action="store_true", help="raw JSON output")
 
@@ -571,7 +578,14 @@ def _cmd_verify(args: argparse.Namespace) -> int:
 def _cmd_status(args: argparse.Namespace) -> int:
     from .status import compute_status, render_status
 
-    result = compute_status(args.path, offline=args.offline, ts_url=args.witness_url)
+    try:
+        directory = _witness_directory_arg(args)
+    except (ValueError, OSError) as err:
+        print(f"status: {err}", file=sys.stderr)
+        return 1
+    result = compute_status(
+        args.path, offline=args.offline, ts_url=args.witness_url, witness_directory=directory
+    )
 
     if args.as_json:
         print(json.dumps(result, indent=2, default=str))

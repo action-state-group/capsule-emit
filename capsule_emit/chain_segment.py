@@ -357,7 +357,9 @@ def verify_chain_segment(
     link — a break never "silently re-links" past the gap — and labels
     ``continuity`` with exactly where and why.
     """
-    from cll.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+    from cll.checkpoint.emit import StampVerdict
+
+    from .witness import stamp_verdict
 
     if not segment.links:
         return ChainSegmentVerifyResult(
@@ -406,7 +408,7 @@ def verify_chain_segment(
         depth += 1
         if cp.witnesses:
             verdicts = [
-                verify_witness_stamp_tristate(cp, w, ts_pubkey_pem=(trust_anchor or {}).get(w.ts_url))[0]
+                stamp_verdict(cp, w, ts_pubkey_pem=(trust_anchor or {}).get(w.ts_url))[0]
                 for w in cp.witnesses
             ]
             if any(v is StampVerdict.WITNESSED for v in verdicts):

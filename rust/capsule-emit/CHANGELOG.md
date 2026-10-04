@@ -18,6 +18,13 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   `https://anchor.agentactioncapsule.org`; the witness host serves the same
   routes itself.
 
+- `anchor`: a redirect is never followed (`AnchorClient` is built with
+  `redirects(0)`): a 3xx is returned as `AnchorError::Status`, so a request
+  never reaches a host the caller did not name.
+- `anchor`: every response body is read up to `MAX_RESPONSE_BYTES` (1 MiB);
+  a larger one is `AnchorError::TooLarge` (a new variant). An error body is
+  read under the same cap and kept to 4096 characters in the error.
+
 ### Added
 - `AnchorClient::base_url()`: the URL a client sends to, as given.
 

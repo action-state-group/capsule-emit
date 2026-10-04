@@ -48,9 +48,8 @@ from typing import Any
 
 def _fetch_witness_identity(ts_url: str, *, timeout: float = 15.0) -> dict:
     """Best-effort GET of the witness's own ``/.well-known/did.json``, purely
-    for display -- this is NEVER used as a trust anchor (verification stays
-    pinned to ``capsule_emit.checkpoint``'s ``DEFAULT_TS_PUBLIC_KEY_PEM`` / a
-    caller-supplied ``trust_anchor``; see [anchor-did-from-host]).
+    for display -- this is NEVER used as a trust anchor (verification uses
+    only a caller-supplied key / ``trust_anchor``; see [anchor-did-from-host]).
 
     Returns ``{"kid_tail": str | None, "operator": str}``. Any failure
     (witness offline, no did.json, malformed response) degrades to
@@ -81,7 +80,14 @@ def _fetch_witness_identity(ts_url: str, *, timeout: float = 15.0) -> dict:
         return {"kid_tail": None, "operator": "unknown"}
 
 
-def compute_status(path: str, *, offline: bool = False, ts_url: str | list[str] | None = None) -> dict:
+def compute_status(
+    path: str,
+    *,
+    offline: bool = False,
+    ts_url: str | list[str] | None = None,
+    trust_anchor: dict[str, bytes | str] | None = None,
+    witness_directory: Any = None,
+) -> dict:
     """Read ``path`` (a JSONL ledger) and report its ladder position.
 
     Returns a plain, JSON-serializable dict -- see the module docstring for
@@ -89,7 +95,13 @@ def compute_status(path: str, *, offline: bool = False, ts_url: str | list[str] 
     the latest checkpoint's witness receipt(s); ``offline=False`` (default)
     performs it. ``ts_url`` resolves which witness(es) ``witness_backlog``
     is reported for, with the same precedence ``seal()``/``maybe_checkpoint``
-    use: explicit ``ts_url``, else ``CAPSULE_WITNESS_URL``, else the default.
+    use: explicit ``ts_url``, else ``CAPSULE_WITNESS_URL`` (no default).
+
+    The latest checkpoint grades ``witnessed`` only when a receipt verifies
+    under a key the caller supplied: ``witness_directory`` (a parsed
+    ``witnesses.json`` the caller chose) or ``trust_anchor`` (``ts_url ->
+    public key``). No witness has a built-in key. ``grade_keys`` says which
+    was used, or ``"none supplied"`` (then no receipt was checked).
     """
     from . import witness
     from .checkpoint import core
@@ -183,7 +195,14 @@ def compute_status(path: str, *, offline: bool = False, ts_url: str | list[str] 
         result["latest_checkpoint"] = {
             "mmr_size": last_cp.mmr_size,
             "leaf_count": covered_leaves,
-            "grade": last_state.grade().value,
+            "grade": _grade(last_state, trust_anchor, witness_directory).value,
+            "grade_keys": (
+                "witness directory"
+                if witness_directory is not None
+                else "trust anchor"
+                if trust_anchor
+                else "none supplied"
+            ),
             "stub_witness": stub_witness_only,
             "timestamp": last_cp.timestamp,
             "key_id": last_cp.key_id,
@@ -191,6 +210,30 @@ def compute_status(path: str, *, offline: bool = False, ts_url: str | list[str] 
         }
 
     return result
+
+
+def _grade(state: Any, trust_anchor: dict | None, directory: Any) -> Any:
+    """The latest checkpoint's grade under the caller's keys only."""
+    from .checkpoint import Grade, StampVerdict
+    from .witness import stamp_verdict
+
+    if directory is not None:
+        from .witness_bindings import verify_witnesses
+
+        result = verify_witnesses(
+            state.checkpoint,
+            state.effective_witnesses,
+            directory=directory,
+            checkpoint_cose_hex=state.checkpoint_cose_hex,
+        )
+        return Grade.WITNESSED if result.counted else Grade.SELF_ATTESTED
+    witnessed = any(
+        not w.is_stub
+        and stamp_verdict(state.checkpoint, w, ts_pubkey_pem=(trust_anchor or {}).get(w.ts_url))[0]
+        is StampVerdict.WITNESSED
+        for w in state.effective_witnesses.values()
+    )
+    return Grade.WITNESSED if witnessed else Grade.SELF_ATTESTED
 
 
 def render_status(status: dict, *, out: Any = None) -> None:
@@ -209,6 +252,12 @@ def render_status(status: dict, *, out: Any = None) -> None:
         print(f"  {'latest checkpoint':<30}none yet", file=out)
     else:
         print(f"  {'latest checkpoint grade':<30}{cp['grade']}", file=out)
+        if cp.get("grade_keys") == "none supplied" and cp["witnesses"]:
+            print(
+                f"  {'':<30}(receipts not checked: no witness keys supplied; "
+                "pass --witness-directory)",
+                file=out,
+            )
         if cp.get("stub_witness"):
             print(
                 f"  {'':<30}⚠ STUB WITNESS — proves nothing beyond self-attested",

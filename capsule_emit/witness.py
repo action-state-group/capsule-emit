@@ -190,6 +190,7 @@ __all__ = [
     "CheckpointWitnessState",
     "StampVerification",
     "verify_witness_stamp_tristate_keyed",
+    "stamp_verdict",
     "checkpoint_witness_states",
     "checkpoint_witness_backlog",
     "retry_pending_witness_stamps",
@@ -822,11 +823,9 @@ class StampVerification:
     the three-state ``verdict``, its ``errors``, and ``key_pem``, the trusted
     Transparency Service key the verdict was reached under.
 
-    ``key_pem`` is the caller's pin when one was given; else
-    :data:`capsule_emit.checkpoint.DEFAULT_TS_PUBLIC_KEY_PEM` for a witness
-    at :data:`capsule_emit.checkpoint.DEFAULT_TS_URL`; else ``None`` (an
-    unpinned witness anywhere else, for which no key is trusted and nothing
-    better than ``UNVERIFIED`` is possible). ``WITNESSED`` means the receipt's
+    ``key_pem`` is the caller's pin when one was given, else ``None``: no
+    key is trusted that the caller did not supply (there is no built-in key
+    for any witness), and nothing better than ``UNVERIFIED`` is possible. ``WITNESSED`` means the receipt's
     signature verified under exactly ``key_pem``. With any other verdict the
     key is only the one the stamp was judged against, not one it verified
     under, so nothing may be read from the receipt on its strength."""
@@ -847,8 +846,7 @@ def verify_witness_stamp_tristate_keyed(
     never makes a network call.
 
     The trust-anchor choice is made HERE, once: the caller's
-    ``ts_pubkey_pem``, else the built-in default key for a witness at the
-    default ``ts_url``, else none. The chosen key is then passed to the
+    ``ts_pubkey_pem``, else none (see :func:`stamp_verdict`). The chosen key is then passed to the
     tristate explicitly, so the tristate never picks a key of its own on this
     path, and the returned verdict and ``key_pem`` cannot describe two
     different keys. Anything that must read more from a receipt after a
@@ -859,18 +857,43 @@ def verify_witness_stamp_tristate_keyed(
     ``(verdict, errors)``; for any stamp it returns the same verdict this
     function does.
     """
-    # The constants are read off the module at call time, not bound at
-    # import, so a deployment (or test) that re-points DEFAULT_TS_URL /
-    # DEFAULT_TS_PUBLIC_KEY_PEM on it is seen here exactly as the tristate
-    # sees it. cll's module directly: capsule_emit.checkpoint.emit is the
-    # same module object behind a deprecated alias.
+    key_pem = ts_pubkey_pem
+    verdict, errors = stamp_verdict(checkpoint, witness, ts_pubkey_pem=key_pem)
+    return StampVerification(verdict=verdict, errors=tuple(errors), key_pem=key_pem)
+
+
+def stamp_verdict(
+    checkpoint: Any,  # capsule_emit.checkpoint.CheckpointRecord
+    witness: Any,  # capsule_emit.checkpoint.WitnessRecord
+    *,
+    ts_pubkey_pem: bytes | str | None = None,
+) -> tuple[Any, list[str]]:
+    """:func:`cll.checkpoint.emit.verify_witness_stamp_tristate`, trusting
+    only the key the caller supplies. Never raises; never makes a network
+    call.
+
+    That function pins a key built into the library when it is given none
+    and the stamp's ``ts_url`` is one particular public witness. A verifier
+    here trusts no witness its caller did not name: with no key, the stamp
+    gets the shape checks only (bound to this checkpoint, a structurally
+    valid receipt) and reads ``UNVERIFIED`` at best, whatever its URL. To
+    trust a witness, pass its key (``ts_pubkey_pem``, or a ``trust_anchor``
+    / witness directory the caller chose).
+    """
+    import dataclasses
+
     from cll.checkpoint import emit as _emit
 
-    key_pem = ts_pubkey_pem
-    if key_pem is None and getattr(witness, "ts_url", None) == _emit.DEFAULT_TS_URL:
-        key_pem = _emit.DEFAULT_TS_PUBLIC_KEY_PEM
-    verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=key_pem)
-    return StampVerification(verdict=verdict, errors=tuple(errors), key_pem=key_pem)
+    if ts_pubkey_pem is not None:
+        verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=ts_pubkey_pem)
+        return verdict, list(errors)
+    # No key: ask for the shape checks under a URL that pins nothing, and
+    # report the stamp's own URL.
+    unpinned = dataclasses.replace(witness, ts_url="")
+    verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, unpinned, ts_pubkey_pem=None)
+    if verdict is _emit.StampVerdict.UNVERIFIED:
+        errors = [f"witnessed by {witness.ts_url}, no key supplied by the caller — unverified stamp"]
+    return verdict, list(errors)
 
 
 def _receipt_grade(
@@ -898,18 +921,17 @@ def _receipt_grade(
     1. **Bound to this checkpoint.** ``witness.entry_hash`` equals the hash
        of ``checkpoint.digest()``, so a genuine receipt replayed from
        another checkpoint fails.
-    2. **Signed by a key this process already trusts.** With
-       ``ts_pubkey_pem`` the receipt must verify under that pinned key (one
-       key, applied to every witness it is passed with). Without it, only a
-       witness at the library's default ``ts_url`` can pass, under the
-       public key built into the library. No key is ever fetched: a
+    2. **Signed by a key the caller supplied.** With ``ts_pubkey_pem`` the
+       receipt must verify under that pinned key (one key, applied to every
+       witness it is passed with). Without it, no witness can pass: there is
+       no built-in key for any witness. No key is ever fetched: a
        ``ts_url`` is written by whoever writes the ledger, so a key served
        there proves nothing about who signed the receipt.
 
     ``None`` -- "no verified grade" -- when: the stamp is a stub
     (``is_stub``); it is not ``WITNESSED`` (wrong signer, replayed or
-    tampered stamp, no ``checkpoint`` to bind to, an unpinned witness other
-    than the default, ``scitt_cose`` not installed); or it is ``WITNESSED``
+    tampered stamp, no ``checkpoint`` to bind to, no key supplied,
+    ``scitt_cose`` not installed); or it is ``WITNESSED``
     but carries no label, or a value outside the two grades above. ``None``
     must never be presented as either grade string.
 
@@ -998,13 +1020,13 @@ class CheckpointWitnessState:
         alone, so a late backfilled stamp flips this to WITNESSED without
         needing the checkpoint's own, never-updated ``.witnesses`` list to
         change."""
-        from .checkpoint import Grade, verify_witness_stamp_offline
+        from .checkpoint import Grade, StampVerdict
 
         return (
             Grade.WITNESSED
             if any(
                 not w.is_stub
-                and verify_witness_stamp_offline(self.checkpoint, w, ts_pubkey_pem=ts_pubkey_pem)[0]
+                and stamp_verdict(self.checkpoint, w, ts_pubkey_pem=ts_pubkey_pem)[0] is StampVerdict.WITNESSED
                 for w in self.effective_witnesses.values()
             )
             else Grade.SELF_ATTESTED
