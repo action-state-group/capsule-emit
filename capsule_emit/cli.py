@@ -39,6 +39,13 @@ Four rendering levels for the ledger:
                                                       deliberate, recorded
                                                       act (never a default)
 
+    capsule-emit export <ledger_dir>             — a SCOPED evidence file for a
+      (--exchange ID | --peer NODE |               third party: only the records
+       --since/--until TIME | --record ID |        in scope, the signed
+       --all) --signing-key KEY.pem -o FILE        checkpoint, one inclusion
+                                                    proof per record; a whole
+                                                    ledger only with --all
+
 Exit codes: 0 = ok, 1 = error.
 """
 
@@ -267,6 +274,44 @@ def _build_parser() -> argparse.ArgumentParser:
         f"inline permalink would exceed {MAX_INLINE_URL_BYTES // (1024 * 1024)} MiB: "
         "the fragment then carries a digest-checked pointer instead of the bundle. "
         "Without it an oversize permalink is refused.",
+    )
+
+    permalink_p.add_argument(
+        "--all",
+        action="store_true",
+        help="with --ledger and --bundle-out: write every record of the ledger to the evidence "
+        "file, across every counterparty. Without it the whole-ledger file is refused; "
+        "use `capsule-emit export` for a scoped, proven one",
+    )
+
+    # export
+    export_p = sub.add_parser(
+        "export",
+        help="write a SCOPED evidence file (evidence-bundle/v2) for a third party: one exchange, "
+        "one peer or one time window, each record proven in the node's signed checkpoint",
+    )
+    export_p.add_argument("ledger_dir", metavar="LEDGER_DIR", help="the ledger directory (capsules.jsonl, checkpoints.jsonl)")
+    export_p.add_argument("--exchange", metavar="ID", default=None, help="the records of one exchange")
+    export_p.add_argument("--peer", metavar="NODE", default=None, help="the records naming one peer node")
+    export_p.add_argument("--since", metavar="TIME", default=None, help="records at or after TIME (ISO 8601)")
+    export_p.add_argument("--until", metavar="TIME", default=None, help="records at or before TIME (ISO 8601)")
+    export_p.add_argument("--record", metavar="CAPSULE_ID", default=None, help="one record")
+    export_p.add_argument(
+        "--all", action="store_true", help="every record of the ledger, every counterparty: only on purpose"
+    )
+    export_p.add_argument(
+        "--signing-key",
+        metavar="KEY.pem",
+        required=True,
+        help="the node's Ed25519 key (PKCS#8 PEM) that signed the checkpoint, used to give the "
+        "checkpoint its portable COSE form; never created",
+    )
+    export_p.add_argument(
+        "-o",
+        "--out",
+        metavar="PATH",
+        required=True,
+        help="the evidence file to write",
     )
 
     # evidence
@@ -704,6 +749,15 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
         )
         disclosures = per_capsule if bundle else next(iter(per_capsule.values()))
 
+    if args.bundle_out and args.ledger and len(capsules) > 1 and not args.all:
+        print(
+            f"permalink: refusing to write every record of {args.ledger} ({len(capsules)}) to an "
+            "evidence file: that is the whole history, across every counterparty. Pass --all if "
+            "that is what you mean, or use `capsule-emit export` for a scoped, proven file",
+            file=sys.stderr,
+        )
+        return 1
+
     try:
         if args.bundle_out:
             bundle_obj = build_bundle(capsules, bundle=bundle, disclosures=disclosures)
@@ -728,6 +782,24 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
         )
     print(summarize(capsules))
     print(url)
+    return 0
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    from agent_action_capsule.canonical import jcs
+
+    from .scoped_export import ExportError, Scope, export
+
+    scope = Scope(
+        exchange=args.exchange, peer=args.peer, since=args.since, until=args.until, record=args.record, all=args.all
+    )
+    try:
+        bundle = export(args.ledger_dir, scope, signing_key=args.signing_key)
+    except ExportError as exc:
+        print(f"export: {exc}", file=sys.stderr)
+        return 1
+    Path(args.out).write_bytes(jcs(bundle))
+    print(f"export: {len(bundle['records'])} record(s) in scope {scope.describe()} -- wrote {args.out}")
     return 0
 
 
@@ -820,6 +892,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "disclose":
         return _cmd_disclose(args)
+
+    if args.command == "export":
+        return _cmd_export(args)
 
     parser.error(f"unknown command {args.command!r}")
     return 1

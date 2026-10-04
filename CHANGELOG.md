@@ -6,6 +6,34 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added — `export`: a scoped evidence file for a third party
+
+- `capsule-emit export LEDGER_DIR` writes an evidence file (`evidence-bundle/v2`) holding only
+  the records in one scope: `--exchange ID`, `--peer NODE`, `--since/--until TIME`, `--record ID`,
+  or `--all` (the whole ledger, only on purpose). With no scope it refuses.
+- It reads a ledger directory as the Mesh-LLM capsule-emit-mesh plugin writes it
+  (`capsules.jsonl`, with padding leaves, and `checkpoints.jsonl`), rebuilds the log, and checks it
+  against the newest checkpoint whose signature verifies. The file carries that checkpoint in its
+  portable COSE form (signed with the node's own key, `--signing-key`; never created) and one
+  inclusion proof per record. A record the checkpoint does not cover yet is refused by name.
+- The file says `completeness.selection: "producer-selected"`: each record's place in the log is
+  proven, and nothing is claimed about the records between them.
+- `verify --bundle` / `report` on such a file: where the installed agent-action-capsule verifier
+  does not know producer-selected files (every release up to 0.6.0), the check says so
+  ("Producer-selected file; this verifier cannot check its selection"), checks each record's
+  inclusion proof against the signed checkpoint itself, and gives INCOMPLETE, never a false
+  INVALID. A changed proof or root is still INVALID.
+
+### Changed — BREAKING (default behaviour): a whole-ledger evidence file needs `--all`
+
+- `permalink --ledger PATH --bundle-out FILE` on a ledger of more than one record now **exits 1**
+  and writes nothing unless `--all` is given: that file is the node's whole history, across every
+  counterparty. Scripts that relied on it pass `--all`, or switch to `capsule-emit export` for a
+  scoped file. The URL-only `permalink --ledger` is unchanged.
+
+### Changed — padding
+- `read_ledger` no longer reads padding leaves (`record_type: "padding"`) as capsules.
+
 ### Changed — `witnesses.json` may publish an Ed25519 witness's key in `public_keys`
 
 - An Ed25519 row's `key_ids` entry is the raw key. A `public_keys` entry used to have to

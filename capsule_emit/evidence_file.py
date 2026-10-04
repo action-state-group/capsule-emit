@@ -111,6 +111,16 @@ class Check:
 
     @property
     def plain(self) -> str:
+        if "selection_not_checkable" in self.findings:
+            return (
+                "Producer-selected file; this verifier cannot check its selection. Each record's own "
+                "place in the log is checked below."
+            )
+        if "interval_not_claimed" in self.findings:
+            return (
+                "Not claimed: the producer selected these records, so nothing is said about the "
+                "records between them. Each record's own place in the log is checked below."
+            )
         return _PLAIN.get(self.name, {}).get(self.status, self.status)
 
 
@@ -262,6 +272,12 @@ def check_evidence_file(
     checkpoint_check, signed = _checkpoint_check(stated)
     interval = _claim("interval_coverage", result.interval_coverage)
     membership = _claim("per_record_membership", result.per_record_membership)
+    if _producer_selected(bundle) and not _verifier_knows_selected():
+        # This agent-action-capsule release reads a producer-selected
+        # certificate as a broken interval proof. Its selection cannot be
+        # checked here; each record's own proof still can be.
+        interval = Check("interval_coverage", "withheld", ("selection_not_checkable",))
+        membership = _selected_membership(bundle, signed if checkpoint_check.status == "pass" else {})
     if checkpoint_check.status != "pass":
         # Proofs to a checkpoint nobody signed prove nothing about a log.
         interval, membership = _unanchored(interval), _unanchored(membership)
@@ -423,6 +439,64 @@ def _signature_check(records: list[RecordCheck], require_signature: bool) -> Che
     if invalid or (unclaimed and require_signature) or not records:
         return Check("signatures", "fail", findings)
     return Check("signatures", "withheld" if unclaimed else "pass", findings)
+
+
+def _producer_selected(bundle: dict) -> bool:
+    completeness = bundle.get("completeness")
+    return isinstance(completeness, dict) and completeness.get("selection") == "producer-selected"
+
+
+def _verifier_knows_selected() -> bool:
+    from agent_action_capsule import bundle as aac_bundle
+
+    return hasattr(aac_bundle, "PRODUCER_SELECTED")
+
+
+def _selected_membership(bundle: dict, signed: dict[str, Any]) -> Check:
+    """Each record's inclusion proof against the signed checkpoint's root and
+    size, for a producer-selected file the installed verifier does not read.
+    With no signed checkpoint nothing is shown (the caller withholds it)."""
+    name = "per_record_membership"
+    if not signed:
+        return Check(name, "withheld", ("checkpoint_unverified",))
+    try:
+        from cll.checkpoint import InclusionProof, verify_inclusion
+    except ImportError:
+        return Check(name, "withheld", ("membership_verifier_unavailable",))
+    certificate = bundle.get("completeness_certificate")
+    members = certificate.get("memberships") if isinstance(certificate, dict) else None
+    if not isinstance(members, dict) or certificate.get("range_root") != signed.get("root"):
+        return Check(name, "fail", ("completeness_certificate_invalid",))
+    root, size, log_id = bytes.fromhex(signed["root"]), signed["mmr_size"], signed["log_id"]
+    ids = [str(r.get("capsule_id", "")) for r in bundle.get("records") or [] if isinstance(r, dict)]
+    findings: list[str] = []
+    seen: set[int] = set()
+    for cid in ids:
+        member = members.get(cid)
+        coords = member.get("log_coordinates") if isinstance(member, dict) else None
+        if not isinstance(coords, dict):
+            findings.append(f"membership_record_unbound:{cid}")
+            continue
+        seq, index = coords.get("seq"), coords.get("leaf_index")
+        if (
+            coords.get("log_id") != log_id
+            or not all(isinstance(v, int) and not isinstance(v, bool) for v in (seq, index))
+            or seq < 1
+            or index != seq - 1
+            or seq in seen
+        ):
+            findings.append(f"membership_coordinates_invalid:{cid}")
+            continue
+        seen.add(seq)
+        try:
+            raw = member["inclusion_proof"]
+            proof = InclusionProof(**{k: tuple(v) if isinstance(v, list) else v for k, v in raw.items()})
+            if proof.size != size or not verify_inclusion(root, size, index, bytes.fromhex(cid), proof):
+                findings.append(f"membership_proof_invalid:{cid}")
+        except (TypeError, ValueError, KeyError, AttributeError):
+            findings.append(f"membership_proof_invalid:{cid}")
+    findings += [f"membership_record_unknown:{cid}" for cid in members if cid not in ids]
+    return Check(name, "fail" if findings else "pass", tuple(findings))
 
 
 def _memberships(bundle: dict) -> dict[str, int]:
