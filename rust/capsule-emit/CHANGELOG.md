@@ -8,6 +8,25 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 ## Unreleased
 
 ### Fixed
+- `checkpoint`: a registration with any configured witness other than the
+  library's default URL was sent to the default anchor
+  (`https://anchor.agentactioncapsule.org`, through the `AnchorClient` the
+  caller passed in) and its receipt filed under the configured URL. The chosen
+  witness was never contacted, a witness that was down never showed as
+  pending, and a node sent its checkpoints to a witness it had not configured.
+  Each configured witness URL is now reached through its own client
+  (`dispatch_base_for(ts_url)`: the URL itself, or the default URL's alias),
+  so a request for one witness never goes to another and none goes to a
+  witness that is not configured. The `anchor` argument of `tick`,
+  `checkpoint_covering`, `reconnect`, `checkpoint_on_shutdown` and
+  `retry_pending_witnesses` is no longer used to register and is kept so
+  callers do not change. The Python package was already correct
+  (`cll.checkpoint.emit.register_checkpoint` dispatches each URL itself).
+- `checkpoint`: when a witness that had missed checkpoints was caught up, the
+  receipts it returned for those earlier checkpoints were dropped. They are now
+  recorded in `witness-backfill.jsonl` like any receipt that arrives after its
+  checkpoint was written, so with record push on (every checkpoint a push-time
+  cut) each checkpoint the witness holds reads as witnessed.
 - `checkpoint`: the clock leg cut one interval late. A backlog that arrives
   between ticks starts its age clock at the next tick, a little after that
   tick's scheduled instant, so the tick one interval later measured an age just
