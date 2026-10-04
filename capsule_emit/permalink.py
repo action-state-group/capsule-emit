@@ -269,8 +269,9 @@ def build_url(
     if not bundle_locations:
         raise PermalinkError(
             f"the permalink would be {len(url):,} bytes, over the {max_url_bytes:,}-byte "
-            "limit browsers open; host the bundle (write it with --bundle-out) and pass "
-            "its URL with --bundle-location to emit a pointer permalink instead"
+            "limit browsers open; host the bundle and pass its URL with --bundle-location to emit "
+            "a pointer permalink instead. Write it with --bundle-out (a whole ledger also needs "
+            "--all), or write a scoped, proven file with `capsule-emit export`"
         )
     url = f"{base_url}/bundle#{encode_fragment(pointer_fragment(bundle_obj, bundle_locations))}"
     if len(url) > max_url_bytes:

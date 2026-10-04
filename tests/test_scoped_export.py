@@ -155,20 +155,54 @@ def test_exchange_and_peer_scopes_read_the_mesh_fields():
     assert not _in_scope(record, Scope(until="2026-10-03T23:59:59Z"))
 
 
-def test_the_scoped_file_reads_as_proven_where_the_verifier_knows_selected_files(tmp_path):
-    bundle_mod = pytest.importorskip("agent_action_capsule.bundle")
-    if not hasattr(bundle_mod, "PRODUCER_SELECTED"):
-        pytest.skip("this agent-action-capsule verifier does not know producer-selected files yet")
+def test_the_scoped_file_reads_incomplete_never_invalid_on_any_verifier(tmp_path):
+    """Runs against whatever agent-action-capsule is installed. A verifier that
+    knows producer-selected files says the interval is not claimed; one that
+    does not (every release up to 0.6.0) cannot check the selection, and says
+    so. Either way the checkpoint and each record's own proof check, and the
+    verdict is INCOMPLETE, never a false INVALID."""
+    from agent_action_capsule import bundle as aac_bundle
+
     from capsule_emit.evidence_file import check_evidence_file
 
     d, key, capsules = _mesh_ledger(tmp_path)
     bundle = export(d, Scope(record=capsules[1]["capsule_id"]), signing_key=key)
     check = check_evidence_file(bundle)
     status = {c.name: (c.status, c.findings) for c in check.checks}
-    assert status["checkpoint"][0] == "pass"
-    assert status["per_record_membership"][0] == "pass"
-    assert status["interval_coverage"] == ("withheld", ("interval_not_claimed",))
-    assert check.ok
+    reason = "interval_not_claimed" if hasattr(aac_bundle, "PRODUCER_SELECTED") else "selection_not_checkable"
+    assert status["interval_coverage"] == ("withheld", (reason,))
+    assert status["checkpoint"] == ("pass", ())
+    assert status["per_record_membership"] == ("pass", ())
+    assert status["graph_closure"][0] == "pass"
+    assert check.verdict == "INCOMPLETE"
+    interval = next(c for c in check.checks if c.name == "interval_coverage")
+    assert "Producer-selected" in interval.plain or "Not claimed" in interval.plain
+
+
+def test_a_changed_proof_or_root_in_a_scoped_file_is_invalid(tmp_path):
+    from capsule_emit.evidence_file import check_evidence_file
+
+    d, key, capsules = _mesh_ledger(tmp_path)
+    target = capsules[1]["capsule_id"]
+    bundle = export(d, Scope(record=target), signing_key=key)
+
+    changed = json.loads(json.dumps(bundle))
+    witness = changed["completeness_certificate"]["memberships"][target]["inclusion_proof"]["witness"]
+    witness[0] = ("0" if witness[0][0] != "0" else "1") + witness[0][1:]
+    check = check_evidence_file(changed)
+    assert check.verdict == "INVALID"
+    assert next(c for c in check.checks if c.name == "per_record_membership").status == "fail"
+
+    changed = json.loads(json.dumps(bundle))
+    root = changed["completeness_certificate"]["range_root"]
+    changed["completeness_certificate"]["range_root"] = ("0" if root[0] != "0" else "1") + root[1:]
+    assert check_evidence_file(changed).verdict == "INVALID"
+
+    changed = json.loads(json.dumps(bundle))
+    changed["completeness_certificate"]["memberships"][secrets.token_hex(32)] = changed["completeness_certificate"][
+        "memberships"
+    ][target]
+    assert check_evidence_file(changed).verdict == "INVALID", "a proof with no record in the file"
 
 
 def test_permalink_bundle_out_of_a_whole_ledger_needs_all(tmp_path, capsys):

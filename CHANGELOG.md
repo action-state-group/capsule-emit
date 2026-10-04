@@ -17,15 +17,21 @@ All notable changes to `capsule-emit` are documented here. The format follows
   portable COSE form (signed with the node's own key, `--signing-key`; never created) and one
   inclusion proof per record. A record the checkpoint does not cover yet is refused by name.
 - The file says `completeness.selection: "producer-selected"`: each record's place in the log is
-  proven, and nothing is claimed about the records between them. A verifier that does not know
-  `producer-selected` files rejects them (it fails closed); the verifier change is proposed
-  separately.
+  proven, and nothing is claimed about the records between them.
+- `verify --bundle` / `report` on such a file: where the installed agent-action-capsule verifier
+  does not know producer-selected files (every release up to 0.6.0), the check says so
+  ("Producer-selected file; this verifier cannot check its selection"), checks each record's
+  inclusion proof against the signed checkpoint itself, and gives INCOMPLETE, never a false
+  INVALID. A changed proof or root is still INVALID.
 
-### Changed — whole-ledger evidence files and padding
+### Changed — BREAKING (default behaviour): a whole-ledger evidence file needs `--all`
 
-- `permalink --ledger PATH --bundle-out FILE` refuses to write every record of a ledger with more
-  than one record unless `--all` is given: that file is the node's whole history, across every
-  counterparty. The URL-only `permalink --ledger` is unchanged.
+- `permalink --ledger PATH --bundle-out FILE` on a ledger of more than one record now **exits 1**
+  and writes nothing unless `--all` is given: that file is the node's whole history, across every
+  counterparty. Scripts that relied on it pass `--all`, or switch to `capsule-emit export` for a
+  scoped file. The URL-only `permalink --ledger` is unchanged.
+
+### Changed — padding
 - `read_ledger` no longer reads padding leaves (`record_type: "padding"`) as capsules.
 
 ### Changed — `witnesses.json` may publish an Ed25519 witness's key in `public_keys`
