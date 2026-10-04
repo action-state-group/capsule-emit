@@ -972,6 +972,12 @@ impl CheckpointState {
     }
 }
 
+/// The client registering with the witness at `ts_url`: that URL, verbatim
+/// (no alias, no rewriting).
+fn client_for(ts_url: &str) -> AnchorClient {
+    AnchorClient::new(ts_url)
+}
+
 /// Attempt registration with each of `ts_urls`, appending any success onto
 /// `cp.witnesses` in place. Returns the subset still unregistered. Never
 /// lets a network error propagate -- an unreachable witness leaves this
@@ -990,12 +996,6 @@ impl CheckpointState {
 /// register it and is dropped from pending; a witness holding a checkpoint
 /// this log does not have stays pending, and the message says a log that
 /// lost its local state must start a new log id.
-/// The client registering with the witness at `ts_url`: that URL, verbatim
-/// (no alias, no rewriting).
-fn client_for(ts_url: &str) -> AnchorClient {
-    AnchorClient::new(ts_url)
-}
-
 fn register_with(
     cp: &mut CheckpointRecord,
     checkpoint_cose: Option<&[u8]>,

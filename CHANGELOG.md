@@ -31,8 +31,10 @@ The library no longer sends anything to, or builds links for, a service its call
   `status.compute_status()` takes `trust_anchor=` / `witness_directory=` (reported as
   `grade_keys`), and `capsule-emit status` takes `--witness-directory`; with no keys the latest
   checkpoint grades self-attested and says its receipts were not checked. `bundle.verify_bundle`
-  and `disclose.verify_disclosure` go through cll's log check, which still pins that key until the
-  cll release that drops it.
+  and `disclose.verify_disclosure` judge a stamp that cll's log check would verify under its own
+  built-in key as having no key: `UNVERIFIED` unless `trust_anchor` names it.
+- `capsule_emit.checkpoint` no longer re-exports `DEFAULT_TS_PUBLIC_KEY_PEM` or
+  `DEFAULT_TS_PUBLIC_KEY_ID`.
 - **Permalinks have no default verify surface.** `permalink.DEFAULT_BASE_URL` is removed;
   `build_url()` requires `base_url=`; `capsule-emit permalink` requires `--base-url`;
   `build_evidence_markdown()` and `capsule-emit evidence` require it unless the viewer link is off

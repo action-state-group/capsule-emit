@@ -74,8 +74,6 @@ from .cose_wire import (
     verify_checkpoint_cose_offline,
 )
 from .emit import (
-    DEFAULT_TS_PUBLIC_KEY_ID,
-    DEFAULT_TS_PUBLIC_KEY_PEM,
     EXAMPLE_CONFIG_TOML,
     STUB_MARKER,
     STUB_TS_URL,
@@ -133,8 +131,6 @@ __all__ = [
     "RangeProof",
     "verify_range",
     "MemoryNodeStore",
-    "DEFAULT_TS_PUBLIC_KEY_PEM",
-    "DEFAULT_TS_PUBLIC_KEY_ID",
     "EXAMPLE_CONFIG_TOML",
     "STUB_MARKER",
     "STUB_TS_URL",

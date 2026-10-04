@@ -679,3 +679,36 @@ def test_checkpoint_times_are_whole_seconds_the_typescript_verifier_accepts(two_
         assert len(t) == 20 and _cll_ts_accepts_time(t), t
         decoded = verify_checkpoint_cose_offline(b.checkpoint_cose).decoded
         assert decoded is not None and decoded.timestamp == t
+
+
+def test_verify_bundle_trusts_no_built_in_witness_key(two_checkpoint_ledger, stub_ts):
+    """cll's log check verifies a stamp at one URL under a key built into the
+    library. capsule-emit's verifier trusts only the caller's keys: here the
+    stub stands in for that built-in witness (its URL and key are cll's), and
+    its stamp is WITNESSED only when the caller supplies the key."""
+    from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM
+    from cll.checkpoint.bundle import verify_bundle_log_integrity
+
+    ts_url, _received = stub_ts
+    ledger_path, caps = two_checkpoint_ledger
+    b = bundle(ledger_path, caps[0]["capsule_id"])
+    assert [w.ts_url for w in b.checkpoint.witnesses] == [ts_url]
+
+    # cll alone would trust it under its built-in key: no "unverified" notice.
+    cll_ok, cll_messages = verify_bundle_log_integrity(b)
+    assert cll_ok and not any("unverified" in m for m in cll_messages)
+
+    # capsule-emit, no key supplied: verifies, but the stamp is not trusted.
+    ok, messages = verify_bundle(b)
+    assert ok is True, messages
+    assert any(f"witnessed by {ts_url}, no key supplied by the caller" in m for m in messages), messages
+    assert not any("no key supplied for witness #" in m for m in messages), "the real URL is reported"
+
+    # With the caller's key, it is witnessed.
+    ok, messages = verify_bundle(b, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM})
+    assert ok is True, messages
+    assert not any("unverified" in m for m in messages)
+
+    # The caller's bundle is not changed. (verify_disclosure checks each of
+    # its bundles with verify_bundle, so the same rule holds there.)
+    assert b.checkpoint.witnesses[0].ts_url == ts_url
