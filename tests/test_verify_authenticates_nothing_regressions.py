@@ -40,7 +40,6 @@ from agent_action_capsule.canonical import compute_capsule_id
 from capsule_emit import cli, seal, status, witness
 from capsule_emit import ledger as ledger_mod
 from capsule_emit.bundle import bundle, verify_bundle
-from capsule_emit.checkpoint import emit as checkpoint_emit_mod
 from capsule_emit.checkpoint.emit import CheckpointRecord
 from capsule_emit.signing import verify_capsule_signature, verify_store_signed
 
@@ -99,15 +98,10 @@ def _start_stub_ts():
 
 @pytest.fixture
 def stub_ts(monkeypatch):
-    # Simulate that this hermetic stub IS the pinned default witness
-    # ([verify-batch-fastfollow] item D) so fixtures built with it still
-    # signature-verify as WITNESSED via the DEFAULT (no-key) read path,
-    # instead of correctly-but-inconveniently demoting to "TS identity
-    # unverified" for being an unpinned TS. monkeypatch reverts per test.
+    # A local witness. No witness has a built-in key: a test that needs a
+    # stamp to read WITNESSED passes this stub's key (TEST_TS_PUBLIC_KEY_PEM).
     base_url, received, stop = _start_stub_ts()
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
     monkeypatch.setenv("CAPSULE_WITNESS_URL", base_url)
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
 
@@ -376,7 +370,7 @@ def test_attack45_positive_control_genuine_stamp_still_grades_witnessed(two_chec
     assert len(cp.witnesses) == 1
     from capsule_emit.checkpoint import Grade
 
-    assert cp.grade() == Grade.WITNESSED
+    assert cp.grade(ts_pubkey_pem=TEST_TS_PUBLIC_KEY_PEM) == Grade.WITNESSED
 
     result = status.compute_status(
         str(ledger_path), offline=True, trust_anchor={cp.witnesses[0].ts_url: TEST_TS_PUBLIC_KEY_PEM}

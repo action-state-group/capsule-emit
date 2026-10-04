@@ -6,11 +6,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
-### Changed — `checkpointed-local-log` capped below 0.5
+### Changed — requires `checkpointed-local-log` 0.5
 
-The dependency is now `checkpointed-local-log>=0.4.1,<0.5`. cll 0.5 drops its default witness and
-built-in witness key (a breaking change capsule-emit adopts in its own release), so a cll release
-can no longer change this package's behaviour under it.
+The dependency is now `checkpointed-local-log>=0.5,<0.6`: cll 0.5 has no default witness and no
+built-in witness key, so every verification path here (including `bundle.verify_bundle`, through
+cll's log check) trusts only the caller's keys without a guard of its own.
 
 ### Changed — BREAKING: no default witness, anchor or verify surface
 
@@ -37,8 +37,8 @@ The library no longer sends anything to, or builds links for, a service its call
   `status.compute_status()` takes `trust_anchor=` / `witness_directory=` (reported as
   `grade_keys`), and `capsule-emit status` takes `--witness-directory`; with no keys the latest
   checkpoint grades self-attested and says its receipts were not checked. `bundle.verify_bundle`
-  and `disclose.verify_disclosure` judge a stamp that cll's log check would verify under its own
-  built-in key as having no key: `UNVERIFIED` unless `trust_anchor` names it.
+  and `disclose.verify_disclosure` trust only `trust_anchor`'s keys (cll 0.5's log check has no
+  built-in key).
 - `capsule_emit.checkpoint` no longer re-exports `DEFAULT_TS_PUBLIC_KEY_PEM` or
   `DEFAULT_TS_PUBLIC_KEY_ID`.
 - **Permalinks have no default verify surface.** `permalink.DEFAULT_BASE_URL` is removed;

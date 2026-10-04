@@ -404,11 +404,12 @@ def test_receipt_grade_does_not_choose_a_key() -> None:
 def test_a_built_in_key_is_never_used_even_when_re_pointed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Re-point cll's built-in key at the test witness key: the stamp at that
-    # URL still gets no trust (and no grade) without a key from the caller.
+    # Re-point cll's (deprecated, unused) key constant at the test witness
+    # key: the stamp at that URL still gets no trust (and no grade) without a
+    # key from the caller.
     import cll.checkpoint.emit as emit_mod
 
-    monkeypatch.setattr(emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", WITNESS_PUB)
+    monkeypatch.setattr(emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", WITNESS_PUB, raising=False)
     genuine = _witness(DEFAULT_TS_URL, WITNESS_PRIV, "mmr-verified")
     checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, genuine)
     assert (checked.verdict, checked.key_pem) == (StampVerdict.UNVERIFIED, None)

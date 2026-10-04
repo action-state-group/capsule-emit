@@ -23,7 +23,6 @@ import time
 
 import pytest
 from _stub_receipt import (
-    TEST_TS_PUBLIC_KEY_PEM,
     build_stub_receipt_b64,
     checkpoint_dict_from_cose,
     checkpoint_entry_hash,
@@ -32,7 +31,6 @@ from _stub_receipt import (
 from capsule_emit import ledger as ledger_mod
 from capsule_emit import log, seal, witness
 from capsule_emit.bundle import bundle, verify_bundle
-from capsule_emit.checkpoint import emit as checkpoint_emit_mod
 from capsule_emit.core import LogEntry
 from capsule_emit.signing import (
     AuthorshipVerdict,
@@ -96,9 +94,7 @@ def _start_stub_ts():
 @pytest.fixture
 def stub_ts(monkeypatch):
     base_url, received, stop = _start_stub_ts()
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
     monkeypatch.setenv("CAPSULE_WITNESS_URL", base_url)
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
 

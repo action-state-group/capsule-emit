@@ -39,8 +39,8 @@ dependencies = [
     "agent-action-capsule[anchor,envelope]>=0.4.0",  # 0.4.0: bundle.encode_fragment / bundle_digest (permalink)
     "cryptography>=42.0",
     # 0.4.0: range/inclusion proofs for verify --bundle; 0.4.1: scan compares instants (--period).
-    # <0.5: cll 0.5 drops its default witness and built-in key; this release's tests assert 0.4's.
-    "checkpointed-local-log>=0.4.1,<0.5",
+    # 0.5: no default witness and no built-in witness key (verification trusts only the caller's keys).
+    "checkpointed-local-log>=0.5,<0.6",
 ]
 
 [project.optional-dependencies]

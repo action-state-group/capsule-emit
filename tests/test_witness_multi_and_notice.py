@@ -29,7 +29,6 @@ from _stub_receipt import (
 import capsule_emit.core as core
 from capsule_emit import seal, witness
 from capsule_emit.checkpoint import Grade
-from capsule_emit.checkpoint import emit as checkpoint_emit_mod
 
 
 class _StubWitnessTSHandler(http.server.BaseHTTPRequestHandler):
@@ -218,14 +217,10 @@ def test_one_failing_endpoint_does_not_block_the_others(tmp_path, stub_ts_single
 
 @pytest.fixture
 def stub_ts_single(monkeypatch):
-    # Simulate that this hermetic stub IS the pinned default witness
-    # ([verify-batch-fastfollow] item D) so the "one valid stamp is enough"
-    # any-of test still gets a WITNESSED stamp via the DEFAULT (no-key)
-    # read path. monkeypatch reverts per test.
+    # A local witness. No witness has a built-in key: a test that needs a
+    # stamp to read WITNESSED passes this stub's key (TEST_TS_PUBLIC_KEY_PEM).
     base_url, received, stop = _start_stub_ts()
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
     monkeypatch.setenv("CAPSULE_WITNESS_URL", base_url)
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
 
@@ -252,7 +247,7 @@ def test_one_valid_stamp_grades_witnessed_even_if_another_endpoint_fails(
     key = witness._resolve_key(str(ledger))
     state = witness._states[key]
     assert len(state.prev.witnesses) == 1, "only the live endpoint should have stamped"
-    assert state.prev.grade() == Grade.WITNESSED, (
+    assert state.prev.grade(ts_pubkey_pem=TEST_TS_PUBLIC_KEY_PEM) == Grade.WITNESSED, (
         "any-of semantics: one valid stamp is enough to grade witnessed, "
         "regardless of how many other endpoints failed"
     )

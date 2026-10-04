@@ -872,26 +872,17 @@ def stamp_verdict(
     only the key the caller supplies. Never raises; never makes a network
     call.
 
-    That function pins a key built into the library when it is given none
-    and the stamp's ``ts_url`` is one particular public witness. A verifier
-    here trusts no witness its caller did not name: with no key, the stamp
-    gets the shape checks only (bound to this checkpoint, a structurally
-    valid receipt) and reads ``UNVERIFIED`` at best, whatever its URL. To
-    trust a witness, pass its key (``ts_pubkey_pem``, or a ``trust_anchor``
-    / witness directory the caller chose).
+    A verifier here trusts no witness its caller did not name (and no
+    witness has a built-in key): with no key, the stamp gets the shape checks
+    only (bound to this checkpoint, a structurally valid receipt) and reads
+    ``UNVERIFIED`` at best, whatever its URL. To trust a witness, pass its key
+    (``ts_pubkey_pem``, or a ``trust_anchor`` / witness directory the caller
+    chose).
     """
-    import dataclasses
-
     from cll.checkpoint import emit as _emit
 
-    if ts_pubkey_pem is not None:
-        verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=ts_pubkey_pem)
-        return verdict, list(errors)
-    # No key: ask for the shape checks under a URL that pins nothing, and
-    # report the stamp's own URL.
-    unpinned = dataclasses.replace(witness, ts_url="")
-    verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, unpinned, ts_pubkey_pem=None)
-    if verdict is _emit.StampVerdict.UNVERIFIED:
+    verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=ts_pubkey_pem)
+    if ts_pubkey_pem is None and verdict is _emit.StampVerdict.UNVERIFIED:
         errors = [f"witnessed by {witness.ts_url}, no key supplied by the caller — unverified stamp"]
     return verdict, list(errors)
 
