@@ -18,13 +18,18 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   push-time cut, offered on a later tick, or a retried registration) was kept
   only in memory, so `checkpoints.jsonl` readers and restarts never saw it. It
   is now recorded beside the checkpoints in `witness-backfill.jsonl`, one line
-  per receipt, and merged back on load.
+  per receipt, and merged back on load. A receipt is merged only when it is
+  bound to that checkpoint (`mmr_size`, `root`, and `entry_hash` =
+  `sha256(bytes.fromhex(digest))`); its signature is not checked here, since
+  that needs the witness's pinned key. Reading keeps complete lines only, skips
+  each unreadable line on its own, and a write after a torn tail starts on a
+  new line.
 
 ### Added
 - `checkpoint::{WITNESS_BACKFILL_FILE, WitnessBackfill, read_witness_backfills,
   effective_witnesses}`: read those receipts, and a checkpoint's own witnesses
-  merged with them (one per witness URL; the Python ledger's witness-backfill
-  entries work the same way).
+  merged with the ones bound to it (one per witness URL; the Python ledger's
+  witness-backfill entries play the same role).
 
 ## 0.0.4
 
