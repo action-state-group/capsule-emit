@@ -2016,13 +2016,26 @@ mod tests {
         accepted: std::sync::Arc<std::sync::Mutex<Vec<u64>>>,
         /// Every request it was sent, accepted or not.
         hits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        /// The witness's own key: every receipt it issues is a COSE_Sign1
+        /// over the checkpoint's entry hash, signed with it.
+        key: ed25519_dalek::VerifyingKey,
     }
 
-    /// The receipt a test witness returns: its own URL, so a test can tell
-    /// which witness issued a receipt filed under a URL.
-    fn receipt_of(url: &str) -> String {
+    /// Whether a filed receipt was issued by the witness holding `key`: it
+    /// verifies under that key, names the URL it is filed under, and is over
+    /// that checkpoint's entry hash.
+    fn issued_by(w: &CheckpointWitness, key: &ed25519_dalek::VerifyingKey) -> bool {
         use base64::Engine;
-        base64::engine::general_purpose::STANDARD.encode(url)
+        let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&w.receipt_b64) else {
+            return false;
+        };
+        match crate::cose::verify_signed_statement(&bytes, key) {
+            Ok(v) => {
+                v.payload == w.entry_hash.as_bytes()
+                    && v.issuer.as_deref() == Some(w.ts_url.as_str())
+            }
+            Err(_) => false,
+        }
     }
 
     fn continuity_witness(tip: Option<(u64, String)>) -> ContinuityWitness {
@@ -2033,7 +2046,9 @@ mod tests {
         let seen = accepted.clone();
         let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let counted = hits.clone();
-        let receipt = receipt_of(&url);
+        let signing = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
+        let key = signing.verifying_key();
+        let issuer = url.clone();
         std::thread::spawn(move || {
             let mut tip = tip;
             for stream in listener.incoming() {
@@ -2074,6 +2089,21 @@ mod tests {
                         let digest = decoded.to_checkpoint_record().digest();
                         hex::encode(Sha256::digest(hex::decode(digest).unwrap()))
                     };
+                    // Its receipt: signed with this witness's own key, over
+                    // the entry hash, naming this witness.
+                    let receipt = {
+                        use base64::Engine;
+                        let signed = crate::cose::build_signed_statement(
+                            &crate::cose::SignedStatementInput {
+                                payload: entry_hash.as_bytes(),
+                                issuer: &issuer,
+                                subject: &entry_hash,
+                                content_type: "text/plain",
+                            },
+                            &signing,
+                        );
+                        base64::engine::general_purpose::STANDARD.encode(signed)
+                    };
                     (
                         "200 OK",
                         json!({"receipt_b64": receipt, "entry_hash": entry_hash,
@@ -2100,6 +2130,7 @@ mod tests {
             url,
             accepted,
             hits,
+            key,
         }
     }
 
@@ -2140,10 +2171,26 @@ mod tests {
             0,
             "a witness that is not configured is never contacted"
         );
-        // Each receipt is filed under the witness that issued it.
+        // Each receipt is filed under the witness that issued it: it
+        // verifies under that witness's own key, and not under the other's.
         assert_eq!(cp.witnesses.len(), 2);
+        assert_ne!(cp.witnesses[0].ts_url, cp.witnesses[1].ts_url);
         for w in &cp.witnesses {
-            assert_eq!(w.receipt_b64, receipt_of(&w.ts_url), "{}", w.ts_url);
+            let (own, other) = if w.ts_url == a.url {
+                (&a.key, &b.key)
+            } else {
+                (&b.key, &a.key)
+            };
+            assert!(
+                issued_by(w, own),
+                "{} verifies under its own witness's key",
+                w.ts_url
+            );
+            assert!(
+                !issued_by(w, other),
+                "{} does not verify under the other witness's key",
+                w.ts_url
+            );
         }
         assert!(state.pending_witness_urls.is_empty());
     }
@@ -2227,7 +2274,10 @@ mod tests {
             let witnesses = effective_witnesses(&record, &backfills);
             assert_eq!(witnesses.len(), 1, "checkpoint at size {size}");
             assert_eq!(witnesses[0].ts_url, witness.url);
-            assert_eq!(witnesses[0].receipt_b64, receipt_of(&witness.url));
+            assert!(
+                issued_by(&witnesses[0], &witness.key),
+                "checkpoint at size {size}"
+            );
         }
         drop(state);
         let (reloaded, _) =
