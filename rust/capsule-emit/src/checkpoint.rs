@@ -60,6 +60,9 @@ use std::time::Instant;
 ///   `entry_hash` equal to `sha256(bytes.fromhex(checkpoint.digest()))`, the
 ///   check the Python verifier calls "bound to this checkpoint". A receipt
 ///   copied from another checkpoint is dropped.
+/// - Each ignored line, and each receipt recorded for a checkpoint but not
+///   bound to it, is logged on stderr: one `[checkpoint] ignoring ...` line
+///   naming the line number or the checkpoint's `mmr_size`, and why.
 /// - The receipt's own signature is NOT checked here: that needs the
 ///   witness's public key, which a verifier pins (a witness directory). A
 ///   merged receipt is "recorded for this checkpoint", not "verified".
@@ -77,18 +80,42 @@ pub struct WitnessBackfill {
 /// lines only, each unreadable line skipped on its own. A missing file is no
 /// backfills.
 pub fn read_witness_backfills(checkpoints_path: &Path) -> Vec<WitnessBackfill> {
+    let (backfills, ignored) = read_witness_backfills_noting(checkpoints_path);
+    for why in ignored {
+        eprintln!("[checkpoint] {why}");
+    }
+    backfills
+}
+
+/// [`read_witness_backfills`], with one message per line it ignores.
+fn read_witness_backfills_noting(checkpoints_path: &Path) -> (Vec<WitnessBackfill>, Vec<String>) {
+    let mut ignored = Vec::new();
     let Ok(bytes) = std::fs::read(checkpoints_path.with_file_name(WITNESS_BACKFILL_FILE)) else {
-        return Vec::new();
+        return (Vec::new(), ignored);
     };
-    let complete = match bytes.iter().rposition(|b| *b == b'\n') {
-        Some(last_newline) => &bytes[..last_newline],
-        None => return Vec::new(),
-    };
-    complete
-        .split(|b| *b == b'\n')
-        .filter_map(|line| std::str::from_utf8(line).ok())
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect()
+    let complete_len = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+    if complete_len < bytes.len() {
+        ignored.push(format!(
+            "ignoring the last line of {WITNESS_BACKFILL_FILE}: it has no newline (a write cut short)"
+        ));
+    }
+    if complete_len == 0 {
+        return (Vec::new(), ignored);
+    }
+    let mut backfills = Vec::new();
+    for (i, line) in bytes[..complete_len - 1].split(|b| *b == b'\n').enumerate() {
+        let parsed = std::str::from_utf8(line)
+            .map_err(|e| e.to_string())
+            .and_then(|text| serde_json::from_str(text).map_err(|e| e.to_string()));
+        match parsed {
+            Ok(backfill) => backfills.push(backfill),
+            Err(why) => ignored.push(format!(
+                "ignoring line {} of {WITNESS_BACKFILL_FILE}: {why}",
+                i + 1
+            )),
+        }
+    }
+    (backfills, ignored)
 }
 
 /// The `entry_hash` a receipt for `cp` carries: `sha256(bytes.fromhex(digest))`.
@@ -106,20 +133,42 @@ pub fn effective_witnesses(
     cp: &CheckpointRecord,
     backfills: &[WitnessBackfill],
 ) -> Vec<CheckpointWitness> {
+    let (witnesses, ignored) = effective_witnesses_noting(cp, backfills);
+    for why in ignored {
+        eprintln!("[checkpoint] {why}");
+    }
+    witnesses
+}
+
+/// [`effective_witnesses`], with one message per receipt recorded for `cp`
+/// but not bound to it.
+fn effective_witnesses_noting(
+    cp: &CheckpointRecord,
+    backfills: &[WitnessBackfill],
+) -> (Vec<CheckpointWitness>, Vec<String>) {
     let mut witnesses = cp.witnesses.clone();
+    let mut ignored = Vec::new();
     let Some(bound) = bound_entry_hash(cp) else {
-        return witnesses;
+        return (witnesses, ignored);
     };
     for b in backfills
         .iter()
-        .filter(|b| b.mmr_size == cp.mmr_size && b.root == cp.root && b.witness.entry_hash == bound)
+        .filter(|b| b.mmr_size == cp.mmr_size && b.root == cp.root)
     {
+        if b.witness.entry_hash != bound {
+            ignored.push(format!(
+                "ignoring the receipt from {} recorded for checkpoint {}: its entry_hash is not \
+                 bound to this checkpoint",
+                b.witness.ts_url, cp.mmr_size
+            ));
+            continue;
+        }
         match witnesses.iter_mut().find(|w| w.ts_url == b.witness.ts_url) {
             Some(existing) => *existing = b.witness.clone(),
             None => witnesses.push(b.witness.clone()),
         }
     }
-    witnesses
+    (witnesses, ignored)
 }
 
 /// Append one backfill line. If the file ends in a write cut short (no final
@@ -2191,7 +2240,16 @@ mod tests {
                 ..at(entry("https://d.example", "other root", &bound))
             },
         ];
-        let merged = effective_witnesses(&cp, &backfills);
+        let (merged, ignored) = effective_witnesses_noting(&cp, &backfills);
+        assert_eq!(
+            ignored,
+            [format!(
+                "ignoring the receipt from https://e.example recorded for checkpoint {}: its \
+                 entry_hash is not bound to this checkpoint",
+                cp.mmr_size
+            )],
+            "the replayed receipt is logged; other checkpoints' receipts are not this one's"
+        );
         let got: Vec<(&str, &str)> = merged
             .iter()
             .map(|w| (w.ts_url.as_str(), w.receipt_b64.as_str()))
@@ -2222,24 +2280,34 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let checkpoints = dir.path().join("checkpoints.jsonl");
         append_witness_backfill(&checkpoints, &backfill_line(1)).unwrap();
-        // A write cut short: half a record, no newline.
+        // A write cut short before its newline: here the record itself is
+        // complete and parses, so only the complete-lines rule keeps it out
+        // (a write cut short can end on any byte, including a closing brace).
         let path = dir.path().join(WITNESS_BACKFILL_FILE);
-        let half = serde_json::to_string(&backfill_line(2)).unwrap();
+        let tail = serde_json::to_string(&backfill_line(2)).unwrap();
         let mut bytes = std::fs::read(&path).unwrap();
-        bytes.extend_from_slice(&half.as_bytes()[..half.len() / 2]);
+        bytes.extend_from_slice(tail.as_bytes());
         std::fs::write(&path, &bytes).unwrap();
-        let read: Vec<u64> = read_witness_backfills(&checkpoints)
-            .iter()
-            .map(|b| b.mmr_size)
-            .collect();
-        assert_eq!(read, [1], "the torn tail is not a record");
+        let (read, ignored) = read_witness_backfills_noting(&checkpoints);
+        let read: Vec<u64> = read.iter().map(|b| b.mmr_size).collect();
+        assert_eq!(read, [1], "a line without its newline is not a record yet");
+        assert_eq!(
+            ignored,
+            [format!("ignoring the last line of {WITNESS_BACKFILL_FILE}: it has no newline (a write cut short)")]
+        );
 
         append_witness_backfill(&checkpoints, &backfill_line(3)).unwrap();
-        let read: Vec<u64> = read_witness_backfills(&checkpoints)
-            .iter()
-            .map(|b| b.mmr_size)
-            .collect();
-        assert_eq!(read, [1, 3], "the next record starts on its own line");
+        // The writer ended the torn line before writing its own.
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.split_terminator('\n').collect();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[1], tail, "the torn tail kept on its own line");
+        assert_eq!(
+            lines[2],
+            serde_json::to_string(&backfill_line(3)).unwrap(),
+            "the new record not glued onto it"
+        );
+        assert!(text.ends_with('\n'));
     }
 
     #[test]
@@ -2263,6 +2331,20 @@ mod tests {
             .map(|b| b.mmr_size)
             .collect();
         assert_eq!(read, [1, 5]);
+        let (_, ignored) = read_witness_backfills_noting(&checkpoints);
+        let lines: Vec<&str> = ignored
+            .iter()
+            .map(|m| m.split(':').next().unwrap())
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                format!("ignoring line 2 of {WITNESS_BACKFILL_FILE}"),
+                format!("ignoring line 3 of {WITNESS_BACKFILL_FILE}"),
+                format!("ignoring line 4 of {WITNESS_BACKFILL_FILE}"),
+            ],
+            "one message per ignored line, naming it"
+        );
     }
 
     #[test]
