@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""[final-flip-gate] Clean-room PyPI install acceptance gate.
+"""Clean-room PyPI install acceptance gate.
 
 Run this from OUTSIDE any existing capsule-emit/agent-action-capsule install.
 The script creates a temporary venv, installs only from PyPI, then exercises
@@ -69,7 +69,7 @@ def run_cmd(cmd: list[str], *, cwd: str | None = None,
 
 def main() -> int:
     print("=" * 60)
-    print("  [final-flip-gate] capsule-emit clean-room PyPI gate")
+    print("  capsule-emit clean-room PyPI gate")
     print("=" * 60)
 
     with tempfile.TemporaryDirectory() as tmpdir:

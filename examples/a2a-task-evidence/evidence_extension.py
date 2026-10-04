@@ -2,8 +2,8 @@
 """Independent reference implementation of the A2A ``verifiable-record``
 task-evidence extension (v3.1 discussion draft).
 
-Not an official A2A extension. See ``_work/a2a-verifiable-task-evidence-
-proposal-v3-2026-09-04.md`` (this repo's ``docs/a2a-extension/README.md``
+Not an official A2A extension. See the v3.1 discussion-draft proposal
+(this repo's ``docs/a2a-extension/README.md``
 links the published copy) for the normative prose this code implements --
 section references below (``§7``, ``§9``, ``§12``, ...) point there.
 

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the nanda-tax-audit "cook the books, get caught" scenario.
 
-Validator spec (from inbox):
+Validator spec:
   - auditor catches 100% of biz_capsule tampering
   - 0% false positives on honest biz_capsule submissions
   - biz_control tampering goes 100% undetected

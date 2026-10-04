@@ -3,8 +3,7 @@
 
 Uses ``CAPSULE_WITNESS=stub`` (zero-network, real checkpoint mechanics --
 see ``tests/test_stub_witness.py``) so these run hermetically; every
-negative case flips exactly one thing and confirms the mutant is caught,
-per QUEUE_PROTOCOL §7.
+negative case flips exactly one thing and confirms the mutant is caught.
 """
 from __future__ import annotations
 
@@ -151,7 +150,7 @@ def test_answer_missing_record_is_no_such_subject(covered_ledger):
 
 
 # ---------------------------------------------------------------------------
-# Caller invariance — the core test (QUEUE_PROTOCOL acceptance)
+# Caller invariance — the core test
 # ---------------------------------------------------------------------------
 
 

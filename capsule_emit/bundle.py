@@ -85,7 +85,7 @@ def verify_bundle(
 ) -> tuple[bool, list[str]]:
     """Pure, offline, total verification of a standalone :class:`Bundle` —
     no reader, no network, never raises. ``trust_anchor``
-    [verify-threestate-trustanchor] is an optional caller-supplied mapping
+    is an optional caller-supplied mapping
     of ``ts_url -> pubkey_pem`` — one or several pins for Transparency
     Services the caller trusts beyond the built-in pinned default witness
     (``capsule_emit.checkpoint.DEFAULT_TS_URL`` /
@@ -99,10 +99,10 @@ def verify_bundle(
          receipt body was tampered but whose ``capsule_id`` was left alone
          is caught here; AND its self-attested producer-authorship claim is
          graded THREE-STATE
-         (``capsule_emit.signing.verify_capsule_signature_tristate``)
-         [verify-entry-authorship-tristate-and-log]: claimed-and-verifies is
+         (``capsule_emit.signing.verify_capsule_signature_tristate``):
+         claimed-and-verifies is
          fine; claimed-and-fails — a receipt body rewritten with a matching,
-         recomputed ``capsule_id`` (the [verify-checks-producer-signature]
+         recomputed ``capsule_id`` (a producer-signature
          forgery, replayed against a bundle) — is FATAL here; absent (a
          :func:`capsule_emit.surface.log` entry, no ``signature``/``key_id``
          at all) is a non-fatal notice, never treated as forgery. This step
@@ -144,7 +144,7 @@ def verify_bundle(
                 )
                 step1_ok = False
 
-        # Three-state, not two [verify-entry-authorship-tristate-and-log]:
+        # Three-state, not two:
         # UNCLAIMED (no signature/key_id at all -- a log() entry) is a
         # non-fatal notice, never treated the same as a claimed-and-failing
         # (INVALID) signature.

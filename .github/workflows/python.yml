@@ -59,6 +59,11 @@ jobs:
       - name: pytest
         run: python -m pytest -q
 
+      # The leak-lint tests live next to the lint in .github/, outside testpaths. They use
+      # synthetic terms only, so this pull_request job needs no secret.
+      - name: leak-lint tests
+        run: python -m pytest -q .github/test_leak_lint.py
+
   # seal_eval_log drives a real inspect_ai eval; its tests importorskip the
   # package, so they only run where the inspect-ai extra is installed. This
   # job installs it and fails if the import does not work, so those tests
