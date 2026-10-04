@@ -6,6 +6,28 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added — `export`: a scoped evidence file for a third party
+
+- `capsule-emit export LEDGER_DIR` writes an evidence file (`evidence-bundle/v2`) holding only
+  the records in one scope: `--exchange ID`, `--peer NODE`, `--since/--until TIME`, `--record ID`,
+  or `--all` (the whole ledger, only on purpose). With no scope it refuses.
+- It reads a ledger directory as the Mesh-LLM capsule-emit-mesh plugin writes it
+  (`capsules.jsonl`, with padding leaves, and `checkpoints.jsonl`), rebuilds the log, and checks it
+  against the newest checkpoint whose signature verifies. The file carries that checkpoint in its
+  portable COSE form (signed with the node's own key, `--signing-key`; never created) and one
+  inclusion proof per record. A record the checkpoint does not cover yet is refused by name.
+- The file says `completeness.selection: "producer-selected"`: each record's place in the log is
+  proven, and nothing is claimed about the records between them. A verifier that does not know
+  `producer-selected` files rejects them (it fails closed); the verifier change is proposed
+  separately.
+
+### Changed — whole-ledger evidence files and padding
+
+- `permalink --ledger PATH --bundle-out FILE` refuses to write every record of a ledger with more
+  than one record unless `--all` is given: that file is the node's whole history, across every
+  counterparty. The URL-only `permalink --ledger` is unchanged.
+- `read_ledger` no longer reads padding leaves (`record_type: "padding"`) as capsules.
+
 ### Changed — `witnesses.json` may publish an Ed25519 witness's key in `public_keys`
 
 - An Ed25519 row's `key_ids` entry is the raw key. A `public_keys` entry used to have to

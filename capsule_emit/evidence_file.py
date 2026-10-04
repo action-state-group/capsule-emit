@@ -111,6 +111,11 @@ class Check:
 
     @property
     def plain(self) -> str:
+        if "interval_not_claimed" in self.findings:
+            return (
+                "Not claimed: the producer selected these records, so nothing is said about the "
+                "records between them. Each record's own place in the log is checked below."
+            )
         return _PLAIN.get(self.name, {}).get(self.status, self.status)
 
 

@@ -113,6 +113,10 @@ ARCHIVED_SEGMENT_KIND = "archived_segment"
 #: these out the same way ``read_ledger`` does, so bookkeeping entries are
 #: never mistaken for the capsule they happen to share a ``capsule_id``-shaped
 #: field with.
+#: A padding leaf, as a checkpointed log writes it into the same file
+#: (``{"capsule_id", "record_type": "padding", ...}``, no ``kind``).
+PADDING_RECORD_TYPE = "padding"
+
 NON_CAPSULE_KINDS = (CHECKPOINT_STAMP_KIND, DISCLOSURE_RECORD_KIND, WITNESS_BACKFILL_KIND, ARCHIVED_SEGMENT_KIND)
 
 #: What ``cll.ledger.store.LedgerStore`` names its own bookkeeping file --
@@ -375,11 +379,18 @@ def read_ledger(path: str | os.PathLike) -> list[dict]:
     """Read all capsule records from a JSONL ledger file.
 
     Non-capsule bookkeeping entries (``kind`` in ``NON_CAPSULE_KINDS`` --
-    checkpoint-stamp and disclosure records) are excluded -- this is the
+    checkpoint-stamp and disclosure records) and padding leaves
+    (``record_type: "padding"``, which a checkpointed log appends to round a
+    checkpoint's leaf count up; they are leaves, never capsules) are
+    excluded -- this is the
     capsule-only view every existing consumer expects. Use
     ``read_ledger_entries`` to see the raw file, every kind included.
     """
-    return [r for r in read_ledger_entries(path) if r.get("kind") not in NON_CAPSULE_KINDS]
+    return [
+        r
+        for r in read_ledger_entries(path)
+        if r.get("kind") not in NON_CAPSULE_KINDS and r.get("record_type") != PADDING_RECORD_TYPE
+    ]
 
 
 # ---------------------------------------------------------------------------
