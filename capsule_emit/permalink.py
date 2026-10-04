@@ -30,7 +30,8 @@ from typing import Any
 
 from agent_action_capsule.bundle import bundle_digest, encode_fragment
 
-DEFAULT_BASE_URL = "https://verify.agentactioncapsule.org"
+#: There is no default verify surface: callers name the one they use. A
+#: public one is, for example, ``https://verify.agentactioncapsule.org``.
 
 #: Chromium refuses URLs longer than 2 MiB; a longer permalink never opens.
 MAX_INLINE_URL_BYTES = 2 * 1024 * 1024
@@ -248,13 +249,14 @@ def resolve_pointer(pointer: dict, fetched: Any) -> dict:
 def build_url(
     capsules: list[dict],
     *,
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: str,
     bundle: bool,
     disclosures: dict[str, Any] | None = None,
     bundle_locations: list[str] | None = None,
     max_url_bytes: int = MAX_INLINE_URL_BYTES,
 ) -> str:
     """Build the verify-surface permalink: ``<base_url>/bundle#<fragment>``.
+    ``base_url`` is the verify surface the caller chose; there is no default.
 
     The fragment is the §9 encoding of :func:`build_bundle`'s Bundle (see it
     for ``bundle`` and ``disclosures``). When that URL would exceed

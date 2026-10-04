@@ -92,8 +92,9 @@ By default the listeners run an async **checkpoint/witness** stream: after every
 100 records, or at the next seal once 900 seconds have passed (there is no
 background timer), they post a *checkpoint* — size, root hash, timestamp;
 **never capsule content** — to a witness, and print a notice before the first
-attempt. The default witness is the project's public one at
-`witness.agentactioncapsule.org`; `CAPSULE_WITNESS_URL` names another. Each
+attempt. There is no default witness: `CAPSULE_WITNESS_URL` names the one(s) you
+choose (a public one is `witness.agentactioncapsule.org`). With none set,
+nothing is posted and the notice says so. Each
 checkpoint the witness accepts gives an outside party a reference to check the
 ledger against — as far as that party trusts the witness to be independent of
 the key holder — and that comparison is the one check outside offline `verify`.

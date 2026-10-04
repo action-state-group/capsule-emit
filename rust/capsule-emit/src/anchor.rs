@@ -15,31 +15,15 @@
 //! caller decides when and whether to anchor, and a failed anchor call never
 //! invalidates an already-sealed, already-ledgered capsule (fail-open, like
 //! the Python reference's witness client).
+//!
+//! There is no default service: every client is built with the URL its caller
+//! chose (`AnchorClient::new`), and registration reaches each configured
+//! witness at exactly its configured URL. One public witness is, for example,
+//! `https://witness.agentactioncapsule.org`; it is named here as an example
+//! only, and nothing in this crate sends to it unless a caller configures it.
 
 use serde::Deserialize;
 use std::time::Duration;
-
-pub const DEFAULT_ANCHOR_BASE: &str = "https://anchor.agentactioncapsule.org";
-
-/// The default *semantic* witness URL a checkpoint's `WitnessRecord.ts_url`
-/// records — same value `cll::witness::DEFAULT_TS_URL` uses. Matches
-/// `cll.checkpoint.emit._PENDING_CNAME_TARGETS`: `witness.agentactioncapsule.org`
-/// has no DNS record of its own yet, so a request to exactly this URL is
-/// dispatched to [`DEFAULT_ANCHOR_BASE`] directly (same deployment, already
-/// answers `/checkpoints`); any other, explicitly-chosen `ts_url` is never
-/// rewritten. Remove this indirection once the alias domain is live.
-pub const DEFAULT_WITNESS_URL: &str = "https://witness.agentactioncapsule.org";
-
-/// Where an HTTP request registering `ts_url` should actually be sent —
-/// `DEFAULT_ANCHOR_BASE` for the default semantic URL, `ts_url` itself
-/// otherwise. See [`DEFAULT_WITNESS_URL`].
-pub fn dispatch_base_for(ts_url: &str) -> &str {
-    if ts_url == DEFAULT_WITNESS_URL {
-        DEFAULT_ANCHOR_BASE
-    } else {
-        ts_url
-    }
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum AnchorError {
@@ -93,6 +77,11 @@ impl AnchorClient {
                 .timeout(Duration::from_secs(10))
                 .build(),
         }
+    }
+
+    /// The URL this client sends to, exactly as it was given.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// `POST /v1/digest {"capsule_id": <64-hex>}`. Idempotent on the server
@@ -205,10 +194,4 @@ pub struct CheckpointWitnessResponse {
     pub receipt_b64: String,
     pub leaf_index: i64,
     pub tree_size: i64,
-}
-
-impl Default for AnchorClient {
-    fn default() -> Self {
-        Self::new(DEFAULT_ANCHOR_BASE)
-    }
 }

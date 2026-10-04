@@ -31,7 +31,7 @@
 //! implements it) is reused as-is, never a second key.
 //! `tests/evidencebook_parity.rs` pins the output byte for byte.
 
-use crate::anchor::{dispatch_base_for, AnchorClient, AnchorError};
+use crate::anchor::{AnchorClient, AnchorError};
 use evidencebook::substrate::{record_id_from_hex, CllSubstrate, SubstrateError, RECORD_ID_LEN};
 // Re-exported under this module's names so a caller of this crate names
 // them without depending on `evidencebook` directly.
@@ -990,6 +990,12 @@ impl CheckpointState {
 /// register it and is dropped from pending; a witness holding a checkpoint
 /// this log does not have stays pending, and the message says a log that
 /// lost its local state must start a new log id.
+/// The client registering with the witness at `ts_url`: that URL, verbatim
+/// (no alias, no rewriting).
+fn client_for(ts_url: &str) -> AnchorClient {
+    AnchorClient::new(ts_url)
+}
+
 fn register_with(
     cp: &mut CheckpointRecord,
     checkpoint_cose: Option<&[u8]>,
@@ -1003,11 +1009,10 @@ fn register_with(
             still_pending.push(ts_url.clone());
             continue;
         };
-        // Each witness is reached through its own client, at the URL the
-        // operator configured (or its alias's dispatch base): a request for
-        // one witness never goes to another, and none goes to a witness
-        // that is not configured.
-        let client = AnchorClient::new(dispatch_base_for(ts_url));
+        // Each witness is reached through its own client, at exactly the
+        // URL the operator configured: a request for one witness never goes
+        // to another, and none goes to a witness that is not configured.
+        let client = client_for(ts_url);
         let client_ref = &client;
         let mut result = client_ref.post_checkpoint_cose(cose);
         if let Err(err) = &result {
@@ -2225,6 +2230,34 @@ mod tests {
             witness_urls: vec![url.to_string()],
             pad_bucket: 0,
         }
+    }
+
+    #[test]
+    fn a_configured_witness_url_is_used_verbatim() {
+        // The public witness's URL is not rewritten to another host.
+        for url in [
+            "https://witness.agentactioncapsule.org",
+            "https://anchor.agentactioncapsule.org",
+            "https://witness.example/base/",
+        ] {
+            assert_eq!(client_for(url).base_url(), url);
+        }
+        // A witness configured with a trailing slash is reached at its own
+        // address, and its receipt is filed under the URL exactly as
+        // configured.
+        let witness = continuity_witness(None);
+        let configured = format!("{}/", witness.url);
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&configured)).unwrap();
+        let anchor = AnchorClient::new("http://127.0.0.1:1"); // not used to register
+        let one = write_capsule(dir.path(), "one");
+        state.checkpoint_covering(&one, &signer(), &anchor).unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+        assert_eq!(witness.accepted.lock().unwrap().len(), 1);
+        let latest = state.last_checkpoint().unwrap();
+        assert_eq!(latest.witnesses.len(), 1);
+        assert_eq!(latest.witnesses[0].ts_url, configured);
     }
 
     #[test]

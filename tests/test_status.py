@@ -111,6 +111,7 @@ def stub_ts(monkeypatch):
     # unverified" for being an unpinned TS. monkeypatch reverts per test.
     base_url, received, stop = _start_stub_ts()
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", base_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
@@ -485,6 +486,7 @@ def test_render_status_shows_witness_host_and_operator_never_our_brand(
         "operator": "Example Corp",
     })
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", did_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", did_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     try:
         monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "2")

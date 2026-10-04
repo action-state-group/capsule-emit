@@ -5,6 +5,22 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Changed — BREAKING
+- `anchor`: no default service. `impl Default for AnchorClient`,
+  `DEFAULT_ANCHOR_BASE` and `DEFAULT_WITNESS_URL` are removed: build a client
+  with `AnchorClient::new(url)` and the URL you choose (a public witness is,
+  for example, `https://witness.agentactioncapsule.org`).
+- `anchor::dispatch_base_for` is removed: registration reaches each configured
+  witness at exactly its configured URL. It used to send a witness configured
+  as `https://witness.agentactioncapsule.org` to
+  `https://anchor.agentactioncapsule.org`; the witness host serves the same
+  routes itself.
+
+### Added
+- `AnchorClient::base_url()`: the URL a client sends to, as given.
+
 ## 0.0.5
 
 ### Fixed

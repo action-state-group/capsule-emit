@@ -27,14 +27,14 @@ capsule = seal(
     verdict="executed",                  # executed | confirmed | denied | blocked
     effect={"type": "write_order", "status": "dispatched"},
 )
-print(capsule.capsule_id, capsule.signature)   # sealed, signed, witnessed by default; anchor is a legacy opt-in (seal(payload, anchor=True))
+print(capsule.capsule_id, capsule.signature)   # sealed and signed; witnessed once you name a witness (CAPSULE_WITNESS_URL); anchor is a legacy opt-in
 ```
 
 ```bash
 pip install capsule-emit
 ```
 
-`capsule-emit` is the producer layer for the **Agent Action Capsule** — a [SCITT](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/) statement profile. You add one line at the moment your agent does something consequential; you get back a digest-committed, content-addressed capsule — witnessed by a public log — that a third party who trusts neither you nor your agent can independently verify.
+`capsule-emit` is the producer layer for the **Agent Action Capsule** — a [SCITT](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/) statement profile. You add one line at the moment your agent does something consequential; you get back a digest-committed, content-addressed capsule — witnessed by the log(s) you choose — that a third party who trusts neither you nor your agent can independently verify.
 
 ## Why you need this
 
@@ -61,7 +61,7 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 
 ## Where you start, and where it goes
 
-**Start here.** Call `seal()` at each consequential action. You get a **witnessed, verifiable ledger** of what your agent did — each capsule appended locally to `ledger.jsonl`, its digest written to a public log. That's the whole starting point. Everything below is optional depth you grow into — no rewrite.
+**Start here.** Call `seal()` at each consequential action. You get a **verifiable ledger** of what your agent did — each capsule appended locally to `ledger.jsonl` — and, once you name a witness, checkpoints of it held outside your environment. That's the whole starting point. Everything below is optional depth you grow into — no rewrite.
 
 **The verb surface.** One authorship axis, one thing they all return (a `Capsule`, appended to the log) — which one you call just says who authored the content:
 
@@ -118,12 +118,12 @@ for the honest ladder.
 
 Until 0.5.0, your capsule log was like a git repo you never pushed: internally consistent — every capsule content-addressed, every entry chained to the one before it — but nothing *outside* your machine vouches for it. An unpushed commit can be quietly rewritten; a pushed one can't.
 
-**0.5.0 pushes.** Anchoring (above) is per-**capsule**; checkpointing is per-**stream**. `seal()` also, **by default**, folds every capsule into a per-ledger [Merkle Mountain Range](docs/checkpoint.md) and — every ~100 records (`capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`) — builds and registers a signed **checkpoint**: a summary of the whole stream so far (its size, a root hash, a timestamp), sent to an independent witness's `/checkpoints` route so it can verify the checkpoint's own signature before counter-signing. Async, same as the anchor; your payloads never leave.
+**0.5.0 pushes.** Anchoring (above) is per-**capsule**; checkpointing is per-**stream**. `seal()` also folds every capsule into a per-ledger [Merkle Mountain Range](docs/checkpoint.md) and — every ~100 records (`capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`) — builds a signed **checkpoint** and registers it with the witness(es) you name: a summary of the whole stream so far (its size, a root hash, a timestamp), sent to an independent witness's `/checkpoints` route so it can verify the checkpoint's own signature before counter-signing. Async, same as the anchor; your payloads never leave.
 
-- **Off is one flag, honored everywhere:** `seal(payload, witness=False)` for one call, `CAPSULE_WITNESS=off` for every call — no code change, no opt-in required in the first place.
+- **Off is one flag, honored everywhere:** `seal(payload, witness=False)` for one call, `CAPSULE_WITNESS=off` for every call — no code change. With no witness named, nothing is sent at all.
 - **Your log is still your file.** The witness only ever sees the checkpoint (never your capsule content, never a per-record digest); walking away from it loses no history — `ledger.jsonl` is complete on its own, the witness just lets someone else confirm you didn't rewrite it after the fact.
 - **Force a checkpoint on demand.** `push()` builds and registers a checkpoint right now, without waiting for the cadence — useful before a process exits or at a natural audit boundary.
-- **Any witness works, and more than one is stronger.** The default is a free hosted tier at `witness.agentactioncapsule.org` (a separate, live witness service, `POST /checkpoints`) — but any conforming Transparency Service is substitutable (`CAPSULE_WITNESS_URL` / `seal(payload, witness_url=...)`), and you can register with several at once (a list, or comma-separated) for a stronger, equivocation-resistant tier. The first checkpoint of a process prints one line to stderr — once — naming exactly what's sent, where, and how to turn it off.
+- **Any witness works, and more than one is stronger.** There is no default: name the one(s) you use with `CAPSULE_WITNESS_URL` / `seal(payload, witness_url=...)`. A free public one runs at `witness.agentactioncapsule.org` (a separate, live witness service, `POST /checkpoints`), and any conforming Transparency Service works the same way; and you can register with several at once (a list, or comma-separated) for a stronger, equivocation-resistant tier. The first checkpoint of a process prints one line to stderr — once — naming exactly what's sent, where, and how to turn it off.
 
 See **[`capsule_emit.checkpoint`](docs/checkpoint.md)** for the cadence, the multi-witness config, and precisely what trust tier a checkpoint does (and doesn't) reach — a single witness upgrades you from *self-attested*, but it isn't the *multi-witness, equivocation-resistant* tier, and a witness never vouches that your capsules' content is true, only that they exist, are ordered, and weren't deleted.
 

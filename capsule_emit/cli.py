@@ -207,7 +207,7 @@ def _build_parser() -> argparse.ArgumentParser:
     status_p.add_argument("--json", dest="as_json", action="store_true", help="raw JSON output")
 
     # permalink
-    from .permalink import DEFAULT_BASE_URL, MAX_INLINE_URL_BYTES
+    from .permalink import MAX_INLINE_URL_BYTES
 
     permalink_p = sub.add_parser(
         "permalink",
@@ -236,8 +236,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     permalink_p.add_argument(
         "--base-url",
-        default=DEFAULT_BASE_URL,
-        help=f"verify-surface base URL (default: {DEFAULT_BASE_URL})",
+        required=True,
+        help="verify-surface base URL (required; no default), for example "
+        "https://verify.agentactioncapsule.org",
     )
     permalink_p.add_argument(
         "--check",
@@ -352,8 +353,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     evidence_p.add_argument(
         "--base-url",
-        default=DEFAULT_BASE_URL,
-        help=f"verify-surface base URL for the viewer link (default: {DEFAULT_BASE_URL})",
+        default=None,
+        help="verify-surface base URL for the viewer link (required unless --no-viewer-link; "
+        "no default), for example https://verify.agentactioncapsule.org",
     )
     evidence_p.add_argument(
         "--no-viewer-link",

@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import cbor2
 import pytest
+from cll.checkpoint.emit import DEFAULT_TS_URL
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
@@ -38,7 +39,6 @@ from scitt_cose import build_receipt, sign_sign1
 
 from capsule_emit.checkpoint import (
     DEFAULT_TS_PUBLIC_KEY_PEM,
-    DEFAULT_TS_URL,
     CheckpointRecord,
     StampVerdict,
     WitnessRecord,

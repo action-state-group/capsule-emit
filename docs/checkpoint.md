@@ -16,10 +16,11 @@ checkpoint/witness stream automatically:
   last checkpoint — a signed peaks checkpoint over that ledger's MMR is
   built and registered with the witness Transparency Service at its
   `/checkpoints` route (single-host witness ruling, 2026-08-27). The witness is
-  a separate, live service — `witness.agentactioncapsule.org`
-  (`capsule_emit.checkpoint.emit.DEFAULT_TS_URL`), checkpoint-primary and
-  semantically a witness, not the anchor. This is the **only default egress
-  channel** as of 0.5.0 — the older per-capsule anchor channel is now an
+  the one(s) named in `witness_url=` / `CAPSULE_WITNESS_URL`; there is no
+  default witness, and with none named nothing is registered anywhere (a public
+  one is `witness.agentactioncapsule.org`, checkpoint-primary and semantically a
+  witness, not the anchor). This is the **only egress channel on by default**
+  as of 0.5.0 — the older per-capsule anchor channel is now an
   explicit, non-default opt-in (see
   [`docs/why-anchoring.md`](why-anchoring.md#in-practice)), not something every
   default sealing call also dispatches. A bundle (capsule + inclusion proof +
@@ -653,10 +654,10 @@ payload names itself the same way a tampered bundle does.
 registered anywhere until you set one. (This is the manual API described in
 this section; `capsule_emit.core._emit_capsule()`'s own default path above does not
 use `CheckpointConfig` — it resolves its endpoint the same way the anchor
-does, via `witness_url=` / `CAPSULE_WITNESS_URL`.) The free public-good
-witness tier at `witness.agentactioncapsule.org` (`DEFAULT_TS_URL` — a
-separate, live witness service serving `POST /checkpoints`) is documented and
-available, but a generated config shows it **commented out**
+does, via `witness_url=` / `CAPSULE_WITNESS_URL`, with no default.) A free
+public witness runs at `witness.agentactioncapsule.org` (a separate, live
+witness service serving `POST /checkpoints`); a generated config shows it
+**commented out**
 (`emit.EXAMPLE_CONFIG_TOML`), so opting in is an explicit uncomment. Any
 conforming SCITT Transparency Service can be substituted — nothing here is
 tied to one operator.
@@ -665,7 +666,7 @@ tied to one operator.
 from capsule_emit.checkpoint import CheckpointConfig, due_for_checkpoint, lag_exceeded
 
 cfg = CheckpointConfig(cadence_entries=100, cadence_seconds=900, max_lag_entries=200)
-# cfg.ts_urls == [] until you set it — e.g. cfg.ts_urls = [DEFAULT_TS_URL]
+# cfg.ts_urls == [] until you set it — e.g. cfg.ts_urls = ["https://witness.agentactioncapsule.org"]
 
 due_for_checkpoint(cfg, entries_since_last=3, seconds_since_last=920)  # True: age leg
 due_for_checkpoint(cfg, entries_since_last=0, seconds_since_last=920)  # False: no unwitnessed work

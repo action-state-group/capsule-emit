@@ -57,8 +57,8 @@ Environment variables
     CAPSULE_OPERATOR  Tenant / org identifier stamped on every capsule
     CAPSULE_DEVELOPER Agent name + version
     CAPSULE_ANCHOR    "true" to fire-and-forget anchor each capsule (sends only
-                      the capsule_id digest, never payload) against
-                      anchor.agentactioncapsule.org; "false" (default) for offline
+                      the capsule_id digest, never payload) to the anchor named
+                      in AAC_ANCHOR_URL (no default); "false" (default) for offline
 
 Requires: pip install "capsule-emit[mcp]"
 """

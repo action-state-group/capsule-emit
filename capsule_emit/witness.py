@@ -353,7 +353,8 @@ def _parse_witness_urls(raw: str | list[str] | None) -> list[str]:
     list of endpoints, in the order given, with blanks dropped and duplicates
     removed. Accepts a single URL string, a list of URL strings, or a
     comma-separated string (the shape an env var must take). An empty result
-    means "no override" -- the caller falls back to the registered default.
+    means no witness is configured: there is no default witness, and nothing
+    is sent (see :func:`resolved_witness_urls`).
     """
     if raw is None:
         return []
@@ -369,24 +370,15 @@ def _parse_witness_urls(raw: str | list[str] | None) -> list[str]:
 
 
 def resolved_witness_urls(ts_url: str | list[str] | None = None) -> list[str]:
-    """The witness endpoint(s) actually in effect, resolved with the exact
-    same precedence :func:`maybe_checkpoint`'s caller (``core.emit()``/
-    ``seal()``) already applies: an explicit ``ts_url`` wins; otherwise
-    ``CAPSULE_WITNESS_URL``; otherwise the single free public-good default.
-
-    Unlike :func:`_parse_witness_urls` (a pure normalizer that leaves "no
-    override" as ``[]`` for its caller to fall back on), this always
-    returns at least one URL -- callers outside a live ``emit()`` call (a
-    retry pass, ``status``) that need to know "which witness(es) is this
-    ledger actually configured against right now" have no other caller to
-    fall back to.
+    """The witness endpoint(s) actually in effect: an explicit ``ts_url``
+    wins; otherwise ``CAPSULE_WITNESS_URL``. There is no default witness:
+    with neither, the list is empty and nothing is sent anywhere. (A public
+    witness is, for example, ``https://witness.agentactioncapsule.org``; it
+    is used only when configured like any other.)
     """
-    from .checkpoint import DEFAULT_TS_URL
-
     if ts_url is None:
         ts_url = os.environ.get(WITNESS_URL_ENV_VAR)
-    urls = _parse_witness_urls(ts_url)
-    return urls or [DEFAULT_TS_URL]
+    return _parse_witness_urls(ts_url)
 
 
 _notice_lock = threading.Lock()
@@ -421,13 +413,24 @@ def _print_first_use_notice_once(urls: list[str], *, stub: bool = False) -> None
                 "and the grade never leaves self-attested; this mode proves nothing beyond "
                 "self-attested to anyone but you. Never set CAPSULE_WITNESS=stub in production "
                 "-- CAPSULE_ENV=production with stub set refuses to run. To get a real witness: "
-                "unset CAPSULE_WITNESS to use the default hosted witness, or set "
-                "CAPSULE_WITNESS_URL to point at your own. "
+                "unset CAPSULE_WITNESS and set CAPSULE_WITNESS_URL to the witness(es) you "
+                "choose (a public one, or your own). "
                 "(This notice prints once per process.)",
                 file=sys.stderr,
             )
             return
-        endpoints = ", ".join(urls) if urls else "the default witness endpoint"
+        if not urls:
+            print(
+                "capsule-emit: witnessing is on but no witness is configured, so no "
+                "checkpoint leaves this process and every checkpoint stays self-attested. "
+                "To have checkpoints witnessed, set CAPSULE_WITNESS_URL (or pass "
+                "witness_url=) to the witness(es) you choose: a public one such as "
+                "https://witness.agentactioncapsule.org, or your own. Silence this with "
+                "witness=False or CAPSULE_WITNESS=off. (This notice prints once per process.)",
+                file=sys.stderr,
+            )
+            return
+        endpoints = ", ".join(urls)
         print(
             "capsule-emit: witnessing is on for this process -- once a checkpoint "
             "is due, a signed checkpoint of your log (its size, a root hash, and a "
@@ -1250,7 +1253,6 @@ def _checkpoint_timestamp() -> str:
 
 def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool = False) -> None:
     from .checkpoint import (
-        DEFAULT_TS_URL,
         STUB_TS_URL,
         CheckpointError,
         RollbackError,
@@ -1259,10 +1261,13 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     )
 
     # In stub mode, never label a stamp with a real-looking endpoint (a
-    # configured CAPSULE_WITNESS_URL, or the real hosted default) -- nothing
-    # is actually dialed, so the label must say so plainly (STUB_TS_URL),
-    # not borrow a URL that would read as "this really reached that host."
-    resolved_urls = [STUB_TS_URL] if stub else (ts_urls or [DEFAULT_TS_URL])
+    # configured CAPSULE_WITNESS_URL) -- nothing is actually dialed, so the
+    # label must say so plainly (STUB_TS_URL), not borrow a URL that would
+    # read as "this really reached that host." There is no default witness:
+    # with none configured there is nothing to register with.
+    resolved_urls = [STUB_TS_URL] if stub else list(ts_urls)
+    if not resolved_urls:
+        return
 
     # Drain each configured witness's durable backlog BEFORE handling the
     # checkpoint newly due this cycle -- oldest pending stamp first, per
@@ -1411,8 +1416,10 @@ def push(
     refuse_stub_in_production(witness)
     is_stub = mode == "stub"
 
-    urls = _parse_witness_urls(ts_url)
+    urls = resolved_witness_urls(ts_url)
     _print_first_use_notice_once(urls, stub=is_stub)
+    if not urls and not is_stub:
+        return None  # no witness configured: nothing to send
 
     key = _resolve_key(ledger_path)
     dispatch_lock = _dispatch_lock_for(key)
@@ -1478,6 +1485,11 @@ def require_witness_receipt(
             "(witness=False / CAPSULE_WITNESS=off) -- no witness channel is "
             "configured to obtain a receipt from"
         )
+    if witness_mode(witness) == "on" and not resolved_witness_urls(ts_url):
+        raise WitnessRequiredError(
+            f"require_witness=True but no witness is configured for {ledger_path!r} "
+            "-- pass witness_url= or set CAPSULE_WITNESS_URL to the witness(es) you choose"
+        )
     cp = push(ledger_path, ts_url=ts_url, witness=witness, signer=signer)
     if cp is None or not cp.witnesses:
         raise WitnessRequiredError(
@@ -1540,8 +1552,10 @@ def maybe_checkpoint(
     refuse_stub_in_production(enabled)
     is_stub = mode == "stub"
 
-    urls = _parse_witness_urls(ts_url)
+    urls = resolved_witness_urls(ts_url)
     _print_first_use_notice_once(urls, stub=is_stub)
+    if not urls and not is_stub:
+        return  # no witness configured: nothing to send
 
     cadence = _resolved_cadence(cadence_entries)
     age_cadence = _resolved_age_cadence(cadence_seconds)
