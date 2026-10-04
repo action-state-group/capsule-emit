@@ -5,7 +5,10 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## Unreleased
+## 0.0.6
+
+The first release after 0.0.4. 0.0.5 was never published: everything listed
+under it below ships in 0.0.6.
 
 ### Changed — BREAKING
 - `anchor`: no default service. `impl Default for AnchorClient`,
@@ -28,7 +31,7 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 ### Added
 - `AnchorClient::base_url()`: the URL a client sends to, as given.
 
-## 0.0.5
+## 0.0.5 (never published; included in 0.0.6)
 
 ### Fixed
 - `checkpoint`: a registration with any configured witness other than the
