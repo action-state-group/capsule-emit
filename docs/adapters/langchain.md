@@ -375,12 +375,13 @@ chain is consistent; `verify_producer_envelope` proves who sealed it.
 Two channels exist, both off or content-free, and both worth knowing about
 before you run this in production:
 
-- **Witnessing** is **on by default**. After every 100 records, or at the next
-  seal once 900 seconds have passed, a signed checkpoint — log size, root hash,
-  timestamp, *never* capsule content — is POSTed to the default witness endpoint
-  (`witness.agentactioncapsule.org`; `CAPSULE_WITNESS_URL` names another). There
-  is no final checkpoint at exit, so a shorter run posts none. Disable with
-  `CAPSULE_WITNESS=off`.
+- **Witnessing** posts only to the witness(es) you name in
+  `CAPSULE_WITNESS_URL` (a public one is `witness.agentactioncapsule.org`); there
+  is no default, and with none named nothing is posted. Once named, after every
+  100 records, or at the next seal once 900 seconds have passed, a signed
+  checkpoint — log size, root hash, timestamp, *never* capsule content — is
+  POSTed there. There is no final checkpoint at exit, so a shorter run posts
+  none. Disable with `CAPSULE_WITNESS=off`.
 - **Anchoring** is off unless enabled. When on, it is fire-and-forget by
   default: `EmitResult.anchored` reports that a **submission was made**, not
   that an anchor was confirmed. Set `anchor_wait=<seconds>` to block for a

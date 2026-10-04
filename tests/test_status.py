@@ -111,6 +111,7 @@ def stub_ts(monkeypatch):
     # unverified" for being an unpinned TS. monkeypatch reverts per test.
     base_url, received, stop = _start_stub_ts()
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", base_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
@@ -232,8 +233,14 @@ def test_status_witnessed_checkpoint_grades_witnessed_and_rechecks_online(
     assert _wait_for(lambda: _has_stamp(ledger_path))
 
     result = status.compute_status(str(ledger_path), offline=False)
+    assert result["latest_checkpoint"]["grade"] == "self-attested"  # no key supplied
+    assert result["latest_checkpoint"]["grade_keys"] == "none supplied"
+    result = status.compute_status(
+        str(ledger_path), offline=False, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM}
+    )
     cp = result["latest_checkpoint"]
     assert cp["grade"] == "witnessed"
+    assert cp["grade_keys"] == "trust anchor"
     assert result["checkpoints_awaiting_stamp"] == 0
     assert len(cp["witnesses"]) == 1
     assert cp["witnesses"][0]["ts_url"] == ts_url
@@ -376,7 +383,9 @@ def test_status_text_differs_between_self_attested_and_witnessed(
     assert _wait_for(lambda: _has_stamp(witnessed_ledger))
 
     self_attested_result = status.compute_status(str(self_attested_ledger), offline=True)
-    witnessed_result = status.compute_status(str(witnessed_ledger), offline=True)
+    witnessed_result = status.compute_status(
+        str(witnessed_ledger), offline=True, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM}
+    )
 
     out_a = io.StringIO()
     status.render_status(self_attested_result, out=out_a)
@@ -485,6 +494,7 @@ def test_render_status_shows_witness_host_and_operator_never_our_brand(
         "operator": "Example Corp",
     })
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", did_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", did_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     try:
         monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "2")

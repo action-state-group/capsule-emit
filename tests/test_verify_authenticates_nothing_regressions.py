@@ -106,6 +106,7 @@ def stub_ts(monkeypatch):
     # unverified" for being an unpinned TS. monkeypatch reverts per test.
     base_url, received, stop = _start_stub_ts()
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", base_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
@@ -377,7 +378,9 @@ def test_attack45_positive_control_genuine_stamp_still_grades_witnessed(two_chec
 
     assert cp.grade() == Grade.WITNESSED
 
-    result = status.compute_status(str(ledger_path), offline=True)
+    result = status.compute_status(
+        str(ledger_path), offline=True, trust_anchor={cp.witnesses[0].ts_url: TEST_TS_PUBLIC_KEY_PEM}
+    )
     assert result["latest_checkpoint"]["grade"] == "witnessed"
 
 

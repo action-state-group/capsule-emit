@@ -540,7 +540,7 @@ def test_the_default_witness_has_no_built_in_key(tmp_path, servers):
     directory row for it, is not checked -- exactly like an unlisted third
     party. Before the directory was the only key source, this URL was
     auto-pinned to a built-in key."""
-    from capsule_emit.checkpoint import DEFAULT_TS_URL
+    from cll.checkpoint.emit import DEFAULT_TS_URL
 
     for url in (DEFAULT_TS_URL, "https://third.example"):
         state, rec = _cll_receipt_at(url, tmp_path / url.split("//")[1], servers)
@@ -587,9 +587,9 @@ def test_our_row_is_not_rescued_by_the_built_in_key(tmp_path, servers, monkeypat
     plurality path still reached for the built-in key, it would."""
     import cll.checkpoint
     import cll.checkpoint.emit
+    from cll.checkpoint.emit import DEFAULT_TS_URL
 
     import capsule_emit.checkpoint
-    from capsule_emit.checkpoint import DEFAULT_TS_URL
 
     for mod in (cll.checkpoint.emit, cll.checkpoint, capsule_emit.checkpoint):
         monkeypatch.setattr(mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM, raising=False)

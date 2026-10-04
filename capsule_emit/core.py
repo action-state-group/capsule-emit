@@ -102,7 +102,8 @@ AnchorStatus = Literal["confirmed", "submitted", "failed", "skipped"]
 #: the channel that is actually on by default as of 0.5.0.
 #:
 #: - ``"local_sealed"`` -- witnessing is disabled for this ledger
-#:   (``witness=False`` / ``CAPSULE_WITNESS=off``); the capsule is sealed and
+#:   (``witness=False`` / ``CAPSULE_WITNESS=off``), or on with no witness
+#:   configured (there is no default witness); the capsule is sealed and
 #:   signed, but no witness channel is configured for it at all.
 #: - ``"checkpoint_queued"`` -- witnessing is enabled and this call fed the
 #:   default best-effort pipeline (counted toward cadence, or a due
@@ -615,7 +616,9 @@ def _emit_capsule(
             prints to stderr before this process's first anchor or witness
             network attempt, naming the endpoint(s) and how to disable them.
         ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
-        anchor_url: Override the anchor endpoint (else reads ``AAC_ANCHOR_URL`` env var).
+        anchor_url: The anchor endpoint for the legacy anchor channel (else
+            reads ``AAC_ANCHOR_URL`` env var). There is no default: an
+            opted-in anchor with no endpoint is skipped.
         anchor_wait: When set, block up to this many seconds for the anchor
             submission to resolve, and report the real outcome via
             ``EmitResult.anchored`` / ``.anchor_status``. When ``None`` (default),
@@ -647,10 +650,10 @@ def _emit_capsule(
             ``CAPSULE_ENV=production`` is also set — stub must never ship to
             production silently.
         witness_url: Override the witness Transparency Service endpoint(s)
-            (else reads ``CAPSULE_WITNESS_URL`` env var, else the free
-            public-good tier at ``witness.agentactioncapsule.org`` --
-            currently served via ``anchor.agentactioncapsule.org`` while its
-            CNAME is pending). Pass a single URL, or several (a list, or a
+            (else reads ``CAPSULE_WITNESS_URL`` env var). There is no default
+            witness: with neither, no checkpoint leaves the process and a
+            one-time notice says so. A public witness is, for example,
+            ``https://witness.agentactioncapsule.org``. Pass a single URL, or several (a list, or a
             comma-separated string for the env var) to register the same
             checkpoint with more than one Transparency Service at once --
             what climbs from *witnessed (single witness)* to *multi-witness,
@@ -896,9 +899,11 @@ def _emit_capsule(
     # "local-only" posture (frozen surface §1a.3) an honest zero-network
     # guarantee rather than a promise the legacy channel can quietly violate.
     witness_enabled_now = _witness.witness_enabled(witness)
-    anchor_enabled = _anchor_enabled(anchor) and witness_enabled_now
     witness_endpoint = witness_url or os.environ.get(_witness.WITNESS_URL_ENV_VAR, None)
     anchor_endpoint = anchor_url or os.environ.get("AAC_ANCHOR_URL", None)
+    # No default anchor: an opted-in anchor with no endpoint configured sends
+    # nothing (the library underneath would otherwise pick its own default).
+    anchor_enabled = _anchor_enabled(anchor) and witness_enabled_now and bool(anchor_endpoint)
 
     # Single combined notice, before either default network path is dispatched
     # below — see _print_first_run_disclosure_once's docstring for why this
@@ -915,7 +920,8 @@ def _emit_capsule(
         # back in). This notice specifically claims a NETWORK attempt, which
         # stub mode never makes -- see maybe_checkpoint()'s own stub-specific
         # scream instead.
-        witness_active=_witness.witness_mode(witness) == "on",
+        witness_active=_witness.witness_mode(witness) == "on"
+        and bool(_witness.resolved_witness_urls(witness_endpoint)),
         anchor_endpoint=anchor_endpoint,
         witness_endpoint=witness_endpoint,
     )
@@ -935,7 +941,12 @@ def _emit_capsule(
         _witness.maybe_checkpoint(
             os.fspath(ledger), ts_url=witness_endpoint, enabled=witness, signer=signer_obj
         )
-        witness_outcome = "local_sealed" if _witness.witness_mode(witness) == "off" else "checkpoint_queued"
+        witness_outcome = (
+            "local_sealed"
+            if _witness.witness_mode(witness) == "off"
+            or (_witness.witness_mode(witness) == "on" and not _witness.resolved_witness_urls(witness_endpoint))
+            else "checkpoint_queued"
+        )
 
     capsule_id = capsule["capsule_id"]
     anchored = False
@@ -1066,7 +1077,12 @@ def _emit_log_entry(
         _witness.maybe_checkpoint(
             os.fspath(ledger), ts_url=witness_endpoint, enabled=witness, signer=signer_obj
         )
-        witness_outcome = "local_sealed" if _witness.witness_mode(witness) == "off" else "checkpoint_queued"
+        witness_outcome = (
+            "local_sealed"
+            if _witness.witness_mode(witness) == "off"
+            or (_witness.witness_mode(witness) == "on" and not _witness.resolved_witness_urls(witness_endpoint))
+            else "checkpoint_queued"
+        )
 
     return LogEntry(
         capsule_id=entry["capsule_id"],

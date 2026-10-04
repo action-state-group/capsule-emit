@@ -137,7 +137,7 @@ non-default opt-in that reaches only a narrower, per-capsule slice of the same
 tier.
 
 **Can I use my own log instead of the hosted one?**
-Yes — for the default witness/checkpoint stream, `CAPSULE_WITNESS_URL=…` or
+Yes — for the witness/checkpoint stream, `CAPSULE_WITNESS_URL=…` (there is no default) or
 `seal(..., witness_url=…)`; for the legacy per-capsule anchor channel,
 `AAC_ANCHOR_URL=…` or `seal(..., anchor_url=…)`. Either way the log service
 ([`capsule-anchor`](https://github.com/action-state-group/capsule-anchor)) is

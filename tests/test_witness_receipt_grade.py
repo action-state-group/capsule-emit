@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import cbor2
 import pytest
+from cll.checkpoint.emit import DEFAULT_TS_URL
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
@@ -37,8 +38,6 @@ from cryptography.hazmat.primitives.serialization import (
 from scitt_cose import build_receipt, sign_sign1
 
 from capsule_emit.checkpoint import (
-    DEFAULT_TS_PUBLIC_KEY_PEM,
-    DEFAULT_TS_URL,
     CheckpointRecord,
     StampVerdict,
     WitnessRecord,
@@ -344,13 +343,23 @@ def test_keyed_verification_returns_the_pin_when_pinned() -> None:
     assert (checked.verdict, checked.key_pem) == (StampVerdict.WITNESSED, WITNESS_PUB)
 
 
-def test_keyed_verification_returns_the_default_key_at_the_default_ts_url() -> None:
-    # Neither test key is the built-in one, so the stamp fails -- but it was
-    # judged under the built-in key, and the result says which.
+def test_no_witness_has_a_built_in_key() -> None:
+    # A stamp at the public witness's URL is judged under no key unless the
+    # caller supplies one: UNVERIFIED (shape only), never the built-in key.
+    for priv in (WITNESS_PRIV, ATTACKER_PRIV):
+        stamp = _witness(DEFAULT_TS_URL, priv, "mmr-verified")
+        checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, stamp)
+        assert checked.verdict is StampVerdict.UNVERIFIED
+        assert checked.key_pem is None
+        assert DEFAULT_TS_URL in checked.errors[0]
+        assert "no key supplied by the caller" in checked.errors[0]
+    # With the caller's key it is judged under that key.
+    genuine = _witness(DEFAULT_TS_URL, WITNESS_PRIV, "mmr-verified")
+    checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, genuine, ts_pubkey_pem=WITNESS_PUB)
+    assert (checked.verdict, checked.key_pem) == (StampVerdict.WITNESSED, WITNESS_PUB)
     forged = _witness(DEFAULT_TS_URL, ATTACKER_PRIV, "mmr-verified")
-    checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, forged)
+    checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, forged, ts_pubkey_pem=WITNESS_PUB)
     assert checked.verdict is StampVerdict.INVALID
-    assert checked.key_pem == DEFAULT_TS_PUBLIC_KEY_PEM
 
 
 def test_keyed_verification_returns_no_key_for_an_unpinned_non_default_witness() -> None:
@@ -361,13 +370,12 @@ def test_keyed_verification_returns_no_key_for_an_unpinned_non_default_witness()
 
 
 def test_keyed_verification_verdict_matches_the_tuple_api() -> None:
-    # The old (verdict, errors) function is unchanged; the keyed one reaches
-    # the same verdict and errors for every stamp.
+    # With a key supplied, or at any URL but the one cll pins a key for, the
+    # keyed function reaches the same verdict and errors as cll's tuple API.
     cases = [
         (CHECKPOINT, _witness("https://witness.example", WITNESS_PRIV, "mmr-verified"), WITNESS_PUB),
         (CHECKPOINT, _witness("https://witness.example", ATTACKER_PRIV, "mmr-verified"), WITNESS_PUB),
         (CHECKPOINT, _witness("https://witness.example", WITNESS_PRIV, "mmr-verified"), None),
-        (CHECKPOINT, _witness(DEFAULT_TS_URL, WITNESS_PRIV, "mmr-verified"), None),
         (CHECKPOINT, _witness(DEFAULT_TS_URL, WITNESS_PRIV, "mmr-verified"), WITNESS_PUB),
         (
             CHECKPOINT,
@@ -379,7 +387,9 @@ def test_keyed_verification_verdict_matches_the_tuple_api() -> None:
     for checkpoint, witness, pin in cases:
         verdict, errors = verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=pin)
         checked = verify_witness_stamp_tristate_keyed(checkpoint, witness, ts_pubkey_pem=pin)
-        assert (checked.verdict, list(checked.errors)) == (verdict, errors)
+        assert checked.verdict is verdict
+        if pin is not None:  # without a key, the message names the caller
+            assert list(checked.errors) == errors
 
 
 def test_receipt_grade_does_not_choose_a_key() -> None:
@@ -391,18 +401,16 @@ def test_receipt_grade_does_not_choose_a_key() -> None:
     assert "DEFAULT_TS_PUBLIC_KEY_PEM" not in source
 
 
-def test_receipt_grade_follows_the_default_key_the_verification_returns(
+def test_a_built_in_key_is_never_used_even_when_re_pointed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Re-point the built-in default key (as a deployment of its own witness
-    # would) at the test witness key. The unpinned default-URL stamp is then
-    # verified -- and its grade read -- under that key, with no pin passed.
+    # Re-point cll's built-in key at the test witness key: the stamp at that
+    # URL still gets no trust (and no grade) without a key from the caller.
     import cll.checkpoint.emit as emit_mod
 
     monkeypatch.setattr(emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", WITNESS_PUB)
     genuine = _witness(DEFAULT_TS_URL, WITNESS_PRIV, "mmr-verified")
     checked = verify_witness_stamp_tristate_keyed(CHECKPOINT, genuine)
-    assert (checked.verdict, checked.key_pem) == (StampVerdict.WITNESSED, WITNESS_PUB)
-    assert _receipt_grade(CHECKPOINT, genuine) == "mmr-verified"
-    forged = _witness(DEFAULT_TS_URL, ATTACKER_PRIV, "mmr-verified")
-    assert _receipt_grade(CHECKPOINT, forged) is None
+    assert (checked.verdict, checked.key_pem) == (StampVerdict.UNVERIFIED, None)
+    assert _receipt_grade(CHECKPOINT, genuine) is None
+    assert _receipt_grade(CHECKPOINT, genuine, ts_pubkey_pem=WITNESS_PUB) == "mmr-verified"

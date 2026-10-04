@@ -6,6 +6,40 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed — BREAKING: no default witness, anchor or verify surface
+
+The library no longer sends anything to, or builds links for, a service its caller did not name.
+
+- **Witnessing has no default witness.** With witnessing on and no `witness_url=` /
+  `CAPSULE_WITNESS_URL`, no checkpoint leaves the process: a one-time notice says no witness is
+  configured and how to name one, `witness_outcome` is `"local_sealed"`, and `push()` returns
+  `None`. Before, an unconfigured `seal()` posted checkpoints to
+  `https://witness.agentactioncapsule.org`. To keep that, set
+  `CAPSULE_WITNESS_URL=https://witness.agentactioncapsule.org` (a public witness, like any other).
+- `require_witness=True` with no witness configured raises `WitnessRequiredError`.
+- `witness.resolved_witness_urls()` returns `[]` when none is configured (it returned the default).
+- `capsule_emit.checkpoint` no longer re-exports `DEFAULT_TS_URL`.
+- **The legacy anchor channel has no default endpoint.** An opted-in anchor (`anchor=True` /
+  `CAPSULE_ANCHOR=legacy-on`) with no `anchor_url=` / `AAC_ANCHOR_URL` sends nothing
+  (`anchor_status` `"skipped"`), where the library underneath would have chosen its own.
+- **Verification trusts no built-in witness key.** A witness receipt verifies only under a key the
+  caller supplies (`ts_pubkey_pem=`, a `trust_anchor`, or a witness directory the caller names,
+  such as the public `witnesses.json`); with none it reads `UNVERIFIED`. Before, a receipt from
+  `https://witness.agentactioncapsule.org` was checked under a key built into the library.
+  Applies to `witness.verify_witness_stamp_tristate_keyed`, the new `witness.stamp_verdict`,
+  `CheckpointWitnessState.grade()`, chain-segment verification and `status`.
+  `status.compute_status()` takes `trust_anchor=` / `witness_directory=` (reported as
+  `grade_keys`), and `capsule-emit status` takes `--witness-directory`; with no keys the latest
+  checkpoint grades self-attested and says its receipts were not checked. `bundle.verify_bundle`
+  and `disclose.verify_disclosure` judge a stamp that cll's log check would verify under its own
+  built-in key as having no key: `UNVERIFIED` unless `trust_anchor` names it.
+- `capsule_emit.checkpoint` no longer re-exports `DEFAULT_TS_PUBLIC_KEY_PEM` or
+  `DEFAULT_TS_PUBLIC_KEY_ID`.
+- **Permalinks have no default verify surface.** `permalink.DEFAULT_BASE_URL` is removed;
+  `build_url()` requires `base_url=`; `capsule-emit permalink` requires `--base-url`;
+  `build_evidence_markdown()` and `capsule-emit evidence` require it unless the viewer link is off
+  (`viewer_link=False` / `--no-viewer-link`). A public one is `https://verify.agentactioncapsule.org`.
+
 ### Added — `export`: a scoped evidence file for a third party
 
 - `capsule-emit export LEDGER_DIR` writes an evidence file (`evidence-bundle/v2`) holding only

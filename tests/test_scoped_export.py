@@ -210,8 +210,8 @@ def test_permalink_bundle_out_of_a_whole_ledger_needs_all(tmp_path, capsys):
     for action in ("first", "second"):
         seal(None, action=action, operator="acme", anchor=False, ledger=flat, witness_url="http://127.0.0.1:1")
     out = tmp_path / "bundle.json"
-    assert cli.main(["permalink", "--ledger", str(flat), "--bundle-out", str(out)]) == 1
+    assert cli.main(["permalink", "--base-url", "https://verify.example", "--ledger", str(flat), "--bundle-out", str(out)]) == 1
     assert "whole history" in capsys.readouterr().err
     assert not out.exists()
-    assert cli.main(["permalink", "--ledger", str(flat), "--bundle-out", str(out), "--all"]) == 0
+    assert cli.main(["permalink", "--base-url", "https://verify.example", "--ledger", str(flat), "--bundle-out", str(out), "--all"]) == 0
     assert out.exists()

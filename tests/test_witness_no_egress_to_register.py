@@ -61,6 +61,7 @@ def test_default_emit_witness_path_never_requests_register(tmp_path, monkeypatch
     from capsule_emit.checkpoint import emit as emit_mod
 
     monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "2")
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", "https://witness.example")
 
     requested_urls: list[str] = []
 
@@ -100,6 +101,7 @@ def test_witness_outage_retry_path_never_requests_register(tmp_path, monkeypatch
     from capsule_emit.checkpoint import emit as emit_mod
 
     monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "2")
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", "https://witness.example")
 
     requested_urls: list[str] = []
 

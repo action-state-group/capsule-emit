@@ -18,7 +18,6 @@ from agent_action_capsule.bundle import bundle_digest, decode_fragment, verify_b
 from capsule_emit import seal
 from capsule_emit.cli import main as cli_main
 from capsule_emit.permalink import (
-    DEFAULT_BASE_URL,
     MAX_INLINE_URL_BYTES,
     PermalinkError,
     build_bundle,
@@ -26,6 +25,9 @@ from capsule_emit.permalink import (
     pointer_fragment,
     resolve_pointer,
 )
+
+#: The verify surface these tests name (there is no default).
+DEFAULT_BASE_URL = "https://verify.example"
 
 _DOC = json.loads(
     (Path(__file__).resolve().parents[1] / "test-vectors" / "permalink-bundle" / "vectors.json").read_text(
@@ -53,7 +55,7 @@ def test_bundle_shape_matches_the_vector(case):
 
 @CASES
 def test_fragment_matches_the_go_reference_encoder(case):
-    url = build_url(case["capsules"], bundle=case["bundle"], disclosures=case["disclosures"])
+    url = build_url(case["capsules"], bundle=case["bundle"], disclosures=case["disclosures"], base_url=DEFAULT_BASE_URL)
     assert url == f"{DEFAULT_BASE_URL}/bundle#{case['fragment']}"
 
 
@@ -70,6 +72,7 @@ def test_pointer_fragment_matches_the_go_reference_encoder(case):
         disclosures=case["disclosures"],
         bundle_locations=_DOC["locations"],
         max_url_bytes=1024,  # every inline vector URL is longer, every pointer URL shorter
+        base_url=DEFAULT_BASE_URL,
     )
     assert url == f"{DEFAULT_BASE_URL}/bundle#{case['pointer_fragment']}"
     assert decode_fragment(case["pointer_fragment"]) == case["pointer"]
@@ -77,7 +80,7 @@ def test_pointer_fragment_matches_the_go_reference_encoder(case):
 
 @CASES
 def test_fragment_is_unpadded_base64url(case):
-    frag = _fragment(build_url(case["capsules"], bundle=case["bundle"], disclosures=case["disclosures"]))
+    frag = _fragment(build_url(case["capsules"], bundle=case["bundle"], disclosures=case["disclosures"], base_url=DEFAULT_BASE_URL))
     assert "=" not in frag and "+" not in frag and "/" not in frag
 
 
@@ -107,13 +110,13 @@ def oversize_capsule():
 def test_oversize_permalink_is_refused_without_a_location(oversize_capsule):
     capsule, disclosures = oversize_capsule
     with pytest.raises(PermalinkError, match="--bundle-location"):
-        build_url([capsule], bundle=False, disclosures=disclosures)
+        build_url([capsule], bundle=False, disclosures=disclosures, base_url=DEFAULT_BASE_URL)
 
 
 def test_oversize_permalink_falls_back_to_a_pointer(oversize_capsule):
     capsule, disclosures = oversize_capsule
     url = build_url(
-        [capsule], bundle=False, disclosures=disclosures, bundle_locations=["https://bundles.example.org/1.json"]
+        [capsule], bundle=False, disclosures=disclosures, bundle_locations=["https://bundles.example.org/1.json"], base_url=DEFAULT_BASE_URL
     )
     assert len(url) < 1024
     pointer = decode_fragment(_fragment(url))
@@ -130,7 +133,7 @@ def test_oversize_permalink_falls_back_to_a_pointer(oversize_capsule):
 
 def test_inline_permalink_under_the_limit_ignores_locations():
     cap = seal({"a": 1}, action="a", operator="example-org", developer="agent@v1", verdict="executed", anchor=False)
-    url = build_url([cap.capsule], bundle=False, bundle_locations=["https://bundles.example.org/1.json"])
+    url = build_url([cap.capsule], bundle=False, bundle_locations=["https://bundles.example.org/1.json"], base_url=DEFAULT_BASE_URL)
     assert decode_fragment(_fragment(url))["bundle_kind"] == "evidence-bundle/v2"
 
 
@@ -178,7 +181,7 @@ def _oversize_ledger(tmp_path):
 
 def test_cli_oversize_without_location_exits_1_and_prints_no_url(tmp_path, capsys):
     ledger, reveal = _oversize_ledger(tmp_path)
-    assert cli_main(["permalink", "--ledger", str(ledger), "--reveal", f"agent_input={reveal}"]) == 1
+    assert cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", f"agent_input={reveal}"]) == 1
     captured = capsys.readouterr()
     assert "--bundle-location" in captured.err
     assert "http" not in captured.out
@@ -190,7 +193,7 @@ def test_cli_oversize_with_location_prints_a_pointer_matching_the_written_bundle
     location = "https://bundles.example.org/big.json"
     code = cli_main(
         [
-            "permalink", "--ledger", str(ledger), "--reveal", f"agent_input={reveal}",
+            "permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", f"agent_input={reveal}",
             "--bundle-out", str(out_path), "--bundle-location", location,
         ]
     )

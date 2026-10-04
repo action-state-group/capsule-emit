@@ -190,6 +190,7 @@ __all__ = [
     "CheckpointWitnessState",
     "StampVerification",
     "verify_witness_stamp_tristate_keyed",
+    "stamp_verdict",
     "checkpoint_witness_states",
     "checkpoint_witness_backlog",
     "retry_pending_witness_stamps",
@@ -353,7 +354,8 @@ def _parse_witness_urls(raw: str | list[str] | None) -> list[str]:
     list of endpoints, in the order given, with blanks dropped and duplicates
     removed. Accepts a single URL string, a list of URL strings, or a
     comma-separated string (the shape an env var must take). An empty result
-    means "no override" -- the caller falls back to the registered default.
+    means no witness is configured: there is no default witness, and nothing
+    is sent (see :func:`resolved_witness_urls`).
     """
     if raw is None:
         return []
@@ -369,24 +371,15 @@ def _parse_witness_urls(raw: str | list[str] | None) -> list[str]:
 
 
 def resolved_witness_urls(ts_url: str | list[str] | None = None) -> list[str]:
-    """The witness endpoint(s) actually in effect, resolved with the exact
-    same precedence :func:`maybe_checkpoint`'s caller (``core.emit()``/
-    ``seal()``) already applies: an explicit ``ts_url`` wins; otherwise
-    ``CAPSULE_WITNESS_URL``; otherwise the single free public-good default.
-
-    Unlike :func:`_parse_witness_urls` (a pure normalizer that leaves "no
-    override" as ``[]`` for its caller to fall back on), this always
-    returns at least one URL -- callers outside a live ``emit()`` call (a
-    retry pass, ``status``) that need to know "which witness(es) is this
-    ledger actually configured against right now" have no other caller to
-    fall back to.
+    """The witness endpoint(s) actually in effect: an explicit ``ts_url``
+    wins; otherwise ``CAPSULE_WITNESS_URL``. There is no default witness:
+    with neither, the list is empty and nothing is sent anywhere. (A public
+    witness is, for example, ``https://witness.agentactioncapsule.org``; it
+    is used only when configured like any other.)
     """
-    from .checkpoint import DEFAULT_TS_URL
-
     if ts_url is None:
         ts_url = os.environ.get(WITNESS_URL_ENV_VAR)
-    urls = _parse_witness_urls(ts_url)
-    return urls or [DEFAULT_TS_URL]
+    return _parse_witness_urls(ts_url)
 
 
 _notice_lock = threading.Lock()
@@ -421,13 +414,24 @@ def _print_first_use_notice_once(urls: list[str], *, stub: bool = False) -> None
                 "and the grade never leaves self-attested; this mode proves nothing beyond "
                 "self-attested to anyone but you. Never set CAPSULE_WITNESS=stub in production "
                 "-- CAPSULE_ENV=production with stub set refuses to run. To get a real witness: "
-                "unset CAPSULE_WITNESS to use the default hosted witness, or set "
-                "CAPSULE_WITNESS_URL to point at your own. "
+                "unset CAPSULE_WITNESS and set CAPSULE_WITNESS_URL to the witness(es) you "
+                "choose (a public one, or your own). "
                 "(This notice prints once per process.)",
                 file=sys.stderr,
             )
             return
-        endpoints = ", ".join(urls) if urls else "the default witness endpoint"
+        if not urls:
+            print(
+                "capsule-emit: witnessing is on but no witness is configured, so no "
+                "checkpoint leaves this process and every checkpoint stays self-attested. "
+                "To have checkpoints witnessed, set CAPSULE_WITNESS_URL (or pass "
+                "witness_url=) to the witness(es) you choose: a public one such as "
+                "https://witness.agentactioncapsule.org, or your own. Silence this with "
+                "witness=False or CAPSULE_WITNESS=off. (This notice prints once per process.)",
+                file=sys.stderr,
+            )
+            return
+        endpoints = ", ".join(urls)
         print(
             "capsule-emit: witnessing is on for this process -- once a checkpoint "
             "is due, a signed checkpoint of your log (its size, a root hash, and a "
@@ -819,11 +823,9 @@ class StampVerification:
     the three-state ``verdict``, its ``errors``, and ``key_pem``, the trusted
     Transparency Service key the verdict was reached under.
 
-    ``key_pem`` is the caller's pin when one was given; else
-    :data:`capsule_emit.checkpoint.DEFAULT_TS_PUBLIC_KEY_PEM` for a witness
-    at :data:`capsule_emit.checkpoint.DEFAULT_TS_URL`; else ``None`` (an
-    unpinned witness anywhere else, for which no key is trusted and nothing
-    better than ``UNVERIFIED`` is possible). ``WITNESSED`` means the receipt's
+    ``key_pem`` is the caller's pin when one was given, else ``None``: no
+    key is trusted that the caller did not supply (there is no built-in key
+    for any witness), and nothing better than ``UNVERIFIED`` is possible. ``WITNESSED`` means the receipt's
     signature verified under exactly ``key_pem``. With any other verdict the
     key is only the one the stamp was judged against, not one it verified
     under, so nothing may be read from the receipt on its strength."""
@@ -844,8 +846,7 @@ def verify_witness_stamp_tristate_keyed(
     never makes a network call.
 
     The trust-anchor choice is made HERE, once: the caller's
-    ``ts_pubkey_pem``, else the built-in default key for a witness at the
-    default ``ts_url``, else none. The chosen key is then passed to the
+    ``ts_pubkey_pem``, else none (see :func:`stamp_verdict`). The chosen key is then passed to the
     tristate explicitly, so the tristate never picks a key of its own on this
     path, and the returned verdict and ``key_pem`` cannot describe two
     different keys. Anything that must read more from a receipt after a
@@ -856,18 +857,43 @@ def verify_witness_stamp_tristate_keyed(
     ``(verdict, errors)``; for any stamp it returns the same verdict this
     function does.
     """
-    # The constants are read off the module at call time, not bound at
-    # import, so a deployment (or test) that re-points DEFAULT_TS_URL /
-    # DEFAULT_TS_PUBLIC_KEY_PEM on it is seen here exactly as the tristate
-    # sees it. cll's module directly: capsule_emit.checkpoint.emit is the
-    # same module object behind a deprecated alias.
+    key_pem = ts_pubkey_pem
+    verdict, errors = stamp_verdict(checkpoint, witness, ts_pubkey_pem=key_pem)
+    return StampVerification(verdict=verdict, errors=tuple(errors), key_pem=key_pem)
+
+
+def stamp_verdict(
+    checkpoint: Any,  # capsule_emit.checkpoint.CheckpointRecord
+    witness: Any,  # capsule_emit.checkpoint.WitnessRecord
+    *,
+    ts_pubkey_pem: bytes | str | None = None,
+) -> tuple[Any, list[str]]:
+    """:func:`cll.checkpoint.emit.verify_witness_stamp_tristate`, trusting
+    only the key the caller supplies. Never raises; never makes a network
+    call.
+
+    That function pins a key built into the library when it is given none
+    and the stamp's ``ts_url`` is one particular public witness. A verifier
+    here trusts no witness its caller did not name: with no key, the stamp
+    gets the shape checks only (bound to this checkpoint, a structurally
+    valid receipt) and reads ``UNVERIFIED`` at best, whatever its URL. To
+    trust a witness, pass its key (``ts_pubkey_pem``, or a ``trust_anchor``
+    / witness directory the caller chose).
+    """
+    import dataclasses
+
     from cll.checkpoint import emit as _emit
 
-    key_pem = ts_pubkey_pem
-    if key_pem is None and getattr(witness, "ts_url", None) == _emit.DEFAULT_TS_URL:
-        key_pem = _emit.DEFAULT_TS_PUBLIC_KEY_PEM
-    verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=key_pem)
-    return StampVerification(verdict=verdict, errors=tuple(errors), key_pem=key_pem)
+    if ts_pubkey_pem is not None:
+        verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=ts_pubkey_pem)
+        return verdict, list(errors)
+    # No key: ask for the shape checks under a URL that pins nothing, and
+    # report the stamp's own URL.
+    unpinned = dataclasses.replace(witness, ts_url="")
+    verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, unpinned, ts_pubkey_pem=None)
+    if verdict is _emit.StampVerdict.UNVERIFIED:
+        errors = [f"witnessed by {witness.ts_url}, no key supplied by the caller — unverified stamp"]
+    return verdict, list(errors)
 
 
 def _receipt_grade(
@@ -895,18 +921,17 @@ def _receipt_grade(
     1. **Bound to this checkpoint.** ``witness.entry_hash`` equals the hash
        of ``checkpoint.digest()``, so a genuine receipt replayed from
        another checkpoint fails.
-    2. **Signed by a key this process already trusts.** With
-       ``ts_pubkey_pem`` the receipt must verify under that pinned key (one
-       key, applied to every witness it is passed with). Without it, only a
-       witness at the library's default ``ts_url`` can pass, under the
-       public key built into the library. No key is ever fetched: a
+    2. **Signed by a key the caller supplied.** With ``ts_pubkey_pem`` the
+       receipt must verify under that pinned key (one key, applied to every
+       witness it is passed with). Without it, no witness can pass: there is
+       no built-in key for any witness. No key is ever fetched: a
        ``ts_url`` is written by whoever writes the ledger, so a key served
        there proves nothing about who signed the receipt.
 
     ``None`` -- "no verified grade" -- when: the stamp is a stub
     (``is_stub``); it is not ``WITNESSED`` (wrong signer, replayed or
-    tampered stamp, no ``checkpoint`` to bind to, an unpinned witness other
-    than the default, ``scitt_cose`` not installed); or it is ``WITNESSED``
+    tampered stamp, no ``checkpoint`` to bind to, no key supplied,
+    ``scitt_cose`` not installed); or it is ``WITNESSED``
     but carries no label, or a value outside the two grades above. ``None``
     must never be presented as either grade string.
 
@@ -995,13 +1020,13 @@ class CheckpointWitnessState:
         alone, so a late backfilled stamp flips this to WITNESSED without
         needing the checkpoint's own, never-updated ``.witnesses`` list to
         change."""
-        from .checkpoint import Grade, verify_witness_stamp_offline
+        from .checkpoint import Grade, StampVerdict
 
         return (
             Grade.WITNESSED
             if any(
                 not w.is_stub
-                and verify_witness_stamp_offline(self.checkpoint, w, ts_pubkey_pem=ts_pubkey_pem)[0]
+                and stamp_verdict(self.checkpoint, w, ts_pubkey_pem=ts_pubkey_pem)[0] is StampVerdict.WITNESSED
                 for w in self.effective_witnesses.values()
             )
             else Grade.SELF_ATTESTED
@@ -1250,7 +1275,6 @@ def _checkpoint_timestamp() -> str:
 
 def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool = False) -> None:
     from .checkpoint import (
-        DEFAULT_TS_URL,
         STUB_TS_URL,
         CheckpointError,
         RollbackError,
@@ -1259,10 +1283,13 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     )
 
     # In stub mode, never label a stamp with a real-looking endpoint (a
-    # configured CAPSULE_WITNESS_URL, or the real hosted default) -- nothing
-    # is actually dialed, so the label must say so plainly (STUB_TS_URL),
-    # not borrow a URL that would read as "this really reached that host."
-    resolved_urls = [STUB_TS_URL] if stub else (ts_urls or [DEFAULT_TS_URL])
+    # configured CAPSULE_WITNESS_URL) -- nothing is actually dialed, so the
+    # label must say so plainly (STUB_TS_URL), not borrow a URL that would
+    # read as "this really reached that host." There is no default witness:
+    # with none configured there is nothing to register with.
+    resolved_urls = [STUB_TS_URL] if stub else list(ts_urls)
+    if not resolved_urls:
+        return
 
     # Drain each configured witness's durable backlog BEFORE handling the
     # checkpoint newly due this cycle -- oldest pending stamp first, per
@@ -1411,8 +1438,10 @@ def push(
     refuse_stub_in_production(witness)
     is_stub = mode == "stub"
 
-    urls = _parse_witness_urls(ts_url)
+    urls = resolved_witness_urls(ts_url)
     _print_first_use_notice_once(urls, stub=is_stub)
+    if not urls and not is_stub:
+        return None  # no witness configured: nothing to send
 
     key = _resolve_key(ledger_path)
     dispatch_lock = _dispatch_lock_for(key)
@@ -1478,6 +1507,11 @@ def require_witness_receipt(
             "(witness=False / CAPSULE_WITNESS=off) -- no witness channel is "
             "configured to obtain a receipt from"
         )
+    if witness_mode(witness) == "on" and not resolved_witness_urls(ts_url):
+        raise WitnessRequiredError(
+            f"require_witness=True but no witness is configured for {ledger_path!r} "
+            "-- pass witness_url= or set CAPSULE_WITNESS_URL to the witness(es) you choose"
+        )
     cp = push(ledger_path, ts_url=ts_url, witness=witness, signer=signer)
     if cp is None or not cp.witnesses:
         raise WitnessRequiredError(
@@ -1540,8 +1574,10 @@ def maybe_checkpoint(
     refuse_stub_in_production(enabled)
     is_stub = mode == "stub"
 
-    urls = _parse_witness_urls(ts_url)
+    urls = resolved_witness_urls(ts_url)
     _print_first_use_notice_once(urls, stub=is_stub)
+    if not urls and not is_stub:
+        return  # no witness configured: nothing to send
 
     cadence = _resolved_cadence(cadence_entries)
     age_cadence = _resolved_age_cadence(cadence_seconds)

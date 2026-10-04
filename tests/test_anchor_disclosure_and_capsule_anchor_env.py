@@ -50,7 +50,10 @@ def _clean_module_state(monkeypatch):
     witness._states.clear()
     witness._dispatch_locks.clear()
     monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
-    monkeypatch.delenv("AAC_ANCHOR_URL", raising=False)
+    # The legacy anchor and the witness have no default endpoint: these tests
+    # name one each, so an opted-in channel has somewhere to go.
+    monkeypatch.setenv("AAC_ANCHOR_URL", "https://anchor.example")
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", "https://witness.example")
     monkeypatch.delenv("CAPSULE_WITNESS", raising=False)
     yield
     core._disclosure_printed = False
@@ -348,3 +351,17 @@ def test_missing_scitt_cose_fails_seal_fast_and_clearly(tmp_path, _missing_scitt
     ledger = str(tmp_path / "ledger.jsonl")
     with pytest.raises(ModuleNotFoundError, match="scitt_cose"):
         seal({"x": 1}, action="a", operator="acme", anchor=False, witness=False, ledger=ledger)
+
+
+def test_an_opted_in_anchor_with_no_endpoint_sends_nothing(tmp_path, monkeypatch, capsys):
+    """There is no default anchor: opting in with no AAC_ANCHOR_URL / anchor_url
+    dispatches nothing (the library underneath would pick its own default)."""
+    monkeypatch.delenv("AAC_ANCHOR_URL", raising=False)
+    monkeypatch.setattr(
+        core, "async_anchor", lambda *a, **kw: pytest.fail("anchor must not be attempted with no endpoint")
+    )
+    r = seal(
+        {"x": 1}, action="test", operator="acme", anchor=True, witness=True,
+        ledger=str(tmp_path / "ledger.jsonl"),
+    )
+    assert r.anchor_status == "skipped"
