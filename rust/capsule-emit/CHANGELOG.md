@@ -5,7 +5,33 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## 0.0.4 — unreleased
+## Unreleased
+
+### Fixed
+- `checkpoint`: the clock leg cut one interval late. A backlog that arrives
+  between ticks starts its age clock at the next tick, a little after that
+  tick's scheduled instant, so the tick one interval later measured an age just
+  short of `cadence_seconds` and waited a further interval (10 to 15 minutes
+  instead of 5 by default). `tick` now allows for that: 5% of the cadence, at
+  least one second. The shared due rule is unchanged.
+- `checkpoint`: a witness receipt obtained after its checkpoint was written (a
+  push-time cut, offered on a later tick, or a retried registration) was kept
+  only in memory, so `checkpoints.jsonl` readers and restarts never saw it. It
+  is now recorded beside the checkpoints in `witness-backfill.jsonl`, one line
+  per receipt, and merged back on load. A receipt is merged only when it is
+  bound to that checkpoint (`mmr_size`, `root`, and `entry_hash` =
+  `sha256(bytes.fromhex(digest))`); its signature is not checked here, since
+  that needs the witness's pinned key. Reading keeps complete lines only, skips
+  each unreadable line on its own, and a write after a torn tail starts on a
+  new line.
+
+### Added
+- `checkpoint::{WITNESS_BACKFILL_FILE, WitnessBackfill, read_witness_backfills,
+  effective_witnesses}`: read those receipts, and a checkpoint's own witnesses
+  merged with the ones bound to it (one per witness URL; the Python ledger's
+  witness-backfill entries play the same role).
+
+## 0.0.4
 
 Producer side only: this crate builds, validates and seals settlement legs; it
 does not derive settlement states. Verify legs with the Python reference

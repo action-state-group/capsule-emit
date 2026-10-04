@@ -45,6 +45,161 @@ use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+/// Witness receipts obtained after their checkpoint was written, one JSON line
+/// each, next to `checkpoints.jsonl` (which is append-only and holds
+/// checkpoints only). A push-time cut is written before any witness sees it;
+/// its receipt arrives on a later tick and is recorded here. Same role as the
+/// Python ledger's witness-backfill entries.
+///
+/// What a reader can rely on, and what it cannot:
+/// - [`read_witness_backfills`] returns only complete lines (a final line with
+///   no newline is a write cut short and is ignored), and skips each line that
+///   is not valid UTF-8 JSON of the right shape on its own, never the rest.
+/// - [`effective_witnesses`] merges a backfill into a checkpoint only if the
+///   receipt is bound to that checkpoint: same `mmr_size` and `root`, and an
+///   `entry_hash` equal to `sha256(bytes.fromhex(checkpoint.digest()))`, the
+///   check the Python verifier calls "bound to this checkpoint". A receipt
+///   copied from another checkpoint is dropped.
+/// - Each ignored line, and each receipt recorded for a checkpoint but not
+///   bound to it, is logged on stderr: one `[checkpoint] ignoring ...` line
+///   naming the line number or the checkpoint's `mmr_size`, and why.
+/// - The receipt's own signature is NOT checked here: that needs the
+///   witness's public key, which a verifier pins (a witness directory). A
+///   merged receipt is "recorded for this checkpoint", not "verified".
+pub const WITNESS_BACKFILL_FILE: &str = "witness-backfill.jsonl";
+
+/// One witness receipt for the checkpoint at `mmr_size` with `root`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WitnessBackfill {
+    pub mmr_size: u64,
+    pub root: String,
+    pub witness: CheckpointWitness,
+}
+
+/// The backfills recorded next to `checkpoints_path`, in file order: complete
+/// lines only, each unreadable line skipped on its own. A missing file is no
+/// backfills.
+pub fn read_witness_backfills(checkpoints_path: &Path) -> Vec<WitnessBackfill> {
+    let (backfills, ignored) = read_witness_backfills_noting(checkpoints_path);
+    for why in ignored {
+        eprintln!("[checkpoint] {why}");
+    }
+    backfills
+}
+
+/// [`read_witness_backfills`], with one message per line it ignores.
+fn read_witness_backfills_noting(checkpoints_path: &Path) -> (Vec<WitnessBackfill>, Vec<String>) {
+    let mut ignored = Vec::new();
+    let Ok(bytes) = std::fs::read(checkpoints_path.with_file_name(WITNESS_BACKFILL_FILE)) else {
+        return (Vec::new(), ignored);
+    };
+    let complete_len = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+    if complete_len < bytes.len() {
+        ignored.push(format!(
+            "ignoring the last line of {WITNESS_BACKFILL_FILE}: it has no newline (a write cut short)"
+        ));
+    }
+    if complete_len == 0 {
+        return (Vec::new(), ignored);
+    }
+    let mut backfills = Vec::new();
+    for (i, line) in bytes[..complete_len - 1].split(|b| *b == b'\n').enumerate() {
+        let parsed = std::str::from_utf8(line)
+            .map_err(|e| e.to_string())
+            .and_then(|text| serde_json::from_str(text).map_err(|e| e.to_string()));
+        match parsed {
+            Ok(backfill) => backfills.push(backfill),
+            Err(why) => ignored.push(format!(
+                "ignoring line {} of {WITNESS_BACKFILL_FILE}: {why}",
+                i + 1
+            )),
+        }
+    }
+    (backfills, ignored)
+}
+
+/// The `entry_hash` a receipt for `cp` carries: `sha256(bytes.fromhex(digest))`.
+fn bound_entry_hash(cp: &CheckpointRecord) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let digest = hex::decode(cp.digest()).ok()?;
+    Some(hex::encode(Sha256::digest(digest)))
+}
+
+/// `cp`'s own witnesses merged with the backfills bound to it (see
+/// [`WITNESS_BACKFILL_FILE`] for what "bound" checks and what it does not),
+/// one entry per witness URL: a backfill replaces an entry for the same URL,
+/// and a new URL is appended, in file order.
+pub fn effective_witnesses(
+    cp: &CheckpointRecord,
+    backfills: &[WitnessBackfill],
+) -> Vec<CheckpointWitness> {
+    let (witnesses, ignored) = effective_witnesses_noting(cp, backfills);
+    for why in ignored {
+        eprintln!("[checkpoint] {why}");
+    }
+    witnesses
+}
+
+/// [`effective_witnesses`], with one message per receipt recorded for `cp`
+/// but not bound to it.
+fn effective_witnesses_noting(
+    cp: &CheckpointRecord,
+    backfills: &[WitnessBackfill],
+) -> (Vec<CheckpointWitness>, Vec<String>) {
+    let mut witnesses = cp.witnesses.clone();
+    let mut ignored = Vec::new();
+    let Some(bound) = bound_entry_hash(cp) else {
+        return (witnesses, ignored);
+    };
+    for b in backfills
+        .iter()
+        .filter(|b| b.mmr_size == cp.mmr_size && b.root == cp.root)
+    {
+        if b.witness.entry_hash != bound {
+            ignored.push(format!(
+                "ignoring the receipt from {} recorded for checkpoint {}: its entry_hash is not \
+                 bound to this checkpoint",
+                b.witness.ts_url, cp.mmr_size
+            ));
+            continue;
+        }
+        match witnesses.iter_mut().find(|w| w.ts_url == b.witness.ts_url) {
+            Some(existing) => *existing = b.witness.clone(),
+            None => witnesses.push(b.witness.clone()),
+        }
+    }
+    (witnesses, ignored)
+}
+
+/// Append one backfill line. If the file ends in a write cut short (no final
+/// newline), a newline goes first, so the torn tail stays one unreadable line
+/// and the new record is not glued onto it.
+fn append_witness_backfill(
+    checkpoints_path: &Path,
+    backfill: &WitnessBackfill,
+) -> std::io::Result<()> {
+    use std::io::{Read, Write};
+    let path = checkpoints_path.with_file_name(WITNESS_BACKFILL_FILE);
+    let mut line = serde_json::to_string(backfill).map_err(std::io::Error::other)?;
+    line.push('\n');
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .append(true)
+        .open(path)?;
+    let len = file.metadata()?.len();
+    if len > 0 {
+        let mut last = [0u8; 1];
+        file.seek(SeekFrom::Start(len - 1))?;
+        file.read_exact(&mut last)?;
+        if last[0] != b'\n' {
+            line.insert(0, '\n');
+        }
+    }
+    file.write_all(line.as_bytes())?;
+    file.sync_data()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CheckpointStateError {
     #[error("I/O error: {0}")]
@@ -219,6 +374,16 @@ impl Default for CheckpointCadenceConfig {
             pad_bucket: DEFAULT_PAD_BUCKET,
         }
     }
+}
+
+/// The clock leg's allowance for the tick that measures it. A backlog that
+/// arrives between ticks is first seen (and its age clock started) by the
+/// next tick, a little after that tick's scheduled instant; the tick one
+/// interval later then measures an age just short of `cadence_seconds` and,
+/// without this allowance, waits a whole further interval. 5% of the cadence,
+/// at least one second.
+fn tick_slack_seconds(cfg: &CheckpointCadenceConfig) -> f64 {
+    (cfg.cadence_seconds as f64 * 0.05).max(1.0)
 }
 
 /// True once `entries_since_last` reaches `cfg.cadence_entries`, or
@@ -397,6 +562,14 @@ impl CheckpointState {
             .collect();
         let (consumed_bytes, last_line_start) = lines.last().map_or((0, 0), |l| (l.end, l.start));
 
+        // Receipts recorded after this checkpoint was written, merged only when
+        // bound to it (see `WITNESS_BACKFILL_FILE`).
+        if let Some(cp) = substrate.last_checkpoint().cloned() {
+            let merged = effective_witnesses(&cp, &read_witness_backfills(&checkpoints_path));
+            if let Some(witnesses) = substrate.last_checkpoint_witnesses_mut() {
+                *witnesses = merged;
+            }
+        }
         let last_checkpoint_leaf_count = match substrate.last_checkpoint() {
             Some(cp) => cp.leaf_count()?,
             None => 0,
@@ -638,7 +811,9 @@ impl CheckpointState {
             }
             Err(err) => return Err(err),
         }
-        let seconds_since = self.pending_since.map(|t| t.elapsed().as_secs_f64());
+        let seconds_since = self
+            .pending_since
+            .map(|t| t.elapsed().as_secs_f64() + tick_slack_seconds(&self.cfg));
         if due_for_checkpoint(&self.cfg, self.entries_since_checkpoint, seconds_since) {
             return Ok(Some(self.checkpoint_now(signer, anchor, true)?));
         }
@@ -775,6 +950,22 @@ impl CheckpointState {
         );
         self.pending_witness_urls = still_pending;
         let added = cp.witnesses.len() > before;
+        // `checkpoints.jsonl` already holds this checkpoint without these
+        // receipts; record them beside it so a reader (and a restart) sees
+        // them. Best-effort, like registration itself.
+        for witness in &cp.witnesses[before..] {
+            let backfill = WitnessBackfill {
+                mmr_size: cp.mmr_size,
+                root: cp.root.clone(),
+                witness: witness.clone(),
+            };
+            if let Err(err) = append_witness_backfill(&self.checkpoints_path(), &backfill) {
+                eprintln!(
+                    "[checkpoint] could not record the receipt from {} for checkpoint {}: {err}",
+                    witness.ts_url, cp.mmr_size
+                );
+            }
+        }
         if let Some(witnesses) = self.substrate.last_checkpoint_witnesses_mut() {
             *witnesses = cp.witnesses;
         }
@@ -1845,7 +2036,12 @@ mod tests {
                 let (status, payload) = if chains {
                     tip = Some((decoded.mmr_size, decoded.root.clone()));
                     seen.lock().unwrap().push(decoded.mmr_size);
-                    let entry_hash = "ab".repeat(32);
+                    // What a real witness returns: bound to this checkpoint.
+                    let entry_hash = {
+                        use sha2::{Digest, Sha256};
+                        let digest = decoded.to_checkpoint_record().digest();
+                        hex::encode(Sha256::digest(hex::decode(digest).unwrap()))
+                    };
                     (
                         "200 OK",
                         json!({"receipt_b64": "c3R1Yg==", "entry_hash": entry_hash,
@@ -1912,6 +2108,243 @@ mod tests {
         let latest = state.last_checkpoint().unwrap();
         assert_eq!(latest.witnesses.len(), 1);
         assert_eq!(latest.witnesses[0].ts_url, witness.url);
+    }
+
+    #[test]
+    fn a_backlog_first_seen_by_a_tick_is_due_one_interval_later() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = CheckpointCadenceConfig {
+            cadence_entries: 100,
+            cadence_seconds: 300,
+            witness_urls: Vec::new(),
+            pad_bucket: 0,
+        };
+        let (mut state, _) = CheckpointState::load(dir.path(), "test-log", cfg).unwrap();
+        let anchor = AnchorClient::new("http://127.0.0.1:1");
+        write_capsule(dir.path(), "one");
+        // This tick sees the new leaf and starts its age clock.
+        assert!(state.tick(&signer(), &anchor).unwrap().is_none());
+        assert!(state.pending_since.is_some());
+
+        // Clearly younger than the cadence: not due.
+        state.pending_since = Some(Instant::now() - std::time::Duration::from_secs(250));
+        assert!(state.tick(&signer(), &anchor).unwrap().is_none());
+
+        // The next tick fires one interval after the scheduled instant of the
+        // one that started the clock, so the age it measures is a hair short.
+        state.pending_since = Some(Instant::now() - std::time::Duration::from_millis(299_990));
+        let cp = state.tick(&signer(), &anchor).unwrap();
+        assert!(
+            cp.is_some(),
+            "a backlog one interval old must be cut, not left for the next tick"
+        );
+        assert!(state.pending_since.is_none());
+    }
+
+    #[test]
+    fn a_push_cut_receipt_from_a_later_tick_is_kept_beside_the_checkpoint() {
+        let witness = continuity_witness(None);
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&witness.url)).unwrap();
+        let anchor = AnchorClient::new(&witness.url);
+        let one = write_capsule(dir.path(), "one");
+        state.checkpoint_covering(&one, &signer(), &anchor).unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+        let cp = state.last_checkpoint().unwrap().clone();
+        assert_eq!(
+            cp.witnesses.len(),
+            1,
+            "in memory, the receipt is on the checkpoint"
+        );
+
+        // On disk, the checkpoint line predates the receipt...
+        let checkpoints = dir.path().join("checkpoints.jsonl");
+        let on_disk = cll::store::read_last_checkpoint(&checkpoints)
+            .unwrap()
+            .unwrap();
+        assert!(on_disk.record.witnesses.is_empty());
+        // ...and the receipt is recorded beside it, for that checkpoint.
+        let backfills = read_witness_backfills(&checkpoints);
+        assert_eq!(backfills.len(), 1);
+        assert_eq!(
+            (backfills[0].mmr_size, backfills[0].root.as_str()),
+            (cp.mmr_size, cp.root.as_str())
+        );
+        assert_eq!(backfills[0].witness.ts_url, witness.url);
+
+        // A restart sees it, and a later tick does not register again.
+        drop(state);
+        let (mut reloaded, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&witness.url)).unwrap();
+        assert_eq!(reloaded.last_checkpoint().unwrap().witnesses.len(), 1);
+        reloaded.tick(&signer(), &anchor).unwrap();
+        assert_eq!(*witness.accepted.lock().unwrap(), vec![cp.mmr_size]);
+        assert_eq!(read_witness_backfills(&checkpoints).len(), 1);
+
+        // A receipt in the file that is not bound to this checkpoint (here,
+        // one whose entry_hash names another checkpoint) is not merged on load.
+        let mut replayed = backfills[0].clone();
+        replayed.witness.ts_url = "https://other.example".to_string();
+        replayed.witness.entry_hash = "ab".repeat(32);
+        append_witness_backfill(&checkpoints, &replayed).unwrap();
+        drop(reloaded);
+        let (again, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&witness.url)).unwrap();
+        let urls: Vec<&str> = again
+            .last_checkpoint()
+            .unwrap()
+            .witnesses
+            .iter()
+            .map(|w| w.ts_url.as_str())
+            .collect();
+        assert_eq!(urls, [witness.url.as_str()]);
+    }
+
+    #[test]
+    fn effective_witnesses_merges_only_receipts_bound_to_this_checkpoint() {
+        let entry = |url: &str, receipt: &str, entry_hash: &str| CheckpointWitness {
+            ts_url: url.to_string(),
+            entry_hash: entry_hash.to_string(),
+            receipt_b64: receipt.to_string(),
+            leaf_index: 0,
+            tree_size: 1,
+            is_stub: false,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let one = write_capsule(dir.path(), "one");
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", CheckpointCadenceConfig::default())
+                .unwrap();
+        let anchor = AnchorClient::new("http://127.0.0.1:1");
+        state.checkpoint_covering(&one, &signer(), &anchor).unwrap();
+        let mut cp = state.last_checkpoint().unwrap().clone();
+        let bound = bound_entry_hash(&cp).unwrap();
+        cp.witnesses = vec![entry("https://a.example", "old", &bound)];
+        let at = |witness| WitnessBackfill {
+            mmr_size: cp.mmr_size,
+            root: cp.root.clone(),
+            witness,
+        };
+        let backfills = vec![
+            at(entry("https://a.example", "new", &bound)),
+            at(entry("https://b.example", "b", &bound)),
+            // A genuine-looking receipt for some other checkpoint: not bound.
+            at(entry("https://e.example", "replayed", &"ab".repeat(32))),
+            WitnessBackfill {
+                mmr_size: cp.mmr_size + 1,
+                ..at(entry("https://c.example", "other size", &bound))
+            },
+            WitnessBackfill {
+                root: "00".repeat(32),
+                ..at(entry("https://d.example", "other root", &bound))
+            },
+        ];
+        let (merged, ignored) = effective_witnesses_noting(&cp, &backfills);
+        assert_eq!(
+            ignored,
+            [format!(
+                "ignoring the receipt from https://e.example recorded for checkpoint {}: its \
+                 entry_hash is not bound to this checkpoint",
+                cp.mmr_size
+            )],
+            "the replayed receipt is logged; other checkpoints' receipts are not this one's"
+        );
+        let got: Vec<(&str, &str)> = merged
+            .iter()
+            .map(|w| (w.ts_url.as_str(), w.receipt_b64.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![("https://a.example", "new"), ("https://b.example", "b")]
+        );
+    }
+
+    fn backfill_line(n: u64) -> WitnessBackfill {
+        WitnessBackfill {
+            mmr_size: n,
+            root: "11".repeat(32),
+            witness: CheckpointWitness {
+                ts_url: format!("https://w{n}.example"),
+                entry_hash: "ab".repeat(32),
+                receipt_b64: "c3R1Yg==".to_string(),
+                leaf_index: 0,
+                tree_size: 1,
+                is_stub: false,
+            },
+        }
+    }
+
+    #[test]
+    fn a_torn_final_line_is_ignored_and_the_next_record_is_not_glued_to_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let checkpoints = dir.path().join("checkpoints.jsonl");
+        append_witness_backfill(&checkpoints, &backfill_line(1)).unwrap();
+        // A write cut short before its newline: here the record itself is
+        // complete and parses, so only the complete-lines rule keeps it out
+        // (a write cut short can end on any byte, including a closing brace).
+        let path = dir.path().join(WITNESS_BACKFILL_FILE);
+        let tail = serde_json::to_string(&backfill_line(2)).unwrap();
+        let mut bytes = std::fs::read(&path).unwrap();
+        bytes.extend_from_slice(tail.as_bytes());
+        std::fs::write(&path, &bytes).unwrap();
+        let (read, ignored) = read_witness_backfills_noting(&checkpoints);
+        let read: Vec<u64> = read.iter().map(|b| b.mmr_size).collect();
+        assert_eq!(read, [1], "a line without its newline is not a record yet");
+        assert_eq!(
+            ignored,
+            [format!("ignoring the last line of {WITNESS_BACKFILL_FILE}: it has no newline (a write cut short)")]
+        );
+
+        append_witness_backfill(&checkpoints, &backfill_line(3)).unwrap();
+        // The writer ended the torn line before writing its own.
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.split_terminator('\n').collect();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[1], tail, "the torn tail kept on its own line");
+        assert_eq!(
+            lines[2],
+            serde_json::to_string(&backfill_line(3)).unwrap(),
+            "the new record not glued onto it"
+        );
+        assert!(text.ends_with('\n'));
+    }
+
+    #[test]
+    fn each_bad_line_is_skipped_on_its_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let checkpoints = dir.path().join("checkpoints.jsonl");
+        let mut bytes = Vec::new();
+        for line in [
+            serde_json::to_vec(&backfill_line(1)).unwrap(),
+            b"not json".to_vec(),
+            vec![0xff, 0xfe, b'{'],
+            br#"{"mmr_size":"three"}"#.to_vec(),
+            serde_json::to_vec(&backfill_line(5)).unwrap(),
+        ] {
+            bytes.extend(line);
+            bytes.push(b'\n');
+        }
+        std::fs::write(dir.path().join(WITNESS_BACKFILL_FILE), bytes).unwrap();
+        let read: Vec<u64> = read_witness_backfills(&checkpoints)
+            .iter()
+            .map(|b| b.mmr_size)
+            .collect();
+        assert_eq!(read, [1, 5]);
+        let (_, ignored) = read_witness_backfills_noting(&checkpoints);
+        let lines: Vec<&str> = ignored
+            .iter()
+            .map(|m| m.split(':').next().unwrap())
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                format!("ignoring line 2 of {WITNESS_BACKFILL_FILE}"),
+                format!("ignoring line 3 of {WITNESS_BACKFILL_FILE}"),
+                format!("ignoring line 4 of {WITNESS_BACKFILL_FILE}"),
+            ],
+            "one message per ignored line, naming it"
+        );
     }
 
     #[test]
