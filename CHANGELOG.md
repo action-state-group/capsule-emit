@@ -6,6 +6,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed — `witnesses.json` may publish an Ed25519 witness's key in `public_keys`
+
+- An Ed25519 row's `key_ids` entry is the raw key. A `public_keys` entry used to have to
+  hash to a key id, so an Ed25519 key could not be listed there. A `public_keys` entry now
+  matches a key id either by its SHA-256 (as before) or, for an Ed25519 key, by its raw
+  32 bytes. `row_public_keys_pem` returns the same key either way.
+- The `witness.agentactioncapsule.org` row now lists its key in `public_keys`, the value its
+  `GET /anchor/authority-pubkey` serves, checked against a receipt it issued.
+
 ### Changed — receipt grade `observed-only` (was `countersigned-observed`)
 
 - The existence-and-time receipt grade is now named `observed-only`. A witness registers
