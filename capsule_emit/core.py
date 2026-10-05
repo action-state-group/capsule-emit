@@ -22,7 +22,7 @@ It wraps ``agent_action_capsule.emit()`` with:
   fail-closed ``require_witness=True`` profile —
   [capsule-emit-witness-required-profile])
 
-**Single egress (2026-08, O16 items 1-2):** the per-seal SCITT anchor
+**Single egress (2026-08):** the per-seal SCITT anchor
 submission that used to dispatch on every ``seal()``/``received()`` call by
 default has been killed as a default. The checkpoint/witness stream
 is now the only default network path. The old anchor channel still exists as
@@ -31,7 +31,7 @@ an explicit, non-default opt-in — pass ``anchor=True``, or set
 on-values, so an existing ``CAPSULE_ANCHOR=true`` config does not silently
 keep double-egress alive across the upgrade) — kept only as a rollback path
 for one release. **Even when opted back in, the legacy channel stays subject
-to the witness kill switch (O16-03)** — ``witness=False`` /
+to the witness kill switch** — ``witness=False`` /
 ``CAPSULE_WITNESS=off`` is the one switch that zeroes ALL egress, anchor
 included. See ``docs/why-anchoring.md`` and ``docs/checkpoint.md``.
 
@@ -133,14 +133,14 @@ _ATEXIT_ANCHOR_TIMEOUT = float(
 #: Explicit ``anchor=`` always wins; this env var is consulted only when the
 #: caller leaves ``anchor`` at its default (``None``). Unlike
 #: ``capsule_emit.witness.WITNESS_ENV_VAR`` (which defaults ON), this
-#: defaults OFF as of 0.5.0 (O16 items 1-2: the per-seal anchor channel is
+#: defaults OFF as of 0.5.0 (the per-seal anchor channel is
 #: killed as a default egress path) — only the exact value ``"legacy-on"``
 #: re-enables it, kept as a one-release rollback escape hatch. Pre-0.5.0
 #: on-values (``"true"``/``"1"``/``"yes"``/unset) no longer enable anchor —
 #: an existing ``CAPSULE_ANCHOR=true`` config silently downgrades to
 #: single-egress (checkpoint-only) rather than continuing double-egress.
 #:
-#: **O16-03: this switch alone is not sufficient to enable the channel.**
+#: **this switch alone is not sufficient to enable the channel.**
 #: The result of :func:`_anchor_enabled` is further gated by the witness
 #: kill switch at the ``_emit_capsule`` call site -- ``witness=False`` /
 #: ``CAPSULE_WITNESS=off`` disables the legacy anchor channel too, even when
@@ -149,7 +149,7 @@ _ATEXIT_ANCHOR_TIMEOUT = float(
 ANCHOR_ENV_VAR = "CAPSULE_ANCHOR"
 _ANCHOR_LEGACY_ON_VALUE = "legacy-on"
 
-#: The pre-0.5.0 on-values. Kept solely to detect the O16-01-02 breaking
+#: The pre-0.5.0 on-values. Kept solely to detect the single-egress breaking
 #: change at runtime: a caller who wrote one of these before the flip now
 #: gets a silent no-op (single-egress) instead of the anchor channel they
 #: asked for, with nothing in the docs surfacing that unless they read them
@@ -161,7 +161,7 @@ _stale_anchor_notice_printed = False
 
 
 def _print_legacy_anchor_env_stale_notice_once(value: str) -> None:
-    """One-time stderr notice for the O16-01-02 breaking change: a pre-0.5.0
+    """One-time stderr notice for the single-egress breaking change: a pre-0.5.0
     affirmative ``CAPSULE_ANCHOR`` value (``true``/``1``/``yes``) used to
     enable the per-seal anchor channel; as of 0.5.0 it is off by default and
     that value is now silently ignored. Never raises; a broken stderr must
@@ -193,7 +193,7 @@ def _anchor_enabled(explicit: bool | None) -> bool:
     channel stays off unless ``CAPSULE_ANCHOR=legacy-on`` — the deliberately
     narrow escape hatch described on ``ANCHOR_ENV_VAR`` above. Callers must
     additionally AND this with the witness kill switch (see
-    ``ANCHOR_ENV_VAR``'s O16-03 note) -- this function alone does not apply
+    the ``ANCHOR_ENV_VAR`` note on the kill switch) -- this function alone does not apply
     it."""
     if explicit is not None:
         return explicit
@@ -475,7 +475,7 @@ class EmitResult:
 
     ``seq`` is this capsule's 1-indexed position in its ledger file (see
     ``capsule_emit.ledger.append_to_ledger``) — the log is where every
-    capsule already lives ambiently, per the frozen surface's "already a
+    capsule already lives ambiently, per the public API's "already a
     leaf in your log" (§2.1): once a checkpoint covers this position, ``seq``
     is the MMR leaf index too. Rendered as ``#logged @ leaf <seq>`` by
     ``__repr__`` and by ``ledger.show()``.
@@ -605,8 +605,7 @@ def _emit_capsule(
             ``ValueError`` (a chain relation needs a chain target);
             ``relation=None`` never raises regardless of ``confirms``. Default
             ``"confirms"``.
-        anchor: Legacy, non-default channel — killed as a default in 0.5.0 (O16
-            items 1-2). ``None`` (default) never dispatches. Pass ``True``, or
+        anchor: Legacy, non-default channel — killed as a default in 0.5.0. ``None`` (default) never dispatches. Pass ``True``, or
             set ``CAPSULE_ANCHOR=legacy-on``, to opt back into the old
             per-seal, async, digest-only SCITT anchor submission
             (:func:`agent_action_capsule.anchor.async_anchor`) — kept only as
@@ -775,7 +774,7 @@ def _emit_capsule(
             "a chain relation needs a chain target"
         )
     # CAPSULE_WITNESS=stub + CAPSULE_ENV=production refuses to run, before
-    # anything is written (frozen surface §1a.4) — see
+    # anything is written — see
     # capsule_emit.witness.refuse_stub_in_production.
     _witness.refuse_stub_in_production(witness)
 
@@ -903,11 +902,11 @@ def _emit_capsule(
 
     seq = append_to_ledger(capsule, ledger)
 
-    # O16-03: the witness kill switch (``witness=False`` / ``CAPSULE_WITNESS=off``)
+    # the witness kill switch (``witness=False`` / ``CAPSULE_WITNESS=off``)
     # is the ONE switch that zeroes all egress -- including the legacy anchor
     # channel, even when a caller has explicitly opted it back in via
     # ``anchor=True`` / ``CAPSULE_ANCHOR=legacy-on``. This is what makes the
-    # "local-only" posture (frozen surface §1a.3) an honest zero-network
+    # "local-only" posture an honest zero-network
     # guarantee rather than a promise the legacy channel can quietly violate.
     witness_enabled_now = _witness.witness_enabled(witness)
     witness_endpoint = witness_url or os.environ.get(_witness.WITNESS_URL_ENV_VAR, None)
@@ -921,11 +920,11 @@ def _emit_capsule(
     # must run first and print at most once per process. Stub witnessing
     # (CAPSULE_WITNESS=stub) is deliberately excluded from "network path
     # active" here — it never dials out, and _witness.maybe_checkpoint()
-    # below prints its OWN, stub-specific scream instead (frozen surface
-    # §1a.4); this notice must never claim a network attempt that isn't real.
+    # below prints its OWN, stub-specific scream instead;
+    # this notice must never claim a network attempt that isn't real.
     _print_first_run_disclosure_once(
         anchor_active=anchor_enabled,
-        # NOT witness_enabled_now (the O16-03 kill-switch gate, True for
+        # NOT witness_enabled_now (the kill-switch gate, True for
         # both "on" and "stub" -- stub is not the kill switch, and anchor's
         # own decision must still govern when a caller explicitly opts it
         # back in). This notice specifically claims a NETWORK attempt, which

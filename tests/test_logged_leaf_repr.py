@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""O16 audit item 9: '#logged @ leaf N' repr.
+"""The '#logged @ leaf N' repr.
 
 ``seal()``'s log is meant to be ambient -- every capsule is already a leaf in
-its ledger before any checkpoint (frozen v4 surface §2.1). ``EmitResult``
+its ledger before any checkpoint. ``EmitResult``
 carries this as ``.seq`` (1-indexed position in the ledger file), and both
 ``repr(cap)`` and ``capsule-emit ledger show`` render it as
 ``#logged @ leaf <seq>``.
@@ -48,7 +48,7 @@ def test_seq_is_1_indexed_position_in_ledger(tmp_ledger):
 def test_repr_includes_logged_at_leaf(tmp_ledger):
     """Default path (legacy anchor channel not engaged): the frozen
     '#logged @ leaf N' shape only -- the deprecated anchored/anchor_status
-    fields (both vestigial on this path, see [o16-fu-2-deprecate-anchored-fields-repr])
+    fields (both vestigial on this path)
     are not surfaced."""
     cap = _seal(tmp_ledger)
     assert cap.anchor_status == "skipped"

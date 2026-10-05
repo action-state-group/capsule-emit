@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for E14 — ``capsule_emit.evidence_request.answer()``.
+"""Tests for the evidence request protocol — ``capsule_emit.evidence_request.answer()``.
 
 Uses ``CAPSULE_WITNESS=stub`` (zero-network, real checkpoint mechanics --
 see ``tests/test_stub_witness.py``) so these run hermetically; every

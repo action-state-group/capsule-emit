@@ -20,9 +20,8 @@ classifiers = [
     "Development Status :: 3 - Alpha",
 ]
 # checkpointed-local-log's `cll` package -- the CLL/MMR core, graduated out
-# of this repo per the W3.1 extraction (2026-09-01; was capsule_emit.checkpoint,
-# itself ported from capsule-ledger's mmr/{core,index,store}.py per Amendment
-# E, 2026-08-21). capsule_emit.checkpoint / capsule_emit.bundle are now thin
+# of this repo on 2026-09-01 (was capsule_emit.checkpoint, itself ported
+# from capsule-ledger's mmr/{core,index,store}.py on 2026-08-21). capsule_emit.checkpoint / capsule_emit.bundle are now thin
 # compatibility re-exports over it -- see those modules' docstrings. Pulls in
 # scitt-cose + cbor2 + agent-action-capsule transitively. A CORE dependency,
 # not an extra: capsule_emit/checkpoint/*.py import `cll.checkpoint.*`
@@ -30,7 +29,7 @@ classifiers = [
 # lazily but from inside a plain `capsule-emit` install) is ON BY DEFAULT --
 # so every install needs cll available, not just installs that opt into a
 # `checkpoint` extra.
-# Floor bumped to 0.2.0 ([mesh-ledger-store-migration]): capsule_emit.ledger's
+# Floor bumped to 0.2.0: capsule_emit.ledger's
 # read_ledger/read_ledger_entries now detect a cll.ledger.store.LedgerStore
 # directory (manifest.json present) and read it via cll.ledger.store /
 # cll.ledger.segments directly -- segment rotation/archival (list_segments,

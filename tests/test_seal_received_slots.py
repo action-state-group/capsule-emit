@@ -2,9 +2,8 @@
 """Tests for the seal() / received() / who() / can() / did() / audit() Layer-0
 developer surface.
 
-Surface of record: ``_work/dev-surface-v4-2026-08-24.md`` §1/§3 (frozen);
-clean break removing the v3 ``compose()``/``carry()`` verbs from the public
-surface: ``_work/v4-complete-050-and-single-witness-task-2026-08-27.md`` (A/B).
+Surface of record: the v4 developer surface, a clean break that removed the
+v3 ``compose()``/``carry()`` verbs from the public API.
 """
 from __future__ import annotations
 
@@ -71,7 +70,7 @@ def test_received_standalone_dispatch_is_a_carry(tmp_path, monkeypatch):
 
 
 def test_received_has_two_distinct_addresses(tmp_path, monkeypatch):
-    # dev-surface v4 §1: "A carry receipt has its own capsule_id (over the
+    # "A carry receipt has its own capsule_id (over the
     # carried bytes as payload) while preserving the foreign record's own
     # digest inside — two addresses, two facts: theirs identifies their
     # record, yours identifies your act of holding it."
@@ -106,7 +105,7 @@ def test_received_has_two_distinct_addresses(tmp_path, monkeypatch):
 
 
 def test_slot_form_composes_the_frozen_surface_canonical_example(tmp_path, monkeypatch):
-    # dev-surface v4 §3's own example, verbatim shape:
+    # the v4 developer surface's own example, verbatim shape:
     #   seal(who(delegation_record), can(received(mandate_jws, type=...)), did(payment_action))
     monkeypatch.chdir(tmp_path)
     delegation_record = {"delegate": "po-agent@v1", "scope": "write_order"}
@@ -173,7 +172,7 @@ def test_slot_form_can_wrapping_a_received_capsule_is_byte_identical_to_standalo
 
 
 def test_slot_composition_order_is_canonicalized_regardless_of_caller_arg_order(tmp_path, monkeypatch):
-    # dev-surface v4 §3's frozen composition order is who -> can -> did ->
+    # the v4 developer surface's composition order is who -> can -> did ->
     # audit. Two seal() calls citing the EXACT same three already-sealed
     # members, differing only in the order the caller wrote the positional
     # slot wrappers, must produce byte-identical composition capsules —
@@ -232,7 +231,7 @@ def test_seal_refuses_bare_bytes_naming_received(tmp_path, monkeypatch):
 def test_slot_wrappers_refuse_bare_bytes_naming_received(tmp_path, monkeypatch, wrapper):
     # Same dispatch-ambiguity refusal as seal() itself, for every slot
     # wrapper: bare foreign bytes are always refused, never guessed —
-    # frozen surface §1's dispatch rule applies identically nested in a slot.
+    # the public API's dispatch rule applies identically nested in a slot.
     monkeypatch.chdir(tmp_path)
     with pytest.raises(TypeError, match=r"received\("):
         seal(wrapper(b'{"provider_ack": "PO-9182"}'), did({"x": 1}), anchor=False)
@@ -296,7 +295,7 @@ def test_seal_slot_form_refuses_an_outer_action(tmp_path, monkeypatch):
 
 def test_private_compose_helper_requires_at_least_one_member(tmp_path, monkeypatch):
     # The v3 compose() verb's flat-bind body survives as the private helper
-    # the slot-form calls (frozen surface §1/§9 clean break) — its own
+    # the slot-form calls (a clean break) — its own
     # invariants (at least one member; every member already a Capsule) still
     # hold, exercised directly since there is no longer a public zero-slot
     # entry point to reach them through.
@@ -308,7 +307,7 @@ def test_private_compose_helper_requires_at_least_one_member(tmp_path, monkeypat
 
 
 def test_slot_membership_is_never_inferred(tmp_path, monkeypatch):
-    # "The verb never infers membership" (frozen surface §3a) — a capsule
+    # "The verb never infers membership" — a capsule
     # sealed earlier in the same process/ledger must never silently show up
     # as a composition member just because it exists; only what is
     # explicitly wrapped in a slot is ever a member. This is the guessing
@@ -336,7 +335,7 @@ def test_import_discipline_noun_not_shadowed():
 
 
 def test_compose_and_carry_are_not_public(tmp_path, monkeypatch):
-    # Clean break, no deprecation period (frozen surface §1/§9, task B): the
+    # Clean break, no deprecation period (task B): the
     # v3 flat-bind verbs are gone from __all__ and from the module namespace
     # entirely — compose()'s body survives only as the private _compose()
     # helper the slot-form calls; carry()'s body was already received()'s.
@@ -406,7 +405,7 @@ def test_emit_is_a_removed_raising_stub():
         emit("mint", agent_input={"x": 1})
 
 
-# --- O16-07 follow-up: Ethan's #97 review (PR #97 review 5012424851) ---
+# --- Ethan's #97 review (PR #97 review 5012424851) ---
 
 
 def test_seal_on_received_rejects_outer_ledger_and_signer_instead_of_dropping_them(tmp_path, monkeypatch):

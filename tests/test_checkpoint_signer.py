@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for [o16-14-precond-checkpoint-signer] (O16-14's bundle
+"""Acceptance tests for the checkpoint-signer precondition (the bundle
 precondition): checkpoint/stamp entries must stop carrying the ephemeral
 HMAC ``witness._AutoSigner`` output and instead be signed by the SAME
 persisted Ed25519 identity ``capsule_emit.signing.LocalKeypairSigner`` (#80)

@@ -40,8 +40,8 @@ concretely:
 - **Existence proof** comes from witnessing (or, if opted into, the legacy anchor
   channel) — the **receipt**, held *beside* the capsule.
 - **Third-party identity binding** (whose key this really is) and the **COSE_Sign1
-  Signed-Statement wire format** are layered above this — see the frozen dev-surface's
-  §7a identity layers; not part of the default `cap.capsule` shape.
+  Signed-Statement wire format** are layered above this; they are
+  not part of the default `cap.capsule` shape.
 
 The upshot: the capsule is **content-private by construction** — it carries *digests*
 of your inputs/outputs, never the raw values (see the layers below). You can hand

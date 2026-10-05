@@ -276,7 +276,7 @@ class CapsuleEmitServicer:
         other capsule-emit adapter (via adapters/_base.py): the public
         ``seal()`` verb's canonical shape is ``seal(payload)``; an adapter that
         needs the full flat kwarg set reaches for the primitive those verbs
-        themselves wrap (frozen surface §1/§9 clean break).
+        themselves wrap (a clean break).
         """
         try:
             result = _emit_capsule(

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Acceptance tests for the 0.5.0 migration audit, item 6 ("Stub mode + env
-refusal", frozen dev-surface v4 §1a.4):
+refusal"):
 
 - ``CAPSULE_WITNESS=stub`` runs the real checkpoint mechanics with zero
   network, and the grade never leaves self-attested.
@@ -200,7 +200,7 @@ def test_stub_mode_makes_no_network_call_and_grade_stays_self_attested(tmp_path,
     assert cp.witnesses, "the stub should still have produced a stamp"
     assert all(w.is_stub for w in cp.witnesses)
     assert cp.grade() == Grade.SELF_ATTESTED, (
-        "frozen surface §1a.4: the stub's grade never leaves self-attested"
+        "the stub's grade never leaves self-attested"
     )
 
 

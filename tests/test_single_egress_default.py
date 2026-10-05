@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance test for [O16-01-02]: per-seal `anchor=True` is killed as a
+"""Acceptance test for the single-egress change: per-seal `anchor=True` is killed as a
 default, so a default-config `seal()`/`received()` call has exactly
 ONE egress channel -- the checkpoint/witness stream -- not two.
 
-Named-test-coverage entry (O16 migration audit, items 1-2): "a no-network
+Named-test-coverage entry (the migration audit): "a no-network
 test with witness on/anchor removed asserting exactly one POST call site
 exists." This test drives that literally: a single hermetic stub
 Transparency Service stands in for both the legacy anchor endpoint and the

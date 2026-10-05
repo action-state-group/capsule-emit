@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for [O16-13]: seal() cryptographically signs every capsule.
+"""Acceptance tests for the signer seam: seal() cryptographically signs every capsule.
 
-O16 audit item 13 ("Signer protocol seam") found that ``seal()`` never
+The signer seam review found that ``seal()`` never
 touched a ``Signer`` at all -- no cryptographic signature existed over sealed
 capsule content outside the opt-in checkpoint layer, and that layer's own
 default signer (``witness._AutoSigner``) is ephemeral HMAC, not a persisted
@@ -240,7 +240,7 @@ def test_rotation_persists_the_new_key(tmp_path):
 
 
 def test_rotation_landing_between_sign_and_label_cannot_mismatch(tmp_path, monkeypatch):
-    """[O16-13-signer-tuple-fix] Forces the exact race the PR #80 gate review
+    """The signer tuple fix Forces the exact race the PR #80 gate review
     flagged: a `rotate()` landing between a capsule's producer envelope being
     built and its `key_id` being read to label it. Under a hypothetical
     `sign_envelope(payload) -> bytes` + separately-read mutable `.key_id`
@@ -248,7 +248,7 @@ def test_rotation_landing_between_sign_and_label_cannot_mismatch(tmp_path, monke
     `capsule["key_id"]` as two unsynchronized steps, so a rotation racing in
     between would mint a capsule enveloped by the OLD key but labeled with
     the NEW key_id -- an honestly-produced capsule that fails verification.
-    The frozen §7d atomic `sign_envelope(bytes) -> (envelope, key_id)` return
+    The stable public API's atomic `sign_envelope(bytes) -> (envelope, key_id)` return
     (see `LocalKeypairSigner.sign_envelope`, [capsule-cose-sign1]) closes the
     window the same way `sign()` always has: both the key and its `key_id`
     are read from ONE lock-protected snapshot inside the same call, so

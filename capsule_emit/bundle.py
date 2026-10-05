@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``bundle()`` — the hand-to-anyone artifact (O16 audit item 14, frozen
-surface §2.5).
+"""``bundle()`` — the hand-to-anyone artifact.
 
-**Thin wrapper over ``cll.checkpoint.bundle`` (2026-09-01, W3.1 CLL
+**Thin wrapper over ``cll.checkpoint.bundle`` (2026-09-01, the CLL
 extraction).** The generic record/range-level disclosure-bundle mechanism
 (MMR inclusion, checkpoint signature, consistency, witness stamps, COSE
 wire — everything the LOG proves) now lives in ``cll.checkpoint.bundle``,
@@ -28,7 +27,7 @@ Once built, a ``Bundle`` is offline-verifiable by a stranger — no account,
 no further help from the producer, no network (see :func:`verify_bundle`;
 witness-stamp re-confirmation is a separate, explicitly optional step since
 it may need a network fetch of the Transparency Service's public key). It
-gives the two-sided append bracket the frozen surface names (§2.4): the
+gives the two-sided append bracket the public API names: the
 record provably entered the log no later than the covering checkpoint's
 stamp and no earlier than the prior checkpoint (it wasn't in that one yet)
 — except for a record covered by the very first checkpoint a log ever had,

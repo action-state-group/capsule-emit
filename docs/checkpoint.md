@@ -87,7 +87,7 @@ endpoint (or add more) with `seal(..., witness_url=...)` or
 `CAPSULE_WITNESS_CADENCE_ENTRIES=…` and the age-based cadence with
 `CAPSULE_WITNESS_CADENCE_SECONDS=…`.
 
-### Kill switch scope (O16-03)
+### Kill switch scope
 
 **`witness=False` / `CAPSULE_WITNESS=off` is ONE switch that zeroes ALL
 egress, not just the checkpoint stream.** It also gates:
@@ -334,7 +334,7 @@ records. So does `CAPSULE_WITNESS=off` (the kill switch, see
 process reports each witness as `unconfirmed (witness disabled)` and never
 attempts the GET, whether or not `--offline` was also given.
 
-## Witness outage: durable retry, not a drop (O5)
+## Witness outage: durable retry, not a drop
 
 Witnessing is default-on, so **outage handling is launch behavior, not an
 edge case.** When a configured witness is unreachable, the checkpoint it
@@ -435,14 +435,14 @@ Default behavior (`require_witness=False`, i.e. every existing caller) is
 unchanged: it is exactly the best-effort path described earlier in this
 document.
 
-## Bundle — the hand-to-anyone artifact (O16 audit item 14)
+## Bundle — the hand-to-anyone artifact
 
 The verification chain above (`checkpoint/emit.py`'s module docstring) is four
 separate, caller-composed primitives — inclusion, checkpoint signature, TS
 receipt, rollback/consistency. `capsule_emit.bundle.bundle()` assembles all
 of them, plus the record's own receipt and the *prior* checkpoint's
 consistency proof, into one standalone object for a single record — the
-frozen surface's §2.5 shape:
+the shape the public API defines:
 
 ```python
 from capsule_emit.bundle import bundle, verify_bundle
@@ -583,7 +583,7 @@ if b.checkpoint_cose is not None:
 `Bundle.checkpoint` and failing the bundle if they disagree; absence is
 never fatal.
 
-## Disclose — bundle's conscious sibling (O16 audit item 10)
+## Disclose — bundle's conscious sibling
 
 `bundle` above is always safe — digests only, no producer decision needed.
 `capsule-emit disclose` is the deliberate, recorded act of handing
@@ -704,7 +704,7 @@ cp = emit_checkpoint(mmr, MySigner("node-a", b"..."), log_id="my-log")
 ## Provenance
 
 Ported from `capsule-ledger`'s `capsule_ledger/mmr/{core,index,store}.py`
-per Amendment E (2026-08-21): the CLL core is substrate a counterparty needs
+per a 2026-08-21 decision: the CLL core is substrate a counterparty needs
 in order to verify a log, so it lives in the neutral producer library rather
 than forked per consumer. `capsule-ledger` consumes this package through its
 public interface — see its own docs for the ledger-specific wiring.

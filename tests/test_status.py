@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for O16 audit item 17 ("status's fetch-fold"):
+"""Acceptance tests for `status` ("status's fetch-fold"):
 
 Net-new ``status`` verb: ladder position (self-attested/witnessed grade,
 item 11), checkpoint/stamp lag (records awaiting checkpoint, checkpoints

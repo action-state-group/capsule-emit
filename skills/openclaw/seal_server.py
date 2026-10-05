@@ -118,10 +118,10 @@ def seal(req: SealRequest) -> JSONResponse:
         # of what the caller sends.
         eff_status = "planned" if req.verdict == "blocked" else req.effect_status
         # anchor= is deliberately NOT passed here -- it defaults to off
-        # (capsule_emit.core's O16 "single egress" default; see the module
+        # (capsule_emit.core's "single egress" default; see the module
         # docstring). This server used to force anchor=True by default
         # (`anchor=(not _ANCHOR_OFF)`), re-enabling the exact per-record
-        # egress O16 killed -- the regression this fix removes.
+        # egress the single-egress change removed -- the regression this fix removes.
         result = capsule_emit.seal(
             req.input,
             action=req.action,

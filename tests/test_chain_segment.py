@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for E14's ``chain_segment`` subject — ``capsule_emit.chain_segment``
+"""Tests for the evidence request protocol's ``chain_segment`` subject — ``capsule_emit.chain_segment``
 and its wiring into ``capsule_emit.evidence_request.answer()``.
 
 Uses ``CAPSULE_WITNESS=stub`` (zero-network, real checkpoint mechanics —

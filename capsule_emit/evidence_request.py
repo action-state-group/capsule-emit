@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``answer()`` — the one evidence-request responder (E14).
+"""``answer()`` — the one evidence-request responder (draft-mih-agent-evidence-request-00).
 
 Cites the *shape* of the local, pre-consent evidence-request draft — a
 request map ``{subject, coverage, derivation?, deadline?, nonce}`` — never
@@ -60,8 +60,7 @@ requester side, not here.
 Every refusal shape is the SAME signed object — ``{request_digest, reason,
 issued_at, key_id, sig}`` — because a signed ``no_such_subject`` gives the
 requester a REFUSAL, which a 404 never could: it verifies OFFLINE, against
-the node's own key, so "I asked and it was gone" is citable (frozen
-surface's "requests are evidence").
+the node's own key, so "I asked and it was gone" is citable (the public API's "requests are evidence").
 
 **Caller invariance by construction.** The answer is a pure function of
 ``request_bytes`` — this module has no requester-identity parameter at all.

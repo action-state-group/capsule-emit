@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for O16 audit item 14 — ``capsule_emit.bundle``.
+"""Tests for ``capsule_emit.bundle``.
 
 Builds real checkpoint chains through ``seal()`` + the default witness
 wiring (same stub-TS harness as ``tests/test_checkpoint_signer.py``) and
@@ -263,7 +263,7 @@ def test_bundle_ambiguous_prefix_raises(two_checkpoint_ledger):
     # rejected rather than silently picking one — construct that collision
     # directly against the resolver so the test doesn't depend on hash luck.
     # `_find_record` now lives in `cll.checkpoint.bundle` (genericized,
-    # W3.1 CLL extraction, 2026-09-01) -- `capsule_emit.bundle` is a thin
+    # CLL extraction, 2026-09-01) -- `capsule_emit.bundle` is a thin
     # wrapper that no longer defines its own copy.
     from cll.checkpoint.bundle import _find_record
 
@@ -328,7 +328,7 @@ def test_bundle_self_attested_checkpoint_still_verifies(tmp_path, monkeypatch):
 # [verify-threestate-trustanchor] -- a well-formed stamp from an UNPINNED
 # witness (no caller-supplied pin, and not the built-in default) must NOT
 # make the bundle INVALID: it is exactly what a self-hosted/zero-egress TS
-# a caller hasn't pinned yet looks like, and frozen §1a.2 promises that
+# a caller hasn't pinned yet looks like, and the public API promises that
 # deployment shape works. Three states: unpinned -> unverified (bundle OK);
 # pinned + genuine -> witnessed; pinned + forged -> INVALID.
 # ---------------------------------------------------------------------------
