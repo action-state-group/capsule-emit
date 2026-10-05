@@ -132,7 +132,7 @@ class BudgetCapConstraint:
 
 ACTION: dict = {
     "type": "book_dj_slot",
-    "venue": "Museumsquartier Vienna",
+    "venue": "Volkstheater Vienna",
     "date": "2026-07-20",
     "set_duration_min": 90,
     "requester_id": "aauth:planner-v1@planner-org.example",
