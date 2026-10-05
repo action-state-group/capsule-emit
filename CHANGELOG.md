@@ -1028,7 +1028,7 @@ waiting on cadence.
   untouched. Single-payload `seal(payload)` is byte-for-byte unchanged. A slot wrapper's value is
   either a payload (minted fresh, under the slot name as its action) or an already-produced
   `Capsule` (referenced as-is — `can(received(...))` is byte-identical to calling `received(...)`
-  standalone, the O8 acceptance case). Bare foreign bytes nested in a slot wrapper are refused,
+  standalone, the slot-composition acceptance case). Bare foreign bytes nested in a slot wrapper are refused,
   same as `seal()`'s own dispatch rule — never guessed.
 - **`push()`.** New public verb: forces a checkpoint now, synchronously, sharing the per-ledger
   dispatch lock the cadence-triggered async path uses so the two never race. A no-op when
@@ -1462,7 +1462,7 @@ install needs it. `import capsule_emit` alone still does not import `cryptograph
 what's still layered above `signature`/`key_id` (identity binding, the COSE_Sign1
 Signed-Statement wire format).
 
-### Changed — BREAKING (default-behavior): CLL checkpoint/witness is now default-ON (emit-witness-default-on)
+### Changed — BREAKING (default-behavior): CLL checkpoint/witness is now default-ON
 
 **What changed.** The CLL checkpoint/witness layer (`capsule_emit.checkpoint`, shipped
 opt-in in the previous release via the `cll-extract-mmr-to-capsule-emit` port) is now
@@ -1547,7 +1547,7 @@ manual/direct API (`MmrLedger`, `CheckpointConfig`, `emit_checkpoint`,
 `register_checkpoint`) is unchanged and remains independently documented for callers who
 want their own cadence, key, or Transparency Service.
 
-### Fixed — LAUNCH BLOCKER: anchor had no first-run disclosure (emit-anchor-disclosure-and-endpoint-consolidation)
+### Fixed — LAUNCH BLOCKER: anchor had no first-run disclosure
 
 **The bug (found by Ethan, tested against shipped 0.4.0).** `anchor` defaults to
 on, and the very first `seal()`/`carry()`/`compose()` call in a process

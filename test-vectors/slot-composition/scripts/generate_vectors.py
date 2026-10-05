@@ -114,7 +114,7 @@ def _write_case(case_dir: Path, spec_version: str) -> None:
     assert mandate.capsule["spec_version"] == spec_version == action.capsule["spec_version"]
     members = action.capsule["model_attestation"]["compute_attestation"]["composed_members"]
     can_ref = next(m for m in members if m["slot"] == "can")
-    assert can_ref["digest"] == mandate.capsule_id, "O8 violated: can(mandate) re-minted instead of referencing"
+    assert can_ref["digest"] == mandate.capsule_id, "slot composition violated: can(mandate) re-minted instead of referencing"
 
     case_dir.mkdir(parents=True, exist_ok=True)
     (case_dir / "carry_form.json").write_text(
