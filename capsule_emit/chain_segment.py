@@ -14,8 +14,9 @@ O(checkpoints), not O(records).
 **Log vocabulary only.** This module ships exactly the vocabulary
 ``capsule-emit`` itself already owns: ``stamp`` (the log's own
 checkpoint-stamp bookkeeping — see :mod:`capsule_emit.ledger`) and
-``adjudication`` (:mod:`capsule_emit.adjudication`'s ``chain.relation ==
-"adjudicates"``) — everything else classifies as the generic ``capsule``. A
+``adjudication`` (:func:`capsule_emit.adjudication.is_adjudication`: the
+adjudication block, or the legacy ``chain.relation == "adjudicates"``) —
+everything else classifies as the generic ``capsule``. A
 caller with its own record taxonomy (e.g. a mesh deployment's
 ``exchange``/``card`` split) supplies its own ``classify`` callback; this
 module never invents a third party's vocabulary itself.
@@ -100,8 +101,9 @@ def _default_classify(entry: dict, *, kind_field: str, stamp_kind: str) -> str:
     kind = entry.get(kind_field)
     if kind:
         return "stamp" if kind == stamp_kind else str(kind)
-    chain = entry.get("chain")
-    if isinstance(chain, dict) and chain.get("relation") == "adjudicates":
+    from .adjudication import is_adjudication
+
+    if is_adjudication(entry):
         return "adjudication"
     return "capsule"
 

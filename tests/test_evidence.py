@@ -6,7 +6,7 @@ Covers:
   verify commands, viewer permalink (and its omission via viewer_link=False)
 - fail-closed: an empty ledger and a tampered capsule both refuse to bundle
 - honesty: attestation mode reported exactly as the capsules carry it
-- chained ledgers bundle cleanly (relation="sequence")
+- chained ledgers bundle cleanly (relation="follows")
 - CLI: exit 0 + markdown on stdout / --out file; exit 1 on tampered ledger
 """
 
@@ -48,7 +48,7 @@ def _ledger(tmp_path: Path, *, chained: bool = True) -> Path:
         action_type="decide",
         effect={"status": "dispatched", "type": "test_run"},
         prior_capsule_id=r1.capsule_id if chained else None,
-        relation="sequence" if chained else None,
+        relation="follows" if chained else None,
     )
     return path
 

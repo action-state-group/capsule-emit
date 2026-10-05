@@ -2,7 +2,7 @@
 """Tests for the capsule-emit adjudication module.
 
 Covers:
-- seal_adjudication produces correct chain (parent_capsule_id + relation="adjudicates")
+- seal_adjudication produces correct chain (parent_capsule_id + relation="confirms")
 - disposition.verdict_class == "assessed" (detection, never enforcement)
 - compute_attestation.adjudication carries source/capture_method/verdict/margin/margin_tau
 - corroborated / inconclusive / contradicted:<owner_id> verdict shapes
@@ -72,7 +72,7 @@ def test_seal_adjudication_chains_to_half_a(tmp_path):
     chain = result.capsule.get("chain") or {}
 
     assert chain.get("parent_capsule_id") == half_a["capsule_id"]
-    assert chain.get("relation") == RELATION_ADJUDICATES == "adjudicates"
+    assert chain.get("relation") == RELATION_ADJUDICATES == "confirms"
 
 
 def test_seal_adjudication_verdict_class_is_assessed(tmp_path):
@@ -217,3 +217,22 @@ def test_no_engine_imports():
                 assert root in _PUBLIC or root in _STDLIB, (
                     f"adjudication.py must not import {alias.name!r} — only public capsule packages are allowed"
                 )
+
+
+def test_is_adjudication_reads_new_and_legacy_records(tmp_path):
+    """An adjudication is recognised by its adjudication block, whatever the
+    relation; a record from an earlier release with the legacy
+    relation="adjudicates" is still recognised."""
+    from capsule_emit.adjudication import LEGACY_RELATION_ADJUDICATES, is_adjudication
+
+    half_a = _half(tmp_path, "serve_a")["capsule_id"]
+    half_b = _half(tmp_path, "serve_b")["capsule_id"]
+    new = _adjudication_result(tmp_path, half_a, half_b, VERDICT_CORROBORATED).capsule
+    assert new["chain"]["relation"] == "confirms"
+    assert is_adjudication(new)
+    legacy = {"chain": {"parent_capsule_id": half_a, "relation": LEGACY_RELATION_ADJUDICATES}}
+    assert is_adjudication(legacy)
+    plain = {"chain": {"parent_capsule_id": half_a, "relation": "confirms"}}
+    assert not is_adjudication(plain)
+    assert not is_adjudication(None)
+

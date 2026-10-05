@@ -240,5 +240,5 @@ digest graph, and privilege log in a browser with zero pasting.
 (`write_order`, executed), a larger order is denied by a human approver
 (`decide`, `verdict_class=blocked`, `human_disposed=true`, with a named approver and reason),
 and the agent escalates past the denial to a manager (`fyi`, chained with
-`chain.relation="escalates"`) instead of silently retrying. The denial is the point — it is the
+`chain.relation="supersedes"`, the registered relation for an escalation) instead of silently retrying. The denial is the point — it is the
 kind of event an ordinary log line cannot prove happened, or prove *why*.

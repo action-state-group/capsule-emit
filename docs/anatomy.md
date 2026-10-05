@@ -146,7 +146,8 @@ Hermes demo records `"NVIDIA-NIM-routed"` rather than pretending to detect silic
 ## Chaining & disclosure
 
 A confirmation is **itself a capsule** that points at its parent by digest. `seal(..., confirms=…)` writes a chain with `relation="confirms"` by default;
-pass `relation="supersedes"` or `relation="escalates"` to use the other spec relations.
+pass `relation="supersedes"` (terminal: resolution, expiry, escalation) or `relation="follows"`
+(ordering only) for the other registered relations; capsule-emit writes nothing else.
 
 ```python
 done = seal({"po_id": "PO-7781"}, action="write_order", operator="acme-co", developer="po-agent@v1",

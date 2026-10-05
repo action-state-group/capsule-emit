@@ -54,9 +54,10 @@ address, a capsule in one ledger can reference a capsule in another by id alone
 — no shared database is required. What's changing is which relation you use to
 express that cross-stream link; this page will be updated when that lands.
 
-> Today `confirms=` writes `relation: "confirms"`. The spec also defines `supersede` /
-> `escalate`; richer relation values (and a `relation=` parameter) are
-> [registry-extensible](going-deeper.md), not yet surfaced on `seal()` / `received()`.
+> `confirms=` writes `relation: "confirms"`; `relation=` picks another of the five
+> registered values (`follows`, `confirms`, `supersedes`, `epoch_opens`,
+> `duplicates`), and capsule-emit refuses any other. New values are registered
+> first ([registry-extensible](going-deeper.md)), then written.
 
 ## Approvals close a blocked action: `supersedes`
 
@@ -75,6 +76,23 @@ any more. `list_pending` reads a `resolves` record already in a ledger as
 `supersedes`, so it still closes the pending item. A verifier that meets
 `resolves` handles it like any unregistered value: an informational finding,
 never a rejection.
+
+## Unregistered tokens in older records
+
+Earlier releases and examples wrote some unregistered relation tokens. They are
+read as the registered value each meant, and nothing writes them any more
+(`capsule_emit.relations.LEGACY_RELATION_ALIASES`):
+
+| Token | Read as | Where it came from |
+|---|---|---|
+| `sequence` | `follows` | the goose example; the registry's own documented alias |
+| `resolves` | `supersedes` | `seal_approval` (see above) |
+| `escalates` | `supersedes` | the goose example's escalation |
+| `adjudicates` | `confirms` | `seal_adjudication`; `adjudication.is_adjudication` also recognises an adjudication by its `compute_attestation.adjudication` block |
+| `assesses` | `confirms` | advertised for judge verdicts in the `seal()` docstring |
+
+A verifier that meets one handles it like any unregistered value: an
+informational finding, never a rejection.
 
 ## An agent has *many* chains — the ledger is a DAG, not a line
 
