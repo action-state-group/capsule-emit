@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Generate capsule-emit's slot-form / carry-form conformance vectors.
 
-O8 acceptance (`_work/dev-surface-v4-operational-2026-08-24.md`): "the
-carry-form and slot-form produce byte-identical records" -- this is the
-byte-level proof for capsule-producer-go's (Ethan's repo) cross-language
-conformance target, generated through the SAME code paths
+The v4 developer surface's acceptance criterion: "the carry-form and
+slot-form produce byte-identical records" -- this is the byte-level proof for
+capsule-producer-go's cross-language conformance target, generated through the SAME code paths
 ``capsule_emit.surface.seal``/``received``/``who``/``can``/``did`` use, with
 key material, uuids, and timestamps pinned for reproducibility (never a
 production signing key -- same convention as

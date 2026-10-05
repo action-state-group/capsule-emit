@@ -658,7 +658,7 @@ break a demo; an empty one reads as a broken artifact, which is why only that on
   caller can understate its own call as partial but never overstate one — stated on the page. Found
   by the adapter-coverage recon on litellm 1.101.0.
 
-### Fixed — vintage structural-rejection test tracks upstream's format-4-only verifier ([capsule-emit-vintage-format-test])
+### Fixed — vintage structural-rejection test tracks upstream's format-4-only verifier
 
 - `tests/test_canonicalization_id_emitter.py::TestVintageRule::test_explicit_null_is_the_signed_vintage_shape`
   asserted `verify_store_signed` rejects an explicit-null vintage (`format_version "2"`) record with
@@ -671,8 +671,8 @@ break a demo; an empty one reads as a broken artifact, which is why only that on
   all, not just an explicit null) is rejected identically — this check is format-version-driven, not
   value-driven. No production code changed; `capsule-emit`'s own producers already build only
   `format_version "4"` (confirmed: the one non-`emit()` producer path,
-  `capsule_emit/holds/capsules.py`, is migrated separately in [capsule-emit-fixture-format-version-4]).
-### Fixed — hold-lifecycle capsules now build at `format_version` `"4"` ([capsule-emit-fixture-format-version-4])
+  `capsule_emit/holds/capsules.py`, is migrated separately).
+### Fixed — hold-lifecycle capsules now build at `format_version` `"4"`
 
 - `capsule_emit/holds/capsules.py` hardcoded `format_version="2"` and never declared
   `canonicalization_id`, following the pre-reversal vintage profile. `agent_action_capsule`'s
@@ -793,7 +793,7 @@ See `tests/test_logged_leaf_repr.py`.
 
 ## 0.8.1
 
-### Added — `seal(..., references=...)`: draft-04 §5.5.5 cross-record citations (#166, [emit-references-seal-plumbing])
+### Added — `seal(..., references=...)`: draft-04 §5.5.5 cross-record citations (#166)
 
 `seal()` now accepts `references=` (a tuple of `agent-action-capsule` `ReferenceEntry`
 citations) and threads them to AAC **before** `capsule_id` calculation, signing, and
@@ -805,7 +805,7 @@ inside the payload digest and is never promoted to a top-level Capsule `referenc
 explicit `references=` kwarg does (guarded by tests). The AAC dependency floor is raised to
 `>=0.3.0` (the version that carries `references[]`).
 
-### Added — `ledger_io.py`: capsule-ledger's read/verify seam homed here (#160, [emit-ledger-io-home])
+### Added — `ledger_io.py`: capsule-ledger's read/verify seam homed here (#160)
 
 The read/verify seam previously living in capsule-ledger now has its home in capsule-emit, so a
 consumer reads and verifies a ledger through one library.
@@ -821,7 +821,7 @@ neutral-surface discipline (a witness is one row in an alphabetical directory).
 
 ## 0.8.0
 
-### Added — `strict-tier KAT class`: dup keys, -0, leading zero (#157, [strict-tier-kat-class])
+### Added — `strict-tier KAT class`: dup keys, -0, leading zero (#157)
 
 The strict verification tier previously only caught float tokens (a post-parse float-value
 scan), missing duplicate object keys and the negative-zero integer token — `json.loads`
@@ -868,7 +868,7 @@ evidence-request door: resolves to every capsule in this ledger carrying `value`
 correlator field. Answer is range-shaped (capped/paged like `range`); a value matching nothing
 is a signed `no_such_record` refusal, never an empty artifact.
 
-### Fixed — three-state entry-authorship; `log()`, the unsigned append verb ([verify-entry-authorship-tristate-and-log])
+### Fixed — three-state entry-authorship; `log()`, the unsigned append verb
 
 `verify_bundle`/`verify_store_signed` collapsed "no producer signature" and "producer
 signature fails" into the same INVALID verdict, so an honestly-unsigned entry read as forged.
@@ -878,7 +878,7 @@ fatal. `capsule_emit.surface.log()` is a new, honestly-named unsigned append ver
 digest, full MMR/checkpoint/witness participation, never a signature/key_id) — there is no
 `sign=` kwarg anywhere, so `seal(sign=False)` can never become reachable.
 
-### Fixed — evidence-request `range` cap/paging; pull-only checkpoint writes (ADV-10, [adv-evidence-door-caps-and-subjects])
+### Fixed — evidence-request `range` cap/paging; pull-only checkpoint writes
 
 A `range` subject had no cap or paging, so a large ledger's selector was a one-request
 memory/CPU amplifier. `answer()` now returns at most `MAX_PAGE_SIZE` bundles per `range`
@@ -886,7 +886,7 @@ request, carrying `next_page_token` when more remains. Also: a `min_freshness` r
 deadline could force a node to write a checkpoint just because the requester asked;
 `allow_forced_checkpoint` (default `False`) now gates that on the node's own opt-in as well.
 
-### Added — fail-closed `require_witness` profile + anti-equivocation docs ([capsule-emit-witness-required-profile])
+### Added — fail-closed `require_witness` profile + anti-equivocation docs
 
 `require_witness=True` on `_emit_capsule()` (and therefore `seal()`/`received()`) forces a
 synchronous checkpoint and raises `capsule_emit.witness.WitnessRequiredError` unless a
@@ -910,7 +910,7 @@ link.
 
 ## 0.7.0
 
-### Changed — emit now depends on `cll` (checkpointed-local-log) ([w3-cll-lib-extraction], #139)
+### Changed — emit now depends on `cll` (checkpointed-local-log) (#139)
 
 **Minor, not patch:** this release adds a new runtime dependency
 (`checkpointed-local-log`), which changes downstream install graphs —
@@ -983,7 +983,7 @@ Launch-blocker fixes for fresh installs (capsule-emit#123 + a producer/verifier 
 
 ## 0.6.0
 
-### Added — neutral fold/account core (`capsule_emit.account`) ([account-fold-core] #132)
+### Added — neutral fold/account core (`capsule_emit.account`) (#132)
 
 **What changed.** A new public subpackage, `capsule_emit.account`, is the single neutral
 implementation of the fold/account contract — definition-as-DATA plus its `definition_digest`,
@@ -1009,13 +1009,13 @@ implementation anywhere in the neutral stack.
 - **Meter-not-price.** An account counts and asserts a result over a selected range or set; it
   carries no currency, rate, or price.
 
-### Added — `chain_segment` selection kind ([account-chain-segment] #133)
+### Added — `chain_segment` selection kind (#133)
 
 `SELECTION_CHAIN_SEGMENT` joins `SELECTION_RANGE` and `SELECTION_EXPLICIT_SET` in the closed
 `SELECTION_KINDS` set — an additive third way to name the covered leaves of a fold (a contiguous
 segment of a chain). Unknown selection kinds remain fail-closed at construction and verify.
 
-### Added / Changed — slot-form composition; `compose()`/`carry()` removed ([v4-surface-complete-050])
+### Added / Changed — slot-form composition; `compose()`/`carry()` removed
 
 **What changed.** The v4 developer surface
 ships complete: `who()`/`can()`/`did()`/`audit()` slot wrappers, passed into `seal()`, replace the
@@ -1043,7 +1043,7 @@ waiting on cadence.
   `seal_server.py` no longer re-enables the legacy per-record anchor channel by default
   (`anchor=(not _ANCHOR_OFF)` was a regression against the off-by-default anchor).
 
-### Fixed — the verify surface authenticates cryptography, not just structure ([verify-authenticates-nothing])
+### Fixed — the verify surface authenticates cryptography, not just structure
 
 **What changed.** An adversarial run against `origin/main`
 found the offline read/verify surface authenticated almost nothing: the self-attested Ed25519
@@ -1070,7 +1070,7 @@ read path trusted structure over cryptography):
 The three original attack scripts (`/tmp/atk/attack_forge_sig.py`, `attack6b.py`, `attack45.py`) are
 reconstructed as permanent regression tests in `tests/test_verify_authenticates_nothing_regressions.py`.
 
-### Fixed — fast-follow hardening on the verify surface ([verify-batch-fastfollow])
+### Fixed — fast-follow hardening on the verify surface
 
 **What changed.** Manager review of the above batch found a residual gap and an honesty gap; both
 close here, on the same `verify_bundle`/`grade()` surface:
