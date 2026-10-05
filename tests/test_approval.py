@@ -2,7 +2,7 @@
 """Tests for the capsule-emit approval module.
 
 Covers:
-- seal_approval produces correct chain (parent_capsule_id + relation="resolves")
+- seal_approval produces correct chain (parent_capsule_id + relation="supersedes")
 - seal_approval sets compute_attestation.human_disposed=True
 - list_pending: empty when resolved
 - list_pending: shows unresolved blocked capsule
@@ -71,8 +71,8 @@ def test_seal_approval_chains_to_blocked(tmp_path):
     assert chain.get("parent_capsule_id") == blocked_id, (
         f"chain.parent_capsule_id should be {blocked_id!r}, got {chain.get('parent_capsule_id')!r}"
     )
-    assert chain.get("relation") == "resolves", (
-        f"chain.relation should be 'resolves', got {chain.get('relation')!r}"
+    assert chain.get("relation") == "supersedes", (
+        f"chain.relation should be 'supersedes', got {chain.get('relation')!r}"
     )
 
 
@@ -283,7 +283,7 @@ def test_list_pending_crash_resume(tmp_path):
 
 
 def test_seal_approval_deny(tmp_path):
-    """decision='deny' → verdict_class='denied' and chain.relation='resolves'."""
+    """decision='deny' → verdict_class='denied' and chain.relation='supersedes'."""
     blocked = _blocked_capsule(tmp_path)
     result = seal_approval(
         blocked_capsule_id=blocked["capsule_id"],
@@ -299,7 +299,7 @@ def test_seal_approval_deny(tmp_path):
         f"Expected 'denied', got {capsule['disposition']['verdict_class']!r}"
     )
     assert capsule["disposition"]["decision"] == "deny"
-    assert capsule["chain"]["relation"] == "resolves"
+    assert capsule["chain"]["relation"] == "supersedes"
     assert capsule["chain"]["parent_capsule_id"] == blocked["capsule_id"]
 
 
@@ -371,3 +371,77 @@ def test_no_engine_imports():
                 assert root in _PUBLIC or root in _STDLIB, (
                     f"approval.py must not import {alias.name!r} — only public capsule packages are allowed"
                 )
+
+
+# ---------------------------------------------------------------------------
+# Registered relations only; the legacy "resolves" still closes pending items
+# ---------------------------------------------------------------------------
+
+#: agent-action-capsule REGISTRY.md section 6: the registered chain.relation values.
+REGISTERED_RELATIONS = {"follows", "confirms", "supersedes", "epoch_opens", "duplicates"}
+
+
+@pytest.mark.parametrize(
+    "decision,resume_ok",
+    [("approve", None), ("deny", None), ("approve", False)],
+)
+def test_seal_approval_writes_only_a_registered_relation(tmp_path, decision, resume_ok):
+    """Every path through seal_approval closes the blocked capsule's open
+    state -- an approval, a denial, and an approval turned into a denial by a
+    failed resume check -- so each writes the registered terminal relation."""
+    blocked = _blocked_capsule(tmp_path)
+    result = seal_approval(
+        blocked_capsule_id=blocked["capsule_id"],
+        approver_id="alice@org.example",
+        decision=decision,
+        action_digest="abc123",
+        ledger=tmp_path / "ledger.jsonl",
+        anchor=False,
+        resume_ok=resume_ok,
+        resume_reason=None if resume_ok is None else "over budget",
+    )
+    relation = result.capsule["chain"]["relation"]
+    assert relation == "supersedes"
+    assert relation in REGISTERED_RELATIONS
+    assert list_pending(tmp_path / "ledger.jsonl") == []
+
+
+def test_a_legacy_resolves_record_still_closes_a_pending_item(tmp_path):
+    """Releases before this one wrote chain.relation="resolves" on approval
+    capsules. Such a record, already in a ledger, is read as supersedes: the
+    blocked capsule it points at is no longer pending."""
+    blocked = _blocked_capsule(tmp_path)
+    other = _blocked_capsule(tmp_path, action="write_invoice")
+    _emit_capsule(  # written the way older releases wrote an approval
+        action="review_action",
+        operator="test-org",
+        developer="approver@v1",
+        human_disposed=True,
+        approver="human",
+        decision="approve",
+        verdict="executed",
+        confirms=blocked["capsule_id"],
+        relation="resolves",
+        ledger=tmp_path / "ledger.jsonl",
+        anchor=False,
+    )
+    pending = list_pending(tmp_path / "ledger.jsonl")
+    assert [c["capsule_id"] for c in pending] == [other["capsule_id"]]
+
+
+def test_a_non_resolving_relation_does_not_close_a_pending_item(tmp_path):
+    """Fail-closed: only supersedes (or the legacy resolves) closes a pending
+    item. A confirms link to a blocked capsule observes it; it stays pending."""
+    blocked = _blocked_capsule(tmp_path)
+    _emit_capsule(
+        action="note",
+        operator="test-org",
+        developer="agent@v1",
+        verdict="executed",
+        confirms=blocked["capsule_id"],
+        relation="confirms",
+        ledger=tmp_path / "ledger.jsonl",
+        anchor=False,
+    )
+    assert [c["capsule_id"] for c in list_pending(tmp_path / "ledger.jsonl")] == [blocked["capsule_id"]]
+
