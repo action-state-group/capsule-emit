@@ -6,6 +6,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed — approvals write the registered `supersedes`, not `resolves`
+
+`seal_approval` wrote `chain.relation = "resolves"`, which is not a registered relation value.
+It now writes `supersedes`, the registered terminal relation: an approval or a denial closes the
+blocked capsule's open state (every path through `seal_approval` does, so none uses `confirms`).
+**Old records still close pending items:** `list_pending` reads `resolves` as a deployed legacy
+alias of `supersedes` (`approval.LEGACY_RESOLVES`, `approval.RESOLVING_RELATIONS`); nothing
+writes it any more. Documented in `docs/chaining.md`.
+
 ### Changed — `checkpointed-local-log` capped below 0.5
 
 The dependency is now `checkpointed-local-log>=0.4.1,<0.5`. cll 0.5 drops its default witness and

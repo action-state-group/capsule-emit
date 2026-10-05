@@ -58,6 +58,24 @@ express that cross-stream link; this page will be updated when that lands.
 > `escalate`; richer relation values (and a `relation=` parameter) are
 > [registry-extensible](going-deeper.md), not yet surfaced on `seal()` / `received()`.
 
+## Approvals close a blocked action: `supersedes`
+
+`capsule_emit.approval.seal_approval` seals a human approval (or denial)
+chained to the blocked capsule it decides, with `relation: "supersedes"`. That
+is the registered terminal relation: the decision closes the blocked capsule's
+open state, whether it approves or denies. `list_pending` drops a blocked
+capsule once a `supersedes` link points at it; any other relation (a
+`confirms`, say) leaves it pending.
+
+**Deployed legacy alias: `resolves`.** Releases before this one wrote
+`relation: "resolves"` on approval capsules, with the same terminal meaning as
+`supersedes`. It is NOT a registered relation value: `supersedes` is the
+registered form, and `resolves` is a deployed legacy alias that nothing writes
+any more. `list_pending` reads a `resolves` record already in a ledger as
+`supersedes`, so it still closes the pending item. A verifier that meets
+`resolves` handles it like any unregistered value: an informational finding,
+never a rejection.
+
 ## An agent has *many* chains — the ledger is a DAG, not a line
 
 Don't picture "the agent's chain." Picture the **ledger as a forest**:
