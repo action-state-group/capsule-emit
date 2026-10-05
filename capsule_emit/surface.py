@@ -22,8 +22,7 @@ membership is always declared, never inferred — see ``who``/``can``/``did``/
 ``audit`` below. Neither verb re-implements signing or binding — they are
 thin, opinionated wrappers over :func:`capsule_emit.core._emit_capsule`, the
 internal primitive that already does the CPB-bind + sign + ledger-append
-work. See ``_work/dev-surface-v4-2026-08-24.md`` §1/§3 for the frozen
-surface of record this module implements.
+work. This module implements the v4 developer surface.
 
 **Dispatch rule for foreign bytes, stated once.** ``received()`` is legal
 **standalone** (``effect = received(bytes, type=...)`` — a carry; their
@@ -110,7 +109,7 @@ _MEMBER_TYPE = "capsule"
 _CARRIED_TYPE = "foreign-artifact"
 
 #: The four slot names, in the composition I-D's canonical order — the
-#: WHO/CAN/WHAT/AUDIT four-leg model (frozen surface §3). ``did()`` fills
+#: WHO/CAN/WHAT/AUDIT four-leg model. ``did()`` fills
 #: the WHAT leg (the slot name reads as "what did you do").
 _SLOTS = ("who", "can", "did", "audit")
 
@@ -188,7 +187,7 @@ def did(value: Any) -> _SlotMember:
 def audit(value: Any) -> _SlotMember:
     """Mark *value* as this action's AUDIT-slot member — whoever/whatever
     checked (a TEE attestation, an operator countersign, ...). Reserved by
-    the frozen surface for future evidence kinds; see the module docstring's
+    the public API for future evidence kinds; see the module docstring's
     "Slots" section. Passed into :func:`seal`."""
     return _slot_wrapper("audit", value)
 
@@ -469,8 +468,7 @@ def _compose(
 ) -> Capsule:
     """Private: bind existing capsules into one composition capsule —
     references, asserts nothing new. The flat-bind logic behind the public
-    v3 ``compose()`` verb (removed from the public surface, clean break —
-    frozen surface §1/§9); the slot-form (``seal(who(...), can(...), ...)``,
+    v3 ``compose()`` verb (removed from the public surface, a clean break); the slot-form (``seal(who(...), can(...), ...)``,
     see :func:`_seal_slots`) is now the only public entry point that reaches
     this.
 
@@ -510,13 +508,13 @@ def push(
     ts_url: str | list[str] | None = None,
     witness: bool | None = None,
 ) -> Any:
-    """Force a checkpoint now — frozen surface §1's "one verb for urgency".
+    """Force a checkpoint now: the "one verb for urgency".
 
     A thin call into the existing checkpoint layer (``capsule_emit.witness``)
     — see that module's ``push()`` for the full contract (synchronous,
     cadence-independent, no-op when there is nothing new to checkpoint or
     when witnessing is off). Re-exported here so the write-verb family
-    (``seal``, ``push``) lives on one import line, per the frozen surface's
+    (``seal``, ``push``) lives on one import line, per the public API's
     §5 verb table.
     """
     import os

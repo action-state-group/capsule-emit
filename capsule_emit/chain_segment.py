@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``chain_segment()`` — the cheap form of "history" (E14's third subject
+"""``chain_segment()`` — the cheap form of "history" (the evidence request protocol's third subject
 kind, ``{kind: "chain_segment", from_size, to_size}`` or ``{last: N}``).
 
 Without this, a stranger's ``range`` ask is one full :class:`~capsule_emit
@@ -183,7 +183,7 @@ class CheckpointLink:
 
 @dataclass(frozen=True)
 class ChainSegment:
-    """cp_a..cp_b — the checkpoint CHAIN artifact for E14's ``chain_segment``
+    """cp_a..cp_b — the checkpoint CHAIN artifact for the evidence request protocol's ``chain_segment``
     subject. See the module docstring for what it proves and what it
     deliberately does not (no records, no inclusion proofs)."""
 
@@ -338,7 +338,7 @@ def chain_segment(
 class ChainSegmentVerifyResult:
     """Total, offline outcome of :func:`verify_chain_segment` — never
     raises. ``continuity``/``history_depth``/``witnessed`` are exactly the
-    three properties a receiver renders per E14's acceptance
+    three properties a receiver renders per the evidence request protocol's acceptance
     ("depth/continuity/witnessed")."""
 
     ok: bool

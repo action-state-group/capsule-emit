@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for O16 audit item 5 ("Idle silence (+stamp-entry
+"""Acceptance tests for idle silence ("Idle silence (+stamp-entry
 exclusion)"):
 
 Cadence is "100 entries or 15 minutes, whichever comes first, both
-configurable" (frozen surface §0) -- but the age leg must only ever fire when
+configurable" -- but the age leg must only ever fire when
 there is genuinely unwitnessed work. An idle log is silent, never a
 heartbeat: there is no background timer, so a ledger with no new ``emit()``
 calls must never produce a checkpoint on age alone, even once real wall-clock

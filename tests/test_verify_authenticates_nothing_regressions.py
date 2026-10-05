@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Permanent regression tests for the [verify-authenticates-nothing] PM
-escalation (2026-08-24): an adversarial run against ``origin/main``
-(``_work/adv-migration-run-2026-08-24.md``) found the offline read/verify
+"""Permanent regression tests for an adversarial review (2026-08-24): a run
+against ``origin/main`` found the offline read/verify
 surface authenticated almost nothing -- structure was checked, cryptography
 was not. The original attack scripts lived at ``/tmp/atk/*.py`` in that run
 and are gone; this file reconstructs the three repros from the run report as
