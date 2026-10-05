@@ -6,6 +6,12 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed — `checkpointed-local-log` capped below 0.5
+
+The dependency is now `checkpointed-local-log>=0.4.1,<0.5`. cll 0.5 drops its default witness and
+built-in witness key (a breaking change capsule-emit adopts in its own release), so a cll release
+can no longer change this package's behaviour under it.
+
 ### Changed — BREAKING: no default witness, anchor or verify surface
 
 The library no longer sends anything to, or builds links for, a service its caller did not name.
