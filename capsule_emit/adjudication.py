@@ -12,9 +12,9 @@ One public helper, :func:`seal_adjudication`, and a reader, :func:`is_adjudicati
       state as it was, whatever the verdict). Releases before this one wrote
       the unregistered ``"adjudicates"``; :func:`is_adjudication` reads both.
     - ``disposition.verdict_class`` — ``"assessed"`` (a detection
-      disposition, never ``"executed"``/``"confirmed"`` — same discipline as
-      the ``"assesses"`` relation; see ``capsule_emit.core``'s ``relation``
-      parameter docs)
+      disposition, never ``"executed"``/``"confirmed"``, the same as a judge's
+      verdict capsule; see ``capsule_emit.core``'s ``relation`` parameter
+      docs)
     - ``compute_attestation.adjudication`` — ``source: "twin_comparison"``,
       ``capture_method: "deterministic_replay"``, the *verdict*, and the
       properties that back it (``divergence_index``, ``margin``,
