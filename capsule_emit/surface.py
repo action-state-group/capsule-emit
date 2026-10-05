@@ -289,7 +289,7 @@ def _resolve_slot_member(member: _SlotMember, **kwargs: Any) -> Capsule:
     """Resolve one slot wrapper's value to a Capsule: reference an
     already-sealed/carried one unchanged (never re-minted — this is what
     makes ``can(received(bytes, type=...))`` byte-identical to calling
-    ``received(bytes, type=...)`` standalone, O8), or mint a raw payload as
+    ``received(bytes, type=...)`` standalone), or mint a raw payload as
     its own capsule under its slot name as the action."""
     value = member.value
     if isinstance(value, EmitResult):
@@ -315,7 +315,7 @@ def _seal_slots(members: list[_SlotMember], **kwargs: Any) -> Capsule:
     # Canonicalize composition order to _SLOTS (who/can/did/audit) so the
     # composed_members bytes — and therefore capsule_id — depend only on
     # which slots are filled, never on the order the caller wrote the
-    # positional args (O8, cross-language conformance with Go's fixed
+    # positional args (cross-language conformance with Go's fixed
     # struct order).
     resolved.sort(key=lambda c: _SLOTS.index(slots[c.capsule_id]))
     return _compose(resolved, slots=slots, references=composition_references, **kwargs)

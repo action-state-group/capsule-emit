@@ -122,7 +122,7 @@ def test_slot_form_composes_the_frozen_surface_canonical_example(tmp_path, monke
     # Layer 0: members referenced by CPB typed digest ref, slot-annotated — no log coordinates.
     assert all(set(m) == {"type", "digest_alg", "digest", "slot"} for m in members)
     # can() references the mandate capsule already produced by received() —
-    # not a re-mint (O8: slot-form and carry-form are byte-identical).
+    # not a re-mint (slot-form and carry-form are byte-identical).
     assert by_slot["can"]["digest"] == mandate.capsule_id
 
     result = verify(action.capsule)
@@ -148,7 +148,7 @@ def test_slot_form_mints_a_fresh_capsule_for_a_raw_payload(tmp_path, monkeypatch
 
 
 def test_slot_form_can_wrapping_a_received_capsule_is_byte_identical_to_standalone(tmp_path, monkeypatch):
-    # O8 acceptance: slot-form and carry-form produce byte-identical records.
+    # The acceptance criterion: slot-form and carry-form produce byte-identical records.
     # can(received(...)) must reference the EXACT same capsule bytes a
     # standalone received() call for the identical Capsule object would —
     # never a re-mint (which would also double-append to the ledger).
