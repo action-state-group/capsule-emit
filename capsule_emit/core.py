@@ -84,6 +84,7 @@ from . import witness as _witness
 from .canonicalization import compute_capsule_id
 from .ledger import append_to_ledger
 from .numbers import CANONICALIZATION_ID
+from .relations import REGISTERED_RELATIONS
 from .signing import Signer
 from .spec_version import SPEC_VERSION
 
@@ -589,19 +590,21 @@ def _emit_capsule(
         verdict: Disposition verdict_class (e.g. ``"executed"``, ``"confirmed"``).
         effect: Effect dict with ``"type"`` and ``"status"`` (and optional ``"autonomy"``).
         confirms: capsule_id of the prior capsule this one chains to.
-        relation: Chain relation (``"confirms"`` | ``"supersedes"`` | ``"escalates"``
-            | ``"assesses"`` | ``"adjudicates"`` | …), or ``None`` to keep the chain
-            link (``confirms``) without asserting a relation value on it — e.g. a
-            human refusal that chains to the capsule it denies without claiming to
-            "confirm" it. ``"assesses"`` is for a judge/verdict capsule that cites a
-            subject capsule by digest without confirming its outcome (a detection
-            relation, never an enforcement one). ``"adjudicates"`` is for a
-            twin-comparison referee capsule that cites two compared halves and
-            records a ``corroborated``/``inconclusive``/``contradicted:<owner_id>``
-            verdict — see :mod:`capsule_emit.adjudication`. Passing a non-``None``,
-            non-default relation without ``confirms`` set raises ``ValueError``
-            (a chain relation needs a chain target); ``relation=None`` never
-            raises regardless of ``confirms``. Default ``"confirms"``.
+        relation: Chain relation, one of the five registered values
+            (:data:`capsule_emit.relations.REGISTERED_RELATIONS`): ``"follows"``
+            (ordering only), ``"confirms"`` (observes or records the parent's
+            outcome; its open state remains), ``"supersedes"`` (terminal:
+            resolution, expiry or escalation closes or replaces the parent's
+            open state), ``"epoch_opens"``, ``"duplicates"``; or ``None`` to keep
+            the chain link (``confirms``) without asserting a relation value on
+            it (written as ``"follows"``, the registered bare next-link). Any other
+            value raises ``ValueError``: capsule-emit writes only
+            registered relations (earlier unregistered tokens are still read,
+            see :data:`capsule_emit.relations.LEGACY_RELATION_ALIASES`). Passing
+            a non-``None``, non-default relation without ``confirms`` set raises
+            ``ValueError`` (a chain relation needs a chain target);
+            ``relation=None`` never raises regardless of ``confirms``. Default
+            ``"confirms"``.
         anchor: Legacy, non-default channel — killed as a default in 0.5.0 (O16
             items 1-2). ``None`` (default) never dispatches. Pass ``True``, or
             set ``CAPSULE_ANCHOR=legacy-on``, to opt back into the old
@@ -761,6 +764,11 @@ def _emit_capsule(
             "human_disposed=True requires approver='human' — "
             "pass approver='human' or set human_disposed=False"
         )
+    if relation is not None and relation not in REGISTERED_RELATIONS:
+        raise ValueError(
+            f"relation={relation!r} is not a registered chain.relation; capsule-emit writes only "
+            f"{sorted(REGISTERED_RELATIONS)} (agent-action-capsule REGISTRY.md section 6)"
+        )
     if relation is not None and relation != "confirms" and confirms is None:
         raise ValueError(
             f"relation={relation!r} requires confirms=<capsule_id> — "
@@ -829,7 +837,10 @@ def _emit_capsule(
 
     chain_relation: str | None = None
     if confirms is not None:
-        chain_relation = relation
+        # relation=None keeps the link without asserting anything about the
+        # parent: the registered bare next-link, "follows" (left unset, the
+        # library underneath would fill in its own unregistered default).
+        chain_relation = relation if relation is not None else "follows"
 
     _action_type = action_type if action_type is not None else (
         "decide" if verdict in ("executed", "confirmed", "denied", "blocked", "assessed") else "fyi"

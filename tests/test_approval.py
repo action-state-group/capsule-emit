@@ -12,6 +12,7 @@ Covers:
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -412,7 +413,9 @@ def test_a_legacy_resolves_record_still_closes_a_pending_item(tmp_path):
     blocked capsule it points at is no longer pending."""
     blocked = _blocked_capsule(tmp_path)
     other = _blocked_capsule(tmp_path, action="write_invoice")
-    _emit_capsule(  # written the way older releases wrote an approval
+    # A record as older releases wrote it (the writer now refuses "resolves",
+    # so the old record is put in the ledger as it was left on disk).
+    approval = _emit_capsule(
         action="review_action",
         operator="test-org",
         developer="approver@v1",
@@ -421,10 +424,13 @@ def test_a_legacy_resolves_record_still_closes_a_pending_item(tmp_path):
         decision="approve",
         verdict="executed",
         confirms=blocked["capsule_id"],
-        relation="resolves",
-        ledger=tmp_path / "ledger.jsonl",
+        relation="supersedes",
+        ledger=tmp_path / "other.jsonl",
         anchor=False,
-    )
+    ).capsule
+    approval["chain"]["relation"] = "resolves"
+    with open(tmp_path / "ledger.jsonl", "a") as f:
+        f.write(json.dumps(approval) + "\n")
     pending = list_pending(tmp_path / "ledger.jsonl")
     assert [c["capsule_id"] for c in pending] == [other["capsule_id"]]
 

@@ -6,6 +6,26 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed — BREAKING: capsule-emit writes only the five registered relations
+
+`chain.relation` is now one of `follows`, `confirms`, `supersedes`, `epoch_opens`, `duplicates`
+(agent-action-capsule REGISTRY.md section 6); `seal()` / `_emit_capsule` raise `ValueError` for any
+other value. New in `capsule_emit.relations`: `REGISTERED_RELATIONS`, `LEGACY_RELATION_ALIASES`,
+`registered_meaning()`.
+
+- `seal_adjudication` writes `confirms` (it observes the compared half; the half's open state
+  remains), not `adjudicates`. `adjudication.is_adjudication()` recognises an adjudication by its
+  adjudication block, or by the legacy `adjudicates` on older records; `chain_segment` uses it.
+  `adjudication.RELATION_ADJUDICATES` is now `"confirms"`; `LEGACY_RELATION_ADJUDICATES` is the old
+  token.
+- `relation=None` with a chain target writes `follows` (the library underneath used to fill in
+  the unregistered `sequence`).
+- The goose example: its escalation writes `supersedes`, its ordered tool calls `follows`.
+- The `seal()` docstring no longer advertises `escalates` / `assesses`; a judge verdict uses
+  `confirms`.
+- Older records are still read: `sequence`, `resolves`, `escalates`, `adjudicates` and `assesses`
+  are documented legacy aliases (`docs/chaining.md`).
+
 ### Changed — approvals write the registered `supersedes`, not `resolves`
 
 `seal_approval` wrote `chain.relation = "resolves"`, which is not a registered relation value.
