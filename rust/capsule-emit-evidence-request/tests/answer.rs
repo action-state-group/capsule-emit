@@ -1323,3 +1323,99 @@ fn a_receipt_for_its_own_checkpoint_is_verified_only_under_the_witness_key() {
     let other = |_: &str| Some(other_key().verifying_key());
     assert_eq!(history_card(&log, &other), Err(VerifyError::ReceiptBinding));
 }
+
+/// Append unrelated records and one more checkpoint to `log`.
+fn grow(log: &mut TestLog, checkpoint_key: &SigningKey) {
+    for i in 10..13u64 {
+        let body = format!("unrelated-{i}").into_bytes();
+        let digest = sha(&body);
+        let raw: [u8; 32] = hex::decode(&digest).unwrap().try_into().unwrap();
+        add_leaf(&mut log.nodes, leaf_hash(&raw)).unwrap();
+        log.records.push(Record {
+            leaf_index: i,
+            digest,
+            body,
+        });
+    }
+    let size = log.nodes.size();
+    let peak_hashes: Vec<_> = peaks(size)
+        .unwrap()
+        .iter()
+        .map(|&p| log.nodes.node(p))
+        .collect();
+    let prev = log.checkpoints.last().cloned().unwrap();
+    let mut cp = CheckpointRecord {
+        v: 1,
+        kind: "mmr_checkpoint".into(),
+        log_id: STREAM.into(),
+        mmr_size: size,
+        root: hex::encode(root_from_peaks(&peak_hashes)),
+        prev_size: prev.mmr_size,
+        prev_root: prev.root.clone(),
+        key_id: hex::encode(checkpoint_key.verifying_key().to_bytes()),
+        timestamp: "2026-09-30T00:00:00Z".into(),
+        signature: String::new(),
+        witnesses: Vec::new(),
+    };
+    cp.signature = sign_checkpoint_digest(&cp, checkpoint_key);
+    log.checkpoints.push(cp);
+}
+
+/// Expected to fail until the exchange-half pin gets a stable binding: today
+/// an exchange-half pinned answer is anchored to the latest checkpoint, so
+/// unrelated growth changes its bytes (§5 fixed-pin invariance). Whether to
+/// anchor it stably or to refuse the form is open with the draft; see
+/// capsule-emit#285, item 2.
+#[test]
+#[ignore = "fails until the exchange-half pin has a stable binding (capsule-emit#285, item 2)"]
+fn unrelated_log_growth_does_not_change_a_fixed_exchange_half_artifact() {
+    // subject={"exchange":H}, coverage={"expected_pin":H}: build and verify,
+    // append unrelated records and another checkpoint, answer the same
+    // request again with the same returned records; the artifact is the
+    // same bytes (§5, fixed-pin artifact invariance).
+    let mut log = test_log(&responder_key());
+    let (b, q) = request(
+        json!({"exchange": half()}),
+        json!({"expected_pin": half()}),
+        json!({}),
+    );
+    let digest = request_digest(&b);
+    let answer_once = |log: &TestLog| {
+        let Resolution::Artifact(anchor) = resolve(&q, log) else {
+            panic!("expected an artifact")
+        };
+        let a = build(
+            &q,
+            &digest,
+            &anchor,
+            log,
+            MAX_RECORDS,
+            &responder_key(),
+            ISSUED_AT,
+        )
+        .unwrap();
+        let v = answer::verify(
+            &a.envelope,
+            &a.artifact,
+            &a.material,
+            &q,
+            &digest,
+            &responder_key().verifying_key(),
+            &record_digest,
+            &no_witness_key,
+        )
+        .unwrap();
+        (a.artifact, v.records)
+    };
+    let (first, records_first) = answer_once(&log);
+    grow(&mut log, &responder_key());
+    let (second, records_second) = answer_once(&log);
+    assert_eq!(
+        records_first, records_second,
+        "the returned records are the same"
+    );
+    assert_eq!(
+        first, second,
+        "unrelated growth changed a fixed-pin artifact"
+    );
+}
