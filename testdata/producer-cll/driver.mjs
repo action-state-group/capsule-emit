@@ -10,7 +10,7 @@ const seed = Uint8Array.from({ length: 32 }, (_, i) => i);
 const now = new Date("2026-09-07T12:00:00Z");
 const identity = emit.createEd25519Identity(seed);
 if (mode === "produce") {
-  const result = emit.seal({
+  const result = await emit.seal({
     capsule: {
       actionId: "producer-cll/example",
       actionType: "fyi",
@@ -24,8 +24,8 @@ if (mode === "produce") {
   await writeFile(`${prefix}.cose`, result.envelope);
 } else if (mode === "checkpoint") {
   const payload = await readFile(`${prefix}.json`);
-  const verified = emit.verifyCapsule(payload);
-  const author = emit.verifyEnvelope(
+  const verified = await emit.verifyCapsule(payload);
+  const author = await emit.verifyEnvelope(
     verified.capsuleId,
     await readFile(`${prefix}.cose`),
   );

@@ -1,7 +1,7 @@
 filippo.io/edwards25519 v1.2.0 h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
 filippo.io/edwards25519 v1.2.0/go.mod h1:xzAOLCNug/yB62zG1bQ8uziwrIqIuxhctzJT18Q77mc=
-github.com/action-state-group/agent-action-capsule/go v0.5.2-0.20260926235627-439dc02c05d1 h1:R3Z+bdLDxy0UYak5E3pvQf1aCV6v0vf+n1RD5X+Tdfc=
-github.com/action-state-group/agent-action-capsule/go v0.5.2-0.20260926235627-439dc02c05d1/go.mod h1:miJnjbceLMHON1PmfHKRjqlNSsy95k6qZ1jz1j3KR84=
+github.com/action-state-group/agent-action-capsule/go v0.6.1-0.20260929194912-371bf4fa5880 h1:4dytP0w06GctLuexD7ZCeQvT7ShOJry9Inkt3FbRNfw=
+github.com/action-state-group/agent-action-capsule/go v0.6.1-0.20260929194912-371bf4fa5880/go.mod h1:miJnjbceLMHON1PmfHKRjqlNSsy95k6qZ1jz1j3KR84=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sapM=
