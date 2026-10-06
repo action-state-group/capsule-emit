@@ -11,3 +11,7 @@ build/
 # ledger lock files carry a PID/hostname and are never deliverables
 *.jsonl.lock
 *.signing_key.pem
+
+# Local secrets: never commit an env file.
+.env
+.env.*
