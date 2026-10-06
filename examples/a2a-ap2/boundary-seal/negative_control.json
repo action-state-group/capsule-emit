@@ -1,0 +1,41 @@
+{
+  "_note": "Negative control for the capsule.resolve and capsule.digest gates. Unlike the frozen negative_variant.json, its capsule_id can never be registered on the anchor, so it cannot start resolving through ordinary use. See NEGATIVE_CONTROLS.md.",
+  "_construction": "64 characters like a capsule_id, but not hex. The anchor's write routes (POST /v1/digest, POST /register) refuse any capsule_id that is not 64 hex characters, so this value is never registered; resolving it is refused too (400). The anchor's own tests pin both.",
+
+  "variant_id": "negative-boundary-seal-002",
+  "task_id": "task-boundary-seal-001",
+  "description": "Same task_request.json as the positive case. The callee's response carries a capsule_id that is not the one sealed for this task and can never be one.",
+
+  "a2a_response_extension_tampered": {
+    "uri": "https://agentactioncapsule.org/a2a-extension/v1",
+    "capsule_id": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    "anchor": "https://anchor.agentactioncapsule.org",
+    "verify_url": "https://anchor.agentactioncapsule.org/v1/inclusion/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+  },
+
+  "expected_gate_results": {
+    "capsule.resolve": {
+      "result": "DENY",
+      "reason": "The capsule_id is malformed (not hex); the anchor refuses to resolve it (400) and can never have registered it."
+    },
+    "capsule.digest": {
+      "result": "DENY",
+      "reason": "Cannot verify digest: no capsule to fetch. Depends on capsule.resolve passing."
+    }
+  },
+
+  "verifier_procedure": {
+    "step_1": "GET https://anchor.agentactioncapsule.org/v1/inclusion/<capsule_id>  (read-only; never POST to check a negative: POST registers)",
+    "step_1_result": "400 Bad Request: capsule_id must be a 64-character hex string",
+    "step_2": "capsule.resolve = DENY",
+    "step_3": "capsule.digest = DENY",
+    "final": "Both gates DENY. The task response is non-conformant: capsule extension present but unresolvable."
+  },
+
+  "distinguish_from_positive": {
+    "positive_capsule_id": "553b0a2352a25be70d5400434525172e104021f27b8879b1348dc4a53821f046",
+    "positive_entry_hash": "41ff4118ffdbf4d14ab00bfe2a8ebe4179bb4b23c2176e3ac44c7106f42babbb",
+    "positive_leaf_index": 167,
+    "positive_anchor": "https://anchor.agentactioncapsule.org"
+  }
+}
