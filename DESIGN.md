@@ -18,8 +18,16 @@ imports no storage driver into the root; see [Artifact storage](#artifact-storag
 | `capsule-emit-go`      | `280596e03070d6c3333224313fd6aa20b0cb992a` | Public producer API and behavior                  |
 | `capsule-emit`         | `40b592192e19622ff7a8c82674eb7caddb52e8db` | Released 0.7.0 Python byte-exact fixtures         |
 
-These revisions record the implementation baseline. CI interoperability jobs
-intentionally test the current change against each peer repository's `main`.
+These revisions record the historical implementation baseline. Runtime record
+verification uses exact npm `@action-state-group/agent-action-capsule@0.1.0`,
+whose reviewed artifact comes from `36d6770cf1856ed9043d98782275a14ce221fdde`
+(PR #184). `AAC_COMMIT` in `test/aac-pin.ts` pins the same-commit authoritative
+corpus in tests, CI and publication checks. Other peer interoperability inputs
+continue to use their repositories' `main`.
+
+AAC stays external in the emit build and retains its BSD-3-Clause LICENSE in
+the installed dependency. Emit remains Apache-2.0; no AAC implementation is
+bundled into its package.
 
 At `439dc02` AAC moved its corpora to `vectors/capsule/` and
 `vectors/producer-envelope/`, folded the cross-record reference vectors into
@@ -80,44 +88,51 @@ the lexical rule above. Format-4 Capsule identity removes only top-level `capsul
 
 ## Low-level AAC compatibility subpath
 
-`@action-state-group/capsule-emit/aac` exports `decodeCapsuleJson`, `computeCapsuleId`,
-`verifyClass1`, and `verifyStore`. It mirrors the upstream AAC dependency used
-by both Go libraries. It retains vintage format-2 identity and store checks
-only so the AAC ledger binding in `cll-ts` can match current Go read behavior. Vintage
-normalization recursively removes object members whose normalized value is
-null, an empty array, or an empty object, while retaining null array elements.
-The top-level
-emitter never constructs or accepts format 2.
+`@action-state-group/capsule-emit/aac` re-exports canonicalization, identity,
+Class-1 and store verification from the authoritative AAC `/core` entry.
+It supports format 4 and preserves AAC's async behavior. It does not retain a
+private verifier, registry mirror, or vintage format-2 algorithm.
 
-The port preserves the eight pinned checks: structure, identity, confirmed
-effect, verdict/effect orthogonality, effect attestation, chain, assurance, and
-registry findings. Unknown registry values remain informational. Public
-`verifyCapsule` throws `CapsuleVerificationError` with the complete Class 1
-result when verification does not pass.
+Digest-dependent producer APIs and all verification APIs are awaited before
+acceptance or signing. Decoding, JCS encoding, opaque slot wrappers, signing
+identity constructors and raw Capsule-ID signing remain synchronous.
+Unknown registry values remain informational. `verifyCapsule` throws
+`CapsuleVerificationError` with the complete AAC Class-1 result on failure.
+
+Artifact backends await authentication and bound-original verification before
+writes or successful reads. SQLite `putTx`/`getTx` now return promises: callers
+must use explicit BEGIN/await/COMMIT and roll back on rejection, never an async
+callback passed to better-sqlite3's synchronous `transaction` helper. The
+caller-owned connection must have only one in-flight transaction. MySQL uses
+its existing async transaction lifecycle; JSONL awaits verification before
+its synchronous file mutation. No additional queue or recovery mechanism is
+introduced.
 
 ## Producer Envelope
 
-Node `crypto` supplies Ed25519. The Producer Envelope is tagged COSE_Sign1 with
-the raw 32-byte Capsule ID attached in its payload slot. Hand-rolled CBOR
-primitives in `envelope.ts` (`head`, `bstr`, `tstr`, `array`,
-`protectedHeaders`) encode the protected map in frozen byte order: content type
-label 3, raw 32-byte public-key `kid` label 4, then EdDSA label 1. The signature
-covers
+AAC's `producer-envelope-wire.ts` owns the exact COSE encoding, and its
+Producer Envelope modules own Ed25519 signing and verification. The protected
+map retains the frozen byte order: content type label 3, raw 32-byte public-key
+`kid` label 4, then EdDSA label 1. Tagged COSE_Sign1 carries the raw Capsule ID
+in its payload slot; the signature covers
 `["Signature1", protected, empty-bstr, raw-id]`.
+Emit's `envelope.ts` re-exports AAC identity/raw-ID signing and envelope
+verification, with an awaited complete Capsule verification before its public
+`sign` wrapper delegates to AAC.
 
 Verification requires tag 18, four array items, empty unprotected map, exactly
 three protected headers, a 32-byte payload, a 64-byte signature, and no more
 than 4,096 total envelope bytes.
 
-An internal `signCapsuleId` test seam replays the upstream synthetic envelope
+The raw `signCapsuleId` primitive replays the upstream synthetic envelope
 whose ID has no matching Capsule. Public `sign` first verifies that its built
 Capsule matches the ID, then delegates to the same primitive.
 
 ## Toolchain
 
 Node.js 24 LTS, npm, TypeScript 7 strict mode, Vitest 4, and tsup are used.
-Envelope encoding is hand-rolled in `envelope.ts`; `cborg` is used only to
-decode the protected header map during verification. GitHub Actions use
+AAC owns envelope encoding, protected-header decoding and cryptographic
+verification; emit retains the awaited verify-before-sign producer wrapper. GitHub Actions use
 read-only permissions and immutable action revisions.
 
 ## Artifact storage

@@ -9,6 +9,7 @@ export default defineConfig({
     "artifact/mysql": "src/artifact/mysql.ts",
     "artifact/jsonl": "src/artifact/jsonl.ts",
   },
+  external: ["@action-state-group/agent-action-capsule"],
   format: ["esm"],
   dts: false,
   sourcemap: true,

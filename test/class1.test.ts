@@ -8,7 +8,7 @@ import {
   verifyStore,
   type ParsedJson,
 } from "../src/aac/index.js";
-
+import { verifyCapsule } from "../src/verify.js";
 const root = resolve(
   process.env.AAC_ROOT ?? "../agent-action-capsule",
   "vectors",
@@ -16,10 +16,15 @@ const root = resolve(
 );
 const manifest = JSON.parse(
   readFileSync(resolve(root, "vectors.json"), "utf8"),
-) as { cases: Array<{ name: string; kind: string }> };
+) as {
+  cases: Array<{
+    name: string;
+    kind: string;
+  }>;
+};
 describe("complete upstream AAC corpus", () => {
   for (const item of manifest.cases)
-    it(item.name, () => {
+    it(item.name, async () => {
       const input = decodeStrictJson(
         readFileSync(resolve(root, item.name, "input.json")),
       );
@@ -30,27 +35,35 @@ describe("complete upstream AAC corpus", () => {
         capsule_id_recomputed?: string;
         exception?: string | null;
         derived?: Record<string, string>;
-        findings?: Array<{ code: string }>;
+        findings?: Array<{
+          code: string;
+        }>;
         results?: Array<{
           ok: boolean;
           capsule_id_recomputed?: string;
-          findings: Array<{ code: string }>;
+          findings: Array<{
+            code: string;
+          }>;
         }>;
       };
       if (item.kind === "canonical") {
         if (expected.exception !== null)
-          expect(() =>
+          await expect(
             computeCapsuleId(input as Record<string, ParsedJson>),
-          ).toThrow();
+          ).rejects.toThrow();
         else
-          expect(computeCapsuleId(input as Record<string, ParsedJson>)).toBe(
-            expected.capsule_id_recomputed,
-          );
+          expect(
+            await computeCapsuleId(input as Record<string, ParsedJson>),
+          ).toBe(expected.capsule_id_recomputed);
         return;
       }
       if (item.kind === "store") {
-        const ledger = (input as { ledger: ParsedJson[] }).ledger;
-        const actual = verifyStore(ledger);
+        const ledger = (
+          input as {
+            ledger: ParsedJson[];
+          }
+        ).ledger;
+        const actual = await verifyStore(ledger);
         expect(actual.map((result) => result.ok)).toEqual(
           expected.results!.map((result) => result.ok),
         );
@@ -68,7 +81,7 @@ describe("complete upstream AAC corpus", () => {
         );
         return;
       }
-      const actual = verifyClass1(input);
+      const actual = await verifyClass1(input);
       expect(actual.ok).toBe(expected.ok);
       expect(actual.capsuleId ?? null).toBe(
         expected.capsule_id_recomputed ?? null,
@@ -79,50 +92,54 @@ describe("complete upstream AAC corpus", () => {
       );
     });
 });
-
 describe("reference parity edge cases", () => {
+  it("preserves the complete authoritative finding result on producer rejection", async () => {
+    const data = readFileSync(
+      resolve(root, "neg-retention-declarant-missing-and-empty", "input.json"),
+    );
+    const reference = await verifyClass1(decodeStrictJson(data));
+    expect(reference.ok).toBe(false);
+    await expect(verifyCapsule(data)).rejects.toMatchObject({
+      result: reference,
+    });
+  });
   const fixture = (): Record<string, ParsedJson> =>
     decodeStrictJson(
       readFileSync(resolve(root, "pos-executed-confirmed", "input.json")),
     ) as Record<string, ParsedJson>;
-
-  it("checks effect_attestation presence independently of its type", () => {
+  it("checks effect_attestation presence independently of its type", async () => {
     const capsule = fixture();
     const effect = capsule.effect as Record<string, ParsedJson>;
     effect.effect_attestation = decodeStrictJson("1");
     expect(
-      verifyClass1(capsule).findings.some(
+      (await verifyClass1(capsule)).findings.some(
         (finding) => finding.code === "effect_attestation_missing",
       ),
     ).toBe(false);
-
     effect.status = "planned";
     expect(
-      verifyClass1(capsule).findings.some(
+      (await verifyClass1(capsule)).findings.some(
         (finding) => finding.code === "effect_attestation_present",
       ),
     ).toBe(true);
   });
-
-  it("treats a null effect_attestation as absent like the references", () => {
+  it("treats a null effect_attestation as absent like the references", async () => {
     const capsule = fixture();
     const effect = capsule.effect as Record<string, ParsedJson>;
     effect.effect_attestation = null;
     expect(
-      verifyClass1(capsule).findings.some(
+      (await verifyClass1(capsule)).findings.some(
         (finding) => finding.code === "effect_attestation_missing",
       ),
     ).toBe(true);
-
     effect.status = "planned";
     expect(
-      verifyClass1(capsule).findings.some(
+      (await verifyClass1(capsule)).findings.some(
         (finding) => finding.code === "effect_attestation_present",
       ),
     ).toBe(false);
   });
-
-  it("does not attempt ID computation when the identity profile is invalid", () => {
+  it("does not attempt ID computation when the identity profile is invalid", async () => {
     for (const name of [
       "neg-float-in-digest-field",
       "neg-unsafe-integer-in-digest-field",
@@ -132,14 +149,13 @@ describe("reference parity edge cases", () => {
       ) as Record<string, ParsedJson>;
       capsule.format_version = "4";
       capsule.canonicalization_id = decodeStrictJson("4");
-      const codes = verifyClass1(capsule).findings.map(
+      const codes = (await verifyClass1(capsule)).findings.map(
         (finding) => finding.code,
       );
       expect(codes).toContain("canonicalization_id_not_string");
       expect(codes).not.toContain("capsule_id_uncomputable");
     }
   });
-
   it.each([
     ["1", "jcs", "unsupported_format_version"],
     ["2", undefined, "unsupported_format_version"],
@@ -151,21 +167,19 @@ describe("reference parity edge cases", () => {
     ["4", "jcs-n", "canonicalization_profile_mismatch"],
   ] as const)(
     "does not derive an ID finding for format %s and canonicalization %s",
-    (formatVersion, canonicalizationId, expectedCode) => {
+    async (formatVersion, canonicalizationId, expectedCode) => {
       const capsule = fixture();
       capsule.format_version = formatVersion;
       if (canonicalizationId === undefined) delete capsule.canonicalization_id;
       else capsule.canonicalization_id = canonicalizationId;
-
-      const result = verifyClass1(capsule);
+      const result = await verifyClass1(capsule);
       const codes = result.findings.map((finding) => finding.code);
       expect(codes).toContain(expectedCode);
       expect(codes).not.toContain("capsule_id_uncomputable");
       expect(result.capsuleId).toBeUndefined();
     },
   );
-
-  it("reports assurance overclaims when optional evidence is absent", () => {
+  it("reports assurance overclaims when optional evidence is absent", async () => {
     const capsule = fixture();
     delete capsule.chain;
     delete capsule.cross_party;
@@ -175,23 +189,23 @@ describe("reference parity edge cases", () => {
       cross_party_rung: "full_bilateral",
     };
     expect(
-      verifyClass1(capsule).findings.filter(
+      (await verifyClass1(capsule)).findings.filter(
         (finding) => finding.code === "assurance_overclaim",
       ),
     ).toHaveLength(3);
   });
-
-  it("matches reference disposition presence and type findings", () => {
+  it("matches reference disposition presence and type findings", async () => {
     const capsule = fixture();
     const disposition = capsule.disposition as Record<string, ParsedJson>;
     disposition.decision = decodeStrictJson("5");
     disposition.human_disposed = "not-a-boolean";
-    const codes = verifyClass1(capsule).findings.map((finding) => finding.code);
+    const codes = (await verifyClass1(capsule)).findings.map(
+      (finding) => finding.code,
+    );
     expect(codes).not.toContain("missing_required_field");
     expect(codes).toContain("field_not_bool");
-
     delete disposition.human_disposed;
-    const missingCodes = verifyClass1(capsule).findings.map(
+    const missingCodes = (await verifyClass1(capsule)).findings.map(
       (finding) => finding.code,
     );
     expect(missingCodes).toContain("field_not_bool");

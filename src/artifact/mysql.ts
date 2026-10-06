@@ -129,7 +129,7 @@ export class MysqlArtifactStore implements Store {
     record: Record,
   ): Promise<void> {
     const prepared = prepare(record);
-    verify(prepared, this.trusted);
+    await verify(prepared, this.trusted);
     const hash = storageChecksum(prepared);
     try {
       await connection.query(
@@ -230,7 +230,7 @@ export class MysqlArtifactStore implements Store {
     };
     if (storageChecksum(record) !== capsule.record_sha256)
       throw new ArtifactError("corrupt", "stored record integrity failure");
-    verify(record, this.trusted);
+    await verify(record, this.trusted);
     return record;
   }
 

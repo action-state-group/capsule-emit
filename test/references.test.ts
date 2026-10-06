@@ -14,7 +14,6 @@ import {
   verifyClass1,
   type ParsedJson,
 } from "../src/aac/index.js";
-
 const root = resolve(
   process.env.AAC_ROOT ?? "../agent-action-capsule",
   "vectors",
@@ -27,30 +26,28 @@ const vector = (name: string): Record<string, ParsedJson> =>
   decodeStrictJson(
     readFileSync(resolve(root, `reference-${name}`, "input.json")),
   ) as Record<string, ParsedJson>;
-
 describe("shared draft-04 cross-record reference vectors", () => {
-  it("accepts a caller-registered citation purpose without findings", () => {
+  it("accepts a caller-registered citation purpose without findings", async () => {
     const capsule = vector("future-purpose");
-    const custom = verifyClass1(capsule, new Set(["a".repeat(64)]), {
+    const custom = await verifyClass1(capsule, new Set(["a".repeat(64)]), {
       citation_purpose: new Set(["example-purpose"]),
     });
     expect(custom.ok).toBe(true);
     expect(custom.findings).toEqual([]);
   });
-
-  it("constructs the same cited Capsule bytes as Python and commits the citation", () => {
+  it("constructs the same cited Capsule bytes as Python and commits the citation", async () => {
     // The released vector is -04; this producer stamps -05. Its bytes are
     // the vector's with only spec_version (and so capsule_id) changed.
     const expected = vector("external-capsule");
     expected.spec_version = SPEC_VERSION;
-    expected.capsule_id = computeCapsuleId(expected);
+    expected.capsule_id = await computeCapsuleId(expected);
     const reference: Reference = {
       type: "agent-action-capsule",
       digestAlg: "SHA-256",
       digest: "b".repeat(64),
       citationPurpose: "responds_to",
     };
-    const built = build({
+    const built = await build({
       actionId: "reference/example",
       actionType: "fyi",
       operator: "example-org",
@@ -64,12 +61,13 @@ describe("shared draft-04 cross-record reference vectors", () => {
     );
     const tampered = JSON.parse(new TextDecoder().decode(built.json));
     tampered.references[0].citation_purpose = "acted_on";
-    expect(computeCapsuleId(tampered)).not.toBe(built.capsuleId);
-    expect(() => verifyCapsule(jcs(tampered))).toThrow("capsule_id_mismatch");
+    expect(await computeCapsuleId(tampered)).not.toBe(built.capsuleId);
+    await expect(verifyCapsule(jcs(tampered))).rejects.toThrow(
+      "capsule_id_mismatch",
+    );
   });
-
-  it("rejects a typed citation that duplicates the chain parent", () => {
-    expect(() =>
+  it("rejects a typed citation that duplicates the chain parent", async () => {
+    await expect(
       build({
         actionId: "reference/example",
         actionType: "fyi",
@@ -85,11 +83,10 @@ describe("shared draft-04 cross-record reference vectors", () => {
           },
         ],
       }),
-    ).toThrow("reference_duplicates_chain_parent");
+    ).rejects.toThrow("reference_duplicates_chain_parent");
   });
 });
-
-it("records opaque log coordinates and preserves absent versus empty references", () => {
+it("records opaque log coordinates and preserves absent versus empty references", async () => {
   const base = {
     actionId: "reference/example",
     actionType: "fyi" as const,
@@ -107,7 +104,7 @@ it("records opaque log coordinates and preserves absent versus empty references"
       inclusion_proof: "opaque",
     },
   };
-  const built = build({ ...base, references: [reference] });
+  const built = await build({ ...base, references: [reference] });
   expect(built.value.references).toEqual([
     {
       type: reference.type,
@@ -116,22 +113,21 @@ it("records opaque log coordinates and preserves absent versus empty references"
       log_coordinates: reference.logCoordinates,
     },
   ]);
-  expect(() =>
+  await expect(
     build({
       ...base,
       references: [
         { ...reference, logCoordinates: { log_id: "example", leaf_index: 0 } },
       ],
     }),
-  ).toThrow("reference_log_coordinates_malformed");
-  const absent = build(base);
-  const empty = build({ ...base, references: [] });
+  ).rejects.toThrow("reference_log_coordinates_malformed");
+  const absent = await build(base);
+  const empty = await build({ ...base, references: [] });
   expect(absent.value).not.toHaveProperty("references");
   expect(empty.value.references).toEqual([]);
   expect(absent.capsuleId).not.toBe(empty.capsuleId);
 });
-
-it("treats decoded numbers as scalars in reference object positions", () => {
+it("treats decoded numbers as scalars in reference object positions", async () => {
   const source = readFileSync(
     resolve(root, "reference-opaque-proof", "input.json"),
     "utf8",
@@ -140,8 +136,8 @@ it("treats decoded numbers as scalars in reference object positions", () => {
     const capsule = JSON.parse(source);
     if (numericEntry) capsule.references = [1];
     else capsule.references[0].log_coordinates = 7;
-    capsule.capsule_id = computeCapsuleId(capsule);
-    const result = verifyClass1(
+    capsule.capsule_id = await computeCapsuleId(capsule);
+    const result = await verifyClass1(
       decodeStrictJson(JSON.stringify(capsule)),
       new Set(["a".repeat(64)]),
     );
@@ -153,14 +149,13 @@ it("treats decoded numbers as scalars in reference object positions", () => {
     ]);
   }
 });
-
-it("detaches nested log coordinates from caller mutations", () => {
+it("detaches nested log coordinates from caller mutations", async () => {
   const coordinates = {
     log_id: "example",
     leaf_index: 0,
     inclusion_proof: { path: ["original"] },
   };
-  const built = build({
+  const built = await build({
     actionId: "reference/mutation",
     actionType: "fyi",
     operator: "example",
@@ -179,6 +174,8 @@ it("detaches nested log coordinates from caller mutations", () => {
   coordinates.inclusion_proof.path[0] = "changed";
   expect(jcs(built.value)).toEqual(built.json);
   expect(
-    computeCapsuleId(built.value as Parameters<typeof computeCapsuleId>[0]),
+    await computeCapsuleId(
+      built.value as Parameters<typeof computeCapsuleId>[0],
+    ),
   ).toBe(built.capsuleId);
 });

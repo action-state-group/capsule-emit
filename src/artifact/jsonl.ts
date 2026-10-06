@@ -240,7 +240,7 @@ export class JsonlArtifactStore implements Store {
   /** Persists an immutable record atomically, accepting byte-identical retries. */
   public async put(record: Record): Promise<void> {
     const prepared = prepare(record);
-    verify(prepared, this.trusted);
+    await verify(prepared, this.trusted);
     const hash = storageChecksum(prepared);
 
     const existing = this.index.get(prepared.capsuleId);
@@ -253,7 +253,7 @@ export class JsonlArtifactStore implements Store {
           "corrupt",
           "index points to a different capsule",
         );
-      verify(stored, this.trusted);
+      await verify(stored, this.trusted);
       if (storageChecksum(stored) !== hash)
         throw new ArtifactError("conflict", "immutable record conflict");
       for (const a of stored.artifacts)
@@ -282,7 +282,7 @@ export class JsonlArtifactStore implements Store {
     const record = decodeRecord(line);
     if (record.capsuleId !== id)
       throw new ArtifactError("corrupt", "index points to a different capsule");
-    verify(record, this.trusted);
+    await verify(record, this.trusted);
     return record;
   }
 

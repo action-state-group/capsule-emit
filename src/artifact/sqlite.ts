@@ -75,7 +75,7 @@ function isConstraint(error: unknown): boolean {
 /**
  * An application-importable SDK, independent of CLI profiles and CLL log IDs.
  * The caller owns the better-sqlite3 handle (opened with `PRAGMA
- * foreign_keys=ON` and a single writer so writes serialize) and the trusted
+ * foreign_keys=ON` and at most one in-flight transaction) and the trusted
  * keys. A namespace isolates a collection; it must not implicitly be a log ID.
  */
 export class SqliteArtifactStore implements Store {
@@ -105,7 +105,7 @@ export class SqliteArtifactStore implements Store {
   public async put(record: Record): Promise<void> {
     this.db.exec("BEGIN");
     try {
-      this.putTx(record);
+      await this.putTx(record);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -116,11 +116,13 @@ export class SqliteArtifactStore implements Store {
   /**
    * Runs the immutable-insert logic on the current connection without managing
    * the transaction. The caller MUST have an open transaction and MUST roll the
-   * whole transaction back on error; this method never commits.
+   * whole transaction back on error; this method never commits. Await this
+   * operation before committing; better-sqlite3 transaction callbacks cannot
+   * own an async operation.
    */
-  public putTx(record: Record): void {
+  public async putTx(record: Record): Promise<void> {
     const prepared = prepare(record);
-    verify(prepared, this.trusted);
+    await verify(prepared, this.trusted);
     const hash = storageChecksum(prepared);
     try {
       this.db
@@ -137,7 +139,7 @@ export class SqliteArtifactStore implements Store {
         );
     } catch (error) {
       if (!isConstraint(error)) throw error;
-      const existing = this.readOnConnection(prepared.capsuleId);
+      const existing = await this.readOnConnection(prepared.capsuleId);
       if (storageChecksum(existing) !== hash)
         throw new ArtifactError("conflict", "immutable record conflict");
       for (const a of existing.artifacts)
@@ -165,7 +167,7 @@ export class SqliteArtifactStore implements Store {
   public async get(id: string): Promise<Record> {
     this.db.exec("BEGIN");
     try {
-      const record = this.readOnConnection(id);
+      const record = await this.readOnConnection(id);
       this.db.exec("COMMIT");
       return record;
     } catch (error) {
@@ -175,11 +177,11 @@ export class SqliteArtifactStore implements Store {
   }
 
   /** Reads within a caller-managed transaction. SQLite serializes writers. */
-  public getTx(id: string): Record {
+  public async getTx(id: string): Promise<Record> {
     return this.readOnConnection(id);
   }
 
-  private readOnConnection(id: string): Record {
+  private async readOnConnection(id: string): Promise<Record> {
     if (!ID_PATTERN.test(id)) throw new ArtifactError("invalid", "capsule id");
     const capsule = this.db
       .prepare(
@@ -209,7 +211,7 @@ export class SqliteArtifactStore implements Store {
     };
     if (storageChecksum(record) !== capsule.record_sha256)
       throw new ArtifactError("corrupt", "stored record integrity failure");
-    verify(record, this.trusted);
+    await verify(record, this.trusted);
     return record;
   }
 

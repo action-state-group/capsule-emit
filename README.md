@@ -19,6 +19,13 @@ npm install @action-state-group/capsule-emit
 
 ## Build, sign, and verify
 
+Digest-dependent production and verification APIs are async. Await `build`,
+`received`, `carry`, `buildComposition`, `digestJSON`, `seal`, `sign`,
+`verifyCapsule`, `verifyEnvelope`, and artifact `verify`. Decoding, JCS bytes,
+slot wrappers, identity constructors and raw `signCapsuleId` remain synchronous.
+The compatibility `./aac` entry delegates to AAC's authoritative async core;
+there is no private verifier or registry snapshot.
+
 `seal` is the recommended application-facing API. It digests caller-owned JSON,
 builds and verifies the format-4 Capsule, then signs its raw 32-byte Capsule ID
 with an independent Producer Envelope.
@@ -33,7 +40,7 @@ import {
 } from "@action-state-group/capsule-emit";
 
 const identity = createEd25519Identity(randomBytes(32));
-const result = seal({
+const result = await seal({
   capsule: {
     actionId: "example/1",
     actionType: "decide",
@@ -54,11 +61,11 @@ const result = seal({
   identity,
 });
 
-const capsule = verifyCapsule(result.payload);
+const capsule = await verifyCapsule(result.payload);
 if (capsule.capsuleId !== result.capsuleId) {
   throw new Error("Capsule ID mismatch");
 }
-const envelope = verifyEnvelope(result.capsuleId, result.envelope);
+const envelope = await verifyEnvelope(result.capsuleId, result.envelope);
 if (!envelope.ok) {
   throw new Error(
     `Producer Envelope failed: ${JSON.stringify(envelope.findings)}`,
@@ -107,17 +114,17 @@ const common = {
   timestamp: "2026-09-02T12:00:00Z",
 };
 
-const identityCapsule = build({
+const identityCapsule = await build({
   ...common,
   actionId: "identity/1",
   domain: "identity",
 });
-const providerAck = received(
+const providerAck = await received(
   { ...common, actionId: "provider-ack/1" },
   new TextEncoder().encode("opaque provider acknowledgement"),
   "provider-ack",
 );
-const actionCapsule = build({
+const actionCapsule = await build({
   ...common,
   actionId: "action/1",
   effect: {
@@ -126,12 +133,11 @@ const actionCapsule = build({
     irreversibilityClass: "two_way",
   },
 });
-const composition = buildComposition({ ...common, actionId: "composition/1" }, [
-  who(identityCapsule),
-  can(providerAck),
-  did(actionCapsule),
-]);
-const envelope = sign(composition, identity);
+const composition = await buildComposition(
+  { ...common, actionId: "composition/1" },
+  [who(identityCapsule), can(providerAck), did(actionCapsule)],
+);
+const envelope = await sign(composition, identity);
 
 console.log(providerAck.capsuleId, composition.capsuleId, envelope.length);
 ```
@@ -139,7 +145,7 @@ console.log(providerAck.capsuleId, composition.capsuleId, envelope.length);
 The same composition can use the high-level signing path:
 
 ```ts
-const signedComposition = seal({
+const signedComposition = await seal({
   capsule: { ...common, actionId: "composition/2" },
   members: [who(identityCapsule), can(providerAck), did(actionCapsule)],
   identity,
@@ -162,14 +168,14 @@ and append only the verified 32-byte Capsule ID to CLL.
 import { build, verifyCapsule } from "@action-state-group/capsule-emit";
 import { MysqlStore } from "@action-state-group/cll/mysql";
 
-const built = build({
+const built = await build({
   actionId: "deploy-42",
   actionType: "fyi",
   operator: "example-org",
   developer: "example-agent@v1",
   timestamp: new Date(),
 });
-verifyCapsule(built.json); // returns verified metadata or throws
+await verifyCapsule(built.json); // returns verified metadata or throws
 
 // Persist built.json and any Producer Envelope in application storage.
 const mysqlUrl = process.env.MYSQL_URL;
@@ -195,15 +201,15 @@ Full Capsules and Producer Envelopes remain in application-owned storage.
 
 ## JSON digests
 
-`digestJSON(value)` returns the lowercase SHA-256 of RFC 8785 JCS bytes. It
+`await digestJSON(value)` returns the lowercase SHA-256 of RFC 8785 JCS bytes. It
 rejects duplicate object names, excessive depth, floats, unsafe integers,
 invalid UTF-8, and trailing JSON data on strict decoding paths.
 
 ```ts
 import { digestJSON } from "@action-state-group/capsule-emit";
 
-const requestDigest = digestJSON({ issue: 123, operation: "publish" });
-const responseDigest = digestJSON({ accepted: true });
+const requestDigest = await digestJSON({ issue: 123, operation: "publish" });
+const responseDigest = await digestJSON({ accepted: true });
 ```
 
 Callers own the JSON shape and assign these values to effect request/response
@@ -224,10 +230,13 @@ invalid.
 Tests replay the complete upstream AAC corpus, all Producer Envelope vectors,
 and Go/Python authored, received, WHO, DID, and composition fixtures.
 
-The AAC corpus is pinned to one agent-action-capsule commit, `AAC_COMMIT` in
-`test/aac-pin.ts`. CI checks out that commit, and the tests refuse an AAC
-checkout (`AAC_ROOT`, default `../agent-action-capsule`) at any other. To take
-in newer vectors, bump `AAC_COMMIT` in a pull request that makes them pass.
+The runtime dependency is pinned to
+`@action-state-group/agent-action-capsule@0.1.0`. AAC remains external in the
+build and carries its BSD-3-Clause license; this package remains Apache-2.0.
+The AAC corpus is pinned by `AAC_COMMIT` in `test/aac-pin.ts` to the source of
+that reviewed npm artifact. Tests require a clean AAC checkout at that exact
+revision; CI and publication checks read the same pin. Bump the npm dependency
+and corpus pin together after validating the new artifact and vectors.
 
 ## Cross-record references
 
@@ -252,8 +261,8 @@ const common = {
   developer: "example-agent@v1",
   timestamp: "2026-09-02T12:00:00Z",
 };
-const request = build({ ...common, actionId: "request/1" });
-const response = build({
+const request = await build({ ...common, actionId: "request/1" });
+const response = await build({
   ...common,
   actionId: "response/1",
   references: [
@@ -265,7 +274,7 @@ const response = build({
     },
   ],
 });
-verifyCapsule(response.json);
+await verifyCapsule(response.json);
 console.log(request.capsuleId, response.capsuleId);
 ```
 

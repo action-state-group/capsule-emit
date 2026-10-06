@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { computeCapsuleId, jcs, jsonDigest } from "./aac/index.js";
-import { isHex64 } from "./aac/json.js";
+import { isHex64 } from "./aac/index.js";
 import { sign } from "./envelope.js";
 import {
   CANONICALIZATION_ID,
@@ -153,15 +153,15 @@ function compact(
   );
 }
 
-export function build(input: Input): BuiltPayload {
+export async function build(input: Input): Promise<BuiltPayload> {
   return buildWithInternalCompute(input);
 }
 
-export function received(
+export async function received(
   input: Input,
   artifact: Uint8Array,
   artifactType: string,
-): BuiltPayload {
+): Promise<BuiltPayload> {
   if (artifact.length === 0)
     throw new TypeError("received artifact must not be empty");
   requireText("received artifact type", artifactType);
@@ -171,14 +171,17 @@ export function received(
     carried_input_digest: digest,
   });
 }
-export function carry(input: Input, artifact: Uint8Array): BuiltPayload {
+export async function carry(
+  input: Input,
+  artifact: Uint8Array,
+): Promise<BuiltPayload> {
   return received(input, artifact, "foreign-artifact");
 }
 
-function buildWithInternalCompute(
+async function buildWithInternalCompute(
   input: Input,
   internal?: Record<string, unknown>,
-): BuiltPayload {
+): Promise<BuiltPayload> {
   if (
     internal !== undefined &&
     (input.compute?.agentInputDigest !== undefined ||
@@ -274,12 +277,12 @@ function buildWithInternalCompute(
   ]);
   if (Object.keys(attestation).length !== 0)
     value.model_attestation = attestation;
-  const capsuleId = computeCapsuleId(
+  const capsuleId = await computeCapsuleId(
     value as Parameters<typeof computeCapsuleId>[0],
   );
   value.capsule_id = capsuleId;
   const json = jcs(value);
-  verifyCapsule(json);
+  await verifyCapsule(json);
   return { capsuleId, value, json };
 }
 
@@ -291,10 +294,10 @@ export const can = slot("can");
 export const did = slot("did");
 export const audit = slot("audit");
 
-export function buildComposition(
+export async function buildComposition(
   input: Input,
   members: readonly SlotMember[],
-): BuiltPayload {
+): Promise<BuiltPayload> {
   if (members.length === 0)
     throw new TypeError("composition requires at least one slot member");
   const bySlot = new Map<Slot, string>();
@@ -307,7 +310,7 @@ export function buildComposition(
     const capsuleId = item.member.capsuleId;
     const payload =
       "json" in item.member ? item.member.json : item.member.payload;
-    if (verifyCapsule(payload).capsuleId !== capsuleId)
+    if ((await verifyCapsule(payload)).capsuleId !== capsuleId)
       throw new TypeError(
         `composition ${item.slot} member is not a matching verified format-4 Capsule`,
       );
@@ -329,11 +332,11 @@ export function buildComposition(
   return buildWithInternalCompute(input, { composed_members });
 }
 
-export function digestJSON(value: unknown): string {
+export async function digestJSON(value: unknown): Promise<string> {
   return jsonDigest(value);
 }
 
-export function seal(input: SealInput): Result {
+export async function seal(input: SealInput): Promise<Result> {
   if (input.capsule.model !== undefined || input.capsule.compute !== undefined)
     throw new TypeError(
       "SealInput model and compute metadata must use model and runtime fields",
@@ -351,22 +354,24 @@ export function seal(input: SealInput): Result {
       throw new TypeError(
         "composition seal must not include payload or agent output",
       );
-    built = buildComposition(capsule, input.members);
+    built = await buildComposition(capsule, input.members);
   } else {
     const compute = compact([
       [
         "agentInputDigest",
-        input.payload === undefined ? undefined : digestJSON(input.payload),
+        input.payload === undefined
+          ? undefined
+          : await digestJSON(input.payload),
       ],
       [
         "agentOutputDigest",
         input.agentOutput === undefined
           ? undefined
-          : digestJSON(input.agentOutput),
+          : await digestJSON(input.agentOutput),
       ],
       ["runtime", input.runtime],
     ]);
-    built = build({
+    built = await build({
       ...capsule,
       ...(Object.keys(compute).length === 0
         ? {}
@@ -376,6 +381,6 @@ export function seal(input: SealInput): Result {
   return {
     capsuleId: built.capsuleId,
     payload: Uint8Array.from(built.json),
-    envelope: sign(built, input.identity),
+    envelope: await sign(built, input.identity),
   };
 }

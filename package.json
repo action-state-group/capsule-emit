@@ -61,7 +61,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "cborg": "6.1.2"
+    "@action-state-group/agent-action-capsule": "0.1.0"
   },
   "peerDependencies": {
     "@types/better-sqlite3": ">=7",

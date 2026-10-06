@@ -16,7 +16,6 @@ import {
   type Result,
   verifyCapsule,
 } from "../src/index.js";
-
 const goRoot = resolve(
   process.env.CAPSULE_EMIT_GO_ROOT ?? "../capsule-emit-go",
 );
@@ -58,14 +57,13 @@ const base = (record: Record<string, unknown>): Input => ({
     verdictClass: record.verdict as string,
   },
 });
-
 describe("Go/Python format-4 frozen vectors", () => {
   const results = new Map<string, Result>();
   for (const record of spec.records) {
-    it(`${String(record.name)} replays byte for byte`, () => {
+    it(`${String(record.name)} replays byte for byte`, async () => {
       let result: Result;
       if (record.operation === "seal")
-        result = seal({
+        result = await seal({
           capsule: base(record),
           payload: record.payload,
           ...(record.agent_output === undefined
@@ -89,7 +87,7 @@ describe("Go/Python format-4 frozen vectors", () => {
           identity,
         });
       else if (record.operation === "received") {
-        const built = received(
+        const built = await received(
           base(record),
           Buffer.from(record.artifact_utf8 as string),
           record.artifact_type as string,
@@ -97,19 +95,22 @@ describe("Go/Python format-4 frozen vectors", () => {
         result = {
           capsuleId: built.capsuleId,
           payload: built.json,
-          envelope: sign(built, identity),
+          envelope: await sign(built, identity),
         };
       } else {
         const members = (
-          record.members as Array<{ slot: string; record: string }>
+          record.members as Array<{
+            slot: string;
+            record: string;
+          }>
         ).map((item) =>
           ({ who, can, did, audit })[item.slot]!(results.get(item.record)!),
         );
-        const built = buildComposition(base(record), members);
+        const built = await buildComposition(base(record), members);
         result = {
           capsuleId: built.capsuleId,
           payload: built.json,
-          envelope: sign(built, identity),
+          envelope: await sign(built, identity),
         };
       }
       const directory = resolve(vectorRoot, "valid", record.name as string);
@@ -124,30 +125,41 @@ describe("Go/Python format-4 frozen vectors", () => {
           readFileSync(resolve(directory, "envelope.cose")),
         ),
       ).toBe(true);
-      expect(verifyEnvelope(result.capsuleId, result.envelope).ok).toBe(true);
+      expect((await verifyEnvelope(result.capsuleId, result.envelope)).ok).toBe(
+        true,
+      );
     });
   }
 });
-
 describe("Go/Python format-4 packs verify whatever spec_version they carry", () => {
   for (const root of packRoots) {
     const manifest = JSON.parse(
       readFileSync(resolve(root, "vectors.json"), "utf8"),
-    ) as { profile: string; cases: Array<{ name: string; path: string }> };
+    ) as {
+      profile: string;
+      cases: Array<{
+        name: string;
+        path: string;
+      }>;
+    };
     for (const item of manifest.cases)
-      it(`${manifest.profile} ${item.name} verifies with its envelope`, () => {
+      it(`${manifest.profile} ${item.name} verifies with its envelope`, async () => {
         const directory = resolve(root, item.path);
         const expected = JSON.parse(
           readFileSync(resolve(directory, "expected.json"), "utf8"),
-        ) as { capsule_id: string };
-        const result = verifyCapsule(
+        ) as {
+          capsule_id: string;
+        };
+        const result = await verifyCapsule(
           readFileSync(resolve(directory, "capsule.detached.jcs")),
         );
         expect(result.capsuleId).toBe(expected.capsule_id);
         expect(
-          verifyEnvelope(
-            expected.capsule_id,
-            readFileSync(resolve(directory, "envelope.cose")),
+          (
+            await verifyEnvelope(
+              expected.capsule_id,
+              readFileSync(resolve(directory, "envelope.cose")),
+            )
           ).ok,
         ).toBe(true);
       });

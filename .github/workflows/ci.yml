@@ -89,11 +89,17 @@ jobs:
           repository: action-state-group/capsule-emit
           ref: main
           path: capsule-emit
-      - name: Check out Python reference main
+      - name: Read the pinned AAC commit
+        id: aac
+        run: |
+          commit="$(sed -n 's/^export const AAC_COMMIT = "\([0-9a-f]\{40\}\)";$/\1/p' capsule-emit-ts/test/aac-pin.ts)"
+          [ -n "$commit" ] || { echo "::error::no AAC_COMMIT in test/aac-pin.ts"; exit 1; }
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: Check out the pinned AAC commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: action-state-group/agent-action-capsule
-          ref: main
+          ref: ${{ steps.aac.outputs.commit }}
           path: agent-action-capsule
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -142,6 +148,24 @@ jobs:
           npm --prefix capsule-emit-ts run build
           npm --prefix cll-ts ci
           npm --prefix cll-ts run build
+      - name: Adapt peer fixture to async producer APIs
+        run: |
+          python - <<'PYTHON'
+          from pathlib import Path
+
+          # The peer fixture calls emit's former synchronous APIs. Keep its
+          # interop orchestration and adapt only these test-only calls.
+          path = Path("capsule-emit-go/testdata/producer-cll/driver.mjs")
+          source = path.read_text()
+          for name in ("seal", "verifyCapsule", "verifyEnvelope"):
+              old = f"= emit.{name}("
+              new = f"= await emit.{name}("
+              if source.count(old) == 1 and source.count(new) == 0:
+                  source = source.replace(old, new)
+              elif source.count(old) != 0 or source.count(new) != 1:
+                  raise RuntimeError(f"unexpected peer fixture call shape: {name}")
+          path.write_text(source)
+          PYTHON
       - name: Verify producer to CLL interoperability
         run: scripts/check-producer-cll-interop.sh
         working-directory: capsule-emit-go

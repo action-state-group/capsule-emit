@@ -22,7 +22,9 @@ export function decodePayload(
   return decodeCapsuleJson(data);
 }
 
-export function verifyCapsule(data: Uint8Array | string): VerificationResult {
+export async function verifyCapsule(
+  data: Uint8Array | string,
+): Promise<VerificationResult> {
   const payload = decodeCapsuleJson(data);
   // spec_version is deliberately not compared: it selects no algorithm, and
   // -04, -05, or an unrecognized revision is never by itself a rejection.
@@ -33,7 +35,7 @@ export function verifyCapsule(data: Uint8Array | string): VerificationResult {
     throw new TypeError(
       `unsupported Capsule profile: only AAC format 4 with canonicalization_id ${JSON.stringify(CANONICALIZATION_ID)} is supported`,
     );
-  const result = verifyClass1(payload);
+  const result = await verifyClass1(payload);
   if (!result.ok) throw new CapsuleVerificationError(result);
   return result;
 }

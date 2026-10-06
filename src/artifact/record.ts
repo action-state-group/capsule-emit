@@ -5,8 +5,8 @@
 // artifact package.
 import { createHash } from "node:crypto";
 
-import { asJsonObject, decodeStrictJson, jsonDigest } from "../aac/json.js";
-import type { ParsedJson } from "../aac/json.js";
+import { asJsonObject, decodeStrictJson, jsonDigest } from "../aac/index.js";
+import type { ParsedJson } from "../aac/index.js";
 import { verifyEnvelope } from "../envelope.js";
 import { decodePayload, verifyCapsule } from "../verify.js";
 
@@ -138,15 +138,15 @@ function digestAt(capsule: ParsedJson, field: DigestField): string {
  * keys, and verifies every available bound original using emit's JCS. It does
  * not verify CLL inclusion, external references, or business correctness.
  */
-export function verify(
+export async function verify(
   record: Record,
   trusted: readonly Uint8Array[],
-): Map<string, ArtifactVerification> {
+): Promise<Map<string, ArtifactVerification>> {
   if (!ID_PATTERN.test(record.capsuleId))
     throw new ArtifactError("invalid", "capsule id");
   let capsuleId: string | undefined;
   try {
-    capsuleId = verifyCapsule(record.capsule).capsuleId;
+    capsuleId = (await verifyCapsule(record.capsule)).capsuleId;
   } catch (error) {
     throw new ArtifactError(
       "invalid",
@@ -155,7 +155,10 @@ export function verify(
   }
   if (capsuleId !== record.capsuleId)
     throw new ArtifactError("invalid", "capsule verification");
-  const envelope = verifyEnvelope(record.capsuleId, record.producerEnvelope);
+  const envelope = await verifyEnvelope(
+    record.capsuleId,
+    record.producerEnvelope,
+  );
   if (!envelope.ok || envelope.publicKey === undefined)
     throw new ArtifactError(
       "invalid",
@@ -194,7 +197,7 @@ export function verify(
         if (a.binding) {
           let digest: string;
           try {
-            digest = jsonDigest(decodeStrictJson(a.content));
+            digest = await jsonDigest(decodeStrictJson(a.content));
           } catch {
             throw new ArtifactError(
               "digest_mismatch",

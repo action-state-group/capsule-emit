@@ -1,7 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-
 import { describe, expect, it } from "vitest";
-
 import { createEd25519Identity } from "../../src/envelope.js";
 import { digestJSON, seal } from "../../src/build.js";
 import {
@@ -16,20 +14,18 @@ import {
   type Artifact,
   type Record,
 } from "../../src/artifact/index.js";
-
 function utf8(value: string): Uint8Array {
   return new Uint8Array(Buffer.from(value, "utf8"));
 }
-
-function fixture(actionId = "identity-regression"): {
+async function fixture(actionId = "identity-regression"): Promise<{
   record: Record;
   trusted: Uint8Array;
-} {
+}> {
   const { privateKey } = generateKeyPairSync("ed25519");
   const identity = createEd25519Identity(privateKey);
   const payload = { question: "where next?", n: 2 };
   const output = { next_action: "inspect logs" };
-  const sealed = seal({
+  const sealed = await seal({
     capsule: {
       actionId,
       actionType: "fyi",
@@ -67,7 +63,6 @@ function fixture(actionId = "identity-regression"): {
   };
   return { record, trusted: identity.publicKey };
 }
-
 describe("storageChecksum", () => {
   it("reproduces the Go golden value byte-for-byte", () => {
     // Same synthetic record as capsule-emit-go artifact/regression_test.go.
@@ -92,7 +87,6 @@ describe("storageChecksum", () => {
     const golden =
       "ac78a7aa2b9206e55c1932931afa35f3f5bee9ec836724e925c8e5256cf1ddb9";
     expect(storageChecksum(record)).toBe(golden);
-
     // Purge normalization must not move the value.
     const purged: Record = {
       ...record,
@@ -104,7 +98,6 @@ describe("storageChecksum", () => {
     };
     expect(storageChecksum(purged)).toBe(golden);
   });
-
   it("matches Go for an empty inventory (json/v2 encodes it as [])", () => {
     // Authoritative value from capsule-emit-go Record.StorageChecksum() with no
     // artifacts. encoding/json/v2 encodes the empty inventory as `"artifacts":[]`,
@@ -120,11 +113,10 @@ describe("storageChecksum", () => {
     );
   });
 });
-
 describe("verify", () => {
-  it("authenticates a sealed record and reports bound preimages", () => {
-    const { record, trusted } = fixture();
-    const results = verify(prepare(record), [trusted]);
+  it("authenticates a sealed record and reports bound preimages", async () => {
+    const { record, trusted } = await fixture();
+    const results = await verify(prepare(record), [trusted]);
     expect(results.get("payload")).toEqual({
       state: "present",
       bound: true,
@@ -138,19 +130,17 @@ describe("verify", () => {
       verified: false,
     });
   });
-
-  it("rejects an untrusted signer", () => {
-    const { record } = fixture();
+  it("rejects an untrusted signer", async () => {
+    const { record } = await fixture();
     const other = createEd25519Identity(
       generateKeyPairSync("ed25519").privateKey,
     );
-    expect(() => verify(prepare(record), [other.publicKey])).toThrow(
+    await expect(verify(prepare(record), [other.publicKey])).rejects.toThrow(
       expect.objectContaining({ code: "untrusted_signer" }),
     );
   });
-
-  it("detects a tampered bound original", () => {
-    const { record, trusted } = fixture();
+  it("detects a tampered bound original", async () => {
+    const { record, trusted } = await fixture();
     const prepared = prepare(record);
     const tampered: Record = {
       ...prepared,
@@ -160,13 +150,12 @@ describe("verify", () => {
           : a,
       ),
     };
-    expect(() => verify(prepare(tampered), [trusted])).toThrow(
+    await expect(verify(prepare(tampered), [trusted])).rejects.toThrow(
       expect.objectContaining({ code: "digest_mismatch" }),
     );
   });
-
-  it("detects a corrupt unbound attachment", () => {
-    const { record, trusted } = fixture();
+  it("detects a corrupt unbound attachment", async () => {
+    const { record, trusted } = await fixture();
     const prepared = prepare(record);
     const corrupt: Record = {
       ...prepared,
@@ -176,17 +165,16 @@ describe("verify", () => {
           : a,
       ),
     };
-    expect(() => verify(corrupt, [trusted])).toThrow(
+    await expect(verify(corrupt, [trusted])).rejects.toThrow(
       expect.objectContaining({ code: "corrupt" }),
     );
   });
-
-  it("verifies effect request/response bindings", () => {
+  it("verifies effect request/response bindings", async () => {
     const { privateKey } = generateKeyPairSync("ed25519");
     const identity = createEd25519Identity(privateKey);
     const request = { operation: "synthetic" };
     const response = { ok: true };
-    const sealed = seal({
+    const sealed = await seal({
       capsule: {
         actionId: "effect-bindings",
         actionType: "decide",
@@ -204,8 +192,8 @@ describe("verify", () => {
           status: "confirmed",
           irreversibilityClass: "one-way-consequential",
           effectAttestation: "gate-executed",
-          requestDigest: digestJSON(request),
-          responseDigest: digestJSON(response),
+          requestDigest: await digestJSON(request),
+          responseDigest: await digestJSON(response),
         },
       },
       payload: { synthetic: true },
@@ -231,22 +219,20 @@ describe("verify", () => {
       producerEnvelope: sealed.envelope,
       artifacts,
     };
-    const checks = verify(prepare(record), [identity.publicKey]);
+    const checks = await verify(prepare(record), [identity.publicKey]);
     expect(checks.get("request")?.verified).toBe(true);
     expect(checks.get("response")?.verified).toBe(true);
   });
-
-  it("rejects an input record that declares a purged artifact", () => {
-    const { record } = fixture();
+  it("rejects an input record that declares a purged artifact", async () => {
+    const { record } = await fixture();
     record.artifacts[0]!.state = "purged";
     expect(() => prepare(record)).toThrow(
       expect.objectContaining({ code: "purged" }),
     );
   });
-
-  it("exposes ArtifactError as the thrown type", () => {
-    expect(() => verify({ ...fixture().record, capsuleId: "x" }, [])).toThrow(
-      ArtifactError,
-    );
+  it("exposes ArtifactError as the thrown type", async () => {
+    await expect(
+      verify({ ...(await fixture()).record, capsuleId: "x" }, []),
+    ).rejects.toThrow(ArtifactError);
   });
 });

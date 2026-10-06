@@ -11,4 +11,4 @@
  * `npm test`, fix what fails, and list in the pull request the AAC changes the
  * bump takes in.
  */
-export const AAC_COMMIT = "b3e7620edd015f0abca3fe040e1803eebc7a21a0";
+export const AAC_COMMIT = "36d6770cf1856ed9043d98782275a14ce221fdde";

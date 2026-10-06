@@ -1,5 +1,4 @@
 import { generateKeyPairSync } from "node:crypto";
-
 import { seal } from "../../src/build.js";
 import { createEd25519Identity } from "../../src/envelope.js";
 import {
@@ -7,22 +6,20 @@ import {
   PAYLOAD_DIGEST,
   type Record,
 } from "../../src/artifact/index.js";
-
 export function utf8(value: string): Uint8Array {
   return new Uint8Array(Buffer.from(value, "utf8"));
 }
-
 /** A locally signed record with a bound payload, bound output, and an attachment. */
-export function makeRecord(actionId = "store-fixture"): {
+export async function makeRecord(actionId = "store-fixture"): Promise<{
   record: Record;
   trusted: Uint8Array;
-} {
+}> {
   const identity = createEd25519Identity(
     generateKeyPairSync("ed25519").privateKey,
   );
   const payload = { question: "where next?", n: 2 };
   const output = { next_action: "inspect logs" };
-  const sealed = seal({
+  const sealed = await seal({
     capsule: {
       actionId,
       actionType: "fyi",

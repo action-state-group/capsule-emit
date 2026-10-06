@@ -34,7 +34,7 @@ jobs:
       - name: Read the pinned AAC commit
         id: aac
         run: |
-          commit="$(sed -n 's/^export const AAC_COMMIT = "\([0-9a-f]\{40\}\)";$/\1/p' capsule-emit-ts/test/aac-pin.ts)"
+          commit="$(sed -n 's/^export const AAC_COMMIT = "\([0-9a-f]\{40\}\)";$/\1/p' test/aac-pin.ts)"
           [ -n "$commit" ] || { echo "::error::no AAC_COMMIT in test/aac-pin.ts"; exit 1; }
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
