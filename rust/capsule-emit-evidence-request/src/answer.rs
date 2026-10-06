@@ -395,6 +395,40 @@ pub enum VerifyError {
     /// records or checkpoints; refused before anything is parsed.
     #[error("the answer is larger than MAX_RECORDS")]
     TooLarge,
+    /// A checkpoint carries a witness receipt that is not a receipt this
+    /// crate reads (§4.1: receipts are verified on their own terms).
+    #[error("a witness receipt on a checkpoint is malformed")]
+    ReceiptMalformed,
+    /// A checkpoint carries a witness receipt that is not for that
+    /// checkpoint: its entry hash is another checkpoint's, or, under the
+    /// requester's key for that witness, its proof and signature do not cover
+    /// this checkpoint's entry (§8.1).
+    #[error("a witness receipt does not cover the checkpoint it is carried on")]
+    ReceiptBinding,
+}
+
+/// What became of one witness receipt carried on a checkpoint.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReceiptCheck {
+    /// The digest of the checkpoint the receipt is carried on.
+    pub checkpoint_digest: String,
+    /// The witness (transparency service) that issued it.
+    pub ts_url: String,
+    pub status: ReceiptStatus,
+}
+
+/// A carried receipt's standing after verification. Only `Verified` counts
+/// as independent witnessing; how many are required is the requester's
+/// policy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReceiptStatus {
+    /// It proves this checkpoint's entry under the witness's key.
+    Verified,
+    /// Well formed and bound to this checkpoint by its entry hash, but the
+    /// requester gave no key for this witness, so it was not authenticated.
+    NoKey,
+    /// A stub stamp: never registered with any service. Never verified.
+    Stub,
 }
 
 /// A verified answer.
@@ -409,13 +443,22 @@ pub struct VerifiedAnswer {
     /// For `checkpoints` and `history_card/1`: the checkpoints, oldest first,
     /// each signed by the responder and chaining to the anchor.
     pub checkpoints: Vec<CheckpointRecord>,
+    /// Every witness receipt carried on the anchor and on those checkpoints.
+    /// A malformed or unbound receipt fails verification; the rest are listed
+    /// here with what could be established for each.
+    pub receipts: Vec<ReceiptCheck>,
 }
 
 /// Verify an answer offline: `envelope`, `artifact` and `material` as
 /// received, against the `request` the requester sent (and its digest as
 /// sent) and the responder's key. `record_digest` computes a record's digest
 /// from its bytes, as the evidence format defines it (`None`: not a record
-/// of this format).
+/// of this format). `witness_key` is the requester's trust policy for witness
+/// receipts: the key it holds for a witness (by its `ts_url`), if any.
+// Each argument is one independent input the requester supplies (what it
+// received, what it sent, whom it trusts); bundling them would only rename
+// them.
+#[allow(clippy::too_many_arguments)]
 pub fn verify(
     envelope: &Value,
     artifact: &[u8],
@@ -424,6 +467,7 @@ pub fn verify(
     request_digest: &str,
     responder_key: &VerifyingKey,
     record_digest: &dyn Fn(&[u8]) -> Option<String>,
+    witness_key: &dyn Fn(&str) -> Option<VerifyingKey>,
 ) -> Result<VerifiedAnswer, VerifyError> {
     // 1. The envelope: responder, request, anchor, artifact digest.
     let env = envelope.as_object().ok_or(VerifyError::EnvelopeMalformed)?;
@@ -533,10 +577,12 @@ pub fn verify(
             return Err(VerifyError::TooLarge);
         }
         let checkpoints = verify_history(history, &anchor, responder_key)?;
+        let receipts = check_receipts(&anchor, &checkpoints, witness_key)?;
         return Ok(VerifiedAnswer {
             anchor,
             records: Vec::new(),
             checkpoints,
+            receipts,
         });
     }
     if let Subject::Checkpoints = request.subject {
@@ -548,10 +594,12 @@ pub fn verify(
             return Err(VerifyError::TooLarge);
         }
         let checkpoints = verify_checkpoint_list(list, &anchor, responder_key)?;
+        let receipts = check_receipts(&anchor, &checkpoints, witness_key)?;
         return Ok(VerifiedAnswer {
             anchor,
             records: Vec::new(),
             checkpoints,
+            receipts,
         });
     }
 
@@ -631,11 +679,73 @@ pub fn verify(
             }
         }
     }
+    let receipts = check_receipts(&anchor, &[], witness_key)?;
     Ok(VerifiedAnswer {
         anchor,
         records,
         checkpoints: Vec::new(),
+        receipts,
     })
+}
+
+/// Check every witness receipt carried on `anchor` and `checkpoints` (the
+/// anchor is usually also the last of them; each checkpoint is checked once).
+///
+/// A receipt must be bound to the checkpoint it is carried on: its entry hash
+/// is `SHA-256(checkpoint digest bytes)`, the leaf it must prove. It must be a
+/// receipt this crate reads. When the requester holds a key for its witness,
+/// its proof and signature must cover that entry under the key. Stubs were
+/// never registered and are never verified.
+fn check_receipts(
+    anchor: &CheckpointRecord,
+    checkpoints: &[CheckpointRecord],
+    witness_key: &dyn Fn(&str) -> Option<VerifyingKey>,
+) -> Result<Vec<ReceiptCheck>, VerifyError> {
+    use base64::Engine as _;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for cp in checkpoints.iter().chain(std::iter::once(anchor)) {
+        let digest = cp.digest();
+        if !seen.insert(digest.clone()) {
+            continue;
+        }
+        let digest_bytes = hex::decode(&digest).map_err(|_| VerifyError::CheckpointChain)?;
+        let entry: [u8; 32] = Sha256::digest(&digest_bytes).into();
+        for w in &cp.witnesses {
+            let check = |status| ReceiptCheck {
+                checkpoint_digest: digest.clone(),
+                ts_url: w.ts_url.clone(),
+                status,
+            };
+            if w.is_stub {
+                out.push(check(ReceiptStatus::Stub));
+                continue;
+            }
+            if w.entry_hash != hex::encode(entry) {
+                return Err(VerifyError::ReceiptBinding);
+            }
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(&w.receipt_b64)
+                .map_err(|_| VerifyError::ReceiptMalformed)?;
+            match witness_key(&w.ts_url) {
+                Some(key) => match crate::receipt::verify(&bytes, &entry, &key) {
+                    Ok(()) => out.push(check(ReceiptStatus::Verified)),
+                    Err(crate::receipt::ReceiptError::Malformed(_)) => {
+                        return Err(VerifyError::ReceiptMalformed)
+                    }
+                    Err(crate::receipt::ReceiptError::NotForThisLeaf) => {
+                        return Err(VerifyError::ReceiptBinding)
+                    }
+                },
+                None => {
+                    crate::receipt::check_form(&bytes)
+                        .map_err(|_| VerifyError::ReceiptMalformed)?;
+                    out.push(check(ReceiptStatus::NoKey));
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn verify_checkpoint_list(

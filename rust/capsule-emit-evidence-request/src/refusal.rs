@@ -57,20 +57,27 @@ impl Refusal {
         })
     }
 
-    /// The refusal as a CBOR map (the CBOR binding).
+    /// The refusal as a CBOR map (the CBOR binding), deterministically
+    /// encoded (RFC 8949 §4.2.1, as §10 requires): the map's keys in the
+    /// bytewise order of their encodings, so `sig`, `key_id`, `reason`,
+    /// `issued_at`, `request_digest`.
     pub fn to_cbor(&self) -> Vec<u8> {
         use ciborium::Value as C;
         let text = |s: &str| C::Text(s.to_string());
-        let map = C::Map(vec![
+        let encoded = |v: &C| {
+            let mut out = Vec::new();
+            ciborium::into_writer(v, &mut out).expect("writing to a Vec never fails");
+            out
+        };
+        let mut entries = vec![
             (text("issued_at"), text(&self.issued_at)),
             (text("reason"), text(self.reason.token())),
             (text("request_digest"), text(&self.request_digest)),
             (text("key_id"), text(&self.key_id)),
             (text("sig"), text(&self.sig)),
-        ]);
-        let mut out = Vec::new();
-        ciborium::into_writer(&map, &mut out).expect("writing to a Vec never fails");
-        out
+        ];
+        entries.sort_by_cached_key(|(k, _)| encoded(k));
+        encoded(&C::Map(entries))
     }
 }
 
@@ -297,6 +304,44 @@ mod tests {
 
     fn key() -> SigningKey {
         SigningKey::from_bytes(&[5u8; 32])
+    }
+
+    /// RFC 8949 §3.1 text-string head plus the bytes (lengths under 256 are
+    /// all a refusal's members need).
+    fn cbor_text(s: &str) -> Vec<u8> {
+        let mut out = match s.len() {
+            n if n < 24 => vec![0x60 | n as u8],
+            n if n < 256 => vec![0x78, n as u8],
+            _ => unreachable!(),
+        };
+        out.extend_from_slice(s.as_bytes());
+        out
+    }
+
+    #[test]
+    fn the_cbor_binding_is_deterministic_on_the_wire() {
+        // RFC 8949 §4.2.1: map keys in the bytewise order of their encodings.
+        // Text keys sort by encoded length first, then by bytes:
+        // sig (3), key_id and reason (6), issued_at (9), request_digest (14).
+        let r = sign(
+            &"a".repeat(64),
+            Reason::NoSuchSubject,
+            "2026-09-28T00:00:00Z",
+            &key(),
+        )
+        .unwrap();
+        let mut expected = vec![0xa5];
+        for (k, v) in [
+            ("sig", r.sig.as_str()),
+            ("key_id", r.key_id.as_str()),
+            ("reason", r.reason.token()),
+            ("issued_at", r.issued_at.as_str()),
+            ("request_digest", r.request_digest.as_str()),
+        ] {
+            expected.extend(cbor_text(k));
+            expected.extend(cbor_text(v));
+        }
+        assert_eq!(hex::encode(r.to_cbor()), hex::encode(expected));
     }
 
     #[test]

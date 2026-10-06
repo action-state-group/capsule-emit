@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.0.3
+
+- **`answer::verify` checks the witness receipts an answer carries** (§4.1,
+  §8.1). Every receipt on the anchor and on a `checkpoints` or
+  `history_card/1` list must be bound to the checkpoint it is carried on (its
+  entry hash is `SHA-256(checkpoint digest)`) and must be a COSE receipt with
+  an RFC 9162 inclusion proof; otherwise `VerifyError::ReceiptMalformed` or
+  `VerifyError::ReceiptBinding`. `verify` takes the requester's witness trust
+  policy, `witness_key(ts_url) -> Option<VerifyingKey>`: under a key, the
+  receipt's proof and signature must cover that checkpoint's entry. Each
+  receipt is reported in `VerifiedAnswer::receipts` as `Verified`, `NoKey`
+  (bound and well formed, not authenticated) or `Stub`; only `Verified`
+  counts as independent witnessing, and how many are required stays the
+  requester's policy. Breaking: `verify` has a new last argument.
+- **The refusal's CBOR binding is deterministic** (RFC 8949 §4.2.1, as §10
+  requires): map keys in the bytewise order of their encodings (`sig`,
+  `key_id`, `reason`, `issued_at`, `request_digest`), pinned by an exact
+  wire-byte test.
+- New dependencies: `coset` 0.4 and `base64` 0.22 (both already in the tree
+  through `checkpointed-local-log`). `receipt` is the Ed25519 subset of the
+  RFC 9162 receipt verifier in action-state-group/scitt-cose.
+
 ## 0.0.2
 
 - `answer`: build the artifact response over a checkpointed local log
