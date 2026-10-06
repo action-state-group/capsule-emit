@@ -1326,7 +1326,8 @@ fn a_receipt_for_its_own_checkpoint_is_verified_only_under_the_witness_key() {
 
 /// Append unrelated records and one more checkpoint to `log`.
 fn grow(log: &mut TestLog, checkpoint_key: &SigningKey) {
-    for i in 10..13u64 {
+    let next = log.records.len() as u64;
+    for i in next..next + 3 {
         let body = format!("unrelated-{i}").into_bytes();
         let digest = sha(&body);
         let raw: [u8; 32] = hex::decode(&digest).unwrap().try_into().unwrap();
@@ -1361,13 +1362,7 @@ fn grow(log: &mut TestLog, checkpoint_key: &SigningKey) {
     log.checkpoints.push(cp);
 }
 
-/// Expected to fail until the exchange-half pin gets a stable binding: today
-/// an exchange-half pinned answer is anchored to the latest checkpoint, so
-/// unrelated growth changes its bytes (§5 fixed-pin invariance). Whether to
-/// anchor it stably or to refuse the form is open with the draft; see
-/// capsule-emit#285, item 2.
 #[test]
-#[ignore = "fails until the exchange-half pin has a stable binding (capsule-emit#285, item 2)"]
 fn unrelated_log_growth_does_not_change_a_fixed_exchange_half_artifact() {
     // subject={"exchange":H}, coverage={"expected_pin":H}: build and verify,
     // append unrelated records and another checkpoint, answer the same
@@ -1417,5 +1412,122 @@ fn unrelated_log_growth_does_not_change_a_fixed_exchange_half_artifact() {
     assert_eq!(
         first, second,
         "unrelated growth changed a fixed-pin artifact"
+    );
+}
+
+/// Answer an exchange half pinned by itself; return the artifact, the anchor
+/// digest and the verified records.
+fn answer_exchange_half(log: &TestLog) -> (Vec<u8>, String, Vec<Record>) {
+    let (b, q) = request(
+        json!({"exchange": half()}),
+        json!({"expected_pin": half()}),
+        json!({}),
+    );
+    let digest = request_digest(&b);
+    let Resolution::Artifact(anchor) = resolve(&q, log) else {
+        panic!("expected an artifact")
+    };
+    let a = build(
+        &q,
+        &digest,
+        &anchor,
+        log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
+    let v = answer::verify(
+        &a.envelope,
+        &a.artifact,
+        &a.material,
+        &q,
+        &digest,
+        &responder_key().verifying_key(),
+        &record_digest,
+        &no_witness_key,
+    )
+    .unwrap();
+    (a.artifact, v.anchor.digest(), v.records)
+}
+
+#[test]
+fn a_new_citing_record_advances_the_exchange_half_anchor() {
+    // Records 2 and 8 cite the half; the earliest checkpoint covering record
+    // 8 is checkpoint 2. A new citing record, once a checkpoint covers it,
+    // legitimately moves the answer to that checkpoint, and the artifact
+    // lists the records it covers.
+    let mut log = test_log(&responder_key());
+    let (_, anchor_before, records_before) = answer_exchange_half(&log);
+    assert_eq!(anchor_before, log.checkpoints[2].digest());
+    assert_eq!(
+        records_before
+            .iter()
+            .map(|r| r.leaf_index)
+            .collect::<Vec<_>>(),
+        vec![2, 8]
+    );
+    // A new citing record not yet in any checkpoint changes nothing.
+    let body = b"citing-10".to_vec();
+    let digest = sha(&body);
+    let raw: [u8; 32] = hex::decode(&digest).unwrap().try_into().unwrap();
+    add_leaf(&mut log.nodes, leaf_hash(&raw)).unwrap();
+    log.records.push(Record {
+        leaf_index: 10,
+        digest: digest.clone(),
+        body,
+    });
+    log.citations.entry(half()).or_default().push(digest);
+    let (_, anchor_pending, _) = answer_exchange_half(&log);
+    assert_eq!(anchor_pending, anchor_before);
+    // Once a checkpoint covers it, the anchor advances to that checkpoint.
+    grow(&mut log, &responder_key());
+    let (_, anchor_after, records_after) = answer_exchange_half(&log);
+    assert_eq!(anchor_after, log.checkpoints.last().unwrap().digest());
+    assert_eq!(
+        records_after
+            .iter()
+            .map(|r| r.leaf_index)
+            .collect::<Vec<_>>(),
+        vec![2, 8, 10]
+    );
+}
+
+#[test]
+fn an_exchange_half_answer_under_a_later_checkpoint_is_refused() {
+    // A responder that answers under the latest checkpoint instead of the
+    // earliest covering one: the anchor's own prev_size already covers the
+    // last served record, so verify refuses it.
+    let mut log = test_log(&responder_key());
+    grow(&mut log, &responder_key());
+    let (b, q) = request(
+        json!({"exchange": half()}),
+        json!({"expected_pin": half()}),
+        json!({}),
+    );
+    let digest = request_digest(&b);
+    let latest = log.anchors().into_iter().last().unwrap();
+    let a = build(
+        &q,
+        &digest,
+        &ResolvedAnchor::Anchor(latest),
+        &log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
+    assert_eq!(
+        answer::verify(
+            &a.envelope,
+            &a.artifact,
+            &a.material,
+            &q,
+            &digest,
+            &responder_key().verifying_key(),
+            &record_digest,
+            &no_witness_key,
+        ),
+        Err(VerifyError::CoverageUnmet)
     );
 }

@@ -14,6 +14,15 @@
   (bound and well formed, not authenticated) or `Stub`; only `Verified`
   counts as independent witnessing, and how many are required stays the
   requester's policy. Breaking: `verify` has a new last argument.
+- **A fixed exchange-half pin has a stable anchor** (§5 fixed-pin
+  invariance). An `exchange` subject pinned by the requester's own half is
+  answered under the earliest checkpoint covering every checkpointed record
+  that cites the half, no longer the latest, so growth that adds no citing
+  record leaves the artifact unchanged. A new citing record, once a
+  checkpoint covers it, advances the anchor, and the artifact lists the
+  records it covers. `verify` enforces it: the anchor's own signed
+  `prev_size` must not already cover the last served record
+  (`VerifyError::CoverageUnmet`).
 - **The refusal's CBOR binding is deterministic** (RFC 8949 §4.2.1, as §10
   requires): map keys in the bytewise order of their encodings (`sig`,
   `key_id`, `reason`, `issued_at`, `request_digest`), pinned by an exact

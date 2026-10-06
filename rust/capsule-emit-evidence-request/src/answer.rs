@@ -137,7 +137,9 @@ pub enum BuildError {
 /// Build the answer to `request` (digest `request_digest`, as received)
 /// under `anchor`, as resolved by [`crate::resolve::resolve`]. For an
 /// `exchange` subject pinned by the requester's own half, the records are
-/// proven under the stream's latest checkpoint.
+/// proven under the earliest checkpoint that covers every checkpointed record
+/// citing the half ([`exchange_anchor`]), never simply the latest, so growth
+/// that adds no citing record does not change the artifact (§5).
 ///
 /// `limit` caps the records (or checkpoints) the answer carries; it is
 /// clamped to [`MAX_RECORDS`], the most a requester accepts. Over the limit,
@@ -159,7 +161,7 @@ pub fn build<L: EvidenceLog>(
     let checkpoints = log.checkpoints();
     let anchor_index = match anchor {
         ResolvedAnchor::Anchor(a) => checkpoints.iter().position(|cp| cp.digest() == a.digest),
-        ResolvedAnchor::ExchangeHalf(_) => checkpoints.len().checked_sub(1),
+        ResolvedAnchor::ExchangeHalf(half) => exchange_anchor(log, &checkpoints, half),
     }
     .ok_or(BuildError::AnchorNotFound)?;
     let anchor_cp = &checkpoints[anchor_index];
@@ -285,6 +287,30 @@ pub fn build<L: EvidenceLog>(
         material: material.into_bytes(),
         envelope: Value::Object(envelope),
     })
+}
+
+/// The anchor for an exchange subject pinned by the requester's own half: the
+/// earliest checkpoint covering the last record that cites `half` among those
+/// any checkpoint covers. A citing record not yet in any checkpoint cannot be
+/// proven, so it does not move the anchor; once a checkpoint covers it, the
+/// anchor advances to that checkpoint and the artifact lists it. `None` when
+/// no checkpointed record cites the half.
+fn exchange_anchor<L: EvidenceLog>(
+    log: &L,
+    checkpoints: &[CheckpointRecord],
+    half: &str,
+) -> Option<usize> {
+    let latest = leaf_count(checkpoints.last()?.mmr_size).ok()?;
+    let last_citing = log
+        .citing(half)
+        .iter()
+        .filter_map(|d| log.record_by_digest(d))
+        .map(|r| r.leaf_index)
+        .filter(|&i| i < latest)
+        .max()?;
+    checkpoints
+        .iter()
+        .position(|cp| leaf_count(cp.mmr_size).is_ok_and(|n| n > last_citing))
 }
 
 fn range_records<L: EvidenceLog>(
@@ -677,6 +703,18 @@ pub fn verify(
             if !verify_inclusion(&root, anchor.mmr_size, r.leaf_index, &digest, &proof) {
                 return Err(VerifyError::ProofInvalid);
             }
+        }
+    }
+    // An exchange half pinned by itself is answered under the earliest
+    // checkpoint covering the records served: the anchor's predecessor (its
+    // own signed prev_size) must not already cover the last of them.
+    if matches!((&request.subject, &request.coverage),
+        (Subject::Exchange(half), Coverage::ExpectedPin(pin)) if half == pin)
+    {
+        let last = records.iter().map(|r| r.leaf_index).max();
+        let before = leaf_count(anchor.prev_size).map_err(|_| VerifyError::AnchorInvalid)?;
+        if last.is_none_or(|last| last < before) {
+            return Err(VerifyError::CoverageUnmet);
         }
     }
     let receipts = check_receipts(&anchor, &[], witness_key)?;
