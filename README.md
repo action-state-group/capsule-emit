@@ -224,6 +224,11 @@ invalid.
 Tests replay the complete upstream AAC corpus, all Producer Envelope vectors,
 and Go/Python authored, received, WHO, DID, and composition fixtures.
 
+The AAC corpus is pinned to one agent-action-capsule commit, `AAC_COMMIT` in
+`test/aac-pin.ts`. CI checks out that commit, and the tests refuse an AAC
+checkout (`AAC_ROOT`, default `../agent-action-capsule`) at any other. To take
+in newer vectors, bump `AAC_COMMIT` in a pull request that makes them pass.
+
 ## Cross-record references
 
 `Input.references` accepts `{ type, digestAlg, digest, citationPurpose?,

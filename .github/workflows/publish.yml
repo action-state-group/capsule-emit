@@ -31,11 +31,18 @@ jobs:
           echo "npm releases must run from main." >&2
           exit 1
 
-      - name: Check out AAC reference main
+      - name: Read the pinned AAC commit
+        id: aac
+        run: |
+          commit="$(sed -n 's/^export const AAC_COMMIT = "\([0-9a-f]\{40\}\)";$/\1/p' capsule-emit-ts/test/aac-pin.ts)"
+          [ -n "$commit" ] || { echo "::error::no AAC_COMMIT in test/aac-pin.ts"; exit 1; }
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the pinned AAC commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: action-state-group/agent-action-capsule
-          ref: main
+          ref: ${{ steps.aac.outputs.commit }}
           path: agent-action-capsule
 
       - name: Check out capsule-emit-go main
