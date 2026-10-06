@@ -54,7 +54,7 @@ sealed and logged when it says.* It does **not** make the recorded claim *true*,
 by itself it does **not** rule out the log showing different histories to different
 parties. A capsule that says "the payment settled" is still your runtime's word that
 it settled. The honest ladder is `self-attested` → `witnessed` →
-`self-countersigned` / `unresolved-signer` → `countersigned`:
+`countersigned`:
 
 - **Self-attested (a record you keep):** tamper-evident, but trust-the-keeper.
   A bare per-capsule anchor receipt (digest in a shared log, existed-at-T,
@@ -77,15 +77,19 @@ it settled. The honest ladder is `self-attested` → `witnessed` →
   collusion. A witness operated by *you*, or by a party closely related to
   you, buys less than one with no relationship to you at all
   (self < peer < independent).
-- **Self-countersigned / unresolved-signer / countersigned:** a further rung
-  on this SAME ladder, not a separate axis — a named party (e.g. the bank,
-  for a settlement) recomputes checks over the record and signs. Independence
-  is recomputed from the signer's key, never taken as a trusted label: a
-  signer countersigning its own material always resolves as
-  **self-countersigned**, no matter what it claims; a countersignature from a
-  genuinely different key the verifier can't yet resolve to a known signer
-  reads **unresolved-signer**; only a distinct, resolved signer earns
-  **countersigned**. Compounds with witnessing, never substitutes for it.
+- **Countersigned:** a further rung on this SAME ladder, not a separate
+  axis — a named party (e.g. the bank, for a settlement) recomputes checks
+  over the record and signs. Independence is recomputed from the signer's
+  key, never taken as a trusted label, and only a distinct signer the
+  verifier resolves earns **countersigned**. Two findings are annotations,
+  not rungs, and add nothing: a signer countersigning its own material
+  resolves as **self-countersigned**, no matter what it claims, and a
+  countersignature from a different key the verifier can't resolve to a
+  known signer reads **unresolved-signer**. Either leaves the grade where
+  witnessing put it (a self-countersigned record with no witness receipt is
+  self-attested); agent-action-capsule PR #187 (pending) proposes that
+  mapping for an Evidence Result. Compounds with witnessing, never
+  substitutes for it.
   `capsule-emit` does not itself resolve countersignatures today — a
   confirmation capsule that [chains](concepts.md) to the action
   (`seal(..., confirms=earlier_id)`) is a different, producer-side mechanism,

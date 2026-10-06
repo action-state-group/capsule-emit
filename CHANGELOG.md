@@ -6,14 +6,16 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
-### Fixed — grade-ladder vocabulary: the full ladder, one axis
+### Fixed — grade-ladder vocabulary: one axis, and the countersignature annotations
 
-- `TRANSLATION.md`'s ladder table and `docs/why-anchoring.md`'s "honest ladder" section named
-  only three rungs (`self-attested` / `witnessed` / `countersigned`); both now name the full
-  ladder — `self-attested` → `witnessed` → `self-countersigned` / `unresolved-signer` →
-  `countersigned` — and state plainly that independence is recomputed from the signer's key,
-  never taken as a self-reported label: a signer countersigning its own material always resolves
-  as `self-countersigned`, regardless of what it claims. No code or digest behavior changes.
+- `TRANSLATION.md`'s ladder table and `docs/why-anchoring.md`'s "honest ladder" section now
+  state the ladder as `self-attested` → `witnessed` → `countersigned`, on one axis, and name the
+  two countersignature annotations, `self-countersigned` and `unresolved-signer`: they are not
+  rungs and leave the grade where witnessing put it (a self-countersigned record with no witness
+  receipt is self-attested). Independence is recomputed from the signer's key, never taken as a
+  self-reported label: a signer countersigning its own material always resolves as
+  `self-countersigned`, regardless of what it claims. The mapping onto an Evidence Result's grade
+  is proposed in agent-action-capsule PR #187 (pending). No code or digest behavior changes.
 
 ### Changed — BREAKING: capsule-emit writes only the five registered relations
 

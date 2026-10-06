@@ -43,13 +43,27 @@ The four slots are `who` / `can` / `did` / `audit` (identity / authority-or-mand
 | unsigned entry | "logged, not signed" | log-integrity only: order, completeness, tamper-evidence of the sequence — no authorship | unsigned CLL entry |
 | **self-attested** | "signed by me" | record integrity by the producer's key alone; no third-party confirmation | `attestation_mode=self_attested` |
 | **witnessed** | "an independent log confirmed it existed" | existence + order + completeness checkable **without trusting the producer** | witnessed checkpoint (≥1 valid stamp) |
-| **self-countersigned** | "I countersigned my own claim" | a countersignature exists, but its signer key is the producer's own — well-formed, never refused, but not independent | the verifier's finding, not a capsule-emit field: the countersignature's signer key equals a producer key |
-| **unresolved-signer** | "someone else signed, can't tell who" | the countersignature's signer key is not the producer's, but the verifier has no directory entry to resolve who that signer is | the verifier's finding, not a capsule-emit field: the signer is in no directory of countersigners the verifier holds |
 | **countersigned** | "someone else vouched" | a non-producer's signed claim citing the record, from a signer the verifier can resolve: counterparty or disinterested operator | counterparty / operator countersignature |
 
+**Countersignature annotations are not rungs.** A countersignature the
+verifier cannot count as independent leaves the grade where witnessing put
+it, and is listed beside it:
+
+| Annotation | **Dev** | **Auditor** | **Grade** |
+|---|---|---|---|
+| **self-countersigned** | "I countersigned my own claim" | a countersignature exists, but its signer key is the producer's own: well-formed, never refused, not independent | unchanged: self-attested, or witnessed if there is a receipt |
+| **unresolved-signer** | "someone else signed, can't tell who" | the countersignature's signer key is not the producer's, but the verifier has no directory entry to resolve who that signer is | unchanged: self-attested, or witnessed if there is a receipt |
+
+A self-countersigned record with no witness receipt is **self-attested**.
+Only a countersignature from a distinct signer the verifier resolves earns
+**countersigned**, and any self-countersignatures are still listed beside
+it. These findings are the verifier's (they are not capsule-emit fields),
+and the mapping onto an Evidence Result's `grade` is proposed in
+agent-action-capsule PR #187 (pending).
+
 **Independence is recomputed from keys, never taken as a trusted label.** A
-countersignature is graded by comparing the signer's key against the
-record's own producer key(s) — a signer that signs its own material always
+countersignature is judged by comparing the signer's key against the
+record's own producer key(s): a signer that signs its own material always
 resolves as **self-countersigned**, no matter what the countersignature
 itself claims about who signed it. Witnessing and countersigning are
 separate mechanisms on the same ladder: **witnessing** is checkpoint
