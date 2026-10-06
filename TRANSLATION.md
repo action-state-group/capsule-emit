@@ -43,8 +43,8 @@ The four slots are `who` / `can` / `did` / `audit` (identity / authority-or-mand
 | unsigned entry | "logged, not signed" | log-integrity only: order, completeness, tamper-evidence of the sequence — no authorship | unsigned CLL entry |
 | **self-attested** | "signed by me" | record integrity by the producer's key alone; no third-party confirmation | `attestation_mode=self_attested` |
 | **witnessed** | "an independent log confirmed it existed" | existence + order + completeness checkable **without trusting the producer** | witnessed checkpoint (≥1 valid stamp) |
-| **self-countersigned** | "I countersigned my own claim" | a countersignature exists, but its signer key is the producer's own — well-formed, never refused, but not independent | `independent: false` |
-| **unresolved-signer** | "someone else signed, can't tell who" | the countersignature's signer key is not the producer's, but the verifier has no directory entry to resolve who that signer is | signer absent from the countersigner directory |
+| **self-countersigned** | "I countersigned my own claim" | a countersignature exists, but its signer key is the producer's own — well-formed, never refused, but not independent | the verifier's finding, not a capsule-emit field: the countersignature's signer key equals a producer key |
+| **unresolved-signer** | "someone else signed, can't tell who" | the countersignature's signer key is not the producer's, but the verifier has no directory entry to resolve who that signer is | the verifier's finding, not a capsule-emit field: the signer is in no directory of countersigners the verifier holds |
 | **countersigned** | "someone else vouched" | a non-producer's signed claim citing the record, from a signer the verifier can resolve: counterparty or disinterested operator | counterparty / operator countersignature |
 
 **Independence is recomputed from keys, never taken as a trusted label.** A
@@ -77,7 +77,7 @@ either — `self-attest` stays producer-side vocabulary.
 
 ## Three roles (not three products)
 - **Record registration (legacy).** Attests one digest existed by time T — existence only, no order/completeness. The pre-CLL mechanism, strictly weaker than witnessing; opt-in legacy in 0.5.0, never a default.
-- **Witnessing (default).** Attests your entire history — order, completeness, non-equivocation — as of a ~200-byte checkpoint; every record inherits via its inclusion proof. The default in 0.5.0. The default witness endpoint accepts **only** checkpoints, which makes the privacy claim *structural*: nothing payload-adjacent leaves by default, auditable from the endpoint's surface.
+- **Witnessing.** A witness confirms your entire history — order, completeness, non-equivocation — as of a ~200-byte checkpoint; every record inherits via its inclusion proof. There is no default witness: checkpoints leave only for a witness the caller names (`witness_url=` / `CAPSULE_WITNESS_URL`), and with none configured nothing leaves the process. A witness endpoint accepts **only** checkpoints, which makes the privacy claim *structural*: nothing payload-adjacent leaves, auditable from the endpoint's surface.
 - **Countersigning.** A named party vouches about the record itself. It is a rung in the ladder and the spec; it is **not offered as a service today**. It compounds with witnessing, never substitutes for it.
 
 *"anchor" is retired as service vocabulary (it collides with "trust anchor"). The legacy hostname stays only because existing Receipts reference it; docs call that surface "record registration (legacy)."*

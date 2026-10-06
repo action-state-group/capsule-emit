@@ -6,6 +6,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed — grade-ladder vocabulary: the full ladder, one axis
+
+- `TRANSLATION.md`'s ladder table and `docs/why-anchoring.md`'s "honest ladder" section named
+  only three rungs (`self-attested` / `witnessed` / `countersigned`); both now name the full
+  ladder — `self-attested` → `witnessed` → `self-countersigned` / `unresolved-signer` →
+  `countersigned` — and state plainly that independence is recomputed from the signer's key,
+  never taken as a self-reported label: a signer countersigning its own material always resolves
+  as `self-countersigned`, regardless of what it claims. No code or digest behavior changes.
+
 ### Changed — BREAKING: capsule-emit writes only the five registered relations
 
 `chain.relation` is now one of `follows`, `confirms`, `supersedes`, `epoch_opens`, `duplicates`
@@ -688,15 +697,6 @@ break a demo; an empty one reads as a broken artifact, which is why only that on
   a result; this is a wire-format fix, not a new digest scheme — old format-2 ledger records
   remain verify-only and unaffected. No test fixtures existed on disk for this path; the builder
   itself was the "fixture."
-
-### Fixed — grade-ladder vocabulary: the full ladder, one axis
-
-- `TRANSLATION.md`'s ladder table and `docs/why-anchoring.md`'s "honest ladder" section named
-  only three rungs (`self-attested` / `witnessed` / `countersigned`); both now name the full
-  ladder — `self-attested` → `witnessed` → `self-countersigned` / `unresolved-signer` →
-  `countersigned` — and state plainly that independence is recomputed from the signer's key,
-  never taken as a self-reported label: a signer countersigning its own material always resolves
-  as `self-countersigned`, regardless of what it claims. No code or digest behavior changes.
 
 ### Added — `capsule-emit verify --require-signature` (#185)
 
