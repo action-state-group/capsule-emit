@@ -69,7 +69,11 @@ curl -s "$SERVICE_URL/.well-known/agent-card.json" | jq '.supportedInterfaces[0]
   in the single `POST /v1/digest`. Submitting the same new `capsule_id` twice can
   double-append it on the anchor (one statement at two CT leaves) — see the
   anchor-side atomic-dedup fix. One submission → one leaf.
-- **DENY negative** is verifier-side: resolving a fabricated `capsule_id` returns
-  DENY (404 on the read-only resolve route / "no cached statement" offline).
+- **DENY negative** is verifier-side, and checked only with the read-only
+  resolve route (`GET /v1/inclusion/<capsule_id>`; a POST would register the
+  id). Use `negative_control.json`, whose malformed `capsule_id` is refused (400)
+  and can never be registered; the all-zeros id in `negative_variant.json` no
+  longer denies. See `../NEGATIVE_CONTROLS.md`; `../check_controls.py` checks
+  every control.
 - For a public cross-network close, run behind a reachable URL and pass
   `--public-url https://<host>` so the Agent Card advertises the external address.
