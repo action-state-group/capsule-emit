@@ -6,6 +6,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed — agent-action-capsule floor raised to 0.7.0
+
+- `pyproject.toml` now requires `agent-action-capsule>=0.7.0`. The old `>=0.4.0` was below what this
+  release needs: it stamps the -05 wire (agent-action-capsule 0.6.0 and later), and verification
+  hands off to agent-action-capsule, so an environment still on an older release would accept the
+  records the 0.7.0 verifier rules reject (non-string in a string-typed field, malformed
+  `references[].retention`). CI no longer force-reinstalls agent-action-capsule from a pinned commit;
+  it tests the declared floor from PyPI, and still asserts the installed build is the -05 wire.
+
 ### Fixed — grade-ladder vocabulary: one axis, and the countersignature annotations
 
 - `TRANSLATION.md`'s ladder table and `docs/why-anchoring.md`'s "honest ladder" section now
