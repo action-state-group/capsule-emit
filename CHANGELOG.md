@@ -4,7 +4,7 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## Unreleased
+## 0.9.0 — 2026-10-07
 
 ### Changed — agent-action-capsule floor raised to 0.7.0
 
@@ -456,6 +456,44 @@ and the signed `issued_at`, to that verifier's rule.
   reaches the stub. The comment now says the setting is inert there.
 - No code or example behavior changed; every page's code blocks are byte-identical.
 
+
+### Added — Inspect `.eval` log sealing and the bilateral reconciliation fold
+
+- `capsule_emit.adapters.inspect_ai` (extra `inspect-ai`) seals a finished `inspect_ai` `.eval`
+  log: one record per model call and per tool call, digested from the harness's own
+  request/response bytes and chained in the harness's event order, plus one per sample result.
+  The docs say where the signing key lives so a sandboxed process cannot mint a record under the
+  harness's `key_id`. `examples/inspect-sealed-log-demo/` walks through it (#177, #178).
+- `capsule_emit.reconciliation` folds a requester half against a counterparty half into
+  matched / requester_only / contradicted (never a percentage), with a found/not-found
+  completeness sampler (#177).
+
+### Added — per-receipt grades beside the derived client grade
+
+- `CheckpointWitnessState.receipt_grades()` reports each effective witness receipt's own grade,
+  kept separate from `grade()`'s derived `WITNESSED` / `SELF_ATTESTED`: witnessed means only that
+  a receipt exists, never that consistency was checked (#179).
+
+### Changed — examples, tests, docs and CI
+
+- The verify and witness hostnames are canonical on `agentactioncapsule.org`, with a hostname
+  lint in CI (#222, #254).
+- `examples/a2a-ap2/boundary-seal`: the negative control is an id that can never be registered
+  (not hex), and a check notices when a control changes (#284).
+- Neutrality scanner: reads only regular files and does not follow symlinks, redacts terms on
+  untrusted runs, scans every tracked file, with pinned actions (#233, #234).
+- Tests: `verify_disclosure` trusts no built-in witness key (#272); the Evidence Request -00
+  vectors are re-copied from agent-action-capsule `ced858f` (#261).
+- Docs name every adapter, command, module family and the Rust crates (#278); value sets and
+  rules are described directly, and internal planning labels, task tags and paths are removed
+  (#235, #279, #280, #281, #282). `.gitignore` excludes env files (#283).
+
+### Rust crates (versioned and released separately)
+
+- The `rust/` crates (`capsule-emit`, `capsule-emit-evidence-request`) landed on this branch
+  (#230 to #273, including settlement records #255 and the crates.io Trusted Publishing workflow
+  #241). They ship under their own `crates/<name>-v*` tags and are not part of this Python
+  release.
 
 ## 0.8.6 — 2026-09-23
 
