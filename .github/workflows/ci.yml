@@ -54,11 +54,14 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Check out Python reference main
+      - name: Check out the Python reference at the pinned release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: action-state-group/agent-action-capsule
-          ref: main
+          # The conformance corpus at the same commit as the Go module go.mod
+          # pins (agent-action-capsule go/v0.7.0), not main: a corpus that moves
+          # ahead of the pinned module turns CI red for no change here.
+          ref: df3af95221da3cd77792a7fd1c24c1db9ce88376
           path: agent-action-capsule
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -90,11 +93,14 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Check out Python reference main
+      - name: Check out the Python reference at the pinned release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: action-state-group/agent-action-capsule
-          ref: main
+          # The conformance corpus at the same commit as the Go module go.mod
+          # pins (agent-action-capsule go/v0.7.0), not main: a corpus that moves
+          # ahead of the pinned module turns CI red for no change here.
+          ref: df3af95221da3cd77792a7fd1c24c1db9ce88376
           path: agent-action-capsule
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -124,11 +130,14 @@ jobs:
           repository: action-state-group/capsule-emit
           ref: main
           path: capsule-emit
-      - name: Check out Python reference main
+      - name: Check out the Python reference at the pinned release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: action-state-group/agent-action-capsule
-          ref: main
+          # The conformance corpus at the same commit as the Go module go.mod
+          # pins (agent-action-capsule go/v0.7.0), not main: a corpus that moves
+          # ahead of the pinned module turns CI red for no change here.
+          ref: df3af95221da3cd77792a7fd1c24c1db9ce88376
           path: agent-action-capsule
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
