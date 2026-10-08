@@ -48,6 +48,7 @@ pub mod digest;
 pub mod invariance;
 pub mod jcs;
 pub mod outcome;
+pub mod receipt;
 pub mod refusal;
 pub mod registry;
 pub mod request;

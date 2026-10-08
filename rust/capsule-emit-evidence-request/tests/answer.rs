@@ -41,6 +41,11 @@ struct TestLog {
     citations: BTreeMap<String, Vec<String>>,
 }
 
+/// A requester that holds no witness keys.
+fn no_witness_key(_ts_url: &str) -> Option<ed25519_dalek::VerifyingKey> {
+    None
+}
+
 fn responder_key() -> SigningKey {
     SigningKey::from_bytes(&[11u8; 32])
 }
@@ -214,6 +219,7 @@ fn round_trip(
         &digest,
         &responder_key().verifying_key(),
         &record_digest,
+        &no_witness_key,
     )
 }
 
@@ -334,7 +340,8 @@ fn artifacts_are_caller_invariant_and_envelopes_are_per_request() {
         &q1,
         &request_digest(&b1),
         &key,
-        &record_digest
+        &record_digest,
+        &no_witness_key
     )
     .is_ok());
     assert_eq!(
@@ -345,7 +352,8 @@ fn artifacts_are_caller_invariant_and_envelopes_are_per_request() {
             &q2,
             &request_digest(&b2),
             &key,
-            &record_digest
+            &record_digest,
+            &no_witness_key
         ),
         Err(VerifyError::WrongRequest)
     );
@@ -391,6 +399,7 @@ fn verify_parts(
         digest,
         &responder_key().verifying_key(),
         &record_digest,
+        &no_witness_key,
     )
 }
 
@@ -408,7 +417,8 @@ fn wrong_key_wrong_request_and_tampered_artifact_are_caught() {
             &q,
             &digest,
             &other_key().verifying_key(),
-            &record_digest
+            &record_digest,
+            &no_witness_key
         ),
         Err(VerifyError::WrongKey)
     );
@@ -428,7 +438,8 @@ fn wrong_key_wrong_request_and_tampered_artifact_are_caught() {
             &q,
             &digest,
             &responder_key().verifying_key(),
-            &record_digest
+            &record_digest,
+            &no_witness_key
         ),
         Err(VerifyError::ArtifactDigest)
     );
@@ -511,7 +522,8 @@ fn a_responder_that_misstates_its_records_is_caught() {
             &q,
             &digest,
             &responder_key().verifying_key(),
-            &record_digest
+            &record_digest,
+            &no_witness_key
         ),
         Err(VerifyError::RecordsMismatch)
     );
@@ -723,7 +735,8 @@ fn a_history_card_with_a_false_consistency_proof_is_caught() {
             &q,
             &digest,
             &responder_key().verifying_key(),
-            &record_digest
+            &record_digest,
+            &no_witness_key
         ),
         Err(VerifyError::CheckpointChain)
     );
@@ -742,7 +755,8 @@ fn garbage_is_an_error_never_a_panic() {
             &q,
             &digest,
             &key,
-            &record_digest
+            &record_digest,
+            &no_witness_key
         )
         .is_err());
     }
@@ -759,7 +773,8 @@ fn garbage_is_an_error_never_a_panic() {
             &q,
             &digest,
             &key,
-            &record_digest
+            &record_digest,
+            &no_witness_key
         )
         .is_err());
     }
@@ -1073,5 +1088,556 @@ fn correlation_records_out_of_log_order_are_refused() {
     assert_eq!(
         verify_parts(&a, &q, &digest),
         Err(VerifyError::RecordsMismatch)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Regressions for three reported gaps: carried witness receipts, a fixed
+// exchange-half pin, and the refusal's CBOR (the last in `src/refusal.rs`).
+// ---------------------------------------------------------------------------
+
+const WITNESS: &str = "https://witness.example";
+
+fn witness_signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[7u8; 32])
+}
+
+fn witness_key(ts_url: &str) -> Option<ed25519_dalek::VerifyingKey> {
+    (ts_url == WITNESS).then(|| witness_signing_key().verifying_key())
+}
+
+/// The entry a checkpoint's receipt proves: SHA-256 of its digest's bytes.
+fn entry_of(cp: &CheckpointRecord) -> [u8; 32] {
+    Sha256::digest(hex::decode(cp.digest()).unwrap()).into()
+}
+
+fn rfc9162_leaf(entry: &[u8]) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update([0x00]);
+    h.update(entry);
+    h.finalize().into()
+}
+
+fn rfc9162_node(l: &[u8; 32], r: &[u8; 32]) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update([0x01]);
+    h.update(l);
+    h.update(r);
+    h.finalize().into()
+}
+
+fn split(n: usize) -> usize {
+    let mut k = 1;
+    while k * 2 < n {
+        k *= 2;
+    }
+    k
+}
+
+fn mth(leaves: &[[u8; 32]]) -> [u8; 32] {
+    if leaves.len() == 1 {
+        return leaves[0];
+    }
+    let k = split(leaves.len());
+    rfc9162_node(&mth(&leaves[..k]), &mth(&leaves[k..]))
+}
+
+fn audit_path(leaves: &[[u8; 32]], m: usize) -> Vec<[u8; 32]> {
+    if leaves.len() == 1 {
+        return Vec::new();
+    }
+    let k = split(leaves.len());
+    if m < k {
+        let mut p = audit_path(&leaves[..k], m);
+        p.push(mth(&leaves[k..]));
+        p
+    } else {
+        let mut p = audit_path(&leaves[k..], m - k);
+        p.push(mth(&leaves[..k]));
+        p
+    }
+}
+
+/// A genuine COSE receipt from `key` proving `entries[index]` in an RFC 9162
+/// tree of `entries`.
+fn issue_receipt(key: &SigningKey, entries: &[[u8; 32]], index: usize) -> Vec<u8> {
+    use coset::cbor::value::Value as C;
+    use coset::{CoseSign1Builder, HeaderBuilder, TaggedCborSerializable};
+    use ed25519_dalek::Signer;
+    let leaves: Vec<[u8; 32]> = entries.iter().map(|e| rfc9162_leaf(e)).collect();
+    let root = mth(&leaves);
+    let proof = C::Array(vec![
+        C::Integer((leaves.len() as u64).into()),
+        C::Integer((index as u64).into()),
+        C::Array(
+            audit_path(&leaves, index)
+                .into_iter()
+                .map(|h| C::Bytes(h.to_vec()))
+                .collect(),
+        ),
+    ]);
+    let mut proof_bytes = Vec::new();
+    ciborium::into_writer(&proof, &mut proof_bytes).unwrap();
+    let protected = HeaderBuilder::new()
+        .algorithm(coset::iana::Algorithm::EdDSA)
+        .value(395, C::Integer(1.into()))
+        .build();
+    let unprotected = HeaderBuilder::new()
+        .value(
+            396,
+            C::Map(vec![(
+                C::Integer((-1).into()),
+                C::Array(vec![C::Bytes(proof_bytes)]),
+            )]),
+        )
+        .build();
+    CoseSign1Builder::new()
+        .protected(protected)
+        .unprotected(unprotected)
+        .create_detached_signature(&root, &[], |tbs| key.sign(tbs).to_bytes().to_vec())
+        .build()
+        .to_tagged_vec()
+        .unwrap()
+}
+
+fn witness_record(entry: [u8; 32], receipt: &[u8]) -> cll::checkpoint::WitnessRecord {
+    use base64::Engine as _;
+    cll::checkpoint::WitnessRecord {
+        ts_url: WITNESS.into(),
+        entry_hash: hex::encode(entry),
+        receipt_b64: base64::engine::general_purpose::STANDARD.encode(receipt),
+        leaf_index: 0,
+        tree_size: 1,
+        is_stub: false,
+    }
+}
+
+/// The history card pinned at the last checkpoint, built as the responder
+/// (with the legitimate responder key) and verified as the requester.
+fn history_card(
+    log: &TestLog,
+    keys: &dyn Fn(&str) -> Option<ed25519_dalek::VerifyingKey>,
+) -> Result<answer::VerifiedAnswer, VerifyError> {
+    let (b, q) = request(
+        json!({"checkpoints": null}),
+        pin(log, log.checkpoints.len() - 1),
+        json!({"derivation": "history_card/1"}),
+    );
+    let digest = request_digest(&b);
+    let Resolution::Artifact(anchor) = resolve(&q, log) else {
+        panic!("expected an artifact")
+    };
+    let a = build(
+        &q,
+        &digest,
+        &anchor,
+        log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
+    answer::verify(
+        &a.envelope,
+        &a.artifact,
+        &a.material,
+        &q,
+        &digest,
+        &responder_key().verifying_key(),
+        &record_digest,
+        keys,
+    )
+}
+
+#[test]
+fn a_history_card_carrying_bogus_receipt_bytes_is_refused() {
+    // A valid signed checkpoint chain with valid consistency proofs, and a
+    // structurally valid witness with bogus receipt bytes on a middle
+    // checkpoint (witnesses are outside the checkpoint's signature).
+    let mut log = test_log(&responder_key());
+    let entry = entry_of(&log.checkpoints[1]);
+    log.checkpoints[1]
+        .witnesses
+        .push(witness_record(entry, b"not a receipt"));
+    assert_eq!(
+        history_card(&log, &no_witness_key),
+        Err(VerifyError::ReceiptMalformed)
+    );
+    assert_eq!(
+        history_card(&log, &witness_key),
+        Err(VerifyError::ReceiptMalformed)
+    );
+}
+
+#[test]
+fn a_history_card_carrying_a_valid_receipt_for_another_checkpoint_is_refused() {
+    let mut log = test_log(&responder_key());
+    let entries: Vec<[u8; 32]> = log.checkpoints.iter().map(entry_of).collect();
+    // A genuine receipt from the witness, for checkpoint 0's entry...
+    let for_cp0 = issue_receipt(&witness_signing_key(), &entries, 0);
+    // ...carried on checkpoint 1 under checkpoint 1's entry hash: caught by
+    // its proof and signature under the witness's key.
+    log.checkpoints[1]
+        .witnesses
+        .push(witness_record(entries[1], &for_cp0));
+    assert_eq!(
+        history_card(&log, &witness_key),
+        Err(VerifyError::ReceiptBinding)
+    );
+    // ...or under checkpoint 0's entry hash: caught by the binding alone.
+    log.checkpoints[1].witnesses = vec![witness_record(entries[0], &for_cp0)];
+    assert_eq!(
+        history_card(&log, &no_witness_key),
+        Err(VerifyError::ReceiptBinding)
+    );
+    assert_eq!(
+        history_card(&log, &witness_key),
+        Err(VerifyError::ReceiptBinding)
+    );
+}
+
+#[test]
+fn a_receipt_for_its_own_checkpoint_is_verified_only_under_the_witness_key() {
+    use answer::ReceiptStatus;
+    let mut log = test_log(&responder_key());
+    let entries: Vec<[u8; 32]> = log.checkpoints.iter().map(entry_of).collect();
+    let for_cp1 = issue_receipt(&witness_signing_key(), &entries, 1);
+    log.checkpoints[1]
+        .witnesses
+        .push(witness_record(entries[1], &for_cp1));
+    let mut stub = witness_record(entries[2], b"");
+    stub.is_stub = true;
+    log.checkpoints[2].witnesses.push(stub);
+    let statuses = |v: answer::VerifiedAnswer| -> Vec<ReceiptStatus> {
+        v.receipts.into_iter().map(|r| r.status).collect()
+    };
+    assert_eq!(
+        statuses(history_card(&log, &witness_key).unwrap()),
+        vec![ReceiptStatus::Verified, ReceiptStatus::Stub]
+    );
+    assert_eq!(
+        statuses(history_card(&log, &no_witness_key).unwrap()),
+        vec![ReceiptStatus::NoKey, ReceiptStatus::Stub]
+    );
+    // Under another key, the same receipt does not verify.
+    let other = |_: &str| Some(other_key().verifying_key());
+    assert_eq!(history_card(&log, &other), Err(VerifyError::ReceiptBinding));
+}
+
+/// Append unrelated records and one more checkpoint to `log`.
+fn grow(log: &mut TestLog, checkpoint_key: &SigningKey) {
+    let next = log.records.len() as u64;
+    for i in next..next + 3 {
+        let body = format!("unrelated-{i}").into_bytes();
+        let digest = sha(&body);
+        let raw: [u8; 32] = hex::decode(&digest).unwrap().try_into().unwrap();
+        add_leaf(&mut log.nodes, leaf_hash(&raw)).unwrap();
+        log.records.push(Record {
+            leaf_index: i,
+            digest,
+            body,
+        });
+    }
+    let size = log.nodes.size();
+    let peak_hashes: Vec<_> = peaks(size)
+        .unwrap()
+        .iter()
+        .map(|&p| log.nodes.node(p))
+        .collect();
+    let prev = log.checkpoints.last().cloned().unwrap();
+    let mut cp = CheckpointRecord {
+        v: 1,
+        kind: "mmr_checkpoint".into(),
+        log_id: STREAM.into(),
+        mmr_size: size,
+        root: hex::encode(root_from_peaks(&peak_hashes)),
+        prev_size: prev.mmr_size,
+        prev_root: prev.root.clone(),
+        key_id: hex::encode(checkpoint_key.verifying_key().to_bytes()),
+        timestamp: "2026-09-30T00:00:00Z".into(),
+        signature: String::new(),
+        witnesses: Vec::new(),
+    };
+    cp.signature = sign_checkpoint_digest(&cp, checkpoint_key);
+    log.checkpoints.push(cp);
+}
+
+#[test]
+fn unrelated_log_growth_does_not_change_a_fixed_exchange_half_artifact() {
+    // subject={"exchange":H}, coverage={"expected_pin":H}: build and verify,
+    // append unrelated records and another checkpoint, answer the same
+    // request again with the same returned records; the artifact is the
+    // same bytes (§5, fixed-pin artifact invariance).
+    let mut log = test_log(&responder_key());
+    let (b, q) = request(
+        json!({"exchange": half()}),
+        json!({"expected_pin": half()}),
+        json!({}),
+    );
+    let digest = request_digest(&b);
+    let answer_once = |log: &TestLog| {
+        let Resolution::Artifact(anchor) = resolve(&q, log) else {
+            panic!("expected an artifact")
+        };
+        let a = build(
+            &q,
+            &digest,
+            &anchor,
+            log,
+            MAX_RECORDS,
+            &responder_key(),
+            ISSUED_AT,
+        )
+        .unwrap();
+        let v = answer::verify(
+            &a.envelope,
+            &a.artifact,
+            &a.material,
+            &q,
+            &digest,
+            &responder_key().verifying_key(),
+            &record_digest,
+            &no_witness_key,
+        )
+        .unwrap();
+        (a.artifact, v.records)
+    };
+    let (first, records_first) = answer_once(&log);
+    grow(&mut log, &responder_key());
+    let (second, records_second) = answer_once(&log);
+    assert_eq!(
+        records_first, records_second,
+        "the returned records are the same"
+    );
+    assert_eq!(
+        first, second,
+        "unrelated growth changed a fixed-pin artifact"
+    );
+}
+
+/// Answer an exchange half pinned by itself; return the artifact, the anchor
+/// digest and the verified records.
+fn answer_exchange_half(log: &TestLog) -> (Vec<u8>, String, Vec<Record>) {
+    let (b, q) = request(
+        json!({"exchange": half()}),
+        json!({"expected_pin": half()}),
+        json!({}),
+    );
+    let digest = request_digest(&b);
+    let Resolution::Artifact(anchor) = resolve(&q, log) else {
+        panic!("expected an artifact")
+    };
+    let a = build(
+        &q,
+        &digest,
+        &anchor,
+        log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
+    let v = answer::verify(
+        &a.envelope,
+        &a.artifact,
+        &a.material,
+        &q,
+        &digest,
+        &responder_key().verifying_key(),
+        &record_digest,
+        &no_witness_key,
+    )
+    .unwrap();
+    (a.artifact, v.anchor.digest(), v.records)
+}
+
+#[test]
+fn a_new_citing_record_advances_the_exchange_half_anchor() {
+    // Records 2 and 8 cite the half; the earliest checkpoint covering record
+    // 8 is checkpoint 2. A new citing record, once a checkpoint covers it,
+    // legitimately moves the answer to that checkpoint, and the artifact
+    // lists the records it covers.
+    let mut log = test_log(&responder_key());
+    let (_, anchor_before, records_before) = answer_exchange_half(&log);
+    assert_eq!(anchor_before, log.checkpoints[2].digest());
+    assert_eq!(
+        records_before
+            .iter()
+            .map(|r| r.leaf_index)
+            .collect::<Vec<_>>(),
+        vec![2, 8]
+    );
+    // A new citing record not yet in any checkpoint changes nothing.
+    let body = b"citing-10".to_vec();
+    let digest = sha(&body);
+    let raw: [u8; 32] = hex::decode(&digest).unwrap().try_into().unwrap();
+    add_leaf(&mut log.nodes, leaf_hash(&raw)).unwrap();
+    log.records.push(Record {
+        leaf_index: 10,
+        digest: digest.clone(),
+        body,
+    });
+    log.citations.entry(half()).or_default().push(digest);
+    let (_, anchor_pending, _) = answer_exchange_half(&log);
+    assert_eq!(anchor_pending, anchor_before);
+    // Once a checkpoint covers it, the anchor advances to that checkpoint.
+    grow(&mut log, &responder_key());
+    let (_, anchor_after, records_after) = answer_exchange_half(&log);
+    assert_eq!(anchor_after, log.checkpoints.last().unwrap().digest());
+    assert_eq!(
+        records_after
+            .iter()
+            .map(|r| r.leaf_index)
+            .collect::<Vec<_>>(),
+        vec![2, 8, 10]
+    );
+}
+
+#[test]
+fn an_exchange_half_answer_under_a_later_checkpoint_is_refused() {
+    // A responder that answers under the latest checkpoint instead of the
+    // earliest covering one: the anchor's own prev_size already covers the
+    // last served record, so verify refuses it.
+    let mut log = test_log(&responder_key());
+    grow(&mut log, &responder_key());
+    let (b, q) = request(
+        json!({"exchange": half()}),
+        json!({"expected_pin": half()}),
+        json!({}),
+    );
+    let digest = request_digest(&b);
+    let latest = log.anchors().into_iter().last().unwrap();
+    let a = build(
+        &q,
+        &digest,
+        &ResolvedAnchor::Anchor(latest),
+        &log,
+        MAX_RECORDS,
+        &responder_key(),
+        ISSUED_AT,
+    )
+    .unwrap();
+    assert_eq!(
+        answer::verify(
+            &a.envelope,
+            &a.artifact,
+            &a.material,
+            &q,
+            &digest,
+            &responder_key().verifying_key(),
+            &record_digest,
+            &no_witness_key,
+        ),
+        Err(VerifyError::CoverageUnmet)
+    );
+}
+
+/// Replace the unsigned proof array without changing the service's signature.
+fn rewrite_receipt_proofs(receipt: &[u8], proofs: Vec<coset::cbor::value::Value>) -> Vec<u8> {
+    use coset::{CoseSign1, Label, TaggedCborSerializable};
+    let mut sign1 = CoseSign1::from_tagged_slice(receipt).unwrap();
+    let (_, vdp) = sign1
+        .unprotected
+        .rest
+        .iter_mut()
+        .find(|(label, _)| *label == Label::Int(396))
+        .unwrap();
+    let (_, array) = vdp
+        .as_map_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|(key, _)| key.as_integer().map(i128::from) == Some(-1))
+        .unwrap();
+    *array = coset::cbor::value::Value::Array(proofs);
+    sign1.to_tagged_vec().unwrap()
+}
+
+fn receipt_proof(receipt: &[u8]) -> coset::cbor::value::Value {
+    use coset::{CoseSign1, Label, TaggedCborSerializable};
+    let sign1 = CoseSign1::from_tagged_slice(receipt).unwrap();
+    let (_, vdp) = sign1
+        .unprotected
+        .rest
+        .iter()
+        .find(|(label, _)| *label == Label::Int(396))
+        .unwrap();
+    vdp.as_map()
+        .unwrap()
+        .iter()
+        .find(|(key, _)| key.as_integer().map(i128::from) == Some(-1))
+        .unwrap()
+        .1
+        .as_array()
+        .unwrap()[0]
+        .clone()
+}
+
+#[test]
+fn receipt_verification_is_independent_of_proof_order() {
+    use answer::ReceiptStatus;
+    let mut log = test_log(&responder_key());
+    let entries: Vec<_> = log.checkpoints.iter().map(entry_of).collect();
+    let for_cp0 = issue_receipt(&witness_signing_key(), &entries, 0);
+    let for_cp1 = issue_receipt(&witness_signing_key(), &entries, 1);
+    for proofs in [
+        vec![receipt_proof(&for_cp0), receipt_proof(&for_cp1)],
+        vec![receipt_proof(&for_cp1), receipt_proof(&for_cp0)],
+    ] {
+        let receipt = rewrite_receipt_proofs(&for_cp1, proofs);
+        log.checkpoints[1].witnesses = vec![witness_record(entries[1], &receipt)];
+        assert_eq!(
+            history_card(&log, &witness_key).unwrap().receipts[0].status,
+            ReceiptStatus::Verified
+        );
+        assert_eq!(
+            history_card(&log, &no_witness_key).unwrap().receipts[0].status,
+            ReceiptStatus::NoKey
+        );
+    }
+    log.checkpoints[1].witnesses = vec![witness_record(entries[1], &for_cp0)];
+    assert_eq!(
+        history_card(&log, &witness_key),
+        Err(VerifyError::ReceiptBinding)
+    );
+}
+
+#[test]
+fn impossible_receipt_proofs_are_refused_even_without_a_witness_key() {
+    use coset::cbor::value::Value as C;
+    let mut log = test_log(&responder_key());
+    let entries: Vec<_> = log.checkpoints.iter().map(entry_of).collect();
+    let receipt = issue_receipt(&witness_signing_key(), &entries, 1);
+    for (size, index, path) in [
+        (0u64, 0u64, vec![]),
+        (3, 3, vec![C::Bytes(vec![0; 32]); 2]),
+        ((1u64 << 62) + 1, 0, vec![]),
+        (3, 1, vec![]),
+        (1, 0, vec![C::Bytes(vec![0; 32])]),
+    ] {
+        let proof = C::Array(vec![
+            C::Integer(size.into()),
+            C::Integer(index.into()),
+            C::Array(path),
+        ]);
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&proof, &mut bytes).unwrap();
+        let mutated = rewrite_receipt_proofs(&receipt, vec![C::Bytes(bytes)]);
+        log.checkpoints[1].witnesses = vec![witness_record(entries[1], &mutated)];
+        for keys in [&no_witness_key as &dyn Fn(&str) -> _, &witness_key] {
+            assert_eq!(history_card(&log, keys), Err(VerifyError::ReceiptMalformed));
+        }
+    }
+    // A nested proof must contain exactly one CBOR value, even with a key.
+    let mut proof = receipt_proof(&receipt).as_bytes().unwrap().clone();
+    proof.push(0xf6);
+    let mutated = rewrite_receipt_proofs(&receipt, vec![C::Bytes(proof)]);
+    log.checkpoints[1].witnesses = vec![witness_record(entries[1], &mutated)];
+    assert_eq!(
+        history_card(&log, &no_witness_key),
+        Err(VerifyError::ReceiptMalformed)
+    );
+    assert_eq!(
+        history_card(&log, &witness_key),
+        Err(VerifyError::ReceiptMalformed)
     );
 }

@@ -14,7 +14,8 @@ refusal, or the requester's own record that nothing arrived.
 | `outcome` | the one state an interaction is recorded as; a signed refusal is never an absence, and silence is never a refusal |
 | `invariance` | caller invariance: the same subject under the same anchor gives the same bytes |
 | `retention` | retention commitments and the breach table |
-| `answer` (0.0.2) | build the artifact response over a checkpointed local log (`cll`): records with inclusion proofs, a range or the full history with a range proof, the checkpoints, or the `history_card/1` derivation with consistency proofs; the artifact is deterministic and the same for every requester, the envelope is signed by the responder and binds the request digest and the anchor. `answer::verify` checks it all offline |
+| `receipt` (0.0.3) | check RFC 9162 Ed25519 receipt form and authenticate any matching inclusion proof under a pinned service key |
+| `answer` (0.0.3) | build the artifact response over a checkpointed local log (`cll`): records with inclusion proofs, a range or the full history with a range proof, the checkpoints, or the `history_card/1` derivation with consistency proofs; the artifact is deterministic and the same for every requester, the envelope is signed by the responder and binds the request digest and the anchor. `answer::verify` checks it all offline |
 
 ```rust
 use capsule_emit_evidence_request::{digest, request, resolve};
@@ -51,6 +52,14 @@ served record is in the log under the anchor, and you check its content (a
 responder can still leave a record out of those subjects; completeness is
 not provable from this answer alone).
 
+In 0.0.3, `answer::verify` also takes the caller's `witness_key(ts_url)`
+lookup as its final argument and checks every carried receipt.
+`VerifiedAnswer::receipts` distinguishes `Verified` (authenticated under that
+key), `NoKey` (well formed but not authenticated), and `Stub` (not registered).
+Only `Verified` counts as independent witnessing; the caller decides how many
+witnesses are required. Malformed tree/index/path shapes are refused with or
+without a key.
+
 An answer carries at most `answer::MAX_RECORDS` (10,000) records or
 checkpoints: `verify` refuses a larger one before parsing anything, and
 `build` takes a limit and returns `OverLimit`, which a responder answers
@@ -64,9 +73,12 @@ guarantee.
 
 `cargo test` runs the draft's conformance vectors (every corpus, every case)
 from a pinned copy in `tests/vectors/`, checked against the source's own
-`SHA256SUMS` first. See `tests/vectors/SOURCES.md`.
+`SHA256SUMS` first. The Apache-2.0 `scitt-proof-array/` copies also have their
+checksums validated before any test reads them; they cover proof ordering and
+malformed proof classification. See `tests/vectors/SOURCES.md`.
 
 ## License
 
 Apache-2.0. The vendored vectors under `tests/vectors/evidence-request/` are
-BSD-3-Clause; their license travels with them.
+BSD-3-Clause; their license travels with them. The shared scitt-cose receipt
+vectors under `tests/vectors/scitt-proof-array/` are Apache-2.0.

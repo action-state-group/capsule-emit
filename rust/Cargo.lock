@@ -87,10 +87,12 @@ dependencies = [
 
 [[package]]
 name = "capsule-emit-evidence-request"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
+ "base64",
  "checkpointed-local-log",
  "ciborium",
+ "coset",
  "ed25519-dalek",
  "hex",
  "serde_json",
