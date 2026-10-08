@@ -10,7 +10,9 @@
 //!
 //! This is the Ed25519 subset of the RFC 9162 receipt verifier in
 //! action-state-group/scitt-cose (`rust/scitt-cose`, Apache-2.0), kept here so
-//! this crate has no dependency that is not published.
+//! this crate has no dependency that is not published. Proof-array behavior and
+//! shared vectors are pinned to scitt-cose commit
+//! `172632db780df428c2157b0b77945e87c2ca4b7e`.
 
 use coset::cbor::value::Value as CborValue;
 use coset::iana::EnumI64 as _;
@@ -44,6 +46,10 @@ pub enum ReceiptError {
 /// The parts of a receipt the checks need.
 struct Parsed {
     sign1: CoseSign1,
+    proofs: Vec<InclusionProof>,
+}
+
+struct InclusionProof {
     tree_size: u64,
     leaf_index: u64,
     path: Vec<[u8; 32]>,
@@ -87,11 +93,27 @@ fn parse(receipt: &[u8]) -> Result<Parsed, ReceiptError> {
         .and_then(|(_, v)| v.as_array())
         .filter(|p| !p.is_empty() && p.len() <= MAX_INCLUSION_PROOFS)
         .ok_or(Malformed("no inclusion proof"))?;
-    let blob = proofs[0]
+    let proofs = proofs
+        .iter()
+        .map(parse_proof)
+        .collect::<Result<Vec<_>, _>>()?;
+    if sign1.signature.len() != 64 {
+        return Err(Malformed("signature is not 64 bytes"));
+    }
+    Ok(Parsed { sign1, proofs })
+}
+
+fn parse_proof(proof: &CborValue) -> Result<InclusionProof, ReceiptError> {
+    use ReceiptError::Malformed;
+    let blob = proof
         .as_bytes()
         .ok_or(Malformed("inclusion proof is not bytes"))?;
-    let value: CborValue = coset::cbor::de::from_reader(blob.as_slice())
+    let mut reader = blob.as_slice();
+    let value: CborValue = coset::cbor::de::from_reader(&mut reader)
         .map_err(|_| Malformed("inclusion proof is not CBOR"))?;
+    if !reader.is_empty() {
+        return Err(Malformed("trailing inclusion proof data"));
+    }
     let arr = value.as_array().filter(|a| a.len() == 3).ok_or(Malformed(
         "inclusion proof is not [tree_size, leaf_index, path]",
     ))?;
@@ -115,11 +137,13 @@ fn parse(receipt: &[u8]) -> Result<Parsed, ReceiptError> {
         })
         .collect::<Option<Vec<_>>>()
         .ok_or(Malformed("audit path element is not 32 bytes"))?;
-    if sign1.signature.len() != 64 {
-        return Err(Malformed("signature is not 64 bytes"));
+    if tree_size == 0 || tree_size > MAX_TREE_SIZE || leaf_index >= tree_size {
+        return Err(Malformed("invalid tree size or leaf index"));
     }
-    Ok(Parsed {
-        sign1,
+    if path.len() as u64 != expected_path_len(tree_size, leaf_index) {
+        return Err(Malformed("audit path length does not match tree"));
+    }
+    Ok(InclusionProof {
         tree_size,
         leaf_index,
         path,
@@ -140,23 +164,28 @@ pub fn verify(
     service_key: &VerifyingKey,
 ) -> Result<(), ReceiptError> {
     let parsed = parse(receipt)?;
-    let root = root_from_inclusion_proof(
-        leaf_entry,
-        parsed.leaf_index,
-        parsed.tree_size,
-        &parsed.path,
-    )
-    .ok_or(ReceiptError::NotForThisLeaf)?;
-    let tbs = parsed.sign1.tbs_detached_data(&root, &[]);
     let sig: [u8; 64] = parsed
         .sign1
         .signature
         .as_slice()
         .try_into()
         .map_err(|_| ReceiptError::Malformed("signature is not 64 bytes"))?;
-    service_key
-        .verify_strict(&tbs, &Signature::from_bytes(&sig))
-        .map_err(|_| ReceiptError::NotForThisLeaf)
+    // Proof order is not authenticated. Any structurally valid candidate may
+    // prove this entry under the service's signed root.
+    for proof in &parsed.proofs {
+        if let Some(root) =
+            root_from_inclusion_proof(leaf_entry, proof.leaf_index, proof.tree_size, &proof.path)
+        {
+            let tbs = parsed.sign1.tbs_detached_data(&root, &[]);
+            if service_key
+                .verify_strict(&tbs, &Signature::from_bytes(&sig))
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+    }
+    Err(ReceiptError::NotForThisLeaf)
 }
 
 fn leaf_hash(entry: &[u8]) -> [u8; 32] {

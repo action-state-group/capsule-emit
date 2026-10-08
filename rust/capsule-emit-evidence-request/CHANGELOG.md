@@ -2,6 +2,11 @@
 
 ## 0.0.3
 
+- Receipt verification tries every structurally valid inclusion proof, independent
+  of unprotected proof order. Impossible tree/index/path shapes and trailing CBOR
+  return `ReceiptError::Malformed` from both `check_form` and verification with
+  a key, and `VerifyError::ReceiptMalformed` at the answer boundary.
+
 - **`answer::verify` checks the witness receipts an answer carries** (§4.1,
   §8.1). Every receipt on the anchor and on a `checkpoints` or
   `history_card/1` list must be bound to the checkpoint it is carried on (its

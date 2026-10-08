@@ -1531,3 +1531,113 @@ fn an_exchange_half_answer_under_a_later_checkpoint_is_refused() {
         Err(VerifyError::CoverageUnmet)
     );
 }
+
+/// Replace the unsigned proof array without changing the service's signature.
+fn rewrite_receipt_proofs(receipt: &[u8], proofs: Vec<coset::cbor::value::Value>) -> Vec<u8> {
+    use coset::{CoseSign1, Label, TaggedCborSerializable};
+    let mut sign1 = CoseSign1::from_tagged_slice(receipt).unwrap();
+    let (_, vdp) = sign1
+        .unprotected
+        .rest
+        .iter_mut()
+        .find(|(label, _)| *label == Label::Int(396))
+        .unwrap();
+    let (_, array) = vdp
+        .as_map_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|(key, _)| key.as_integer().map(i128::from) == Some(-1))
+        .unwrap();
+    *array = coset::cbor::value::Value::Array(proofs);
+    sign1.to_tagged_vec().unwrap()
+}
+
+fn receipt_proof(receipt: &[u8]) -> coset::cbor::value::Value {
+    use coset::{CoseSign1, Label, TaggedCborSerializable};
+    let sign1 = CoseSign1::from_tagged_slice(receipt).unwrap();
+    let (_, vdp) = sign1
+        .unprotected
+        .rest
+        .iter()
+        .find(|(label, _)| *label == Label::Int(396))
+        .unwrap();
+    vdp.as_map()
+        .unwrap()
+        .iter()
+        .find(|(key, _)| key.as_integer().map(i128::from) == Some(-1))
+        .unwrap()
+        .1
+        .as_array()
+        .unwrap()[0]
+        .clone()
+}
+
+#[test]
+fn receipt_verification_is_independent_of_proof_order() {
+    use answer::ReceiptStatus;
+    let mut log = test_log(&responder_key());
+    let entries: Vec<_> = log.checkpoints.iter().map(entry_of).collect();
+    let for_cp0 = issue_receipt(&witness_signing_key(), &entries, 0);
+    let for_cp1 = issue_receipt(&witness_signing_key(), &entries, 1);
+    for proofs in [
+        vec![receipt_proof(&for_cp0), receipt_proof(&for_cp1)],
+        vec![receipt_proof(&for_cp1), receipt_proof(&for_cp0)],
+    ] {
+        let receipt = rewrite_receipt_proofs(&for_cp1, proofs);
+        log.checkpoints[1].witnesses = vec![witness_record(entries[1], &receipt)];
+        assert_eq!(
+            history_card(&log, &witness_key).unwrap().receipts[0].status,
+            ReceiptStatus::Verified
+        );
+        assert_eq!(
+            history_card(&log, &no_witness_key).unwrap().receipts[0].status,
+            ReceiptStatus::NoKey
+        );
+    }
+    log.checkpoints[1].witnesses = vec![witness_record(entries[1], &for_cp0)];
+    assert_eq!(
+        history_card(&log, &witness_key),
+        Err(VerifyError::ReceiptBinding)
+    );
+}
+
+#[test]
+fn impossible_receipt_proofs_are_refused_even_without_a_witness_key() {
+    use coset::cbor::value::Value as C;
+    let mut log = test_log(&responder_key());
+    let entries: Vec<_> = log.checkpoints.iter().map(entry_of).collect();
+    let receipt = issue_receipt(&witness_signing_key(), &entries, 1);
+    for (size, index, path) in [
+        (0u64, 0u64, vec![]),
+        (3, 3, vec![C::Bytes(vec![0; 32]); 2]),
+        ((1u64 << 62) + 1, 0, vec![]),
+        (3, 1, vec![]),
+        (1, 0, vec![C::Bytes(vec![0; 32])]),
+    ] {
+        let proof = C::Array(vec![
+            C::Integer(size.into()),
+            C::Integer(index.into()),
+            C::Array(path),
+        ]);
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&proof, &mut bytes).unwrap();
+        let mutated = rewrite_receipt_proofs(&receipt, vec![C::Bytes(bytes)]);
+        log.checkpoints[1].witnesses = vec![witness_record(entries[1], &mutated)];
+        for keys in [&no_witness_key as &dyn Fn(&str) -> _, &witness_key] {
+            assert_eq!(history_card(&log, keys), Err(VerifyError::ReceiptMalformed));
+        }
+    }
+    // A nested proof must contain exactly one CBOR value, even with a key.
+    let mut proof = receipt_proof(&receipt).as_bytes().unwrap().clone();
+    proof.push(0xf6);
+    let mutated = rewrite_receipt_proofs(&receipt, vec![C::Bytes(proof)]);
+    log.checkpoints[1].witnesses = vec![witness_record(entries[1], &mutated)];
+    assert_eq!(
+        history_card(&log, &no_witness_key),
+        Err(VerifyError::ReceiptMalformed)
+    );
+    assert_eq!(
+        history_card(&log, &witness_key),
+        Err(VerifyError::ReceiptMalformed)
+    );
+}
