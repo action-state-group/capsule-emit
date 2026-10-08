@@ -12,7 +12,7 @@
 //! action-state-group/scitt-cose (`rust/scitt-cose`, Apache-2.0), kept here so
 //! this crate has no dependency that is not published. Proof-array behavior and
 //! shared vectors are pinned to scitt-cose commit
-//! `172632db780df428c2157b0b77945e87c2ca4b7e`.
+//! `e539fe4d72e6ad70fe443bf2079795322c69a711`.
 
 use coset::cbor::value::Value as CborValue;
 use coset::iana::EnumI64 as _;

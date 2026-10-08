@@ -2,16 +2,35 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use capsule_emit_evidence_request::receipt::{self, ReceiptError};
 use ed25519_dalek::VerifyingKey;
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
+fn vector_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/scitt-proof-array")
+}
+fn verify_pinned_checksums() {
+    let dir = vector_dir();
+    let sums = std::fs::read_to_string(dir.join("SHA256SUMS")).unwrap();
+    let mut checked = 0;
+    for line in sums.lines() {
+        let (want, name) = line.split_once("  ").unwrap();
+        let bytes = std::fs::read(dir.join(name)).unwrap();
+        assert_eq!(
+            hex::encode(Sha256::digest(bytes)),
+            want,
+            "{name}: pinned checksum mismatch"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 7, "all donated consumer files must be pinned");
+}
 fn vector(case: &str, file: &str) -> Vec<u8> {
-    std::fs::read(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/vectors/scitt-proof-array")
-            .join(case)
-            .join(file),
-    )
-    .unwrap()
+    verify_pinned_checksums();
+    std::fs::read(vector_dir().join(case).join(file)).unwrap()
+}
+#[test]
+fn donated_files_match_pinned_checksums() {
+    verify_pinned_checksums();
 }
 fn inputs(case: &str) -> (Vec<u8>, VerifyingKey) {
     let expected: serde_json::Value =
