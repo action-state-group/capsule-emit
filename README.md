@@ -196,7 +196,7 @@ both dependencies explicitly.
 
 `capsule-emit` creates no database tables. `MysqlStore.open()` and
 `SqliteStore.open()` create only CLL's internal tables, documented in the
-[`@action-state-group/cll` backend guide](https://github.com/action-state-group/cll-ts#sqlite-and-mysql-tables).
+[`@action-state-group/cll` backend guide](https://github.com/action-state-group/checkpointed-local-log/tree/main/ts#sqlite-and-mysql-tables).
 Full Capsules and Producer Envelopes remain in application-owned storage.
 
 ## JSON digests

@@ -131,23 +131,19 @@ jobs:
       - name: Verify Python vectors with Go main
         run: scripts/check-format4-interop.sh
         working-directory: capsule-emit-go
-      - name: Check out cll-go main
+      - name: Check out consolidated CLL main
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          repository: action-state-group/cll-go
+          repository: action-state-group/checkpointed-local-log
           ref: main
-          path: cll-go
-      - name: Check out cll-ts main
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: action-state-group/cll-ts
-          ref: main
-          path: cll-ts
+          path: checkpointed-local-log
+      - name: Install consolidated CLL Python verifier
+        run: python -m pip install -e ./checkpointed-local-log/python
       - name: Build TypeScript producer and CLL
         run: |
           npm --prefix capsule-emit-ts run build
-          npm --prefix cll-ts ci
-          npm --prefix cll-ts run build
+          npm --prefix checkpointed-local-log/ts ci
+          npm --prefix checkpointed-local-log/ts run build
       - name: Adapt peer fixture to async producer APIs
         run: |
           python - <<'PYTHON'
