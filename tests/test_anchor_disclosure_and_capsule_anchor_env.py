@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for [emit-anchor-disclosure-and-endpoint-consolidation],
+"""Acceptance tests for anchor disclosure and endpoint consolidation,
 updated for the single-egress change (per-seal ``anchor=True`` killed as a default /
 single egress channel) and the kill-switch change (the witness kill switch scopes ALL
 egress, including this legacy channel):
@@ -321,7 +321,7 @@ def test_capsule_anchor_unset_defaults_to_off(tmp_path, monkeypatch):
 # missing scitt_cose: fails seal() itself now, loudly
 # ---------------------------------------------------------------------------
 #
-# **draft-04 reversal ([capsule-cose-sign1], 2026-08-24):** ``scitt_cose``
+# **draft-04 reversal (2026-08-24):** ``scitt_cose``
 # stopped being an anchor-channel-only optional extra the moment every
 # ``seal()``/``received()`` call started building a mandatory
 # COSE_Sign1 producer envelope (``capsule_emit.signing.LocalKeypairSigner

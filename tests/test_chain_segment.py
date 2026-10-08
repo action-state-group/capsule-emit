@@ -5,7 +5,7 @@ and its wiring into ``capsule_emit.evidence_request.answer()``.
 Uses ``CAPSULE_WITNESS=stub`` (zero-network, real checkpoint mechanics —
 same harness ``tests/test_evidence_request.py`` uses) so these run
 hermetically; every negative case flips exactly one thing and confirms the
-mutant is caught, per QUEUE_PROTOCOL §7.
+mutant is caught.
 """
 from __future__ import annotations
 

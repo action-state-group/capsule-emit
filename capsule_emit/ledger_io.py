@@ -4,7 +4,7 @@ across the workspace uses: opening a ledger from a CLI argument, the common
 filter-flag set, and the ``ScanQuery`` it builds.
 
 **Moved here from ``capsule_ledger.cli.ledger_io`` / the public
-``capsule_ledger.io`` re-export** ([emit-ledger-io-home], 2026-09-06).
+``capsule_ledger.io`` re-export** (2026-09-06).
 ``capsule-ledger`` was archived (read-only) on 2026-09-02; this module is the
 read/verify seam every ledger-backed verb depends on, so it needed a home
 that stays maintained.

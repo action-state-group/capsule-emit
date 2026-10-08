@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for [capsule-emit-witness-required-profile] (per
+"""Acceptance tests for the witness-required emission profile (per
 JamesCarnley's projnanda/nandatown#217 review): a fail-closed
 ``require_witness=True`` option on ``_emit_capsule()``/``seal()`` that raises
 ``WitnessRequiredError`` rather than silently returning a local-only capsule

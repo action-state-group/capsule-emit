@@ -450,4 +450,3 @@ def test_a_non_resolving_relation_does_not_close_a_pending_item(tmp_path):
         anchor=False,
     )
     assert [c["capsule_id"] for c in list_pending(tmp_path / "ledger.jsonl")] == [blocked["capsule_id"]]
-

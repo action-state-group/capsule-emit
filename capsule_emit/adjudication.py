@@ -224,4 +224,3 @@ def is_adjudication(entry: Any) -> bool:
     except (KeyError, TypeError):
         return False
     return isinstance(block, dict) and block.get("source") == SOURCE_TWIN_COMPARISON
-

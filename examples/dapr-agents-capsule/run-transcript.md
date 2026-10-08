@@ -12,12 +12,12 @@ re-executed until this run. This transcript replaces the stale one with the actu
 below.
 
 **Editable-install fix required to run:** the globally registered `capsule-emit` editable
-install pointed at a different, already-merged worktree (`_worktrees/capsule-emit/dapr-agents-adapter`)
-that predates the `prior_capsule_id` chaining parameter added in this worktree (commit db08e63).
+install pointed at a different, older checkout of the adapter that predates the
+`prior_capsule_id` chaining parameter added in this checkout (commit db08e63).
 Running `demo.py` as a script (not `python -c`) put the script's own directory on `sys.path`,
-not this worktree, so it silently picked up the stale adapter and failed at Step 3 with
+not this checkout, so it silently picked up the stale adapter and failed at Step 3 with
 `TypeError: DaprAgentsCapsuleEmitter.tool() got an unexpected keyword argument 'prior_capsule_id'`.
-Fixed by re-running `pip install -e .` from this worktree to re-point the editable install here
+Fixed by re-running `pip install -e .` from this checkout to re-point the editable install here
 before re-running the demo.
 
 ---
@@ -165,16 +165,16 @@ placeholder shows `{"buyer_capsule": {...}, "seller_capsule": {...}, ...}`), not
 required fallback for the basic capsule/bundle case. It remains visible as an alternative way to
 load a capsule interactively; it does not indicate that fragment auto-load is broken.
 
-**This contradicts the PM's earlier same-day (2026-08-02) report** that fragment auto-load did
+**This contradicts an earlier same-day (2026-08-02) report** that fragment auto-load did
 not work and required manual paste. Possible explanations (not confirmed — no evidence of a
-same-day redeploy was found in `outbox.md`): a stale browser cache/service worker on the PM's
+same-day redeploy was found): a stale browser cache/service worker on the reporter's
 side, or a subtle difference in the exact fragment tested. Whatever the original cause, **the
 live surface today renders correctly with zero pasting**, matching the intent described in
 `scitt-cose/demo/README.md`'s `bundle_permalink_stubs` section.
 
 **Recommendation:** No fix needed. The crib doc's "cold verification... zero pasting" line does
 **not** need correction — it is accurate as currently deployed. Suggest a quick re-check on the
-PM's original browser/device before the call, only if time allows, to rule out a local caching
+reporter's original browser/device before the call, only if time allows, to rule out a local caching
 artifact on that machine specifically.
 
 ---

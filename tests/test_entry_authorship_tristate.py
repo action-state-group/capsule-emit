@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for [verify-entry-authorship-tristate-and-log].
+"""Tests for tristate entry-authorship verification and logging.
 
 RULING 1/2: per-record authorship is graded THREE states, not two --
 claimed-and-verifies (AUTHORED), absent (UNCLAIMED -- a ``log()`` entry,

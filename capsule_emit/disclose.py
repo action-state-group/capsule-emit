@@ -382,7 +382,7 @@ def verify_disclosure(
 ) -> tuple[bool, list[str]]:
     """Pure, offline, total verification of a standalone :class:`Disclosure`
     — no reader, no network, never raises. ``trust_anchor``
-    [verify-threestate-trustanchor] is forwarded unchanged to every
+    is forwarded unchanged to every
     ``capsule_emit.bundle.verify_bundle`` call below — see that function's
     docstring for its three-state witness-stamp semantics.
 

@@ -235,4 +235,3 @@ def test_is_adjudication_reads_new_and_legacy_records(tmp_path):
     plain = {"chain": {"parent_capsule_id": half_a, "relation": "confirms"}}
     assert not is_adjudication(plain)
     assert not is_adjudication(None)
-

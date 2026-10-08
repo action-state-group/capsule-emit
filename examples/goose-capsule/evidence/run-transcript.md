@@ -4,7 +4,7 @@
 **Anchor:** `https://anchor.agentactioncapsule.org` (production, live)
 **Verify surface:** `https://verify.agentactioncapsule.org`
 **Branch:** `demo/goose-run`
-**Run date:** 2026-08-10 (regenerated for `[goose-demo-pr42-close-and-merge-prep]` — the OMIT
+**Run date:** 2026-08-10 (regenerated before merging the demo PR (#42) — the OMIT
 ruling on capsule 2's chain relation changes capsule content, and the branch was rebased onto
 `origin/main` mid-task (which landed real anchor-honesty semantics, opt-in digest salting, and
 the `capsule-emit permalink` CLI — PRs #12/#13/#40/#44/#45/#46/#47/#49/#50), so `capsule_id`
@@ -209,7 +209,7 @@ cleanly both standalone (its own individual permalink shows `✓ verifies`, no d
 untouched 2026-08-04 bundle permalink (same failure, same record position, different capsule
 IDs/relation value) — it is a pre-existing bug in the verify-site's bundle-mode digest
 recomputation, not caused by this task's changes, and not something a `capsule-emit`-side fix can
-address (out of this repo's boundary). Reported in the outbox for awareness.
+address (out of this repo's boundary). Reported separately for awareness.
 
 Generated and verified with the now-available `capsule-emit permalink` CLI (`capsule_emit/cli.py`,
 landed on `main` via #49 during this task):
@@ -251,7 +251,7 @@ is `escalates`, distinct from row 2's `sequence`.
 
 ---
 
-## Disclosure addendum ([goose-demo-disclose-payloads], 2026-08-11)
+## Disclosure addendum (2026-08-11)
 
 **No re-anchor.** All three capsules are byte-identical to the PR #42 merge — same
 `capsule_id`s, same leaf indices (267/268/269), same digests. Disclosure only adds a sibling
@@ -262,7 +262,7 @@ load.
 
 **Mechanism:** the Disclosure Envelope (`{"capsule": <unmodified capsule>, "disclosures":
 {"agent_input": ..., "agent_output": ...}}`) already landed in the verify-surface viewer via
-`[aac-disclosure-envelope]` (scitt-cose#27, merged 2026-08-07) — `capsule_emit/permalink.py`
+the disclosure envelope (scitt-cose#27, merged 2026-08-07) — `capsule_emit/permalink.py`
 (this task) is what finally *uses* it: `build_url(..., disclosures={...})` for the library,
 `capsule-emit permalink FILE --reveal agent_input=payload.json --reveal
 agent_output=payload.json` for the CLI. Bare `demo.py`'s `_permalink`/`_bundle_permalink`
@@ -284,7 +284,7 @@ URL on any mismatch — verified with a deliberately wrong payload in
 | 3 | fyi/escalate_to_manager | `https://verify.agentactioncapsule.org/v/061e6bded87d3c46d642501aa1085bd87ae102c8b4459b5c952dbfae634b3a3b#eyJjYXBzdWxlIjogeyJzcGVjX3ZlcnNpb24iOiAiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTAyIiwgImZvcm1hdF92ZXJzaW9uIjogIjIiLCAiY2Fwc3VsZV9pZCI6ICIwNjFlNmJkZWQ4N2QzYzQ2ZDY0MjUwMWFhMTA4NWJkODdhZTEwMmM4YjQ0NTliNWM5NTJkYmZhZTYzNGIzYTNiIiwgImFjdGlvbl9pZCI6ICJlc2NhbGF0ZV90b19tYW5hZ2VyL2IwYjBjYzBjLTllODUtNGUwOC1hOGU4LThiMWMyYjJkZjE2YyIsICJhY3Rpb25fdHlwZSI6ICJmeWkiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjE6MDM6NDkuMTgyNTkxWiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiYjQ0ODRjZWUwNGE3OTdjODJlMzAwZmE1OWYzNTM3MTYzZjVlNGNiNWZiY2RkYzhhMjU4YjA3NmRlYTZmNjJiNyIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogIjYxYzhlYWIyMTNkM2UwMzRmNDY1YTJmNTlkYzVhNTVkMWVmYjY4ZjU5NGQyNzY4M2IwNDQzNTE2MTA0N2IzNjMiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAiZXNjYWxhdGVfdG9fbWFuYWdlciIsICJlZmZlY3RfYXR0ZXN0YXRpb24iOiAicnVudGltZV9jbGFpbWVkIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJkaXNwYXRjaGVkX3VuY29uZmlybWVkIiwgImxlZGdlcl9tb2RlIjogImNoYWluZWQifSwgImRpc3Bvc2l0aW9uIjogeyJkZWNpc2lvbiI6ICJhY2NlcHQiLCAiYXBwcm92ZXIiOiAicG9saWN5IiwgImh1bWFuX2Rpc3Bvc2VkIjogZmFsc2UsICJ2ZXJkaWN0X2NsYXNzIjogImV4ZWN1dGVkIn0sICJjaGFpbiI6IHsicGFyZW50X2NhcHN1bGVfaWQiOiAiMTZhNmFiOTU0MjAyOTFhYzk3NzAxMWZhODYyMDUxNmIwMmE0NDg1MGExMTQzM2MwOWU2YTM1NWU2NjBjY2VmZCIsICJyZWxhdGlvbiI6ICJlc2NhbGF0ZXMifX0sICJkaXNjbG9zdXJlcyI6IHsiYWdlbnRfaW5wdXQiOiB7InBvX251bWJlciI6ICJQTy03Nzc4IiwgInJlYXNvbiI6ICJvcmRlciBibG9ja2VkIGF0IGFwcHJvdmFsIGdhdGU7IHJvdXRpbmcgZm9yIG1hbmFnZXIgcmV2aWV3In0sICJhZ2VudF9vdXRwdXQiOiB7InBvX251bWJlciI6ICJQTy03Nzc4IiwgImVzY2FsYXRlZF90byI6ICJhcC1tYW5hZ2VyQGFjbWUtY28uY29tIn19fQ==` |
 
 Each, browser-confirmed (fresh navigation per link, URL sourced programmatically from the CLI's
-own stdout — never hand-retyped, per the `[verify-bundle-mismatch-fix]` postmortem): Integrity
+own stdout — never hand-retyped, per an earlier bundle-mismatch postmortem): Integrity
 ✓, Sequence ✓, anchor banner unchanged (`Anchored log index 267/268/269`), Privilege Log reads
 `REVEALED · ✓ match` for both `agent_input` and `agent_output` (was `WITHHELD` before), and no
 other artifact shows an unintended withheld/revealed label change.
@@ -329,7 +329,7 @@ verify-surface viewer. Confirmed two ways before writing any code:
 `capsule_emit.permalink.build_url()` now raises `PermalinkError` for `bundle=True` +
 `disclosures=` specifically to make this impossible to ship by accident; the CLI's `--reveal`
 refuses the same combination with a clear message. Not a `capsule-emit` fix — flagged as a
-`scitt-cose`/hosted-verifier gap (see "Needs decision" in the outbox report for this task);
+`scitt-cose`/hosted-verifier gap, raised as an open question;
 disclose via the individual permalinks instead, which have full, correct support.
 
 **Second, related viewer finding (also empirical, also out of `capsule-emit`'s scope):** the
@@ -355,15 +355,15 @@ demo's denial (capsule 2) as emitted with capsule-emit's *default* disposition
 human-disposed refusal so human-oversight rows would light on the (unfixed) viewer. Checked
 against the actual merged `demo.py` (`origin/main`, post-#42) before touching anything: capsule
 2 already carries `human_disposed=True, approver="human", decision="reject"` explicitly (not the
-library default — set in the original `[goose-demo-pr42-close-and-merge-prep]` task, per
+library default — set when the demo was regenerated before merging #42, per
 `decide1 = emitter.emit_capsule(..., human_disposed=True, approver="human", ...)`). Confirmed
 empirically on the live, merged, withheld permalink for capsule 2 (before any change in this
 task): `human-oversight-record` was already detected and shown in the Regulatory context panel —
 the `checkHitl` OR's second branch (`disposition.approver==="human"`) already fires correctly for
-a bare capsule, exactly as the PM's own update independently noted ("detection currently works
+a bare capsule, exactly as a review note independently observed ("detection currently works
 only via disposition.approver=='human'"). **No demo-data change made** — the premise didn't hold
 against the current code, and re-emitting would have been unnecessary churn against an
-already-correct capsule. What the PM's update *did* correctly anticipate — reading
+already-correct capsule. What that review note *did* correctly anticipate — reading
 `cap.human_disposed` at the top level instead of `cap.disposition.human_disposed` is dead code —
 is confirmed real (`hosted_profiles/hosted.py:901-902`), just with lower impact than described,
 since the second branch already covers this demo's case. The genuinely new, higher-impact finding
@@ -373,7 +373,7 @@ from this task is the one above: the *envelope-wrapped* case breaks even the wor
 
 ---
 
-## Bundle disclosure lift addendum ([capsule-emit-lift-bundle-disclosure-block], 2026-08-11)
+## Bundle disclosure lift addendum (2026-08-11)
 
 **No re-anchor, same frozen run.** All three capsules stay byte-identical to the PR #42 merge —
 same `capsule_id`s, same leaf indices (267/268/269), same digests. This task only lifts the
@@ -420,7 +420,7 @@ permalink --reveal: 6/6 disclosed field(s) digest-match VALID (3/3 capsule(s) di
 `https://verify.agentactioncapsule.org/v/f708b92a34b15b582db60042619c37b380f0b64b5c6c0bba6e13a71652f98d3b#W3siY2Fwc3VsZSI6IHsic3BlY192ZXJzaW9uIjogImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wMiIsICJmb3JtYXRfdmVyc2lvbiI6ICIyIiwgImNhcHN1bGVfaWQiOiAiZjcwOGI5MmEzNGIxNWI1ODJkYjYwMDQyNjE5YzM3YjM4MGYwYjY0YjVjNmMwYmJhNmUxM2E3MTY1MmY5OGQzYiIsICJhY3Rpb25faWQiOiAic3VibWl0X29yZGVyL2RlOGI3ZjhjLTdiNzQtNGU1NC05MDA1LTExNDRiMDYzYWExOCIsICJhY3Rpb25fdHlwZSI6ICJkZWNpZGUiLCAib3BlcmF0b3IiOiAiYWNtZS1jbyIsICJkZXZlbG9wZXIiOiAiZ29vc2UtYWdlbnRAdjEiLCAidGltZXN0YW1wIjogIjIwMjYtMDgtMTBUMjE6MDM6NDkuMTgyMDEyWiIsICJtb2RlbF9hdHRlc3RhdGlvbiI6IHsibW9kZWxfaWQiOiAiY2xhdWRlLW9wdXMtNC04IiwgInByb3ZpZGVyIjogImFudGhyb3BpYyIsICJjb21wdXRlX2F0dGVzdGF0aW9uIjogeyJhZ2VudF9pbnB1dF9kaWdlc3QiOiAiOWJlYjg1NGMxOTJlZjIxNTM5MzgxNjQ2NzkyYmIwMzQ2ZDY1NzgxYTllMjcwNTJjNDc3NzVhZTFiMmFiZDkyMiIsICJhZ2VudF9vdXRwdXRfZGlnZXN0IjogImVhN2E5N2U0YTQwNzBhZTYxOTAzMjg2NDNmOTIwOWQ3NDUxNWMxOTkwNDBjZGJmMTYxZGUxNmJkM2VmMTY0NjAiLCAicnVudGltZSI6ICJtY3AifX0sICJlZmZlY3QiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInR5cGUiOiAid3JpdGVfb3JkZXIiLCAiZWZmZWN0X2F0dGVzdGF0aW9uIjogInJ1bnRpbWVfY2xhaW1lZCJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAiZGlzcGF0Y2hlZF91bmNvbmZpcm1lZCIsICJsZWRnZXJfbW9kZSI6ICJzdGFuZGFsb25lIn0sICJkaXNwb3NpdGlvbiI6IHsiZGVjaXNpb24iOiAiYWNjZXB0IiwgImFwcHJvdmVyIjogInBvbGljeSIsICJodW1hbl9kaXNwb3NlZCI6IGZhbHNlLCAidmVyZGljdF9jbGFzcyI6ICJleGVjdXRlZCJ9fSwgImRpc2Nsb3N1cmVzIjogeyJhZ2VudF9pbnB1dCI6IHsidmVuZG9yIjogIkZyb2JvenogU3VwcGx5IiwgImFtb3VudCI6ICIxMjQwLjE5IiwgInBvX251bWJlciI6ICJQTy03Nzc3In0sICJhZ2VudF9vdXRwdXQiOiB7InN0YXR1cyI6ICJkaXNwYXRjaGVkIiwgInBvX251bWJlciI6ICJQTy03Nzc3IiwgInZlbmRvciI6ICJGcm9ib3p6IFN1cHBseSIsICJhbW91bnRfdXNkIjogIjEyNDAuMTkiLCAiY29uZmlybWF0aW9uX3JlZiI6ICJDT05GLTc3NzcifX19LCB7ImNhcHN1bGUiOiB7InNwZWNfdmVyc2lvbiI6ICJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDIiLCAiZm9ybWF0X3ZlcnNpb24iOiAiMiIsICJjYXBzdWxlX2lkIjogIjE2YTZhYjk1NDIwMjkxYWM5NzcwMTFmYTg2MjA1MTZiMDJhNDQ4NTBhMTE0MzNjMDllNmEzNTVlNjYwY2NlZmQiLCAiYWN0aW9uX2lkIjogImFwcHJvdmVfbGFyZ2Vfb3JkZXIvZDE5YjI0YjgtZjQzNC00YWQzLTgyZjYtNzMwMzg4MWEwODIwIiwgImFjdGlvbl90eXBlIjogImRlY2lkZSIsICJvcGVyYXRvciI6ICJhY21lLWNvIiwgImRldmVsb3BlciI6ICJnb29zZS1hZ2VudEB2MSIsICJ0aW1lc3RhbXAiOiAiMjAyNi0wOC0xMFQyMTowMzo0OS4xODIzMjJaIiwgIm1vZGVsX2F0dGVzdGF0aW9uIjogeyJtb2RlbF9pZCI6ICJjbGF1ZGUtb3B1cy00LTgiLCAicHJvdmlkZXIiOiAiYW50aHJvcGljIiwgImNvbXB1dGVfYXR0ZXN0YXRpb24iOiB7ImFnZW50X2lucHV0X2RpZ2VzdCI6ICJmMTBjYmVhOGU0YmZjNTEzNGU3MTc2NzRhZWNmYzQxZGFiMWExMjMwNWMxMWI1NGUwNTQ0MmRiM2ZiOTJiOWE4IiwgImFnZW50X291dHB1dF9kaWdlc3QiOiAiZWJjODlmODg4Yzk1N2ViZDI3YTI4MjVlYzg4MmM2Mjk1OWEyNGM1MTRiNTkxYmRkNWI4YWY4OWJjN2JlMDYwOSIsICJydW50aW1lIjogIm1jcCIsICJhcHByb3Zlcl9pZCI6ICJwcml5YUBhY21lLWNvLmNvbSJ9fSwgImVmZmVjdCI6IHsic3RhdHVzIjogInBsYW5uZWQiLCAidHlwZSI6ICJhcHByb3ZlX2xhcmdlX29yZGVyIn0sICJhc3N1cmFuY2UiOiB7ImF0dGVzdGF0aW9uX21vZGUiOiAic2VsZl9hdHRlc3RlZCIsICJlZmZlY3RfbW9kZSI6ICJub3RfYXBwbGljYWJsZSIsICJsZWRnZXJfbW9kZSI6ICJjaGFpbmVkIn0sICJkaXNwb3NpdGlvbiI6IHsiZGVjaXNpb24iOiAicmVqZWN0IiwgImFwcHJvdmVyIjogImh1bWFuIiwgImh1bWFuX2Rpc3Bvc2VkIjogdHJ1ZSwgInZlcmRpY3RfY2xhc3MiOiAiYmxvY2tlZCJ9LCAiY2hhaW4iOiB7InBhcmVudF9jYXBzdWxlX2lkIjogImY3MDhiOTJhMzRiMTViNTgyZGI2MDA0MjYxOWMzN2IzODBmMGI2NGI1YzZjMGJiYTZlMTNhNzE2NTJmOThkM2IiLCAicmVsYXRpb24iOiAic2VxdWVuY2UifX0sICJkaXNjbG9zdXJlcyI6IHsiYWdlbnRfaW5wdXQiOiB7InBvX251bWJlciI6ICJQTy03Nzc4IiwgInZlbmRvciI6ICJHbG9iZXggQ29ycCIsICJhbW91bnRfdXNkIjogIjEyNTAwMC4wMCIsICJyZXF1ZXN0ZWRfYnkiOiAiZ29vc2UtYWdlbnRAdjEifSwgImFnZW50X291dHB1dCI6IHsicmV2aWV3ZWRfYXQiOiAiMjAyNi0wOC0wM1QwMDowMDowMFoiLCAicmVhc29uIjogIm9yZGVyIHZhbHVlIGV4Y2VlZHMgdmVuZG9yJ3MgYXBwcm92ZWQgUE8gY2VpbGluZyJ9fX0sIHsiY2Fwc3VsZSI6IHsic3BlY192ZXJzaW9uIjogImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wMiIsICJmb3JtYXRfdmVyc2lvbiI6ICIyIiwgImNhcHN1bGVfaWQiOiAiMDYxZTZiZGVkODdkM2M0NmQ2NDI1MDFhYTEwODViZDg3YWUxMDJjOGI0NDU5YjVjOTUyZGJmYWU2MzRiM2EzYiIsICJhY3Rpb25faWQiOiAiZXNjYWxhdGVfdG9fbWFuYWdlci9iMGIwY2MwYy05ZTg1LTRlMDgtYThlOC04YjFjMmIyZGYxNmMiLCAiYWN0aW9uX3R5cGUiOiAiZnlpIiwgIm9wZXJhdG9yIjogImFjbWUtY28iLCAiZGV2ZWxvcGVyIjogImdvb3NlLWFnZW50QHYxIiwgInRpbWVzdGFtcCI6ICIyMDI2LTA4LTEwVDIxOjAzOjQ5LjE4MjU5MVoiLCAibW9kZWxfYXR0ZXN0YXRpb24iOiB7Im1vZGVsX2lkIjogImNsYXVkZS1vcHVzLTQtOCIsICJwcm92aWRlciI6ICJhbnRocm9waWMiLCAiY29tcHV0ZV9hdHRlc3RhdGlvbiI6IHsiYWdlbnRfaW5wdXRfZGlnZXN0IjogImI0NDg0Y2VlMDRhNzk3YzgyZTMwMGZhNTlmMzUzNzE2M2Y1ZTRjYjVmYmNkZGM4YTI1OGIwNzZkZWE2ZjYyYjciLCAiYWdlbnRfb3V0cHV0X2RpZ2VzdCI6ICI2MWM4ZWFiMjEzZDNlMDM0ZjQ2NWEyZjU5ZGM1YTU1ZDFlZmI2OGY1OTRkMjc2ODNiMDQ0MzUxNjEwNDdiMzYzIiwgInJ1bnRpbWUiOiAibWNwIn19LCAiZWZmZWN0IjogeyJzdGF0dXMiOiAiZGlzcGF0Y2hlZCIsICJ0eXBlIjogImVzY2FsYXRlX3RvX21hbmFnZXIiLCAiZWZmZWN0X2F0dGVzdGF0aW9uIjogInJ1bnRpbWVfY2xhaW1lZCJ9LCAiYXNzdXJhbmNlIjogeyJhdHRlc3RhdGlvbl9tb2RlIjogInNlbGZfYXR0ZXN0ZWQiLCAiZWZmZWN0X21vZGUiOiAiZGlzcGF0Y2hlZF91bmNvbmZpcm1lZCIsICJsZWRnZXJfbW9kZSI6ICJjaGFpbmVkIn0sICJkaXNwb3NpdGlvbiI6IHsiZGVjaXNpb24iOiAiYWNjZXB0IiwgImFwcHJvdmVyIjogInBvbGljeSIsICJodW1hbl9kaXNwb3NlZCI6IGZhbHNlLCAidmVyZGljdF9jbGFzcyI6ICJleGVjdXRlZCJ9LCAiY2hhaW4iOiB7InBhcmVudF9jYXBzdWxlX2lkIjogIjE2YTZhYjk1NDIwMjkxYWM5NzcwMTFmYTg2MjA1MTZiMDJhNDQ4NTBhMTE0MzNjMDllNmEzNTVlNjYwY2NlZmQiLCAicmVsYXRpb24iOiAiZXNjYWxhdGVzIn19LCAiZGlzY2xvc3VyZXMiOiB7ImFnZW50X2lucHV0IjogeyJwb19udW1iZXIiOiAiUE8tNzc3OCIsICJyZWFzb24iOiAib3JkZXIgYmxvY2tlZCBhdCBhcHByb3ZhbCBnYXRlOyByb3V0aW5nIGZvciBtYW5hZ2VyIHJldmlldyJ9LCAiYWdlbnRfb3V0cHV0IjogeyJwb19udW1iZXIiOiAiUE8tNzc3OCIsICJlc2NhbGF0ZWRfdG8iOiAiYXAtbWFuYWdlckBhY21lLWNvLmNvbSJ9fX1d`
 
 **Browser-confirmed against the deployed viewer (fresh navigation, URL sourced from CLI stdout,
-never hand-retyped, per the `[verify-bundle-mismatch-fix]` postmortem discipline):**
+never hand-retyped, per an earlier bundle-mismatch postmortem):**
 
 - **Verification Ritual: Integrity ✓, Sequence ✓** — all 3 rows read `✓ verifies`, including the
   two envelope-wrapped items (records 1 and 2, and record 3 too — all disclosed). Before
@@ -560,7 +560,7 @@ anchor-honesty rewrite) — same assertions, new mock target.
 | tamper → `ok=False` | ✓ |
 | Full suite 445/445 green (excl. pre-existing local protobuf collection error) | ✓ |
 
-**[goose-demo-disclose-payloads] (2026-08-11) additions — capsule bytes unchanged, no re-anchor:**
+**Disclosure addendum (2026-08-11) additions — capsule bytes unchanged, no re-anchor:**
 
 | Check | Result |
 |-------|--------|
@@ -573,7 +573,7 @@ anchor-honesty rewrite) — same assertions, new mock target.
 | scitt-cose viewer gap #1 (bundle-array disclosure → vacuous Integrity pass) — found, reported, not fixed here | ✅ FIXED — scitt-cose#30, see below |
 | scitt-cose viewer gap #2 (Regulatory context panel misses human-oversight/disclosure-transparency for envelope-wrapped fragments) — found, reported, not fixed here | ✅ FIXED — scitt-cose#30, see below |
 
-**[capsule-emit-lift-bundle-disclosure-block] (2026-08-11) additions — same frozen run, no re-anchor:**
+**Bundle disclosure lift addendum (2026-08-11) additions — same frozen run, no re-anchor:**
 
 | Check | Result |
 |-------|--------|

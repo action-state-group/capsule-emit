@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for [capsule-emit-anchored-honesty] (capsule-emit#43).
+"""Acceptance tests for anchored honesty (capsule-emit#43).
 
 ``EmitResult.anchored`` MUST NOT be True unless a real ``AnchorResult``
 confirmed the submission — it must never be set merely because anchoring was
