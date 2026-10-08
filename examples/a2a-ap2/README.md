@@ -82,6 +82,10 @@ agent-action-capsule verify --store /path/to/a2a_ap2_ledger.jsonl
 curl https://anchor.agentactioncapsule.org/v1/inclusion/<capsule_id>
 ```
 
+The boundary-seal example's positive and negative controls, and why its
+original all-zeros negative no longer denies, are in
+`boundary-seal/NEGATIVE_CONTROLS.md`.
+
 ## Files
 
 - `run_example.py` — runnable demo (3 capsules: dispatch + confirm + refusal)

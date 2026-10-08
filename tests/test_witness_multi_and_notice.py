@@ -9,7 +9,7 @@
   states what's sent, where, and how to disable.
 - the notice fires at the first ``seal()`` where witnessing is enabled --
   not gated on the cadence counter reaching its threshold (0.5.0 migration
-  audit item 4) -- and its exact wording is pinned by a snapshot test.
+  ) -- and its exact wording is pinned by a snapshot test.
 """
 from __future__ import annotations
 
@@ -224,13 +224,14 @@ def stub_ts_single(monkeypatch):
     # read path. monkeypatch reverts per test.
     base_url, received, stop = _start_stub_ts()
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", base_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
 
 
 # ---------------------------------------------------------------------------
-# multi-witness any-of grading: one live stamp is enough (O16 item 11)
+# multi-witness any-of grading: one live stamp is enough
 # ---------------------------------------------------------------------------
 
 
@@ -310,7 +311,7 @@ def test_first_use_notice_printed_at_first_seal_before_any_checkpoint_is_due(tmp
 
 def test_first_use_notice_exact_text_snapshot(tmp_path, stub_ts_single, capsys):
     """Pins the notice's exact wording so an accidental rewording is caught
-    (bundles the O2 snapshot-test requirement referenced by audit item 4).
+    (bundles the snapshot-test requirement).
 
     The unrelated combined anchor+witness disclosure (``core.py``) is
     pre-silenced so this snapshot isolates the witness-specific notice under

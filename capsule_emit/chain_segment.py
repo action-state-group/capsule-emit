@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``chain_segment()`` — the cheap form of "history" (E14's third subject
+"""``chain_segment()`` — the cheap form of "history" (the evidence request protocol's third subject
 kind, ``{kind: "chain_segment", from_size, to_size}`` or ``{last: N}``).
 
 Without this, a stranger's ``range`` ask is one full :class:`~capsule_emit
@@ -14,8 +14,9 @@ O(checkpoints), not O(records).
 **Log vocabulary only.** This module ships exactly the vocabulary
 ``capsule-emit`` itself already owns: ``stamp`` (the log's own
 checkpoint-stamp bookkeeping — see :mod:`capsule_emit.ledger`) and
-``adjudication`` (:mod:`capsule_emit.adjudication`'s ``chain.relation ==
-"adjudicates"``) — everything else classifies as the generic ``capsule``. A
+``adjudication`` (:func:`capsule_emit.adjudication.is_adjudication`: the
+adjudication block, or the legacy ``chain.relation == "adjudicates"``) —
+everything else classifies as the generic ``capsule``. A
 caller with its own record taxonomy (e.g. a mesh deployment's
 ``exchange``/``card`` split) supplies its own ``classify`` callback; this
 module never invents a third party's vocabulary itself.
@@ -100,8 +101,9 @@ def _default_classify(entry: dict, *, kind_field: str, stamp_kind: str) -> str:
     kind = entry.get(kind_field)
     if kind:
         return "stamp" if kind == stamp_kind else str(kind)
-    chain = entry.get("chain")
-    if isinstance(chain, dict) and chain.get("relation") == "adjudicates":
+    from .adjudication import is_adjudication
+
+    if is_adjudication(entry):
         return "adjudication"
     return "capsule"
 
@@ -181,7 +183,7 @@ class CheckpointLink:
 
 @dataclass(frozen=True)
 class ChainSegment:
-    """cp_a..cp_b — the checkpoint CHAIN artifact for E14's ``chain_segment``
+    """cp_a..cp_b — the checkpoint CHAIN artifact for the evidence request protocol's ``chain_segment``
     subject. See the module docstring for what it proves and what it
     deliberately does not (no records, no inclusion proofs)."""
 
@@ -336,7 +338,7 @@ def chain_segment(
 class ChainSegmentVerifyResult:
     """Total, offline outcome of :func:`verify_chain_segment` — never
     raises. ``continuity``/``history_depth``/``witnessed`` are exactly the
-    three properties a receiver renders per E14's acceptance
+    three properties a receiver renders per the evidence request protocol's acceptance
     ("depth/continuity/witnessed")."""
 
     ok: bool
@@ -357,7 +359,9 @@ def verify_chain_segment(
     link — a break never "silently re-links" past the gap — and labels
     ``continuity`` with exactly where and why.
     """
-    from cll.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+    from cll.checkpoint.emit import StampVerdict
+
+    from .witness import stamp_verdict
 
     if not segment.links:
         return ChainSegmentVerifyResult(
@@ -406,7 +410,7 @@ def verify_chain_segment(
         depth += 1
         if cp.witnesses:
             verdicts = [
-                verify_witness_stamp_tristate(cp, w, ts_pubkey_pem=(trust_anchor or {}).get(w.ts_url))[0]
+                stamp_verdict(cp, w, ts_pubkey_pem=(trust_anchor or {}).get(w.ts_url))[0]
                 for w in cp.witnesses
             ]
             if any(v is StampVerdict.WITNESSED for v in verdicts):

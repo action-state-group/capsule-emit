@@ -1,10 +1,8 @@
 # capsule-emit slot-composition conformance vector
 
-The v4 slot-composition surface (2026-08-27) — the byte-level proof of the
-acceptance criterion for the frozen v4 developer surface:
-**"the carry-form and slot-form produce byte-identical records."** This is
-the cross-language conformance target for `capsule-producer-go` (Ethan's
-repo — coordinate with him, do not push there).
+2026-08-27 — the byte-level proof of the v4 developer surface's acceptance
+criterion: **"the carry-form and slot-form produce byte-identical records."**
+This is the cross-language conformance target for `capsule-producer-go`.
 
 - `valid/carry_form.json` — the full capsule from a standalone
   `received(mandate_jws, type="machine-mandate")` call.

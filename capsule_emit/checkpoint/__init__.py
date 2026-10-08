@@ -23,9 +23,9 @@ Transparency Service can still
 below ever makes a network call on its own (see ``checkpoint.emit``'s module
 docstring).
 
-**Graduated to the ``cll`` package (2026-09-01, W3.1 CLL extraction).** The
+**Graduated to the ``cll`` package (2026-09-01, CLL extraction).** The
 CLL/MMR core originally lived here (ported from
-``capsule-ledger/capsule_ledger/mmr/{core,index,store}.py`` per Amendment E,
+``capsule-ledger/capsule_ledger/mmr/{core,index,store}.py``
 2026-08-21) on the reasoning that it is substrate a counterparty needs to
 verify a log, so it should live where any consumer can depend on it without
 forking. It has now graduated one level further, to the
@@ -74,9 +74,6 @@ from .cose_wire import (
     verify_checkpoint_cose_offline,
 )
 from .emit import (
-    DEFAULT_TS_PUBLIC_KEY_ID,
-    DEFAULT_TS_PUBLIC_KEY_PEM,
-    DEFAULT_TS_URL,
     EXAMPLE_CONFIG_TOML,
     STUB_MARKER,
     STUB_TS_URL,
@@ -134,9 +131,6 @@ __all__ = [
     "RangeProof",
     "verify_range",
     "MemoryNodeStore",
-    "DEFAULT_TS_URL",
-    "DEFAULT_TS_PUBLIC_KEY_PEM",
-    "DEFAULT_TS_PUBLIC_KEY_ID",
     "EXAMPLE_CONFIG_TOML",
     "STUB_MARKER",
     "STUB_TS_URL",

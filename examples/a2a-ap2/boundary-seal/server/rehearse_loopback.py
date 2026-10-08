@@ -83,9 +83,11 @@ async def main() -> int:
     entry_hash = hashlib.sha256(bytes.fromhex(cid)).hexdigest()
     assert entry_hash == binding["entry_hash"], "entry_hash mismatch vs returned binding"
 
-    # fetch the frozen receipt (idempotent resolve) + authority key, verify offline
+    # fetch the receipt with the read-only resolve (GET never registers; a
+    # second POST /v1/digest would be a second submission) + authority key,
+    # then verify offline
     with httpx.Client(timeout=30) as c:
-        reg = c.post(f"{ANCHOR}/v1/digest", json={"capsule_id": cid}).json()
+        reg = c.get(f"{ANCHOR}/v1/inclusion/{cid}").json()
         receipt = base64.b64decode(reg["receipt_b64"])
         pk = c.get(f"{ANCHOR}/anchor/authority-pubkey").json()
         ip = c.get(f"{ANCHOR}/anchor/inclusion-proof-ct",

@@ -35,7 +35,7 @@ would itself be the oracle).
 
 Design:
   - **Exact-text allowlist**, `leak_lint_allowlist.txt` next to this script, for genuine
-    historical record. Never line numbers -- the exact stripped line text.
+    historical record, loaded from the trusted scanner checkout, never the scanned PR. Never line numbers -- the exact stripped line text.
   - **Scans generated artifacts too** (`.txt`, `.xml`), not just sources.
   - **Lockfile URL and hash values are not term-matched** (`package-lock.json`, `yarn.lock`,
     `pnpm-lock.yaml`) when they are what a public registry or a hash looks like: an https URL
@@ -339,7 +339,7 @@ def classify(
 
 def scan(root: Path, terms: dict[str, tuple[str, ...]]) -> tuple[list[str], list[str]]:
     """(bracket-only hits, hits on lines where a term matched), each `path:line:classes: text`."""
-    allow = _load_allowlist(root)
+    allow = _load_allowlist(Path(__file__).resolve().parent.parent)
     bracket_only: list[str] = []
     term_hits: list[str] = []
     for f in _tracked_files(root):

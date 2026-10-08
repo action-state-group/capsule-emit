@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/action-state-group/capsule-emit/blob/main/docs/schemas/witnesses.schema.json",
   "title": "Witness directory",
-  "description": "Shape of witnesses.json. Checks JSON Schema cannot express (alphabetical order, a key id listed at most once, each public_keys entry hashing to one of its row's key_ids) are enforced by capsule_emit.witness_directory.",
+  "description": "Shape of witnesses.json. Checks JSON Schema cannot express (alphabetical order, a key id listed at most once, each public_keys entry matching one of its row's key_ids, by SHA-256 or, for an Ed25519 key, by its raw bytes) are enforced by capsule_emit.witness_directory.",
   "type": "object",
   "additionalProperties": false,
   "required": ["directory_version", "witnesses"],
@@ -30,7 +30,7 @@
             "enum": ["cll", "rekor", "scrapi"]
           },
           "public_keys": {
-            "description": "Base64 DER SubjectPublicKeyInfo of each key that is not Ed25519. Each must hash (SHA-256) to one of the row's key_ids. Required for a rekor row, where every key id is a log ID; the validator also checks each rekor key id has its key here.",
+            "description": "Base64 DER SubjectPublicKeyInfo of a row's keys. Each must match one of the row's key_ids: its SHA-256 does (a key that is not Ed25519, listed under its log ID), or, for an Ed25519 key, its raw 32 bytes do (the key id is the raw key; listing it here is optional). Required for a rekor row, where every key id is a log ID and only a key that hashes to it covers it; the validator also checks each rekor key id has its key here.",
             "type": "array",
             "minItems": 1,
             "uniqueItems": true,

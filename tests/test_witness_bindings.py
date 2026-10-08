@@ -340,7 +340,7 @@ def test_push_to_cll_and_rekor_gives_two_receipts_two_operators(tmp_path, server
     )
     by_binding = {v.binding: v for v in result.receipts}
     assert by_binding["rekor"].verified, by_binding["rekor"].reason
-    assert by_binding["rekor"].grade == "countersigned-observed"
+    assert by_binding["rekor"].grade == "observed-only"
     assert by_binding["cll"].verified, by_binding["cll"].reason
     assert result.counted == 2 and result.operators == 2 and result.policy_met
     assert result.summary() == "2 witnesses · 2 operators"
@@ -355,7 +355,7 @@ def test_rekor_receipt_is_never_mmr_verified(tmp_path, servers):
         checkpoint_cose_hex=state.checkpoint_cose_hex,
         directory=_dir(_row("r", rekor_url, REKOR_TEST_PUBLIC_KEY_PEM)),
     )
-    assert [v.grade for v in result.receipts] == ["countersigned-observed"]
+    assert [v.grade for v in result.receipts] == ["observed-only"]
 
 
 def test_rekor_receipt_under_another_rows_key_does_not_count(tmp_path, servers):
@@ -456,6 +456,35 @@ def test_rekor_refusal_never_blocks_the_other_witness_and_is_retried(tmp_path, s
 # -- scrapi -------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    ("label", "grade"),
+    [
+        ("observed-only", "observed-only"),
+        # Issued before the rename: the same meaning, reported under its current name.
+        ("countersigned-observed", "observed-only"),
+        ("mmr-verified", "mmr-verified"),
+        (None, "observed-only"),
+        ("fully-verified", "observed-only"),
+    ],
+)
+def test_scrapi_receipt_grade_label(label, grade):
+    checkpoint_cose = b"checkpoint statement bytes"
+    leaf = hashlib.sha256(checkpoint_cose).hexdigest()
+    receipt = build_receipt(
+        leaf_entry_hex=leaf,
+        leaf_index=0,
+        tree_entries_hex=[leaf],
+        alg="EdDSA",
+        log_private_key_pem=TEST_TS_PRIVATE_KEY_PEM,
+        grade=label,
+    )
+    ok, _reason, got = wb.verify_scrapi_receipt(
+        receipt, checkpoint_cose=checkpoint_cose, service_public_key_pem=TEST_TS_PUBLIC_KEY_PEM
+    )
+    assert ok
+    assert got == grade
+
+
 def test_scrapi_registration_polls_and_verifies_under_the_rows_key(tmp_path, servers):
     scrapi_url = "scrapi+" + servers(_ScrapiHandler, pending={})
     _l, cp, state = _pushed(tmp_path, [scrapi_url])
@@ -468,7 +497,7 @@ def test_scrapi_registration_polls_and_verifies_under_the_rows_key(tmp_path, ser
         directory=_dir(_row("s", scrapi_url, TEST_TS_PUBLIC_KEY_PEM)),
     )
     assert listed.counted == 1, listed.receipts
-    assert listed.receipts[0].grade == "countersigned-observed"
+    assert listed.receipts[0].grade == "observed-only"
 
     unlisted = wb.verify_witnesses(
         state.checkpoint, state.effective_witnesses, checkpoint_cose_hex=state.checkpoint_cose_hex, directory=_dir()
@@ -511,7 +540,7 @@ def test_the_default_witness_has_no_built_in_key(tmp_path, servers):
     directory row for it, is not checked -- exactly like an unlisted third
     party. Before the directory was the only key source, this URL was
     auto-pinned to a built-in key."""
-    from capsule_emit.checkpoint import DEFAULT_TS_URL
+    from cll.checkpoint.emit import DEFAULT_TS_URL
 
     for url in (DEFAULT_TS_URL, "https://third.example"):
         state, rec = _cll_receipt_at(url, tmp_path / url.split("//")[1], servers)
@@ -558,9 +587,9 @@ def test_our_row_is_not_rescued_by_the_built_in_key(tmp_path, servers, monkeypat
     plurality path still reached for the built-in key, it would."""
     import cll.checkpoint
     import cll.checkpoint.emit
+    from cll.checkpoint.emit import DEFAULT_TS_URL
 
     import capsule_emit.checkpoint
-    from capsule_emit.checkpoint import DEFAULT_TS_URL
 
     for mod in (cll.checkpoint.emit, cll.checkpoint, capsule_emit.checkpoint):
         monkeypatch.setattr(mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM, raising=False)

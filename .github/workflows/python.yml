@@ -34,19 +34,6 @@ jobs:
       - name: install capsule-emit
         run: pip install -e ".[dev,agentgateway,langchain,agno,otel]"
 
-      - name: pin agent-action-capsule to the -05 wire (from source; no PyPI release carries -05 yet)
-        # agent-action-capsule main at the -05 wire bump (#126, with its
-        # follow-ups): DEFAULT_SPEC_VERSION -05, ACCEPTED_SPEC_VERSIONS (-04,
-        # -05). Runs AFTER the install above and forces the reinstall: main
-        # still says version 0.5.0, the same as the PyPI release, so a plain
-        # install would leave PyPI's -04 build in place. --no-deps keeps the
-        # rest of the environment as resolved. tests/test_spec_version_04_05.py
-        # checks capsule-emit's constants against it. Replace with a PyPI floor
-        # in pyproject.toml once a release carries -05.
-        run: >
-          pip install --force-reinstall --no-deps
-          "git+https://github.com/action-state-group/agent-action-capsule.git@439dc02c05d1177ea7c786bf759994d71b85ccc3#subdirectory=python"
-
       - name: agent-action-capsule is the -05 build (so nothing below tests against -04)
         run: >
           python -c "import agent_action_capsule as a;
@@ -79,19 +66,6 @@ jobs:
 
       - name: install capsule-emit with the inspect-ai extra
         run: pip install -e ".[dev,inspect-ai]"
-
-      - name: pin agent-action-capsule to the -05 wire (from source; no PyPI release carries -05 yet)
-        # agent-action-capsule main at the -05 wire bump (#126, with its
-        # follow-ups): DEFAULT_SPEC_VERSION -05, ACCEPTED_SPEC_VERSIONS (-04,
-        # -05). Runs AFTER the install above and forces the reinstall: main
-        # still says version 0.5.0, the same as the PyPI release, so a plain
-        # install would leave PyPI's -04 build in place. --no-deps keeps the
-        # rest of the environment as resolved. tests/test_spec_version_04_05.py
-        # checks capsule-emit's constants against it. Replace with a PyPI floor
-        # in pyproject.toml once a release carries -05.
-        run: >
-          pip install --force-reinstall --no-deps
-          "git+https://github.com/action-state-group/agent-action-capsule.git@439dc02c05d1177ea7c786bf759994d71b85ccc3#subdirectory=python"
 
       - name: agent-action-capsule is the -05 build (so nothing below tests against -04)
         run: >

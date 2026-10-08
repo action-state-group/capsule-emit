@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from capsule_emit.witness_directory import (
@@ -208,7 +208,7 @@ def test_binding_is_optional_and_restricted():
 def test_public_key_must_hash_to_a_key_id_of_its_row():
     doc = _valid()
     doc["witnesses"][1]["key_ids"] = ["55" * 32]
-    assert any("not one of this row's key_ids" in e for e in validate_directory(doc))
+    assert any("matches none of this row's key_ids" in e for e in validate_directory(doc))
 
 
 def test_public_key_must_be_der():
@@ -247,6 +247,51 @@ def test_row_keys_read_ed25519_and_other_keys_the_same_way():
     ed_row, ec_row = _valid()["witnesses"][0], _valid()["witnesses"][1]
     assert row_public_keys_pem(ed_row)[0].startswith(b"-----BEGIN PUBLIC KEY-----")
     assert row_public_keys_pem(ec_row)[0].startswith(b"-----BEGIN PUBLIC KEY-----")
+
+
+def _ed25519_key() -> tuple[str, str, bytes]:
+    """A fresh Ed25519 key: its raw hex (a key id), its base64 DER, its PEM."""
+    public = ed25519.Ed25519PrivateKey.generate().public_key()
+    raw = public.public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+    der = public.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    return raw, base64.b64encode(der).decode(), public.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+
+
+def test_an_ed25519_row_may_publish_its_key_in_public_keys():
+    raw, b64, pem = _ed25519_key()
+    doc = _valid()
+    doc["witnesses"][0]["key_ids"] = [raw]
+    doc["witnesses"][0]["public_keys"] = [b64]
+    assert validate_directory(doc) == []
+    assert row_public_keys_pem(doc["witnesses"][0]) == [pem]
+
+
+def test_an_ed25519_public_key_must_be_the_key_its_key_id_names():
+    raw, _, _ = _ed25519_key()
+    _, other, _ = _ed25519_key()
+    doc = _valid()
+    doc["witnesses"][0]["key_ids"] = [raw]
+    doc["witnesses"][0]["public_keys"] = [other]
+    assert any("witnesses[0].public_keys[0]: matches none of this row's key_ids" in e for e in validate_directory(doc))
+
+
+def test_an_ed25519_public_key_does_not_cover_a_rekor_log_id():
+    """A rekor key id is a log ID: only a key that hashes to it covers it."""
+    raw, b64, _ = _ed25519_key()
+    doc = _valid()
+    doc["witnesses"][1]["key_ids"] = [raw]
+    doc["witnesses"][1]["public_keys"] = [b64]
+    assert any("a rekor row's key id is a log ID" in e for e in validate_directory(doc))
+
+
+def test_committed_ed25519_public_keys_are_the_keys_their_key_ids_name():
+    """Reading a row with or without its public_keys gives the same keys."""
+    rows = json.loads(DIRECTORY.read_text(encoding="utf-8"))["witnesses"]
+    published = [r for r in rows if r.get("binding", "cll") != "rekor" and r.get("public_keys")]
+    assert published, "the directory lists at least one Ed25519 public key"
+    for row in published:
+        bare = {k: v for k, v in row.items() if k != "public_keys"}
+        assert row_public_keys_pem(row) == row_public_keys_pem(bare)
 
 
 def test_row_for_matches_binding_and_endpoint():

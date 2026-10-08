@@ -18,8 +18,10 @@ requires, is the verifier's policy.
 key this is the raw 32-byte public key. A service whose key is not Ed25519
 (a Rekor log signs with ECDSA P-256) lists the SHA-256 of the key's DER
 SubjectPublicKeyInfo -- the RFC 6962 log ID -- and carries the key itself in
-``public_keys`` (base64 DER); every ``public_keys`` entry must hash to one of
-the row's ``key_ids``. A key id cannot say which of the two it is -- any 32
+``public_keys`` (base64 DER). An Ed25519 row may also publish its key in
+``public_keys``, so a reader that wants the DER form need not build it. Every
+``public_keys`` entry must match one of the row's ``key_ids``: its SHA-256
+does, or, for an Ed25519 key, its raw 32 bytes do. A key id cannot say which of the two it is -- any 32
 bytes load as an Ed25519 public key, a log ID included -- so a ``rekor`` row
 must carry a ``public_keys`` entry for EVERY key id (a Rekor key id is always
 a log ID), and :func:`row_public_keys_pem` never reads a ``rekor`` key id as
@@ -114,6 +116,21 @@ def _der(b64: str) -> bytes | None:
         return None
 
 
+def _raw_ed25519(der: bytes) -> str | None:
+    """The raw 32-byte key, in hex, when ``der`` is an Ed25519
+    SubjectPublicKeyInfo; else ``None``."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_der_public_key
+
+    try:
+        key = load_der_public_key(der)
+    except ValueError:
+        return None
+    if not isinstance(key, Ed25519PublicKey):
+        return None
+    return key.public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+
+
 def _public_key_hashes(value: object) -> set[str]:
     if not isinstance(value, list):
         return set()
@@ -131,8 +148,11 @@ def _check_public_keys(where: str, value: object, key_ids: list[str], errors: li
             der = None
         if der is None:
             errors.append(f"{where}.public_keys[{i}]: must be a base64 DER SubjectPublicKeyInfo")
-        elif hashlib.sha256(der).hexdigest() not in key_ids:
-            errors.append(f"{where}.public_keys[{i}]: its SHA-256 is not one of this row's key_ids")
+        elif hashlib.sha256(der).hexdigest() not in key_ids and _raw_ed25519(der) not in key_ids:
+            errors.append(
+                f"{where}.public_keys[{i}]: matches none of this row's key_ids "
+                "(neither its SHA-256 nor, for an Ed25519 key, its raw 32 bytes)"
+            )
 
 
 def _check_since(where: str, value: object, errors: list[str]) -> None:
@@ -252,8 +272,9 @@ def row_for(directory: Any, ts_url: str) -> dict | None:
 
 def row_public_keys_pem(row: dict) -> list[bytes]:
     """Every public key a row lists, as SubjectPublicKeyInfo PEM, in
-    ``key_ids`` order: the ``public_keys`` entry whose SHA-256 is the key id
-    when there is one, else the key id read as a raw Ed25519 key -- except in
+    ``key_ids`` order: the ``public_keys`` entry the key id names (by SHA-256,
+    or an Ed25519 key by its raw bytes) when there is one, else the key id
+    read as a raw Ed25519 key -- except in
     a ``rekor`` row, where an uncovered key id raises ``ValueError`` (it is a
     log ID, and reading it as a key would fail silently)."""
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -268,6 +289,9 @@ def row_public_keys_pem(row: dict) -> list[bytes]:
         der = _der(b64)
         if der is not None:
             by_hash[hashlib.sha256(der).hexdigest()] = der
+            raw = _raw_ed25519(der)
+            if raw is not None:
+                by_hash[raw] = der
     pems = []
     for key_id in row.get("key_ids", []):
         if key_id in by_hash:

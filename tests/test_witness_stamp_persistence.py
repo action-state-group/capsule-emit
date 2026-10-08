@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for O16 audit item 16 ("Stamp-as-log-entry"):
+"""Acceptance tests for stamps as log entries ("Stamp-as-log-entry"):
 
 Checkpoint/witness records must stop living only as an in-memory
 ``CheckpointRecord.witnesses`` mutation and become their own persisted
 ledger entry -- written through ``ledger.append_to_ledger`` -- so that
 checkpoint N's stamp is itself a leaf checkpoint N+1's MMR root covers
-(frozen surface §2.3: "the stamp does land as its own log entry ... so
+("the stamp does land as its own log entry ... so
 checkpoint N's stamp is covered by checkpoint N+1").
 
 Covers:
@@ -193,7 +193,7 @@ def test_checkpoint_is_persisted_as_its_own_ledger_entry(tmp_path, stub_ts, monk
     # mmr_size is total MMR *node* count, not leaf count -- node_count(f) = 2f - popcount(f).
     assert cp["mmr_size"] == mmr_core.node_count(3)
     # The leaf commits to the FULL persisted entry (signature + witnesses),
-    # not just the signing body cp.digest() would cover -- see O16-16's
+    # not just the signing body cp.digest() would cover -- see the stamp-as-log-entry rule's
     # leaf-coverage fix (CheckpointRecord.entry_digest()).
     assert stamp["capsule_id"] == _sha256_of_full_entry(cp)
     assert stamp["capsule_id"] != _sha256_of_signing_body(cp), (

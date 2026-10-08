@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Permanent regression tests for the "verify authenticates nothing" escalation
-(2026-08-24): an adversarial run against ``origin/main`` (documented in the
-frozen adversarial-migration run report) found the offline read/verify
+"""Permanent regression tests for an adversarial review (2026-08-24): a run
+against ``origin/main`` found the offline read/verify
 surface authenticated almost nothing -- structure was checked, cryptography
 was not. The original attack scripts lived at ``/tmp/atk/*.py`` in that run
 and are gone; this file reconstructs the three repros from the run report as
@@ -107,6 +106,7 @@ def stub_ts(monkeypatch):
     # unverified" for being an unpinned TS. monkeypatch reverts per test.
     base_url, received, stop = _start_stub_ts()
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", base_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
@@ -378,7 +378,9 @@ def test_attack45_positive_control_genuine_stamp_still_grades_witnessed(two_chec
 
     assert cp.grade() == Grade.WITNESSED
 
-    result = status.compute_status(str(ledger_path), offline=True)
+    result = status.compute_status(
+        str(ledger_path), offline=True, trust_anchor={cp.witnesses[0].ts_url: TEST_TS_PUBLIC_KEY_PEM}
+    )
     assert result["latest_checkpoint"]["grade"] == "witnessed"
 
 

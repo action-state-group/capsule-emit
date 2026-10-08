@@ -71,10 +71,9 @@ __all__ = [
     "CapsuleOTelSpanExporter",
 ]
 
-#: Provisional per the draft ("`aac.capsule_id` is a placeholder ... expect
-#: rename to `gen_ai.evidence.*`" once the OpenTelemetry semantic-conventions
-#: registry assigns a real name). A single named constant so the eventual
-#: rename is a one-line change here, not a grep-and-replace.
+#: Provisional: ``aac.capsule_id`` is a placeholder until the OpenTelemetry
+#: semantic-conventions registry assigns a name. A single named constant so
+#: the eventual rename is a one-line change here, not a grep-and-replace.
 REVERSE_JOIN_ATTRIBUTE = "aac.capsule_id"
 
 
@@ -135,6 +134,7 @@ def process_span_facts(
     clear_trace_context: bool = False,
     semconv_source: str = DEFAULT_SEMCONV_SOURCE,
     outcome_context_baggage_keys: frozenset[str] = frozenset(),
+    admit_conditional: frozenset[str] = frozenset(),
 ) -> EmitResult | None:
     """Classify *facts*, and seal a capsule iff it classifies ``EFFECT``.
 
@@ -159,6 +159,10 @@ def process_span_facts(
     in a span name, e.g. an HTTP client span named with an unrendered
     route). ``action_label`` below applies the identical gate everywhere the
     name could leave the process.
+
+    *admit_conditional* is passed through to
+    :func:`capsule_emit.otel.block.build_otel_block`: the conditional semconv
+    rows the deployment has checked and admits.
     """
     name = facts.name or "unknown"
     classification = classify_span_signal_1(name, facts.attributes or {})
@@ -178,6 +182,7 @@ def process_span_facts(
             resource_attributes=facts.resource_attributes,
             clear_trace_context=clear_trace_context,
             semconv_source=semconv_source,
+            admit_conditional=admit_conditional,
         )
     except ValueError as exc:
         warnings.warn(f"capsule-emit otel: malformed span identifiers for {name!r}: {exc}", RuntimeWarning, stacklevel=2)
@@ -271,6 +276,7 @@ class CapsuleOTelSpanExporter:
         clear_trace_context: bool = False,
         semconv_source: str = DEFAULT_SEMCONV_SOURCE,
         outcome_context_baggage_keys: frozenset[str] = frozenset(),
+        admit_conditional: frozenset[str] = frozenset(),
     ) -> None:
         self._operator = operator
         self._developer = developer
@@ -279,6 +285,7 @@ class CapsuleOTelSpanExporter:
         self._clear_trace_context = clear_trace_context
         self._semconv_source = semconv_source
         self._outcome_context_baggage_keys = outcome_context_baggage_keys
+        self._admit_conditional = admit_conditional
 
     def export(self, spans: Sequence[Any]) -> SpanExportResult:
         from opentelemetry.baggage import get_all as get_current_baggage
@@ -302,6 +309,7 @@ class CapsuleOTelSpanExporter:
                 clear_trace_context=self._clear_trace_context,
                 semconv_source=self._semconv_source,
                 outcome_context_baggage_keys=self._outcome_context_baggage_keys,
+                admit_conditional=self._admit_conditional,
             )
         return SpanExportResult.SUCCESS
 

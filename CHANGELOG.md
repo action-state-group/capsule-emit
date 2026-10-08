@@ -4,7 +4,184 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## Unreleased
+## 0.9.0 — 2026-10-07
+
+### Changed — agent-action-capsule floor raised to 0.7.0
+
+- `pyproject.toml` now requires `agent-action-capsule>=0.7.0`. The old `>=0.4.0` was below what this
+  release needs: it stamps the -05 wire (agent-action-capsule 0.6.0 and later), and verification
+  hands off to agent-action-capsule, so an environment still on an older release would accept the
+  records the 0.7.0 verifier rules reject (non-string in a string-typed field, malformed
+  `references[].retention`). CI no longer force-reinstalls agent-action-capsule from a pinned commit;
+  it tests the declared floor from PyPI, and still asserts the installed build is the -05 wire.
+
+### Fixed — grade-ladder vocabulary: one axis, and the countersignature annotations
+
+- `TRANSLATION.md`'s ladder table and `docs/why-anchoring.md`'s "honest ladder" section now
+  state the ladder as `self-attested` → `witnessed` → `countersigned`, on one axis, and name the
+  two countersignature annotations, `self-countersigned` and `unresolved-signer`: they are not
+  rungs and leave the grade where witnessing put it (a self-countersigned record with no witness
+  receipt is self-attested). Independence is recomputed from the signer's key, never taken as a
+  self-reported label: a signer countersigning its own material always resolves as
+  `self-countersigned`, regardless of what it claims. The mapping onto an Evidence Result's grade
+  is proposed in agent-action-capsule PR #187 (pending). No code or digest behavior changes.
+
+### Changed — BREAKING: capsule-emit writes only the five registered relations
+
+`chain.relation` is now one of `follows`, `confirms`, `supersedes`, `epoch_opens`, `duplicates`
+(agent-action-capsule REGISTRY.md section 6); `seal()` / `_emit_capsule` raise `ValueError` for any
+other value. New in `capsule_emit.relations`: `REGISTERED_RELATIONS`, `LEGACY_RELATION_ALIASES`,
+`registered_meaning()`.
+
+- `seal_adjudication` writes `confirms` (it observes the compared half; the half's open state
+  remains), not `adjudicates`. `adjudication.is_adjudication()` recognises an adjudication by its
+  adjudication block, or by the legacy `adjudicates` on older records; `chain_segment` uses it.
+  `adjudication.RELATION_ADJUDICATES` is now `"confirms"`; `LEGACY_RELATION_ADJUDICATES` is the old
+  token.
+- `relation=None` with a chain target writes `follows` (the library underneath used to fill in
+  the unregistered `sequence`).
+- The goose example: its escalation writes `supersedes`, its ordered tool calls `follows`.
+- The `seal()` docstring no longer advertises `escalates` / `assesses`; a judge verdict uses
+  `confirms`.
+- Older records are still read: `sequence`, `resolves`, `escalates`, `adjudicates` and `assesses`
+  are documented legacy aliases (`docs/chaining.md`).
+
+### Changed — approvals write the registered `supersedes`, not `resolves`
+
+`seal_approval` wrote `chain.relation = "resolves"`, which is not a registered relation value.
+It now writes `supersedes`, the registered terminal relation: an approval or a denial closes the
+blocked capsule's open state (every path through `seal_approval` does, so none uses `confirms`).
+**Old records still close pending items:** `list_pending` reads `resolves` as a deployed legacy
+alias of `supersedes` (`approval.LEGACY_RESOLVES`, `approval.RESOLVING_RELATIONS`); nothing
+writes it any more. Documented in `docs/chaining.md`.
+
+### Changed — `checkpointed-local-log` capped below 0.5
+
+The dependency is now `checkpointed-local-log>=0.4.1,<0.5`. cll 0.5 drops its default witness and
+built-in witness key (a breaking change capsule-emit adopts in its own release), so a cll release
+can no longer change this package's behaviour under it.
+
+### Changed — BREAKING: no default witness, anchor or verify surface
+
+The library no longer sends anything to, or builds links for, a service its caller did not name.
+
+- **Witnessing has no default witness.** With witnessing on and no `witness_url=` /
+  `CAPSULE_WITNESS_URL`, no checkpoint leaves the process: a one-time notice says no witness is
+  configured and how to name one, `witness_outcome` is `"local_sealed"`, and `push()` returns
+  `None`. Before, an unconfigured `seal()` posted checkpoints to
+  `https://witness.agentactioncapsule.org`. To keep that, set
+  `CAPSULE_WITNESS_URL=https://witness.agentactioncapsule.org` (a public witness, like any other).
+- `require_witness=True` with no witness configured raises `WitnessRequiredError`.
+- `witness.resolved_witness_urls()` returns `[]` when none is configured (it returned the default).
+- `capsule_emit.checkpoint` no longer re-exports `DEFAULT_TS_URL`.
+- **The legacy anchor channel has no default endpoint.** An opted-in anchor (`anchor=True` /
+  `CAPSULE_ANCHOR=legacy-on`) with no `anchor_url=` / `AAC_ANCHOR_URL` sends nothing
+  (`anchor_status` `"skipped"`), where the library underneath would have chosen its own.
+- **Verification trusts no built-in witness key.** A witness receipt verifies only under a key the
+  caller supplies (`ts_pubkey_pem=`, a `trust_anchor`, or a witness directory the caller names,
+  such as the public `witnesses.json`); with none it reads `UNVERIFIED`. Before, a receipt from
+  `https://witness.agentactioncapsule.org` was checked under a key built into the library.
+  Applies to `witness.verify_witness_stamp_tristate_keyed`, the new `witness.stamp_verdict`,
+  `CheckpointWitnessState.grade()`, chain-segment verification and `status`.
+  `status.compute_status()` takes `trust_anchor=` / `witness_directory=` (reported as
+  `grade_keys`), and `capsule-emit status` takes `--witness-directory`; with no keys the latest
+  checkpoint grades self-attested and says its receipts were not checked. `bundle.verify_bundle`
+  and `disclose.verify_disclosure` judge a stamp that cll's log check would verify under its own
+  built-in key as having no key: `UNVERIFIED` unless `trust_anchor` names it.
+- `capsule_emit.checkpoint` no longer re-exports `DEFAULT_TS_PUBLIC_KEY_PEM` or
+  `DEFAULT_TS_PUBLIC_KEY_ID`.
+- **Permalinks have no default verify surface.** `permalink.DEFAULT_BASE_URL` is removed;
+  `build_url()` requires `base_url=`; `capsule-emit permalink` requires `--base-url`;
+  `build_evidence_markdown()` and `capsule-emit evidence` require it unless the viewer link is off
+  (`viewer_link=False` / `--no-viewer-link`). A public one is `https://verify.agentactioncapsule.org`.
+
+### Added — `export`: a scoped evidence file for a third party
+
+- `capsule-emit export LEDGER_DIR` writes an evidence file (`evidence-bundle/v2`) holding only
+  the records in one scope: `--exchange ID`, `--peer NODE`, `--since/--until TIME`, `--record ID`,
+  or `--all` (the whole ledger, only on purpose). With no scope it refuses.
+- It reads a ledger directory as the Mesh-LLM capsule-emit-mesh plugin writes it
+  (`capsules.jsonl`, with padding leaves, and `checkpoints.jsonl`), rebuilds the log, and checks it
+  against the newest checkpoint whose signature verifies. The file carries that checkpoint in its
+  portable COSE form (signed with the node's own key, `--signing-key`; never created) and one
+  inclusion proof per record. A record the checkpoint does not cover yet is refused by name.
+- The file says `completeness.selection: "producer-selected"`: each record's place in the log is
+  proven, and nothing is claimed about the records between them.
+- `verify --bundle` / `report` on such a file: where the installed agent-action-capsule verifier
+  does not know producer-selected files (every release up to 0.6.0), the check says so
+  ("Producer-selected file; this verifier cannot check its selection"), checks each record's
+  inclusion proof against the signed checkpoint itself, and gives INCOMPLETE, never a false
+  INVALID. A changed proof or root is still INVALID.
+
+### Changed — BREAKING (default behaviour): a whole-ledger evidence file needs `--all`
+
+- `permalink --ledger PATH --bundle-out FILE` on a ledger of more than one record now **exits 1**
+  and writes nothing unless `--all` is given: that file is the node's whole history, across every
+  counterparty. Scripts that relied on it pass `--all`, or switch to `capsule-emit export` for a
+  scoped file. The URL-only `permalink --ledger` is unchanged.
+
+### Changed — padding
+- `read_ledger` no longer reads padding leaves (`record_type: "padding"`) as capsules.
+
+### Changed — `witnesses.json` may publish an Ed25519 witness's key in `public_keys`
+
+- An Ed25519 row's `key_ids` entry is the raw key. A `public_keys` entry used to have to
+  hash to a key id, so an Ed25519 key could not be listed there. A `public_keys` entry now
+  matches a key id either by its SHA-256 (as before) or, for an Ed25519 key, by its raw
+  32 bytes. `row_public_keys_pem` returns the same key either way.
+- The `witness.agentactioncapsule.org` row now lists its key in `public_keys`, the value its
+  `GET /anchor/authority-pubkey` serves, checked against a receipt it issued.
+
+### Changed — receipt grade `observed-only` (was `countersigned-observed`)
+
+- The existence-and-time receipt grade is now named `observed-only`. A witness registers
+  and timestamps a checkpoint; it does not countersign it. `witness.normalize_receipt_grade`
+  reads a receipt's label, and a receipt issued before the rename that carries
+  `countersigned-observed` still verifies and is reported as `observed-only`, its same
+  meaning. `CheckpointWitnessState.receipt_grades()` and `witness_bindings.verify_witnesses()`
+  report `observed-only` for both labels, and for a Rekor receipt or an unlabeled SCRAPI
+  receipt. A caller that compared a reported grade to the string `"countersigned-observed"`
+  should compare to `"observed-only"`.
+
+### Changed — docs
+
+- docs: cite the OTel mapping draft by name (draft-palanisamy-scitt-aac-otel-00)
+
+### Changed — OTel processor: conformance with the OTel mapping profile
+
+- `gen_ai.usage.cache_creation.input_tokens` is now admitted; the table listed
+  `gen_ai.usage.cache_write.input_tokens`, which is not an attribute at the pinned
+  `open-telemetry/semantic-conventions-genai@8c1b98a`.
+- The six "clear-safe, conditional" semconv rows (`gen_ai.workflow.name`,
+  `gen_ai.tool.call.id`, `gen_ai.data_source.id`, `gen_ai.memory.store.id`,
+  `gen_ai.prompt.name`, `gen_ai.prompt.version`) are omitted unless named in the new
+  `admit_conditional` parameter. They were previously carried clear unconditionally.
+- `span_name` is carried only with `clear_trace_context=True`; it is no longer replaced by
+  its SHA-256 by default, because the profile defines no digest form for it.
+- All-zero trace and span IDs are rejected as W3C-invalid.
+
+### Changed — evidence-request refusal reasons aligned to `draft-mih-agent-evidence-request-00`
+
+- `evidence_request.answer()`'s "I hold nothing for this subject" refusal now emits
+  `reason="no_such_subject"` (the token `draft-mih-agent-evidence-request-00`, an
+  Internet-Draft -00, establishes in its IANA-style registry), not `no_such_record`.
+  This repo had modeled that case as the draft's *recorded absence* outcome, which is
+  wrong on two counts: `recorded_absence` is not a registry token at all — it is one of
+  the draft's three top-level interaction outcomes (artifact, refusal, absence) — and it
+  names the *requester's own* record that no answer arrived by a deadline, never
+  something a synchronous, always-signed responder like this one produces.
+  `REASON_NO_SUCH_RECORD` stays importable for one release as a deprecated alias name;
+  `LEGACY_REFUSAL_REASON_ALIASES` / `normalize_refusal_reason()` let a caller that reads a
+  peer's refusal keep recognizing the old spelling during a mixed-version rollout.
+- Added refusal reason `derivation_unsupported`: a request naming any `derivation` is now
+  refused with this reason rather than silently answered as a plain bundle — this responder
+  supports no derivation itself (a caller that supports one, e.g. capsule-emit-mesh's
+  `served_summary/1`, intercepts before calling `answer()`).
+- `request_malformed` and `coverage_unsatisfiable` were already the draft's spellings;
+  unchanged. `coverage_unsatisfiable` groups with `no_such_subject` as "evidence not
+  found, or not yet committed" per the draft's own status-mapping table — it is not a
+  policy-withheld reason like `derivation_unsupported`, and this repo's docs and
+  docstrings previously miscategorized it as one.
 
 ### Fixed: the first-use witness notice says witnessing, not countersigning
 
@@ -279,6 +456,45 @@ and the signed `issued_at`, to that verifier's rule.
   reaches the stub. The comment now says the setting is inert there.
 - No code or example behavior changed; every page's code blocks are byte-identical.
 
+
+### Added — Inspect `.eval` log sealing and the bilateral reconciliation fold
+
+- `capsule_emit.adapters.inspect_ai` (extra `inspect-ai`) seals a finished `inspect_ai` `.eval`
+  log: one record per model call and per tool call, digested from the harness's own
+  request/response bytes and chained in the harness's event order, plus one per sample result.
+  The docs say where the signing key lives so a sandboxed process cannot mint a record under the
+  harness's `key_id`. `examples/inspect-sealed-log-demo/` walks through it (#177, #178).
+- `capsule_emit.reconciliation` folds a requester half against a counterparty half into
+  matched / requester_only / contradicted (never a percentage), with a found/not-found
+  completeness sampler (#177).
+
+### Added — per-receipt grades beside the derived client grade
+
+- `CheckpointWitnessState.receipt_grades()` reports each effective witness receipt's own grade,
+  kept separate from `grade()`'s derived `WITNESSED` / `SELF_ATTESTED`: witnessed means only that
+  a receipt exists, never that consistency was checked (#179).
+
+### Changed — examples, tests, docs and CI
+
+- The verify and witness hostnames are canonical on `agentactioncapsule.org`, with a hostname
+  lint in CI (#222, #254).
+- `examples/a2a-ap2/boundary-seal`: the negative control is an id that can never be registered
+  (not hex), and a check notices when a control changes (#284).
+- Neutrality scanner: reads only regular files and does not follow symlinks, redacts terms on
+  untrusted runs, scans every tracked file, with pinned actions (#233, #234).
+- Tests: `verify_disclosure` trusts no built-in witness key (#272); the Evidence Request -00
+  vectors are re-copied from agent-action-capsule `ced858f` (#261).
+- Docs name every adapter, command, module family and the Rust crates (#278); value sets and
+  rules are described directly, and internal planning labels, task tags and paths are removed
+  (#235, #279, #280, #281, #282). `.gitignore` excludes env files (#283).
+
+### Rust crates (versioned and released separately)
+
+- The `rust/` crates (`capsule-emit`, `capsule-emit-evidence-request`) landed on this branch
+  (#230 to #273, including settlement records #255 and the crates.io Trusted Publishing workflow
+  #241). They ship under their own `crates/<name>-v*` tags and are not part of this Python
+  release.
+
 ## 0.8.6 — 2026-09-23
 
 ### Removed — the `ledger-io` extra, which no consumer could ever install
@@ -513,8 +729,8 @@ break a demo; an empty one reads as a broken artifact, which is why only that on
   all, not just an explicit null) is rejected identically — this check is format-version-driven, not
   value-driven. No production code changed; `capsule-emit`'s own producers already build only
   `format_version "4"` (confirmed: the one non-`emit()` producer path,
-  `capsule_emit/holds/capsules.py`, is migrated separately in [capsule-emit-fixture-format-version-4]).
-### Fixed — hold-lifecycle capsules now build at `format_version` `"4"` ([capsule-emit-fixture-format-version-4])
+  `capsule_emit/holds/capsules.py`, is migrated separately).
+### Fixed — hold-lifecycle capsules now build at `format_version` `"4"`
 
 - `capsule_emit/holds/capsules.py` hardcoded `format_version="2"` and never declared
   `canonicalization_id`, following the pre-reversal vintage profile. `agent_action_capsule`'s
@@ -589,7 +805,7 @@ authority block from both hooks, the planned record the request-phase block only
 See `tests/test_agentgateway.py`, `docs/adapters/agentgateway.md` (pairing design note +
 the executed refused-call run).
 
-### Deprecated — `EmitResult.anchored` / `.anchor_status` (O16 follow-up 2, [o16-fu-2-deprecate-anchored-fields-repr])
+### Deprecated — `EmitResult.anchored` / `.anchor_status`
 
 **What changed.** `EmitResult.anchored` / `.anchor_status` report only the legacy,
 non-default anchor channel and are kept for backward compatibility — new code should use
@@ -720,7 +936,7 @@ fatal. `capsule_emit.surface.log()` is a new, honestly-named unsigned append ver
 digest, full MMR/checkpoint/witness participation, never a signature/key_id) — there is no
 `sign=` kwarg anywhere, so `seal(sign=False)` can never become reachable.
 
-### Fixed — evidence-request `range` cap/paging; pull-only checkpoint writes (found in adversarial review)
+### Fixed — evidence-request `range` cap/paging; pull-only checkpoint writes
 
 A `range` subject had no cap or paging, so a large ledger's selector was a one-request
 memory/CPU amplifier. `answer()` now returns at most `MAX_PAGE_SIZE` bundles per `range`
@@ -738,9 +954,9 @@ that demanded one. Default behavior (`require_witness=False`) is unchanged.
 a "Fail-closed" section and an anti-equivocation section on verifying with `bundle()`, not
 `verify_input_digest()`.
 
-### Added — `chain_segment` evidence-request subject, the cheap form of history (E14)
+### Added — `chain_segment` evidence-request subject, the cheap form of history
 
-A third E14 subject kind, `{kind: "chain_segment", from_size, to_size}` (or `{last: N}`): the
+A third evidence-request subject kind, `{kind: "chain_segment", from_size, to_size}` (or `{last: N}`): the
 checkpoint CHAIN itself — each signed checkpoint, its witness receipts, and one consistency
 proof per link — plus per-checkpoint leaf counts by kind, and for adjudication leaves a
 verdict/role split. No records, no inclusion proofs; O(checkpoints), not O(records), so a
@@ -859,7 +1075,8 @@ segment of a chain). Unknown selection kinds remain fail-closed at construction 
 
 ### Added / Changed — slot-form composition; `compose()`/`carry()` removed
 
-**What changed.** The frozen v4 developer surface ships complete: `who()`/`can()`/`did()`/`audit()` slot wrappers, passed into `seal()`, replace the
+**What changed.** The v4 developer surface
+ships complete: `who()`/`can()`/`did()`/`audit()` slot wrappers, passed into `seal()`, replace the
 v3 `compose([...])` flat-bind verb; `push()` forces an immediate, synchronous checkpoint instead of
 waiting on cadence.
 
@@ -869,7 +1086,7 @@ waiting on cadence.
   untouched. Single-payload `seal(payload)` is byte-for-byte unchanged. A slot wrapper's value is
   either a payload (minted fresh, under the slot name as its action) or an already-produced
   `Capsule` (referenced as-is — `can(received(...))` is byte-identical to calling `received(...)`
-  standalone, the O8 acceptance case). Bare foreign bytes nested in a slot wrapper are refused,
+  standalone, the slot-composition acceptance case). Bare foreign bytes nested in a slot wrapper are refused,
   same as `seal()`'s own dispatch rule — never guessed.
 - **`push()`.** New public verb: forces a checkpoint now, synchronously, sharing the per-ledger
   dispatch lock the cadence-triggered async path uses so the two never race. A no-op when
@@ -882,11 +1099,12 @@ waiting on cadence.
 - **Docs:** AGENTS.md/README.md/ADOPT.md canonical snippets now teach `seal()`, not the
   already-removed `emit()`; `AGENTS.md` shows the slot-form composition once. The OpenClaw skill's
   `seal_server.py` no longer re-enables the legacy per-record anchor channel by default
-  (`anchor=(not _ANCHOR_OFF)` was a regression against O16's off-by-default anchor).
+  (`anchor=(not _ANCHOR_OFF)` was a regression against the off-by-default anchor).
 
 ### Fixed — the verify surface authenticates cryptography, not just structure
 
-**What changed.** An adversarial run against `origin/main` found the offline read/verify surface authenticated almost nothing: the self-attested Ed25519
+**What changed.** An adversarial run against `origin/main`
+found the offline read/verify surface authenticated almost nothing: the self-attested Ed25519
 signature (`#80`) was minted on every capsule but never checked by a shipped verify path, `verify_bundle`
 never content-authenticated the receipt it hands a stranger, and the `witnessed` grade was
 presence-only (`len(witnesses) > 0`), so a hand-fabricated stamp laundered a self-attested checkpoint
@@ -939,7 +1157,7 @@ close here, on the same `verify_bundle`/`grade()` surface:
 notices) into its own result, so the new consistency/first-checkpoint notices don't flip an otherwise
 valid disclosure to invalid.
 
-### Added — stub witness + `CAPSULE_ENV=production` refusal (O16 audit item 6, "Stub mode + env refusal")
+### Added — stub witness + `CAPSULE_ENV=production` refusal
 
 **What changed.** `CAPSULE_WITNESS=stub` previously had no dedicated behavior at all —
 only `{"off","0","false","no"}` were recognized as off-values, so a stray `stub` would
@@ -952,7 +1170,7 @@ never leaves `Grade.SELF_ATTESTED` no matter how many stub stamps accumulate
 `CAPSULE_ENV=production` together with a stub-armed witness now refuses to run —
 `capsule_emit.witness.StubWitnessInProductionError`, raised synchronously at the top of
 `seal()`/`carry()`/`compose()`, before the capsule is ever written. The scream
-(frozen dev-surface v4 §1a.4) surfaces at the first stub-armed `seal()` (a distinct
+surfaces at the first stub-armed `seal()` (a distinct
 first-use notice, never conflated with the real witnessing notice) and in `status`
 (`"stub_witness": true`, a loud `⚠ STUB WITNESS` line, `witnessing_mode_now`).
 
@@ -968,7 +1186,7 @@ protected-header encoding once separate COSE-wire work lands the wire format its
 See `tests/test_stub_witness.py`, `tests/checkpoint/test_checkpoint_emit.py`, and
 `docs/checkpoint.md`'s "Test & dev — the stub witness" section.
 
-### Added — durable witness-outage retry, per-witness cursors, honest status lag (O5)
+### Added — durable witness-outage retry, per-witness cursors, honest status lag
 
 **What changed.** Witnessing is default-on, so outage handling is launch behavior:
 a checkpoint that failed to register with a witness was already persisted
@@ -999,7 +1217,7 @@ never hid the others having already advanced.
 See `tests/test_witness_outage_queue.py` and `docs/checkpoint.md`'s new "Witness
 outage" section.
 
-### Added — `received()`, standalone + nested-in-`seal()` carry dispatch (O16 audit item 7, "Standalone `received()` dispatch")
+### Added — `received()`, standalone + nested-in-`seal()` carry dispatch
 
 **What changed.** There was no `received()` verb — `git grep` for `received` across
 the tree returned zero verb-usage hits, and `seal()` performed zero type-checking on
@@ -1021,7 +1239,7 @@ new-verb risk from a breaking removal); its deprecation is a later, separate cha
 See `tests/test_seal_carry_compose.py` (dispatch-ambiguity refusal, standalone-carry,
 and nested-in-wrapper cases) and `capsule_emit/surface.py`'s module docstring.
 
-### Added — flock-based one-log-one-writer locking (O16 audit item 12, "Flock locking")
+### Added — flock-based one-log-one-writer locking
 
 **What changed.** No OS-level write coordination existed: `git grep` for
 `flock|fcntl|filelock|LOCK_EX` across the tree returned zero results, and
@@ -1033,7 +1251,7 @@ the duration of each append — mandatory, no opt-out. A second process that fin
 lock held fails immediately with `capsule_emit.ledger.LedgerLockedError`, naming the
 holder (pid/host/timestamp read from the lock file); waiting is opt-in only
 (`append_to_ledger(..., wait=True[, timeout=seconds])`), never silent, because a torn
-log manufactures fork evidence (frozen surface §7d).
+log manufactures fork evidence.
 
 This is an intentional behavior change: multi-process writers against one log
 directory (previously undocumented and unsafe) now get a hard, named error instead
@@ -1042,14 +1260,14 @@ of a silent, lucky-or-not interleave.
 See `tests/test_ledger_locking.py` (includes a real two-process test — prior
 concurrency coverage was thread-level only) and `docs/concurrency.md`.
 
-### Added — `disclose` CLI verb (O16 audit item 10)
+### Added — `disclose` CLI verb
 
 **What changed.** There was no `disclose` verb — only `disclosure.py`'s narrow
 single-capsule Disclosure Envelope builder, with no `--audience`, no range, no
 completeness statement, and no self-sealing disclosure record. New
 `capsule_emit.disclose` module + `capsule-emit disclose <path> <id|range> --audience
 NAME [--payloads all|selected] [--reveal SELECTOR:FIELD=payload.json] [--suppress
-FIELD]` CLI verb: `bundle()` (O16 audit item 14) plus selected payload content (built
+FIELD]` CLI verb: `bundle()` plus selected payload content (built
 per record via the existing `build_disclosure_envelope`), a **completeness
 statement** (`"contiguous"` for a single id/`id1..id2` range, `"producer-selected"`
 for an explicit `id1,id2,...` list — never overstated), an **audience-suppression
@@ -1067,11 +1285,11 @@ this neutral primitive.
 
 See `tests/test_disclose.py`, `docs/checkpoint.md`'s "Disclose" section.
 
-### Added — `#logged @ leaf N` repr (O16 audit item 9)
+### Added — `#logged @ leaf N` repr
 
 **What changed.** `EmitResult.__repr__` and `capsule-emit ledger show` previously gave
 no indication that a sealed capsule is already a leaf in your log, ambiently, before any
-checkpoint (frozen v4 surface §2.1). `EmitResult` gains a `seq` field — this capsule's
+checkpoint. `EmitResult` gains a `seq` field — this capsule's
 1-indexed position in its ledger file, the same `seq` `capsule_emit.witness`'s
 `_JsonlLogSource.scan` assigns per raw line (checkpoint-stamp entries counted too), so it
 becomes the MMR leaf index once a checkpoint covers it. `capsule_emit.ledger.append_to_ledger`
@@ -1080,11 +1298,11 @@ now returns this position. Both `repr(cap)` and `ledger show`'s header render it
 
 See `tests/test_logged_leaf_repr.py`.
 
-### Changed — kill switch now scopes all egress, not just checkpoint posting (O16 audit item 3)
+### Changed — kill switch now scopes all egress, not just checkpoint posting
 
 **What changed.** `witness=False` / `CAPSULE_WITNESS=off` used to gate only checkpoint
-posting — `status`'s witness-receipt re-check (O16-17) had nothing to gate it, and the
-legacy anchor channel (O16-01-02) was gated solely by the separate `CAPSULE_ANCHOR`
+posting — `status`'s witness-receipt re-check had nothing to gate it, and the
+legacy anchor channel was gated solely by the separate `CAPSULE_ANCHOR`
 env var, so `CAPSULE_WITNESS=off` alone left it fully live. It is now the single switch
 that zeroes all three: `capsule_emit.core._emit_capsule()` ANDs the legacy anchor
 channel's own on/off decision with the witness kill switch (an explicit `anchor=True` /
@@ -1097,29 +1315,29 @@ updated accordingly.
 
 See `tests/test_kill_switch_scope.py`, `docs/checkpoint.md`'s "Kill switch scope" section.
 
-### Added — `status` CLI verb (O16 audit item 17, "status's fetch-fold")
+### Added — `status` CLI verb
 
 **What changed.** No `status` verb existed at all (confirmed against `cli.py`'s actual
 subparser list), and there was no separate `fetch` verb either. `capsule-emit status
 <ledger> [--offline] [--json]` is net-new (`capsule_emit/status.py`): it reports each
-checkpoint's ladder rung (`self-attested` / `witnessed`, via O16-11's `grade()`), and two
+checkpoint's ladder rung (`self-attested` / `witnessed`, via `grade()`), and two
 honest lag numbers — records awaiting the next checkpoint (sealed capsules, and a
 checkpoint's own not-yet-covered stamp entry, past the latest checkpoint's covered leaf
-count per O16-16) and checkpoints still awaiting a witness stamp (persisted checkpoints
+count per stamp entry) and checkpoints still awaiting a witness stamp (persisted checkpoints
 graded `self-attested`). Unless `--offline`, it makes exactly one read-only network
 call — a GET of the Transparency Service's public key to independently re-confirm the
 latest checkpoint's already-held witness receipt(s) (`verify_receipt_offline`); it never
 re-registers a self-attested checkpoint to obtain a new stamp, since that would write a
 new TS log entry — writes belong to `push`, not to a read verb. This folds the audit's
-"fetch" concept into `status` per the frozen surface's read-verb table, matching every
+"fetch" concept into `status` per the public API's set of read verbs, matching every
 other read verb's "reads never write" rule.
 
 See `tests/test_status.py` and `docs/checkpoint.md`'s "Checking status" section.
 
-### Added — `bundle()`, the hand-to-anyone artifact (O16 audit item 14, "Bundle contents")
+### Added — `bundle()`, the hand-to-anyone artifact
 
 **What changed.** New `capsule_emit.bundle` module: `bundle(path, capsule_id)` assembles
-the frozen surface's §2.5 shape for one record — receipt + inclusion proof + covering
+the shape the public API defines for one record — receipt + inclusion proof + covering
 checkpoint (with its witness stamp(s)) + prior checkpoint + consistency proof between the
 two — into one standalone `Bundle` object, JSON-round-trippable via `to_dict()`/
 `from_dict()`. `verify_bundle(b)` is the pure, offline, total counterpart: it checks
@@ -1144,7 +1362,7 @@ since it may need a network fetch of the TS public key.
 
 See `tests/test_bundle.py` and `docs/checkpoint.md`'s new "Bundle" section.
 
-### Added — checkpoint grade: self-attested / witnessed (O16 audit item 11, "Multi-witness any-of grading")
+### Added — checkpoint grade: self-attested / witnessed
 
 **What changed.** `CheckpointRecord` gains a `grade()` method and a new `Grade` enum
 (`capsule_emit.checkpoint.Grade`, also exported from `capsule_emit.checkpoint.emit`):
@@ -1153,7 +1371,7 @@ afterward. Fan-out-to-all and per-endpoint failure isolation already worked (mul
 `witness_url`s each get an independent registration attempt — one endpoint failing never
 blocks the others); what was missing was any concept of "grade" at all —
 `git grep grade` in `capsule_emit/` previously returned nothing. The transition is
-any-of, not all-of (frozen v4 surface §2a.3): the first valid stamp already flips the
+any-of, not all-of: the first valid stamp already flips the
 grade, and additional independently-operated witnesses only ever compound independence,
 never gate it further. A "valid stamp" here is any `WitnessRecord` present on
 `cp.witnesses` — `capsule_emit.witness._build_and_register` only ever appends one after
@@ -1170,12 +1388,12 @@ exist — this change is additive and does not call `grade()` from anywhere yet.
 See `tests/checkpoint/test_checkpoint_emit.py`'s grade tests and
 `tests/test_witness_multi_and_notice.py::test_one_valid_stamp_grades_witnessed_even_if_another_endpoint_fails`.
 
-### Added — age-based checkpoint cadence + explicit idle-silence guarantee (O16 audit item 5, "Idle silence")
+### Added — age-based checkpoint cadence + explicit idle-silence guarantee
 
 **What changed.** `capsule_emit.witness.maybe_checkpoint` (the default `emit()` wiring)
 and `capsule_emit.checkpoint.emit.due_for_checkpoint` (the manual/direct API) previously
 only ever came due on an entry-count cadence (`cadence_entries`, default 100) — there was
-no age-based leg at all, contrary to the frozen v4 surface's "Cadence: 100 entries or 15
+no age-based leg at all, contrary to the documented "Cadence: 100 entries or 15
 minutes, whichever first, both configurable." Both now also come due once
 `cadence_seconds` (`CheckpointConfig.cadence_seconds` / new `CAPSULE_WITNESS_CADENCE_SECONDS`
 env var, default 900 — 15 minutes) has elapsed since the first unwitnessed entry after the
@@ -1188,7 +1406,7 @@ unwitnessed entry — `due_for_checkpoint` returns `False` outright when
 inside a call that itself only runs on the back of a real `emit()`. There is no
 background timer or polling thread, so an idle log (no new `emit()` calls) never comes
 due on age alone — this is structural, not a runtime guard. Checkpoint-stamp entries
-(O16 audit item 16) reinforce this: they are written directly through
+reinforce this: they are written directly through
 `ledger.append_to_ledger`, never through `core.emit()`, so persisting a stamp neither
 advances the entry counter nor resets/starts the age clock.
 
@@ -1199,7 +1417,7 @@ constructors/`from_dict()` that don't set it.
 
 See `tests/test_witness_idle_silence_and_age_cadence.py` and `docs/checkpoint.md`.
 
-### Changed — checkpoint/witness stamps are now persisted ledger entries (O16 audit item 16, "Stamp-as-log-entry")
+### Changed — checkpoint/witness stamps are now persisted ledger entries
 
 **What changed.** Previously, once `capsule_emit.witness`'s default checkpoint/witness
 wiring built and registered a checkpoint, the returned `WitnessRecord`(s) were attached
@@ -1211,7 +1429,7 @@ self-attested) is written back into the *same ledger it covers* as its own JSONL
 "checkpoint": {...}}` — through the same `capsule_emit.ledger.append_to_ledger` every
 capsule already goes through. That entry becomes an MMR leaf the *next* checkpoint's
 `mmr.sync()` folds in, so checkpoint N's stamp is genuinely covered by checkpoint N+1,
-matching the frozen v4 surface's §2.3: "the stamp does land as its own log entry ...
+matching the documented rule: "the stamp does land as its own log entry ...
 checkpoint N's stamp is covered by checkpoint N+1."
 
 **Leaf coverage (PM gate ruling 2026-08-24).** The leaf commits to the checkpoint entry
@@ -1236,7 +1454,7 @@ are written directly via `append_to_ledger`, not through `core.emit()`.
 See `tests/test_witness_stamp_persistence.py` and `docs/checkpoint.md`'s new
 "Checkpoint/stamp persistence" section.
 
-### Changed — BREAKING (default-behavior): per-seal anchor killed as a default; single egress channel (O16-01-02)
+### Changed — BREAKING (default-behavior): per-seal anchor killed as a default; single egress channel
 
 **What changed.** The per-seal SCITT anchor submission that `seal()`/`carry()`/`compose()`
 (and the deprecated `emit()`) dispatched on every call by default has been killed as a
@@ -1250,16 +1468,16 @@ report `"skipped"` / `False` for the overwhelming majority of calls (anything th
 doesn't explicitly opt in). See `docs/why-anchoring.md` and `docs/checkpoint.md`.
 
 **Why.** The dual-channel default (anchor AND witness both firing on every call) was
-an undercounted-migration gap against the frozen v4 developer surface (`seal(payload)`
+an undercounted-migration gap against the v4 developer surface (`seal(payload)`
 promises one egress story, not two independent default network paths with overlapping
-purposes). See the O16 migration audit, items 1-2.
+purposes). See the migration audit.
 
 **Rollback.** `CAPSULE_ANCHOR=legacy-on` restores the pre-0.5.0 per-seal anchor
 dispatch for one release; not a code revert.
 
 ### Added — one-time stderr notice for stale `CAPSULE_ANCHOR=true`/`1`/`yes` (#81 follow-up 1)
 
-**What changed.** The O16-01-02 flip above was documented but silent at runtime: a
+**What changed.** The single-egress flip above was documented but silent at runtime: a
 pre-0.5.0 affirmative `CAPSULE_ANCHOR` value (`true`/`1`/`yes`, case-insensitive) now
 resolves to single-egress with no signal that the setting stopped doing anything.
 `seal()`/`carry()`/`compose()` now print a one-time stderr notice, the first time such
@@ -1270,7 +1488,7 @@ the env var) suppresses it too, since nothing was silently overridden in that ca
 
 ## [0.5.0] — 2026-08-23
 
-### Added — BREAKING (capsule shape): every `seal()`/`carry()`/`compose()` result is now cryptographically signed (O16-13, "Signer protocol seam")
+### Added — BREAKING (capsule shape): every `seal()`/`carry()`/`compose()` result is now cryptographically signed
 
 **What changed.** `seal()` (`capsule_emit.core._emit_capsule`) never touched a `Signer`
 at all — no cryptographic signature existed over sealed capsule content anywhere outside
@@ -1302,7 +1520,7 @@ install needs it. `import capsule_emit` alone still does not import `cryptograph
 what's still layered above `signature`/`key_id` (identity binding, the COSE_Sign1
 Signed-Statement wire format).
 
-### Changed — BREAKING (default-behavior): CLL checkpoint/witness is now default-ON (emit-witness-default-on)
+### Changed — BREAKING (default-behavior): CLL checkpoint/witness is now default-ON
 
 **What changed.** The CLL checkpoint/witness layer (`capsule_emit.checkpoint`, shipped
 opt-in in the previous release via the `cll-extract-mmr-to-capsule-emit` port) is now
@@ -1315,7 +1533,7 @@ participates automatically: once it accumulates `capsule_emit.witness.DEFAULT_CA
 registered with a Transparency Service with zero code change required.
 
 **Both prior rulings hold across the flip:**
-- **Digest-only (Amendment E's privacy posture).** Only the checkpoint's own SHA-256
+- **Digest-only (privacy posture).** Only the checkpoint's own SHA-256
   digest crosses the wire — no capsule content, no ledger path, no action names. Same
   posture as the already-default per-emit anchor. Registration is async,
   fire-and-forget, on a daemon thread; a cadence-crossing `emit()` call never blocks.
@@ -1387,7 +1605,7 @@ manual/direct API (`MmrLedger`, `CheckpointConfig`, `emit_checkpoint`,
 `register_checkpoint`) is unchanged and remains independently documented for callers who
 want their own cadence, key, or Transparency Service.
 
-### Fixed — LAUNCH BLOCKER: anchor had no first-run disclosure (emit-anchor-disclosure-and-endpoint-consolidation)
+### Fixed — LAUNCH BLOCKER: anchor had no first-run disclosure
 
 **The bug (found by Ethan, tested against shipped 0.4.0).** `anchor` defaults to
 on, and the very first `seal()`/`carry()`/`compose()` call in a process
@@ -1396,7 +1614,7 @@ at all** — it only became visible as a cryptic `RuntimeWarning` (a raw
 `repr(ModuleNotFoundError(...))`) when the optional `scitt_cose` dependency was
 missing, and even then only for whichever anchor futures happened to still be
 pending at interpreter shutdown; most vanished silently. This violated the
-default-on ruling's safeguard (Amendment E §E.1.4): every default network path
+default-on ruling's safeguard: every default network path
 must disclose before it fires. The witness/checkpoint path already got a
 correctly-ordered first-checkpoint notice in the previous release
 (`emit-witness-0.5.0-followup`) — the anchor path, which fires on every call

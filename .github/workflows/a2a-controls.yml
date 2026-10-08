@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# The A2A boundary-seal example's positive and negative controls, checked
+# against the live anchor: daily, on demand, and when the check itself changes.
+# GETs only (examples/a2a-ap2/boundary-seal/check_controls.py); it never
+# registers anything. A control that changes fails this workflow.
+name: a2a-controls
+
+on:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "examples/a2a-ap2/boundary-seal/**"
+      - ".github/workflows/a2a-controls.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: check the positive and negative controls
+        run: python examples/a2a-ap2/boundary-seal/check_controls.py

@@ -6,7 +6,7 @@ Covers:
   verify commands, viewer permalink (and its omission via viewer_link=False)
 - fail-closed: an empty ledger and a tampered capsule both refuse to bundle
 - honesty: attestation mode reported exactly as the capsules carry it
-- chained ledgers bundle cleanly (relation="sequence")
+- chained ledgers bundle cleanly (relation="follows")
 - CLI: exit 0 + markdown on stdout / --out file; exit 1 on tampered ledger
 """
 
@@ -23,6 +23,7 @@ from capsule_emit.cli import main
 from capsule_emit.evidence import EvidenceError, build_evidence_markdown
 
 ISSUE = "https://github.com/example-org/example/issues/1"
+BASE_URL = "https://verify.example"  # the verify surface these tests name (no default)
 
 
 def _ledger(tmp_path: Path, *, chained: bool = True) -> Path:
@@ -47,21 +48,21 @@ def _ledger(tmp_path: Path, *, chained: bool = True) -> Path:
         action_type="decide",
         effect={"status": "dispatched", "type": "test_run"},
         prior_capsule_id=r1.capsule_id if chained else None,
-        relation="sequence" if chained else None,
+        relation="follows" if chained else None,
     )
     return path
 
 
 def test_markdown_structure(tmp_path):
     capsules = read_ledger(_ledger(tmp_path))
-    md = build_evidence_markdown(capsules, issue_url=ISSUE)
+    md = build_evidence_markdown(capsules, issue_url=ISSUE, base_url=BASE_URL)
     assert md.startswith("## Verification evidence")
     assert f"Implements: {ISSUE}" in md
     assert "| 1 | `run_repro` | fyi |" in md
     assert "| 2 | `run_tests` | decide |" in md
     assert "agent-action-capsule verify --store ledger.jsonl" in md
     assert "capsule-emit permalink --ledger ledger.jsonl --check" in md
-    assert "verify.agentactioncapsule.org/bundle#" in md
+    assert "verify.example/bundle#" in md
     # short capsule_ids from the real ledger appear in the table
     for cap in capsules:
         assert f"`{cap['capsule_id'][:8]}`" in md
@@ -78,7 +79,7 @@ def test_no_issue_no_viewer_link(tmp_path):
 
 def test_attestation_mode_reported_as_carried(tmp_path):
     capsules = read_ledger(_ledger(tmp_path))
-    md = build_evidence_markdown(capsules)
+    md = build_evidence_markdown(capsules, base_url=BASE_URL)
     assert "Attestation mode: self_attested" in md
     assert "adds no claims of its own" in md
 
@@ -98,7 +99,7 @@ def test_tampered_refuses(tmp_path):
 
 def test_cli_stdout(tmp_path, capsys):
     path = _ledger(tmp_path)
-    rc = main(["evidence", "--ledger", str(path), "--issue", ISSUE])
+    rc = main(["evidence", "--base-url", BASE_URL, "--ledger", str(path), "--issue", ISSUE])
     out = capsys.readouterr().out
     assert rc == 0
     assert "## Verification evidence" in out
@@ -108,7 +109,7 @@ def test_cli_stdout(tmp_path, capsys):
 def test_cli_out_file(tmp_path, capsys):
     path = _ledger(tmp_path)
     out_file = tmp_path / "verification-comment.md"
-    rc = main(["evidence", "--ledger", str(path), "--out", str(out_file)])
+    rc = main(["evidence", "--base-url", BASE_URL, "--ledger", str(path), "--out", str(out_file)])
     assert rc == 0
     assert "VALID" in capsys.readouterr().out
     assert out_file.read_text().startswith("## Verification evidence")
@@ -120,6 +121,6 @@ def test_cli_tampered_exits_1(tmp_path, capsys):
     capsules[0]["model_attestation"]["compute_attestation"]["agent_output_digest"] = "0" * 64
     bad = tmp_path / "tampered.jsonl"
     bad.write_text("\n".join(json.dumps(c) for c in capsules) + "\n")
-    rc = main(["evidence", "--ledger", str(bad)])
+    rc = main(["evidence", "--base-url", BASE_URL, "--ledger", str(bad)])
     assert rc == 1
     assert "refusing" in capsys.readouterr().err

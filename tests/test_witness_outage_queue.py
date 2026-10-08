@@ -200,6 +200,7 @@ def test_restart_mid_outage_loses_nothing(tmp_path, dead_ts, monkeypatch):
     # signature-verifies the backfilled stamp instead of merely structurally
     # validating it.
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", dead_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", dead_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
 
     for i in range(2):
@@ -236,7 +237,8 @@ def test_restart_mid_outage_loses_nothing(tmp_path, dead_ts, monkeypatch):
         assert backfills[0]["witness"]["ts_url"] == dead_url
 
         states = witness.checkpoint_witness_states(str(ledger_path))
-        assert states[0].grade().value == "witnessed"
+        assert states[0].grade().value == "self-attested", "no key supplied: no receipt is trusted"
+        assert states[0].grade(ts_pubkey_pem=TEST_TS_PUBLIC_KEY_PEM).value == "witnessed"
         assert dead_url in states[0].effective_witnesses
 
         # Drained -- nothing left pending for this witness.
@@ -296,6 +298,7 @@ def test_partial_multi_witness_one_down_does_not_block_the_other(tmp_path, stub_
     # Simulate that this hermetic stub IS the pinned default witness so the
     # no-key grade() read path signature-verifies the live stamp.
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", live_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", live_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
 
     for i in range(2):
@@ -314,7 +317,7 @@ def test_partial_multi_witness_one_down_does_not_block_the_other(tmp_path, stub_
     assert len(states) == 1
     # The live witness already advanced -- the checkpoint is witnessed --
     # even though the dead one never confirmed. Grade is any-of, not all-of.
-    assert states[0].grade().value == "witnessed"
+    assert states[0].grade(ts_pubkey_pem=TEST_TS_PUBLIC_KEY_PEM).value == "witnessed"
     assert live_url in states[0].effective_witnesses
     assert dead_url not in states[0].effective_witnesses
 
@@ -431,6 +434,7 @@ def test_status_shows_backlog_during_outage_and_clears_it_after_retry(tmp_path, 
     # Simulate that this hermetic stub IS the pinned default witness so the
     # no-key grade() read path signature-verifies the backfilled stamp.
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
 
     for i in range(2):
@@ -454,7 +458,9 @@ def test_status_shows_backlog_during_outage_and_clears_it_after_retry(tmp_path, 
         result = witness.retry_pending_witness_stamps(str(ledger_path), ts_url=url)
         assert result == {url: 1}
 
-        after = status.compute_status(str(ledger_path), offline=True, ts_url=url)
+        after = status.compute_status(
+            str(ledger_path), offline=True, ts_url=url, trust_anchor={url: TEST_TS_PUBLIC_KEY_PEM}
+        )
         assert after["checkpoints_awaiting_stamp"] == 0, (
             "status must not keep claiming a backfilled checkpoint is still awaiting a stamp"
         )

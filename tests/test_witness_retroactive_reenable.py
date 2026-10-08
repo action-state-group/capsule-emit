@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Regression test for O16 audit item 18 ("Retroactive witnessing on
+"""Regression test for retroactive witnessing ("Retroactive witnessing on
 re-enable"): disabling witnessing mid-stream, sealing several records, then
 re-enabling must NOT leave a gap. ``MmrLedger.sync()`` (see
 ``capsule_emit.checkpoint.index``) rescans the entire ledger from scratch on

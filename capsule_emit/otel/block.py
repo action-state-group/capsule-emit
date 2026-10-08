@@ -13,10 +13,8 @@ arbitrary top-level member; only `compute_attestation` (nested under
 `model_attestation`) is extensible today, exactly the container
 `docs/extensions/mcp-toolset-digest.md`'s `ext.mcp` already uses. v0 places
 this block there too: `model_attestation.compute_attestation
-["org.agentactioncapsule.otel"]`, via `_emit_capsule(extra_compute=...)`. The
-draft's own editor note anticipates this ("AAC -05 is expected to state the
-two extension containers explicitly ... Nothing here changes if it does") --
-the field names, tiers, and shape below are unaffected by which container the
+["org.agentactioncapsule.otel"]`, via `_emit_capsule(extra_compute=...)`.
+The field names, tiers, and shape below are unaffected by which container the
 base profile eventually settles on; only the JSON path changes.
 """
 from __future__ import annotations
@@ -100,6 +98,16 @@ def _validated_hex(value: str, pattern: re.Pattern[str], field: str) -> str:
     return normalized
 
 
+def _validated_id(value: str, pattern: re.Pattern[str], field: str) -> str:
+    """A trace or span ID: lowercase hex of the right length, and not all
+    zeros -- W3C Trace Context defines the all-zero trace-id and parent-id as
+    invalid, so neither identifies a span to correlate with."""
+    normalized = _validated_hex(value, pattern, field)
+    if not normalized.strip("0"):
+        raise ValueError(f"otel block field {field!r} is all zeros, which W3C Trace Context defines as invalid")
+    return normalized
+
+
 def _resource_subset(
     resource_attributes: Mapping[str, SpanAttributeValue] | None,
 ) -> dict[str, SpanAttributeValue]:
@@ -113,21 +121,26 @@ def _resource_subset(
 
 
 def _semconv_subset(
-    attributes: Mapping[str, SpanAttributeValue] | None, *, table: dict[str, Tier], source: str
+    attributes: Mapping[str, SpanAttributeValue] | None,
+    *,
+    table: dict[str, Tier],
+    source: str,
+    admit_conditional: frozenset[str],
 ) -> dict[str, SpanAttributeValue]:
     semconv: dict[str, SpanAttributeValue] = {"source": source}
     if not attributes:
         return semconv
     for key, value in attributes.items():
         tier = tier_for_semconv_attribute(key, table)
-        if tier is Tier.CLEAR_SAFE:
+        if tier is Tier.CLEAR_SAFE or (tier is Tier.CLEAR_SAFE_CONDITIONAL and key in admit_conditional):
             semconv[key] = value
         elif tier is Tier.DIGEST_ONLY:
             semconv[key] = _sha256_hex(value)
-        # tier is None (not allow-listed) or NEVER_ENTERS (never a value in
-        # `table` under normal operation -- see allowlist.NEVER_ENTERS_SEMCONV's
-        # docstring): the key is silently dropped either way. Default-deny,
-        # not a per-key exception list.
+        # tier is None (not allow-listed), a CLEAR_SAFE_CONDITIONAL row the
+        # caller did not admit, or NEVER_ENTERS (never a value in `table`
+        # under normal operation -- see allowlist.NEVER_ENTERS_SEMCONV's
+        # docstring): the key is silently dropped. Default-deny, not a
+        # per-key exception list.
     return semconv
 
 
@@ -144,6 +157,7 @@ def build_otel_block(
     clear_trace_context: bool = False,
     semconv_table: dict[str, Tier] | None = None,
     semconv_source: str = DEFAULT_SEMCONV_SOURCE,
+    admit_conditional: frozenset[str] = frozenset(),
 ) -> OTelBlock:
     """The ``org.agentactioncapsule.otel`` block for one span.
 
@@ -157,6 +171,15 @@ def build_otel_block(
     `trace_id_digest` field; the shape of the value, not the key, carries
     the tier).
 
+    *span_name* is carried only when *clear_trace_context* is ``True``. The
+    mapping profile admits it clear and conditional ("only when it is a
+    fixed operation name and never user-derived") and defines no digest
+    form for it, so without the opt-in it is omitted, not digested.
+
+    *admit_conditional* names the ``CLEAR_SAFE_CONDITIONAL`` semconv keys the
+    deployment has checked and admits; every other conditional row is
+    omitted. A key named here that is not a conditional row changes nothing.
+
     *semconv_table* defaults to :data:`capsule_emit.otel.allowlist.SEMCONV_ATTRS`;
     accepting it as a parameter (rather than importing the module global
     directly) is what lets the leak-mutant test in
@@ -169,13 +192,13 @@ def build_otel_block(
 
     block: OTelBlock = {}
 
-    trace_id = _validated_hex(trace_id, TRACE_ID_RE, "trace_id")
-    span_id = _validated_hex(span_id, SPAN_ID_RE, "span_id")
+    trace_id = _validated_id(trace_id, TRACE_ID_RE, "trace_id")
+    span_id = _validated_id(span_id, SPAN_ID_RE, "span_id")
     block["trace_id"] = trace_id if clear_trace_context else _sha256_hex(trace_id)
     block["span_id"] = span_id if clear_trace_context else _sha256_hex(span_id)
 
     if parent_span_id:
-        parent_span_id = _validated_hex(parent_span_id, SPAN_ID_RE, "parent_span_id")
+        parent_span_id = _validated_id(parent_span_id, SPAN_ID_RE, "parent_span_id")
         block["parent_span_id"] = parent_span_id if clear_trace_context else _sha256_hex(parent_span_id)
 
     if trace_flags:
@@ -187,14 +210,16 @@ def build_otel_block(
         # escape hatch, unlike the IDs above.
         block["tracestate_digest"] = _sha256_hex(tracestate)
 
-    if span_name:
-        block["span_name"] = span_name if clear_trace_context else _sha256_hex(span_name)
+    if span_name and clear_trace_context:
+        block["span_name"] = span_name
 
     resource_subset = _resource_subset(resource_attributes)
     if resource_subset:
         block["resource"] = resource_subset
 
-    semconv_subset = _semconv_subset(attributes, table=table, source=semconv_source)
+    semconv_subset = _semconv_subset(
+        attributes, table=table, source=semconv_source, admit_conditional=admit_conditional
+    )
     if len(semconv_subset) > 1:  # more than just "source"
         block["semconv"] = semconv_subset
 

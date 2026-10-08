@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Acceptance tests for anchor disclosure and endpoint consolidation,
-covering per-seal ``anchor=True`` killed as a default / single egress
-channel, and the witness kill switch scoping ALL egress, including this
-legacy channel:
+updated for the single-egress change (per-seal ``anchor=True`` killed as a default /
+single egress channel) and the kill-switch change (the witness kill switch scopes ALL
+egress, including this legacy channel):
 
 - a first-run disclosure prints to stderr BEFORE the legacy anchor channel's
   network path is dispatched -- verified with a network-mocked first call
@@ -16,7 +16,7 @@ legacy channel:
   old on-values (``"true"``/``"1"``/``"yes"``/unset) no longer enable it --
   only the exact value ``CAPSULE_ANCHOR=legacy-on`` does. An explicit
   ``anchor=`` kwarg always wins over the env var either direction.
-- [O16-03] ``witness=False`` / ``CAPSULE_WITNESS=off`` kills the legacy
+- The kill-switch change: ``witness=False`` / ``CAPSULE_WITNESS=off`` kills the legacy
   anchor channel too, even when it is explicitly re-enabled -- so every test
   below that needs the legacy channel to actually fire now runs with witness
   ON (it never reaches its own cadence threshold in these single/few-call
@@ -50,7 +50,10 @@ def _clean_module_state(monkeypatch):
     witness._states.clear()
     witness._dispatch_locks.clear()
     monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
-    monkeypatch.delenv("AAC_ANCHOR_URL", raising=False)
+    # The legacy anchor and the witness have no default endpoint: these tests
+    # name one each, so an opted-in channel has somewhere to go.
+    monkeypatch.setenv("AAC_ANCHOR_URL", "https://anchor.example")
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", "https://witness.example")
     monkeypatch.delenv("CAPSULE_WITNESS", raising=False)
     yield
     core._disclosure_printed = False
@@ -85,7 +88,7 @@ def test_disclosure_prints_before_anchor_network_attempt(tmp_path, monkeypatch, 
     passes once the disclosure is moved ahead of the dispatch. The legacy
     anchor channel is off by default as of 0.5.0, so this exercises the
     explicit ``anchor=True`` opt-in -- with witness explicitly ON, since
-    O16-03 makes the legacy channel additionally subject to the witness kill
+    the kill-switch change makes the legacy channel additionally subject to the witness kill
     switch (see ``test_witness_off_kills_legacy_anchor_...`` below)."""
     calls = []
 
@@ -134,7 +137,7 @@ def test_no_disclosure_and_no_network_when_both_paths_disabled(tmp_path, monkeyp
 
 
 def test_no_disclosure_and_no_anchor_call_by_default(tmp_path, monkeypatch, capsys):
-    """The core of [O16-01-02]: leaving ``anchor`` and ``CAPSULE_ANCHOR``
+    """The core of the single-egress change: leaving ``anchor`` and ``CAPSULE_ANCHOR``
     both unset must never dispatch the legacy anchor channel, even with
     witness also off -- the per-seal anchor default is killed, full stop."""
     monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)
@@ -153,7 +156,7 @@ def test_no_disclosure_and_no_anchor_call_by_default(tmp_path, monkeypatch, caps
 def test_disclosure_mentions_only_the_active_path(tmp_path, monkeypatch, capsys):
     """Anchor stays off by default, so witness-only (the 0.5.0 default) is
     the achievable "only one path active" case -- the reverse, anchor active
-    with witness off, is now structurally impossible per O16-03 (the witness
+    with witness off, is now structurally impossible per the kill-switch change (the witness
     kill switch also gates the legacy anchor channel)."""
     seal(
         {"x": 1}, action="test", operator="acme",
@@ -165,7 +168,7 @@ def test_disclosure_mentions_only_the_active_path(tmp_path, monkeypatch, capsys)
 
 
 def test_witness_off_kills_legacy_anchor_even_when_explicitly_enabled(tmp_path, monkeypatch, capsys):
-    """O16-03: the witness kill switch is the ONE switch that zeroes all
+    """the witness kill switch is the ONE switch that zeroes all
     egress -- including the legacy anchor channel, even when a caller has
     explicitly re-enabled it via ``anchor=True`` / ``CAPSULE_ANCHOR=legacy-on``.
     Before this fix, ``witness=False`` alone left anchor egress fully live."""
@@ -208,7 +211,7 @@ def test_capsule_anchor_env_non_legacy_values_all_skip_anchor(tmp_path, monkeypa
 
 
 # ---------------------------------------------------------------------------
-# [o16-fu-1-legacy-anchor-notice]: the stale pre-0.5.0 on-values are now a
+# The stale pre-0.5.0 on-values are now a
 # SILENT no-op (see the parametrized test above) -- these tests cover the
 # one-time stderr notice that makes the downgrade audible.
 # ---------------------------------------------------------------------------
@@ -266,7 +269,7 @@ def test_explicit_anchor_kwarg_suppresses_stale_notice(tmp_path, monkeypatch, ca
 
 
 def test_capsule_anchor_legacy_on_value_enables_anchor(tmp_path, monkeypatch):
-    # witness left at its default (on) -- O16-03 makes the legacy channel
+    # witness left at its default (on) -- the kill-switch change makes the legacy channel
     # additionally subject to the witness kill switch, so witness=False here
     # would mask what this test is checking (see the dedicated kill-switch
     # test above).
@@ -348,3 +351,17 @@ def test_missing_scitt_cose_fails_seal_fast_and_clearly(tmp_path, _missing_scitt
     ledger = str(tmp_path / "ledger.jsonl")
     with pytest.raises(ModuleNotFoundError, match="scitt_cose"):
         seal({"x": 1}, action="a", operator="acme", anchor=False, witness=False, ledger=ledger)
+
+
+def test_an_opted_in_anchor_with_no_endpoint_sends_nothing(tmp_path, monkeypatch, capsys):
+    """There is no default anchor: opting in with no AAC_ANCHOR_URL / anchor_url
+    dispatches nothing (the library underneath would pick its own default)."""
+    monkeypatch.delenv("AAC_ANCHOR_URL", raising=False)
+    monkeypatch.setattr(
+        core, "async_anchor", lambda *a, **kw: pytest.fail("anchor must not be attempted with no endpoint")
+    )
+    r = seal(
+        {"x": 1}, action="test", operator="acme", anchor=True, witness=True,
+        ledger=str(tmp_path / "ledger.jsonl"),
+    )
+    assert r.anchor_status == "skipped"

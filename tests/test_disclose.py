@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for O16 audit item 10 — ``capsule_emit.disclose``.
+"""Tests for ``capsule_emit.disclose``.
 
 Builds real checkpoint chains through ``seal()`` + the default witness
 wiring (same stub-TS harness as ``tests/test_bundle.py``), then checks that
@@ -93,6 +93,7 @@ def stub_ts(monkeypatch):
     # unverified" for being an unpinned TS. monkeypatch reverts per test.
     base_url, received, stop = _start_stub_ts()
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", base_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
@@ -767,3 +768,39 @@ def test_ADV_RUN2_verify_disclosure_rejects_forged_top_level_completeness(three_
     ok3, errors3 = verify_disclosure(forged_suppressed)
     assert ok3 is False
     assert any("suppressed_fields" in e for e in errors3)
+
+
+def test_verify_disclosure_trusts_no_built_in_witness_key(three_record_ledger, stub_ts):
+    """The stub stands in for the witness cll's log check holds a built-in key
+    for. A disclosure verifier trusts only the caller's keys: with none, that
+    stamp counts for nothing, so a checkpoint whose only other stamp does not
+    verify fails, and the errors say the stamp had no key. With the caller's
+    key, the stamp counts and the disclosure verifies."""
+    ts_url, _received = stub_ts
+    ledger_path, caps, payloads = three_record_ledger
+    cid = caps[0]["capsule_id"]
+    d = disclose(
+        ledger_path,
+        cid,
+        audience="auditor",
+        reveal={cid: {"agent_input": payloads[0][0], "agent_output": payloads[0][1]}},
+    )
+    # A stamp with no key is not an error on its own.
+    ok, errors = verify_disclosure(d)
+    assert ok, errors
+
+    # Add a stamp that does not verify (bound to another checkpoint).
+    b = d.bundles[cid]
+    (good,) = b.checkpoint.witnesses
+    assert good.ts_url == ts_url
+    bad = replace(good, ts_url="https://other.example", entry_hash="00" * 32)
+    two = replace(b, checkpoint=replace(b.checkpoint, witnesses=[good, bad]))
+    d2 = replace(d, bundles={**d.bundles, cid: two})
+
+    ok, errors = verify_disclosure(d2)
+    assert not ok
+    assert any(f"witnessed by {ts_url}, no key supplied by the caller" in e for e in errors), errors
+    assert any("none verify as authentic TS Receipts" in e for e in errors), errors
+
+    ok, errors = verify_disclosure(d2, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM})
+    assert ok, errors

@@ -16,10 +16,11 @@ checkpoint/witness stream automatically:
   last checkpoint — a signed peaks checkpoint over that ledger's MMR is
   built and registered with the witness Transparency Service at its
   `/checkpoints` route (single-host witness ruling, 2026-08-27). The witness is
-  a separate, live service — `witness.agentactioncapsule.org`
-  (`capsule_emit.checkpoint.emit.DEFAULT_TS_URL`), checkpoint-primary and
-  semantically a witness, not the anchor. This is the **only default egress
-  channel** as of 0.5.0 — the older per-capsule anchor channel is now an
+  the one(s) named in `witness_url=` / `CAPSULE_WITNESS_URL`; there is no
+  default witness, and with none named nothing is registered anywhere (a public
+  one is `witness.agentactioncapsule.org`, checkpoint-primary and semantically a
+  witness, not the anchor). This is the **only egress channel on by default**
+  as of 0.5.0 — the older per-capsule anchor channel is now an
   explicit, non-default opt-in (see
   [`docs/why-anchoring.md`](why-anchoring.md#in-practice)), not something every
   default sealing call also dispatches. A bundle (capsule + inclusion proof +
@@ -86,7 +87,7 @@ endpoint (or add more) with `seal(..., witness_url=...)` or
 `CAPSULE_WITNESS_CADENCE_ENTRIES=…` and the age-based cadence with
 `CAPSULE_WITNESS_CADENCE_SECONDS=…`.
 
-### Kill switch scope (O16-03)
+### Kill switch scope
 
 **`witness=False` / `CAPSULE_WITNESS=off` is ONE switch that zeroes ALL
 egress, not just the checkpoint stream.** It also gates:
@@ -131,9 +132,12 @@ binding is named by the URL scheme, so `witness_url=` and `CAPSULE_WITNESS_URL` 
 
 | URL | Binding | What is sent | Receipt grade |
 |---|---|---|---|
-| `https://host` | `cll`: `POST /checkpoints` | the checkpoint's COSE statement | the witness's own label: `countersigned-observed` or `mmr-verified` |
-| `rekor+https://rekor.sigstore.dev` | `rekor`: a Rekor `dsse` entry | the checkpoint's COSE statement in a DSSE envelope, signed by the log's own key; Rekor stores only its hash | always `countersigned-observed` (existence + time); Rekor never checks MMR consistency |
-| `scrapi+https://host` | `scrapi`: SCRAPI `POST /entries` | the checkpoint's COSE statement, as a signed statement | the receipt's own label; if it has none, `countersigned-observed` |
+| `https://host` | `cll`: `POST /checkpoints` | the checkpoint's COSE statement | the witness's own label: `observed-only` or `mmr-verified` |
+| `rekor+https://rekor.sigstore.dev` | `rekor`: a Rekor `dsse` entry | the checkpoint's COSE statement in a DSSE envelope, signed by the log's own key; Rekor stores only its hash | always `observed-only` (existence + time); Rekor never checks MMR consistency |
+| `scrapi+https://host` | `scrapi`: SCRAPI `POST /entries` | the checkpoint's COSE statement, as a signed statement | the receipt's own label; if it has none, `observed-only` |
+
+A receipt issued before `observed-only` was named carries `countersigned-observed`. It still
+verifies, and the library reports it as `observed-only`: the label changed, the meaning did not.
 
 Why `dsse` and not `hashedrekord`: Rekor verifies an Ed25519 `hashedrekord` signature as
 Ed25519ph over a SHA-512 digest, and a checkpoint key signs plain Ed25519. The `dsse` type carries
@@ -330,7 +334,7 @@ records. So does `CAPSULE_WITNESS=off` (the kill switch, see
 process reports each witness as `unconfirmed (witness disabled)` and never
 attempts the GET, whether or not `--offline` was also given.
 
-## Witness outage: durable retry, not a drop (O5)
+## Witness outage: durable retry, not a drop
 
 Witnessing is default-on, so **outage handling is launch behavior, not an
 edge case.** When a configured witness is unreachable, the checkpoint it
@@ -431,14 +435,14 @@ Default behavior (`require_witness=False`, i.e. every existing caller) is
 unchanged: it is exactly the best-effort path described earlier in this
 document.
 
-## Bundle — the hand-to-anyone artifact (O16 audit item 14)
+## Bundle — the hand-to-anyone artifact
 
 The verification chain above (`checkpoint/emit.py`'s module docstring) is four
 separate, caller-composed primitives — inclusion, checkpoint signature, TS
 receipt, rollback/consistency. `capsule_emit.bundle.bundle()` assembles all
 of them, plus the record's own receipt and the *prior* checkpoint's
 consistency proof, into one standalone object for a single record — the
-frozen surface's §2.5 shape:
+the shape the public API defines:
 
 ```python
 from capsule_emit.bundle import bundle, verify_bundle
@@ -579,7 +583,7 @@ if b.checkpoint_cose is not None:
 `Bundle.checkpoint` and failing the bundle if they disagree; absence is
 never fatal.
 
-## Disclose — bundle's conscious sibling (O16 audit item 10)
+## Disclose — bundle's conscious sibling
 
 `bundle` above is always safe — digests only, no producer decision needed.
 `capsule-emit disclose` is the deliberate, recorded act of handing
@@ -650,10 +654,10 @@ payload names itself the same way a tampered bundle does.
 registered anywhere until you set one. (This is the manual API described in
 this section; `capsule_emit.core._emit_capsule()`'s own default path above does not
 use `CheckpointConfig` — it resolves its endpoint the same way the anchor
-does, via `witness_url=` / `CAPSULE_WITNESS_URL`.) The free public-good
-witness tier at `witness.agentactioncapsule.org` (`DEFAULT_TS_URL` — a
-separate, live witness service serving `POST /checkpoints`) is documented and
-available, but a generated config shows it **commented out**
+does, via `witness_url=` / `CAPSULE_WITNESS_URL`, with no default.) A free
+public witness runs at `witness.agentactioncapsule.org` (a separate, live
+witness service serving `POST /checkpoints`); a generated config shows it
+**commented out**
 (`emit.EXAMPLE_CONFIG_TOML`), so opting in is an explicit uncomment. Any
 conforming SCITT Transparency Service can be substituted — nothing here is
 tied to one operator.
@@ -662,7 +666,7 @@ tied to one operator.
 from capsule_emit.checkpoint import CheckpointConfig, due_for_checkpoint, lag_exceeded
 
 cfg = CheckpointConfig(cadence_entries=100, cadence_seconds=900, max_lag_entries=200)
-# cfg.ts_urls == [] until you set it — e.g. cfg.ts_urls = [DEFAULT_TS_URL]
+# cfg.ts_urls == [] until you set it — e.g. cfg.ts_urls = ["https://witness.agentactioncapsule.org"]
 
 due_for_checkpoint(cfg, entries_since_last=3, seconds_since_last=920)  # True: age leg
 due_for_checkpoint(cfg, entries_since_last=0, seconds_since_last=920)  # False: no unwitnessed work
@@ -700,7 +704,7 @@ cp = emit_checkpoint(mmr, MySigner("node-a", b"..."), log_id="my-log")
 ## Provenance
 
 Ported from `capsule-ledger`'s `capsule_ledger/mmr/{core,index,store}.py`
-per Amendment E (2026-08-21): the CLL core is substrate a counterparty needs
+per a 2026-08-21 decision: the CLL core is substrate a counterparty needs
 in order to verify a log, so it lives in the neutral producer library rather
 than forked per consumer. `capsule-ledger` consumes this package through its
 public interface — see its own docs for the ledger-specific wiring.

@@ -1,30 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
-"""[O4-endpoint-consolidation-ship] acceptance: `witness.agentactioncapsule.org`
-is the *live default* -- exercised through the public ``seal()``/``emit()``
-surface with no ``witness_url``/``CAPSULE_WITNESS_URL`` override, never by
-reading ``DEFAULT_TS_URL`` off the module (that only proves the constant is
-set correctly, not that the default code path actually resolves to it).
-
-This is the endpoint-consolidation half of the anchor-disclosure-and-
-endpoint-consolidation frozen decision
-(witness.agentactioncapsule.org canonical): the anchor.* posting path stays
-configured-but-dormant (see ``_PENDING_CNAME_TARGETS`` in
-``capsule_emit.checkpoint.emit``) so today's actual HTTP dispatch still lands
-on the anchor host until the CNAME propagates -- but the *semantic* endpoint
-recorded on every ``WitnessRecord`` (and shown in the first-use notice) must
-already read ``witness.agentactioncapsule.org``, since that's what a caller,
-a status display, or an auditor reading the record sees. Both facts are
-pinned here so either drifting silently fails this test.
+"""There is no default witness: ``seal()``/``emit()`` with no ``witness_url``
+and no ``CAPSULE_WITNESS_URL`` sends nothing anywhere, and says so once. A
+configured witness is reached at, and recorded under, exactly its configured
+URL. Exercised through the public ``seal()`` surface with the network boundary
+mocked, not by reading constants.
 """
 from __future__ import annotations
 
 import json
 import time
 
-from capsule_emit import seal, witness
-from capsule_emit.checkpoint.emit import DEFAULT_TS_URL
+import pytest
 
-_WITNESS_HOST = "https://witness.agentactioncapsule.org"
+from capsule_emit import seal, witness
+
 _TODAY_DISPATCH_HOST = "https://anchor.agentactioncapsule.org"
 
 
@@ -63,78 +52,78 @@ def _wait_for(predicate, timeout=5.0):
     return ok
 
 
-def test_default_ts_url_constant_is_the_witness_host():
-    # Sanity check on the constant itself -- NOT the acceptance assertion
-    # (see the end-to-end test below for that).
-    assert DEFAULT_TS_URL == _WITNESS_HOST
-
-
-def test_default_witness_endpoint_resolves_to_witness_host_end_to_end(tmp_path, monkeypatch):
-    """The acceptance check: call seal() with NO witness_url / CAPSULE_WITNESS_URL
-    override, mock the network boundary, and assert on what actually happened
-    -- not on a constant."""
-    from capsule_emit.checkpoint import emit as emit_mod
-
-    monkeypatch.delenv("CAPSULE_WITNESS_URL", raising=False)
-    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "3")
-
+def _reset_witness_state():
     witness._counts.clear()
     witness._armed_at.clear()
     witness._states.clear()
     witness._dispatch_locks.clear()
     witness._notice_printed = False
 
-    captured: list[dict] = []
+
+def test_no_witness_configured_sends_nothing(tmp_path, monkeypatch, capsys):
+    from capsule_emit.checkpoint import emit as emit_mod
+
+    monkeypatch.delenv("CAPSULE_WITNESS_URL", raising=False)
+    monkeypatch.delenv("CAPSULE_WITNESS", raising=False)
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "3")
+    _reset_witness_state()
 
     def fake_urlopen(req, timeout=None):
-        captured.append({"full_url": req.full_url})
-        return _fake_response()
+        raise AssertionError(f"nothing may be sent with no witness configured: {req.full_url}")
 
     monkeypatch.setattr(emit_mod.urllib.request, "urlopen", fake_urlopen)
 
     ledger = tmp_path / "ledger.jsonl"
-    results = [
+    results = [seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger) for i in range(5)]
+    assert {r.witness_outcome for r in results} == {"local_sealed"}
+    assert witness.push(str(ledger)) is None
+    time.sleep(0.2)  # no background dispatch either
+    key = witness._resolve_key(str(ledger))
+    assert key not in witness._states or witness._states[key].prev is None
+    err = capsys.readouterr().err
+    assert "no witness is configured" in err
+    assert err.count("no witness is configured") == 1
+    _reset_witness_state()
+
+
+def test_require_witness_with_no_witness_configured_refuses(tmp_path, monkeypatch):
+    monkeypatch.delenv("CAPSULE_WITNESS_URL", raising=False)
+    monkeypatch.delenv("CAPSULE_WITNESS", raising=False)
+    _reset_witness_state()
+    with pytest.raises(witness.WitnessRequiredError, match="no witness is configured"):
+        seal(None, action="a", operator="acme", anchor=False, require_witness=True, ledger=tmp_path / "l.jsonl")
+    _reset_witness_state()
+
+
+def test_the_public_witness_is_reached_at_its_own_url_when_configured(tmp_path, monkeypatch):
+    """Configuring the public witness is like configuring any other: the
+    request goes to that URL (no rewriting to another host) and the receipt is
+    recorded under it."""
+    from capsule_emit.checkpoint import emit as emit_mod
+
+    public = "https://witness.agentactioncapsule.org"
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", public)
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "3")
+    _reset_witness_state()
+    captured: list[str] = []
+
+    def fake_urlopen(req, timeout=None):
+        captured.append(req.full_url)
+        return _fake_response()
+
+    monkeypatch.setattr(emit_mod.urllib.request, "urlopen", fake_urlopen)
+    ledger = tmp_path / "ledger.jsonl"
+    for i in range(5):
         seal(None, action=f"action-{i}", operator="acme", anchor=False, ledger=ledger)
-        for i in range(5)
-    ]
-    assert all(r.capsule_id for r in results)
-
     assert _wait_for(lambda: len(captured) >= 1), "no checkpoint was ever dispatched"
-
     key = witness._resolve_key(str(ledger))
     assert _wait_for(
         lambda: key in witness._states
         and witness._states[key].prev is not None
         and witness._states[key].prev.witnesses
-    ), "CheckpointRecord never recorded its WitnessRecord"
-
-    witness_record = witness._states[key].prev.witnesses[0]
-
-    # The semantic endpoint -- what a caller/status-display/auditor sees --
-    # is witness.agentactioncapsule.org, resolved by the default path with
-    # zero configuration, not read off a constant.
-    assert witness_record.ts_url == _WITNESS_HOST, (
-        "the default witness endpoint must resolve to witness.agentactioncapsule.org "
-        "with no witness_url override -- it did not"
     )
-
-    # Today, the actual bytes still land on the anchor host: the witness.*
-    # CNAME has not propagated (see _PENDING_CNAME_TARGETS). This is the
-    # documented, dormant-but-configured indirection -- pin it too, so its
-    # removal (once the CNAME goes live) is a deliberate test update, not a
-    # silent behavior change.
-    assert captured[0]["full_url"] == f"{_TODAY_DISPATCH_HOST}/checkpoints", (
-        "expected today's CNAME-pending indirection to the anchor host; if "
-        "this now fails because the request went straight to "
-        "witness.agentactioncapsule.org, the CNAME has propagated -- update "
-        "this test (and retire _PENDING_CNAME_TARGETS) rather than loosen it"
-    )
-
-    witness._counts.clear()
-    witness._armed_at.clear()
-    witness._states.clear()
-    witness._dispatch_locks.clear()
-    witness._notice_printed = False
+    assert witness._states[key].prev.witnesses[0].ts_url == public
+    _reset_witness_state()
 
 
 def test_rollback_to_anchor_host_still_works_via_explicit_config(tmp_path, monkeypatch):

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for the checkpoint-signer bundle precondition:
-checkpoint/stamp entries must stop carrying the ephemeral
+"""Acceptance tests for the checkpoint-signer precondition (the bundle
+precondition): checkpoint/stamp entries must stop carrying the ephemeral
 HMAC ``witness._AutoSigner`` output and instead be signed by the SAME
 persisted Ed25519 identity ``capsule_emit.signing.LocalKeypairSigner`` (#80)
 already signs capsule content with -- so a checkpoint signed in one process

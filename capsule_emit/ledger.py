@@ -12,12 +12,12 @@ Two kinds of entry share the same file and the same append path:
   ``WitnessRecord`` s it collected), written back into the *same* ledger it
   covers so the stamp becomes a leaf the *next* checkpoint's MMR root
   genuinely commits over: "checkpoint N's stamp is covered by checkpoint
-  N+1" (frozen surface §2.3).
+  N+1".
 - **disclosure records** (``kind == DISCLOSURE_RECORD_KIND``, added 0.5.0 --
   see ``capsule_emit.disclose``) -- a self-sealed receipt of a *disclose*
   act (who disclosed what range to which audience, when), appended to the
   same ledger so the audit trail of showing evidence is itself evidence
-  (frozen surface §7b: "disclosures are receipts too").
+  ("disclosures are receipts too").
 - **witness-backfill records** (``kind == WITNESS_BACKFILL_KIND``, added
   0.5.0 -- see ``capsule_emit.witness``'s durable retry queue) -- evidence
   that a witness stamp a checkpoint-stamp record didn't yet hold arrived
@@ -42,7 +42,7 @@ Four rendering levels (capsule records only):
 - ``show()``        — L3 full single-capsule two-tier layout
 - JSON passthrough  — L4 via CLI ``--json`` flag (not a function here)
 
-Cross-process write safety: one log, one writer (frozen surface §7d) -- see
+Cross-process write safety: one log, one writer -- see
 ``docs/concurrency.md``. An OS-level flock on a sidecar ``<ledger>.lock``
 file, held only for the duration of one append, gives a second *process* the
 same exclusion ``_append_lock`` below already gives a second *thread*. A
@@ -92,12 +92,12 @@ __all__ = [
 CHECKPOINT_STAMP_KIND = "checkpoint_stamp"
 
 #: Marks a ledger line as a persisted disclosure record rather than a
-#: capsule -- see ``capsule_emit.disclose`` (O16 audit item 10).
+#: capsule -- see ``capsule_emit.disclose``.
 DISCLOSURE_RECORD_KIND = "disclosure_record"
 
 #: Marks a ledger line as a late-arriving witness stamp for an
 #: already-persisted checkpoint -- see ``capsule_emit.witness``'s durable
-#: retry queue (O5 audit item, "witness-outage is launch behavior").
+#: retry queue ("witness-outage is launch behavior").
 WITNESS_BACKFILL_KIND = "checkpoint_witness_backfill"
 
 #: Synthesized (never actually on disk) by :func:`read_ledger_entries` for a
@@ -113,6 +113,10 @@ ARCHIVED_SEGMENT_KIND = "archived_segment"
 #: these out the same way ``read_ledger`` does, so bookkeeping entries are
 #: never mistaken for the capsule they happen to share a ``capsule_id``-shaped
 #: field with.
+#: A padding leaf, as a checkpointed log writes it into the same file
+#: (``{"capsule_id", "record_type": "padding", ...}``, no ``kind``).
+PADDING_RECORD_TYPE = "padding"
+
 NON_CAPSULE_KINDS = (CHECKPOINT_STAMP_KIND, DISCLOSURE_RECORD_KIND, WITNESS_BACKFILL_KIND, ARCHIVED_SEGMENT_KIND)
 
 #: What ``cll.ledger.store.LedgerStore`` names its own bookkeeping file --
@@ -375,11 +379,18 @@ def read_ledger(path: str | os.PathLike) -> list[dict]:
     """Read all capsule records from a JSONL ledger file.
 
     Non-capsule bookkeeping entries (``kind`` in ``NON_CAPSULE_KINDS`` --
-    checkpoint-stamp and disclosure records) are excluded -- this is the
+    checkpoint-stamp and disclosure records) and padding leaves
+    (``record_type: "padding"``, which a checkpointed log appends to round a
+    checkpoint's leaf count up; they are leaves, never capsules) are
+    excluded -- this is the
     capsule-only view every existing consumer expects. Use
     ``read_ledger_entries`` to see the raw file, every kind included.
     """
-    return [r for r in read_ledger_entries(path) if r.get("kind") not in NON_CAPSULE_KINDS]
+    return [
+        r
+        for r in read_ledger_entries(path)
+        if r.get("kind") not in NON_CAPSULE_KINDS and r.get("record_type") != PADDING_RECORD_TYPE
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -559,8 +570,7 @@ def show(
     blocks.  Returns ``True`` when found, ``False`` when not.
 
     Args:
-        path: Path to the JSONL ledger file, or (``[mesh-ledger-store-
-            migration]``) a ``cll.ledger.store.LedgerStore`` directory.
+        path: Path to the JSONL ledger file, or a ``cll.ledger.store.LedgerStore`` directory.
         capsule_id: Full or prefix (≥8 chars) capsule_id to look up.
         out: File-like object for output (defaults to stdout).
     """

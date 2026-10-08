@@ -28,7 +28,6 @@ from __future__ import annotations
 from typing import Any
 
 from .permalink import (
-    DEFAULT_BASE_URL,
     PermalinkError,
     build_url,
     check_capsules,
@@ -70,7 +69,7 @@ def build_evidence_markdown(
     *,
     issue_url: str | None = None,
     title: str = "Verification evidence",
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: str | None = None,
     viewer_link: bool = True,
     ledger_name: str = "ledger.jsonl",
 ) -> str:
@@ -82,7 +81,8 @@ def build_evidence_markdown(
             ``Implements:`` line so the evidence is issue-linked the way
             issues-first policies require.
         title: Comment heading.
-        base_url: Verify-surface base URL for the viewer permalink.
+        base_url: Verify-surface base URL for the viewer permalink (there
+            is no default; required when ``viewer_link`` is true).
         viewer_link: Include the bundle permalink (set ``False`` for venues
             where an external viewer link is unwanted; the offline verify
             commands remain either way).
@@ -136,6 +136,11 @@ def build_evidence_markdown(
         "```",
     ]
     if viewer_link:
+        if not base_url:
+            raise EvidenceError(
+                "a viewer link needs the verify surface's base URL (--base-url, or base_url=); "
+                "there is no default -- or pass viewer_link=False"
+            )
         try:
             url = build_url(capsules, base_url=base_url, bundle=len(capsules) > 1)
         except PermalinkError as exc:  # e.g. a ledger too large for an inline permalink

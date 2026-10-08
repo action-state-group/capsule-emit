@@ -119,7 +119,7 @@ or side-file queue:
   any later backfill -- see below) is, by definition, that witness's
   pending backlog. :func:`checkpoint_witness_backlog` computes it fresh
   from the ledger on every call -- same precedent as ``MmrLedger.sync()``'s
-  full rescan (O16-18: "no persisted cursor spanning an off period ...
+  full rescan (the retroactive-witnessing rule: "no persisted cursor spanning an off period ...
   this already holds structurally"). There is nothing to lose on restart
   because there is nothing kept only in memory: the pending set is a pure
   function of what is already durably on disk, so it cannot desync from a
@@ -190,6 +190,7 @@ __all__ = [
     "CheckpointWitnessState",
     "StampVerification",
     "verify_witness_stamp_tristate_keyed",
+    "stamp_verdict",
     "checkpoint_witness_states",
     "checkpoint_witness_backlog",
     "retry_pending_witness_stamps",
@@ -204,7 +205,7 @@ WITNESS_ENV_VAR = "CAPSULE_WITNESS"
 _OFF_VALUES = {"off", "0", "false", "no"}
 _STUB_VALUES = {"stub"}
 
-#: Deployment-posture env var (frozen surface §1a.4). Only ever consulted to
+#: Deployment-posture env var. Only ever consulted to
 #: refuse ``CAPSULE_WITNESS=stub`` at startup -- it names no other behavior
 #: here. Case-insensitive; only the literal value below is production.
 CAPSULE_ENV_VAR = "CAPSULE_ENV"
@@ -249,7 +250,7 @@ DEFAULT_CADENCE_ENTRIES = 100
 
 #: How many seconds may elapse since the first unwitnessed entry after the
 #: last checkpoint before one comes due on age alone -- the other leg of
-#: "100 entries or 15 minutes, whichever first" (frozen surface §0). Only
+#: "100 entries or 15 minutes, whichever first". Only
 #: ever consulted when at least one unwitnessed entry exists (see the module
 #: docstring's "due" section) -- an idle log never trips this.
 AGE_CADENCE_ENV_VAR = "CAPSULE_WITNESS_CADENCE_SECONDS"
@@ -262,7 +263,7 @@ _ATEXIT_WITNESS_TIMEOUT = float(os.environ.get("CAPSULE_EMIT_ATEXIT_WITNESS_TIME
 
 def witness_mode(explicit: bool | None) -> str:
     """Resolve the three-way mode: ``"off"``, ``"on"`` (real witness), or
-    ``"stub"`` (in-process, zero-network -- frozen surface §1a.4).
+    ``"stub"`` (in-process, zero-network).
 
     ``explicit`` (the ``witness=`` kwarg) always wins when set -- ``True`` is
     ``"on"``, ``False`` is ``"off"``; there is no explicit-kwarg spelling of
@@ -283,8 +284,7 @@ def witness_mode(explicit: bool | None) -> str:
 
 def witness_enabled(explicit: bool | None) -> bool:
     """Resolve the on/off decision: ``True`` whenever checkpoint mechanics
-    should run at all -- i.e. mode is ``"on"`` OR ``"stub"`` (frozen surface
-    §1a.4: the stub runs "the full mechanics ... against a local in-process
+    should run at all -- i.e. mode is ``"on"`` OR ``"stub"`` (the stub runs "the full mechanics ... against a local in-process
     stub"). Callers that need to distinguish real vs. stub use
     :func:`witness_mode` or :func:`witness_is_stub`."""
     return witness_mode(explicit) != "off"
@@ -296,7 +296,7 @@ def witness_is_stub(explicit: bool | None) -> bool:
 
 
 def refuse_stub_in_production(explicit: bool | None) -> None:
-    """Hard, synchronous refusal (frozen surface §1a.4): ``CAPSULE_WITNESS=stub``
+    """Hard, synchronous refusal: ``CAPSULE_WITNESS=stub``
     together with ``CAPSULE_ENV=production`` must never run -- "teams cannot
     ship to prod on stub without noticing." Raises
     :class:`StubWitnessInProductionError` immediately; never a warning, never
@@ -353,7 +353,8 @@ def _parse_witness_urls(raw: str | list[str] | None) -> list[str]:
     list of endpoints, in the order given, with blanks dropped and duplicates
     removed. Accepts a single URL string, a list of URL strings, or a
     comma-separated string (the shape an env var must take). An empty result
-    means "no override" -- the caller falls back to the registered default.
+    means no witness is configured: there is no default witness, and nothing
+    is sent (see :func:`resolved_witness_urls`).
     """
     if raw is None:
         return []
@@ -369,24 +370,15 @@ def _parse_witness_urls(raw: str | list[str] | None) -> list[str]:
 
 
 def resolved_witness_urls(ts_url: str | list[str] | None = None) -> list[str]:
-    """The witness endpoint(s) actually in effect, resolved with the exact
-    same precedence :func:`maybe_checkpoint`'s caller (``core.emit()``/
-    ``seal()``) already applies: an explicit ``ts_url`` wins; otherwise
-    ``CAPSULE_WITNESS_URL``; otherwise the single free public-good default.
-
-    Unlike :func:`_parse_witness_urls` (a pure normalizer that leaves "no
-    override" as ``[]`` for its caller to fall back on), this always
-    returns at least one URL -- callers outside a live ``emit()`` call (a
-    retry pass, ``status``) that need to know "which witness(es) is this
-    ledger actually configured against right now" have no other caller to
-    fall back to.
+    """The witness endpoint(s) actually in effect: an explicit ``ts_url``
+    wins; otherwise ``CAPSULE_WITNESS_URL``. There is no default witness:
+    with neither, the list is empty and nothing is sent anywhere. (A public
+    witness is, for example, ``https://witness.agentactioncapsule.org``; it
+    is used only when configured like any other.)
     """
-    from .checkpoint import DEFAULT_TS_URL
-
     if ts_url is None:
         ts_url = os.environ.get(WITNESS_URL_ENV_VAR)
-    urls = _parse_witness_urls(ts_url)
-    return urls or [DEFAULT_TS_URL]
+    return _parse_witness_urls(ts_url)
 
 
 _notice_lock = threading.Lock()
@@ -403,7 +395,7 @@ def _print_first_use_notice_once(urls: list[str], *, stub: bool = False) -> None
     must not break emit().
 
     ``stub=True`` (``CAPSULE_WITNESS=stub``) prints the distinct scream this
-    mode requires (frozen surface §1a.4: "the scream is everywhere the
+    mode requires ("the scream is everywhere the
     developer is: at the first stub-armed seal()...") instead of the normal
     witnessing notice -- it cannot be mistaken for the real thing, states
     plainly that nothing leaves the process, and names both exits (point at
@@ -421,13 +413,24 @@ def _print_first_use_notice_once(urls: list[str], *, stub: bool = False) -> None
                 "and the grade never leaves self-attested; this mode proves nothing beyond "
                 "self-attested to anyone but you. Never set CAPSULE_WITNESS=stub in production "
                 "-- CAPSULE_ENV=production with stub set refuses to run. To get a real witness: "
-                "unset CAPSULE_WITNESS to use the default hosted witness, or set "
-                "CAPSULE_WITNESS_URL to point at your own. "
+                "unset CAPSULE_WITNESS and set CAPSULE_WITNESS_URL to the witness(es) you "
+                "choose (a public one, or your own). "
                 "(This notice prints once per process.)",
                 file=sys.stderr,
             )
             return
-        endpoints = ", ".join(urls) if urls else "the default witness endpoint"
+        if not urls:
+            print(
+                "capsule-emit: witnessing is on but no witness is configured, so no "
+                "checkpoint leaves this process and every checkpoint stays self-attested. "
+                "To have checkpoints witnessed, set CAPSULE_WITNESS_URL (or pass "
+                "witness_url=) to the witness(es) you choose: a public one such as "
+                "https://witness.agentactioncapsule.org, or your own. Silence this with "
+                "witness=False or CAPSULE_WITNESS=off. (This notice prints once per process.)",
+                file=sys.stderr,
+            )
+            return
+        endpoints = ", ".join(urls)
         print(
             "capsule-emit: witnessing is on for this process -- once a checkpoint "
             "is due, a signed checkpoint of your log (its size, a root hash, and a "
@@ -458,7 +461,7 @@ class _AutoSigner:
 
 
 class _PersistedCheckpointSigner:
-    """Adapts a ``capsule_emit.signing.Signer`` (frozen §7d: atomic
+    """Adapts a ``capsule_emit.signing.Signer`` (the stable public API: atomic
     ``sign(bytes) -> (signature, key_id)``) to the checkpoint layer's own
     ``Signer`` protocol (a static ``key_id`` attribute plus
     ``sign(digest_hex) -> str``, see ``capsule_emit.checkpoint.emit.Signer``)
@@ -788,9 +791,29 @@ def _persist_checkpoint_stamp(
 # section for why that is deliberate, not an omission.
 
 
-#: The two receipt grades register row 5 defines. A label value outside this
-#: set is not reported as a grade, even from a receipt that verifies.
-_RECEIPT_GRADES = frozenset({"countersigned-observed", "mmr-verified"})
+#: The two receipt grades register row 5 defines: existence and time only,
+#: and consistency checked.
+GRADE_OBSERVED_ONLY = "observed-only"
+GRADE_MMR_VERIFIED = "mmr-verified"
+
+#: The label witnesses emitted for ``observed-only`` before it was renamed (a
+#: witness registers and timestamps; it does not countersign). Receipts already
+#: issued keep these signed bytes, so a verifier still accepts the label, with
+#: the same meaning, and reports it as ``observed-only``.
+GRADE_COUNTERSIGNED_OBSERVED_LEGACY = "countersigned-observed"
+
+_RECEIPT_GRADE_ALIASES = {
+    GRADE_OBSERVED_ONLY: GRADE_OBSERVED_ONLY,
+    GRADE_COUNTERSIGNED_OBSERVED_LEGACY: GRADE_OBSERVED_ONLY,
+    GRADE_MMR_VERIFIED: GRADE_MMR_VERIFIED,
+}
+
+
+def normalize_receipt_grade(label: Any) -> str | None:
+    """The receipt grade a label means, under its current name, or ``None``
+    for a value that is not a known grade. A label outside the vocabulary is
+    not reported as a grade, even from a receipt that verifies."""
+    return _RECEIPT_GRADE_ALIASES.get(label) if isinstance(label, str) else None
 
 
 @dataclass(frozen=True)
@@ -799,11 +822,9 @@ class StampVerification:
     the three-state ``verdict``, its ``errors``, and ``key_pem``, the trusted
     Transparency Service key the verdict was reached under.
 
-    ``key_pem`` is the caller's pin when one was given; else
-    :data:`capsule_emit.checkpoint.DEFAULT_TS_PUBLIC_KEY_PEM` for a witness
-    at :data:`capsule_emit.checkpoint.DEFAULT_TS_URL`; else ``None`` (an
-    unpinned witness anywhere else, for which no key is trusted and nothing
-    better than ``UNVERIFIED`` is possible). ``WITNESSED`` means the receipt's
+    ``key_pem`` is the caller's pin when one was given, else ``None``: no
+    key is trusted that the caller did not supply (there is no built-in key
+    for any witness), and nothing better than ``UNVERIFIED`` is possible. ``WITNESSED`` means the receipt's
     signature verified under exactly ``key_pem``. With any other verdict the
     key is only the one the stamp was judged against, not one it verified
     under, so nothing may be read from the receipt on its strength."""
@@ -824,8 +845,7 @@ def verify_witness_stamp_tristate_keyed(
     never makes a network call.
 
     The trust-anchor choice is made HERE, once: the caller's
-    ``ts_pubkey_pem``, else the built-in default key for a witness at the
-    default ``ts_url``, else none. The chosen key is then passed to the
+    ``ts_pubkey_pem``, else none (see :func:`stamp_verdict`). The chosen key is then passed to the
     tristate explicitly, so the tristate never picks a key of its own on this
     path, and the returned verdict and ``key_pem`` cannot describe two
     different keys. Anything that must read more from a receipt after a
@@ -836,18 +856,43 @@ def verify_witness_stamp_tristate_keyed(
     ``(verdict, errors)``; for any stamp it returns the same verdict this
     function does.
     """
-    # The constants are read off the module at call time, not bound at
-    # import, so a deployment (or test) that re-points DEFAULT_TS_URL /
-    # DEFAULT_TS_PUBLIC_KEY_PEM on it is seen here exactly as the tristate
-    # sees it. cll's module directly: capsule_emit.checkpoint.emit is the
-    # same module object behind a deprecated alias.
+    key_pem = ts_pubkey_pem
+    verdict, errors = stamp_verdict(checkpoint, witness, ts_pubkey_pem=key_pem)
+    return StampVerification(verdict=verdict, errors=tuple(errors), key_pem=key_pem)
+
+
+def stamp_verdict(
+    checkpoint: Any,  # capsule_emit.checkpoint.CheckpointRecord
+    witness: Any,  # capsule_emit.checkpoint.WitnessRecord
+    *,
+    ts_pubkey_pem: bytes | str | None = None,
+) -> tuple[Any, list[str]]:
+    """:func:`cll.checkpoint.emit.verify_witness_stamp_tristate`, trusting
+    only the key the caller supplies. Never raises; never makes a network
+    call.
+
+    That function pins a key built into the library when it is given none
+    and the stamp's ``ts_url`` is one particular public witness. A verifier
+    here trusts no witness its caller did not name: with no key, the stamp
+    gets the shape checks only (bound to this checkpoint, a structurally
+    valid receipt) and reads ``UNVERIFIED`` at best, whatever its URL. To
+    trust a witness, pass its key (``ts_pubkey_pem``, or a ``trust_anchor``
+    / witness directory the caller chose).
+    """
+    import dataclasses
+
     from cll.checkpoint import emit as _emit
 
-    key_pem = ts_pubkey_pem
-    if key_pem is None and getattr(witness, "ts_url", None) == _emit.DEFAULT_TS_URL:
-        key_pem = _emit.DEFAULT_TS_PUBLIC_KEY_PEM
-    verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=key_pem)
-    return StampVerification(verdict=verdict, errors=tuple(errors), key_pem=key_pem)
+    if ts_pubkey_pem is not None:
+        verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, witness, ts_pubkey_pem=ts_pubkey_pem)
+        return verdict, list(errors)
+    # No key: ask for the shape checks under a URL that pins nothing, and
+    # report the stamp's own URL.
+    unpinned = dataclasses.replace(witness, ts_url="")
+    verdict, errors = _emit.verify_witness_stamp_tristate(checkpoint, unpinned, ts_pubkey_pem=None)
+    if verdict is _emit.StampVerdict.UNVERIFIED:
+        errors = [f"witnessed by {witness.ts_url}, no key supplied by the caller — unverified stamp"]
+    return verdict, list(errors)
 
 
 def _receipt_grade(
@@ -858,8 +903,9 @@ def _receipt_grade(
 ) -> str | None:
     """The RECEIPT grade this one witness put on its stamp for ``checkpoint``
     -- decoded from the COSE Receipt's protected header, private-use label
-    ``-65537`` (register row 5: ``countersigned-observed`` = existence +
-    time, ``mmr-verified`` = consistency checked). This is NOT
+    ``-65537`` (register row 5: ``observed-only`` = existence + time,
+    ``mmr-verified`` = consistency checked; the pre-rename label
+    ``countersigned-observed`` is read as ``observed-only``). This is NOT
     :class:`CheckpointWitnessState`'s ``Grade`` (``witnessed`` /
     ``self-attested``) -- that is the CLIENT state, derived from whether
     ANY receipt exists at all, never a claim about what was checked. See
@@ -874,18 +920,17 @@ def _receipt_grade(
     1. **Bound to this checkpoint.** ``witness.entry_hash`` equals the hash
        of ``checkpoint.digest()``, so a genuine receipt replayed from
        another checkpoint fails.
-    2. **Signed by a key this process already trusts.** With
-       ``ts_pubkey_pem`` the receipt must verify under that pinned key (one
-       key, applied to every witness it is passed with). Without it, only a
-       witness at the library's default ``ts_url`` can pass, under the
-       public key built into the library. No key is ever fetched: a
+    2. **Signed by a key the caller supplied.** With ``ts_pubkey_pem`` the
+       receipt must verify under that pinned key (one key, applied to every
+       witness it is passed with). Without it, no witness can pass: there is
+       no built-in key for any witness. No key is ever fetched: a
        ``ts_url`` is written by whoever writes the ledger, so a key served
        there proves nothing about who signed the receipt.
 
     ``None`` -- "no verified grade" -- when: the stamp is a stub
     (``is_stub``); it is not ``WITNESSED`` (wrong signer, replayed or
-    tampered stamp, no ``checkpoint`` to bind to, an unpinned witness other
-    than the default, ``scitt_cose`` not installed); or it is ``WITNESSED``
+    tampered stamp, no ``checkpoint`` to bind to, no key supplied,
+    ``scitt_cose`` not installed); or it is ``WITNESSED``
     but carries no label, or a value outside the two grades above. ``None``
     must never be presented as either grade string.
 
@@ -926,8 +971,7 @@ def _receipt_grade(
         return None
     if not result.ok:
         return None
-    grade = result.protected_header_ext.get(-65537)
-    return grade if grade in _RECEIPT_GRADES else None
+    return normalize_receipt_grade(result.protected_header_ext.get(-65537))
 
 
 @dataclass(frozen=True)
@@ -942,14 +986,14 @@ class CheckpointWitnessState:
     exist, since those only ever see the original registration.
 
     **Two vocabularies, never conflated (register row 5 vs this module):**
-    the RECEIPT grade (``countersigned-observed`` / ``mmr-verified``, in
+    the RECEIPT grade (``observed-only`` / ``mmr-verified``, in
     each receipt's own COSE protected header) is what THAT witness verified
     -- a per-witness fact, read via :meth:`receipt_grades`. The CLIENT
     state (:meth:`grade`, ``Grade.SELF_ATTESTED`` / ``Grade.WITNESSED``) is
     DERIVED and never a claim: ``witnessed`` means only "at least one
     receipt exists," independent of what any of them graded themselves. A
     checkpoint whose only receipt is existence-and-time
-    (``countersigned-observed``) is still ``witnessed`` here -- correctly,
+    (``observed-only``) is still ``witnessed`` here -- correctly,
     since that is what ``witnessed`` means -- but it must never be
     RENDERED as consistency-verified on that basis; a surface showing
     ``grade()`` must show :meth:`receipt_grades` beside it, not instead of
@@ -975,13 +1019,13 @@ class CheckpointWitnessState:
         alone, so a late backfilled stamp flips this to WITNESSED without
         needing the checkpoint's own, never-updated ``.witnesses`` list to
         change."""
-        from .checkpoint import Grade, verify_witness_stamp_offline
+        from .checkpoint import Grade, StampVerdict
 
         return (
             Grade.WITNESSED
             if any(
                 not w.is_stub
-                and verify_witness_stamp_offline(self.checkpoint, w, ts_pubkey_pem=ts_pubkey_pem)[0]
+                and stamp_verdict(self.checkpoint, w, ts_pubkey_pem=ts_pubkey_pem)[0] is StampVerdict.WITNESSED
                 for w in self.effective_witnesses.values()
             )
             else Grade.SELF_ATTESTED
@@ -989,7 +1033,7 @@ class CheckpointWitnessState:
 
     def receipt_grades(self, *, ts_pubkey_pem: bytes | str | None = None) -> dict[str, str | None]:
         """Each effective witness's OWN receipt grade for this checkpoint,
-        keyed by ``ts_url`` -- ``countersigned-observed`` / ``mmr-verified``,
+        keyed by ``ts_url`` -- ``observed-only`` / ``mmr-verified``,
         or ``None`` when that witness has no receipt that is bound to this
         checkpoint and verifies under a key this process already trusts (see
         :func:`_receipt_grade`). This is the per-witness fact a surface lists
@@ -1137,7 +1181,7 @@ def retry_pending_witness_stamps(
     (or not) never affects another's -- each URL's loop is independent.
 
     Gated by :func:`witness_enabled` exactly like :func:`maybe_checkpoint`
-    (O16-03: the kill switch is a single, absolute zero-egress guarantee --
+    (the kill switch is a single, absolute zero-egress guarantee --
     a retry pass must honor it too, not just the original registration
     attempt). Synchronous -- callers that want this off the calling thread
     (``maybe_checkpoint``'s dispatched worker) call it from there.
@@ -1230,7 +1274,6 @@ def _checkpoint_timestamp() -> str:
 
 def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool = False) -> None:
     from .checkpoint import (
-        DEFAULT_TS_URL,
         STUB_TS_URL,
         CheckpointError,
         RollbackError,
@@ -1239,10 +1282,13 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     )
 
     # In stub mode, never label a stamp with a real-looking endpoint (a
-    # configured CAPSULE_WITNESS_URL, or the real hosted default) -- nothing
-    # is actually dialed, so the label must say so plainly (STUB_TS_URL),
-    # not borrow a URL that would read as "this really reached that host."
-    resolved_urls = [STUB_TS_URL] if stub else (ts_urls or [DEFAULT_TS_URL])
+    # configured CAPSULE_WITNESS_URL) -- nothing is actually dialed, so the
+    # label must say so plainly (STUB_TS_URL), not borrow a URL that would
+    # read as "this really reached that host." There is no default witness:
+    # with none configured there is nothing to register with.
+    resolved_urls = [STUB_TS_URL] if stub else list(ts_urls)
+    if not resolved_urls:
+        return
 
     # Drain each configured witness's durable backlog BEFORE handling the
     # checkpoint newly due this cycle -- oldest pending stamp first, per
@@ -1341,7 +1387,7 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # next checkpoint's root genuinely covers this one's stamp. Written
     # regardless of registration outcome: even a self-attested checkpoint is
     # history worth logging, and item 5's idle-silence/stamp-exclusion rule
-    # (audit item 5) depends on stamp entries existing in the log at all.
+    # depends on stamp entries existing in the log at all.
     _persist_checkpoint_stamp(cp, state.ledger_path, checkpoint_cose_hex=checkpoint_cose_hex)
 
 
@@ -1352,7 +1398,7 @@ def push(
     witness: bool | None = None,
     signer: _signing.Signer | None = None,
 ) -> Any:
-    """Force an immediate checkpoint now — frozen surface §1's "one verb for
+    """Force an immediate checkpoint now: the "one verb for
     urgency" (``capsule_emit.push()`` is the public re-export of this).
 
     Unlike :func:`maybe_checkpoint` (dispatched from every ``seal()``/
@@ -1391,8 +1437,10 @@ def push(
     refuse_stub_in_production(witness)
     is_stub = mode == "stub"
 
-    urls = _parse_witness_urls(ts_url)
+    urls = resolved_witness_urls(ts_url)
     _print_first_use_notice_once(urls, stub=is_stub)
+    if not urls and not is_stub:
+        return None  # no witness configured: nothing to send
 
     key = _resolve_key(ledger_path)
     dispatch_lock = _dispatch_lock_for(key)
@@ -1458,6 +1506,11 @@ def require_witness_receipt(
             "(witness=False / CAPSULE_WITNESS=off) -- no witness channel is "
             "configured to obtain a receipt from"
         )
+    if witness_mode(witness) == "on" and not resolved_witness_urls(ts_url):
+        raise WitnessRequiredError(
+            f"require_witness=True but no witness is configured for {ledger_path!r} "
+            "-- pass witness_url= or set CAPSULE_WITNESS_URL to the witness(es) you choose"
+        )
     cp = push(ledger_path, ts_url=ts_url, witness=witness, signer=signer)
     if cp is None or not cp.witnesses:
         raise WitnessRequiredError(
@@ -1520,8 +1573,10 @@ def maybe_checkpoint(
     refuse_stub_in_production(enabled)
     is_stub = mode == "stub"
 
-    urls = _parse_witness_urls(ts_url)
+    urls = resolved_witness_urls(ts_url)
     _print_first_use_notice_once(urls, stub=is_stub)
+    if not urls and not is_stub:
+        return  # no witness configured: nothing to send
 
     cadence = _resolved_cadence(cadence_entries)
     age_cadence = _resolved_age_cadence(cadence_seconds)

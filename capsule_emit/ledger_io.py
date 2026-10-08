@@ -10,13 +10,13 @@ read/verify seam every ledger-backed verb depends on, so it needed a home
 that stays maintained.
 
 ``LedgerStore``/``ScanQuery`` come from :mod:`cll.ledger` -- the
-``checkpointed-local-log`` package -- not ``capsule_ledger``: the W3.1 CLL
+``checkpointed-local-log`` package -- not ``capsule_ledger``: the CLL
 extraction (2026-09-01) already made ``capsule_ledger.ledger.store``/
 ``capsule_ledger.ledger.api`` thin ``sys.modules`` aliases for
 ``cll.ledger.store``/``cll.ledger.api``, and ``cll`` is already this
 package's own hard, unconditional dependency (``checkpointed-local-log``),
 so importing the *actual*, still-maintained module directly needs no new
-dependency and no Python-floor gate (Amendment E: import, never vendor --
+dependency and no Python-floor gate (import, never vendor --
 and importing the alias's target rather than the archived alias itself is
 the more honest "import").
 

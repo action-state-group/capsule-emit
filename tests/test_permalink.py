@@ -11,13 +11,15 @@ from agent_action_capsule.disclosure_envelope import MATCH
 from capsule_emit import seal
 from capsule_emit.cli import main as cli_main
 from capsule_emit.permalink import (
-    DEFAULT_BASE_URL,
     PermalinkError,
     build_url,
     check_capsules,
     load_capsules,
     summarize,
 )
+
+#: The verify surface these tests name (there is no default).
+DEFAULT_BASE_URL = "https://verify.example"
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -210,7 +212,7 @@ def test_load_capsules_from_run_no_capsules_errors(tmp_path):
 def test_build_url_single_capsule_is_a_bundle_of_one(three_capsule_chain):
     _, records = three_capsule_chain
     capsules = [records[0].capsule]
-    url = build_url(capsules, bundle=False)
+    url = build_url(capsules, bundle=False, base_url=DEFAULT_BASE_URL)
     assert url.startswith(f"{DEFAULT_BASE_URL}/bundle#")
     decoded = _decode_fragment(url)
     assert decoded["bundle_kind"] == "evidence-bundle/v2"
@@ -223,7 +225,7 @@ def test_build_url_single_capsule_is_a_bundle_of_one(three_capsule_chain):
 def test_build_url_bundle_carries_every_record_rooted_at_the_tip(three_capsule_chain):
     _, records = three_capsule_chain
     capsules = [r.capsule for r in records]
-    url = build_url(capsules, bundle=True)
+    url = build_url(capsules, bundle=True, base_url=DEFAULT_BASE_URL)
     decoded = _decode_fragment(url)
     assert [c["capsule_id"] for c in decoded["records"]] == [r.capsule_id for r in records]
     assert decoded["root"] == records[2].capsule_id
@@ -235,7 +237,7 @@ def test_build_url_partial_chain_declares_the_missing_parent(three_capsule_chain
     """A chain cut off from its parent says so, instead of claiming completeness."""
     _, records = three_capsule_chain
     capsules = [records[1].capsule, records[2].capsule]
-    decoded = _decode_fragment(build_url(capsules, bundle=True))
+    decoded = _decode_fragment(build_url(capsules, bundle=True, base_url=DEFAULT_BASE_URL))
     assert decoded["completeness"]["records_mode"] == "declared_incomplete"
     assert decoded["completeness"]["missing"] == [records[0].capsule_id]
     assert verify_bundle(decoded).graph_closure.status == "withheld"
@@ -250,7 +252,7 @@ def test_build_url_custom_base_url(three_capsule_chain):
 def test_build_url_disclosures_go_in_the_overlay(three_capsule_chain):
     _, records = three_capsule_chain
     cap = records[0].capsule
-    url = build_url([cap], bundle=False, disclosures={"agent_input": {"invoice_id": "INV-1"}})
+    url = build_url([cap], bundle=False, disclosures={"agent_input": {"invoice_id": "INV-1"}}, base_url=DEFAULT_BASE_URL)
     decoded = _decode_fragment(url)
     assert decoded["disclosures"] == {records[0].capsule_id: {"agent_input": {"invoice_id": "INV-1"}}}
     # the enclosed capsule is the unmodified sealed one — no wrapping, no re-keying
@@ -263,7 +265,7 @@ def test_build_url_disclosures_reject_multiple_capsules(three_capsule_chain):
     _, records = three_capsule_chain
     capsules = [r.capsule for r in records]
     with pytest.raises(PermalinkError, match="exactly one capsule"):
-        build_url(capsules, bundle=False, disclosures={"agent_input": {}})
+        build_url(capsules, bundle=False, disclosures={"agent_input": {}}, base_url=DEFAULT_BASE_URL)
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +279,7 @@ def test_build_url_bundle_disclosures_only_the_targeted_item(three_capsule_chain
     _, records = three_capsule_chain
     capsules = [r.capsule for r in records]
     disclosures = {records[1].capsule_id: {"agent_input": {"po_number": "PO-42"}}}
-    url = build_url(capsules, bundle=True, disclosures=disclosures)
+    url = build_url(capsules, bundle=True, disclosures=disclosures, base_url=DEFAULT_BASE_URL)
     decoded = _decode_fragment(url)
     assert decoded["records"] == capsules
     assert decoded["disclosures"] == disclosures
@@ -290,7 +292,7 @@ def test_build_url_bundle_disclosures_multiple_items(three_capsule_chain):
         records[0].capsule_id: {"agent_output": {"risk": "low"}},
         records[2].capsule_id: {"agent_input": {"escalated": True}},
     }
-    url = build_url(capsules, bundle=True, disclosures=disclosures)
+    url = build_url(capsules, bundle=True, disclosures=disclosures, base_url=DEFAULT_BASE_URL)
     decoded = _decode_fragment(url)
     assert decoded["disclosures"] == disclosures
     assert decoded["records"] == capsules
@@ -300,14 +302,14 @@ def test_build_url_bundle_disclosures_no_entries_is_plain_bundle(three_capsule_c
     """An empty disclosures dict behaves like disclosures=None — no overlay."""
     _, records = three_capsule_chain
     capsules = [r.capsule for r in records]
-    assert build_url(capsules, bundle=True, disclosures={}) == build_url(capsules, bundle=True)
+    assert build_url(capsules, bundle=True, disclosures={}, base_url=DEFAULT_BASE_URL) == build_url(capsules, bundle=True, base_url=DEFAULT_BASE_URL)
 
 
 def test_build_url_bundle_disclosures_unknown_capsule_id_rejected(three_capsule_chain):
     _, records = three_capsule_chain
     capsules = [r.capsule for r in records]
     with pytest.raises(PermalinkError, match="not in the bundle"):
-        build_url(capsules, bundle=True, disclosures={"f" * 64: {"agent_input": {}}})
+        build_url(capsules, bundle=True, disclosures={"f" * 64: {"agent_input": {}}}, base_url=DEFAULT_BASE_URL)
 
 
 def test_summarize_single_capsule(three_capsule_chain):
@@ -351,7 +353,7 @@ def test_check_capsules_detects_tamper(three_capsule_chain):
 
 def test_cli_permalink_defaults_to_bundle_for_multiple_capsules(three_capsule_chain, capsys):
     ledger, records = three_capsule_chain
-    exit_code = cli_main(["permalink", "--ledger", str(ledger)])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger)])
     assert exit_code == 0
     out = capsys.readouterr().out
     assert "3 capsules" in out
@@ -365,7 +367,7 @@ def test_cli_permalink_single_capsule_defaults_to_bundle_of_one(two_capsule_run_
     run_dir, records = two_capsule_run_dir
     cap_path = run_dir.parent / "single.json"
     cap_path.write_text(json.dumps(records[0].capsule))
-    exit_code = cli_main(["permalink", str(cap_path)])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, str(cap_path)])
     assert exit_code == 0
     out = capsys.readouterr().out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
@@ -377,7 +379,7 @@ def test_cli_permalink_bundle_flag_on_single_capsule(two_capsule_run_dir, capsys
     run_dir, records = two_capsule_run_dir
     cap_path = run_dir.parent / "single.json"
     cap_path.write_text(json.dumps(records[0].capsule))
-    exit_code = cli_main(["permalink", str(cap_path), "--bundle"])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, str(cap_path), "--bundle"])
     assert exit_code == 0
     out = capsys.readouterr().out
     url = [line for line in out.splitlines() if line.startswith("http")][0]
@@ -387,7 +389,7 @@ def test_cli_permalink_bundle_flag_on_single_capsule(two_capsule_run_dir, capsys
 
 def test_cli_permalink_check_passes_on_valid_chain(three_capsule_chain, capsys):
     ledger, _ = three_capsule_chain
-    exit_code = cli_main(["permalink", "--ledger", str(ledger), "--check"])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--check"])
     assert exit_code == 0
     out = capsys.readouterr().out
     assert "3/3" in out
@@ -403,7 +405,7 @@ def test_cli_permalink_check_refuses_url_on_corrupted_capsule(three_capsule_chai
     corrupt_ledger = tmp_path / "corrupt.jsonl"
     corrupt_ledger.write_text("\n".join(json.dumps(c) for c in capsules) + "\n")
 
-    exit_code = cli_main(["permalink", "--ledger", str(corrupt_ledger), "--check"])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(corrupt_ledger), "--check"])
     assert exit_code != 0
 
     captured = capsys.readouterr()
@@ -415,7 +417,7 @@ def test_cli_permalink_check_refuses_url_on_corrupted_capsule(three_capsule_chai
 
 
 def test_cli_permalink_no_input_errors(capsys):
-    exit_code = cli_main(["permalink"])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL])
     assert exit_code == 1
     assert "no capsules given" in capsys.readouterr().err
 
@@ -424,7 +426,7 @@ def test_cli_permalink_reveal_unqualified_on_bundle_is_rejected(three_capsule_ch
     """--reveal FIELD=... (no SELECTOR:) + more than one capsule is refused — ambiguous
     which item to disclose, not silently applied to the first."""
     ledger, _ = three_capsule_chain
-    exit_code = cli_main(["permalink", "--ledger", str(ledger), "--reveal", "agent_input=x.json"])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", "agent_input=x.json"])
     assert exit_code != 0
     err = capsys.readouterr().err
     assert "SELECTOR:FIELD" in err
@@ -451,7 +453,7 @@ def test_cli_permalink_reveal_matching_payload(tmp_path, capsys):
 
     exit_code = cli_main(
         [
-            "permalink",
+            "permalink", "--base-url", DEFAULT_BASE_URL,
             "--ledger",
             str(ledger),
             "--reveal",
@@ -492,7 +494,7 @@ def test_cli_permalink_reveal_mismatched_payload_refused(tmp_path, capsys):
     input_file.write_text(json.dumps({"invoice_id": "WRONG-ID"}))
 
     exit_code = cli_main(
-        ["permalink", "--ledger", str(ledger), "--reveal", f"agent_input={input_file}"]
+        ["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", f"agent_input={input_file}"]
     )
     assert exit_code != 0
     captured = capsys.readouterr()
@@ -516,7 +518,7 @@ def test_cli_permalink_reveal_bundle_by_index(three_capsule_chain_with_io, tmp_p
 
     exit_code = cli_main(
         [
-            "permalink",
+            "permalink", "--base-url", DEFAULT_BASE_URL,
             "--ledger",
             str(ledger),
             "--reveal",
@@ -547,7 +549,7 @@ def test_cli_permalink_reveal_bundle_by_capsule_id_prefix(three_capsule_chain_wi
     prefix = records[0].capsule_id[:10]
 
     exit_code = cli_main(
-        ["permalink", "--ledger", str(ledger), "--reveal", f"{prefix}:agent_input={input_file}"]
+        ["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", f"{prefix}:agent_input={input_file}"]
     )
     assert exit_code == 0
     out = capsys.readouterr().out
@@ -567,7 +569,7 @@ def test_cli_permalink_reveal_bundle_multiple_items(three_capsule_chain_with_io,
 
     exit_code = cli_main(
         [
-            "permalink",
+            "permalink", "--base-url", DEFAULT_BASE_URL,
             "--ledger",
             str(ledger),
             "--reveal",
@@ -596,7 +598,7 @@ def test_cli_permalink_reveal_bundle_mismatch_refused_per_item(three_capsule_cha
     wrong.write_text(json.dumps({"po_number": "WRONG"}))
 
     exit_code = cli_main(
-        ["permalink", "--ledger", str(ledger), "--reveal", f"2:agent_input={wrong}"]
+        ["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", f"2:agent_input={wrong}"]
     )
     assert exit_code != 0
     captured = capsys.readouterr()
@@ -609,7 +611,7 @@ def test_cli_permalink_reveal_bundle_bad_index_refused(three_capsule_chain_with_
     ledger, _ = three_capsule_chain_with_io
     f = tmp_path / "x.json"
     f.write_text("{}")
-    exit_code = cli_main(["permalink", "--ledger", str(ledger), "--reveal", f"9:agent_input={f}"])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", f"9:agent_input={f}"])
     assert exit_code != 0
     assert "out of range" in capsys.readouterr().err
 
@@ -620,7 +622,7 @@ def test_cli_permalink_reveal_bundle_ambiguous_prefix_refused(three_capsule_chai
     f.write_text("{}")
     # a single hex char is a prefix of >=1 of the three capsule_ids almost always;
     # force ambiguity is impractical here, so instead assert the too-short-prefix path.
-    exit_code = cli_main(["permalink", "--ledger", str(ledger), "--reveal", f"abc:agent_input={f}"])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", f"abc:agent_input={f}"])
     assert exit_code != 0
     assert ">=8-char" in capsys.readouterr().err
 
@@ -666,7 +668,7 @@ def test_resolve_capsule_by_selector_all_digit_prefix_collision_with_valid_index
 
 def test_cli_permalink_fragment_size_no_warning_for_small_chain(three_capsule_chain, capsys):
     ledger, _ = three_capsule_chain
-    exit_code = cli_main(["permalink", "--ledger", str(ledger), "--base-url", "http://x"])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--base-url", "http://x"])
     assert exit_code == 0
     small_err = capsys.readouterr().err
     assert "fragment" not in small_err  # the small demo chain stays well under threshold
@@ -690,7 +692,7 @@ def test_cli_permalink_fragment_size_warning_past_16kb(tmp_path, capsys):
     input_file.write_text(json.dumps(big_payload))
 
     exit_code = cli_main(
-        ["permalink", "--ledger", str(ledger), "--reveal", f"agent_input={input_file}"]
+        ["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", f"agent_input={input_file}"]
     )
     assert exit_code == 0
     captured = capsys.readouterr()
@@ -703,7 +705,7 @@ def test_cli_permalink_fragment_size_warning_past_16kb(tmp_path, capsys):
 
 def test_cli_permalink_from_run(two_capsule_run_dir, capsys):
     run_dir, records = two_capsule_run_dir
-    exit_code = cli_main(["permalink", "--from-run", str(run_dir)])
+    exit_code = cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, "--from-run", str(run_dir)])
     assert exit_code == 0
     out = capsys.readouterr().out
     assert "2 capsules" in out

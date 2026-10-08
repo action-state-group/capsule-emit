@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """``disclose()`` — the deliberate, recorded act of handing bundle + content
-to an audience (O16 audit item 10, frozen dev-surface v4 §7b).
+to an audience.
 
-``disclose`` is ``bundle`` (O16 audit item 14, ``capsule_emit.bundle``) plus:
+``disclose`` is ``bundle`` (``capsule_emit.bundle``) plus:
 selected payload content (the existing single-capsule Disclosure Envelope,
 ``capsule_emit.disclosure.build_disclosure_envelope``, applied per record), a
 **completeness statement** so a partial disclosure can never read as a full
@@ -13,7 +13,7 @@ signed with the same producer ``Signer`` ``seal()`` uses
 (``capsule_emit.signing``), and appended to the SAME ledger as a new
 ``kind`` (``capsule_emit.ledger.DISCLOSURE_RECORD_KIND``) — so it becomes an
 MMR leaf like any other entry: the act of showing evidence is itself
-evidence (frozen surface §7b: "disclosures are receipts too").
+evidence ("disclosures are receipts too").
 
 ``bundle`` stays the always-safe verb (digests only); this module is its
 conscious sibling — reached only when content is about to cross a boundary
@@ -32,7 +32,7 @@ mints no receipt; only a call into this module does.
   completeness, regardless of whether the ids happen to be contiguous,
   because the caller chose to enumerate rather than bound a range.
 
-Both are brownfield-runnable, neutral primitives (frozen surface §7c: "a
+Both are brownfield-runnable, neutral primitives ("a
 brownfield user without our compiler can produce every disclosure our
 compiler can"). ``--claim``-driven selection (resolving a rollup's evidence
 rule to exactly the records it cites) is plugin sugar layered OVER this
@@ -392,7 +392,7 @@ def verify_disclosure(
     object; every bundle (``capsule_emit.bundle.verify_bundle``); and, for
     every disclosed payload field, that it recomputes to the digest
     committed on that record's receipt — a tampered payload names itself
-    (frozen surface §7b) exactly the way a tampered bundle does.
+    exactly the way a tampered bundle does.
 
     Returns ``(ok, errors)`` — ``errors`` is empty iff ``ok``.
     """

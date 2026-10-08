@@ -35,12 +35,14 @@ statement: log shape only (size, root, time, key id), never capsule content.
 
 **What each receipt proves (grade).** A Rekor entry proves the checkpoint
 bytes existed, signed by the log's key, at Rekor's integrated time:
-``countersigned-observed``. Rekor never checks MMR consistency, so a Rekor
+``observed-only``. Rekor never checks MMR consistency, so a Rekor
 receipt is never ``mmr-verified``. A SCRAPI receipt is graded by its own
 protected-header label when it has one; a receipt that verifies but carries
 no label proves inclusion (existence and time) and is
-``countersigned-observed``. A ``cll`` receipt keeps its own label, read by
-``capsule_emit.witness._receipt_grade``.
+``observed-only``. A ``cll`` receipt keeps its own label, read by
+``capsule_emit.witness._receipt_grade``. A receipt issued before the rename
+that carries ``countersigned-observed`` is reported as ``observed-only``,
+its same meaning.
 
 Every verification here is offline and takes its keys from one place: the
 witness directory (``witnesses.json``, see ``capsule_emit.witness_directory``).
@@ -59,6 +61,8 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
+
+from .witness import GRADE_OBSERVED_ONLY, normalize_receipt_grade
 
 __all__ = [
     "BINDING_CLL",
@@ -93,8 +97,6 @@ PUBLIC_REKOR_URL = "rekor+https://rekor.sigstore.dev"
 
 _REKOR_ENTRIES_PATH = "/api/v1/log/entries"
 _SCRAPI_ENTRIES_PATH = "/entries"
-_COUNTERSIGNED_OBSERVED = "countersigned-observed"
-_RECEIPT_GRADES = frozenset({_COUNTERSIGNED_OBSERVED, "mmr-verified"})
 
 
 class WitnessBindingError(RuntimeError):
@@ -409,10 +411,11 @@ def verify_scrapi_receipt(
         return False, "receipt does not verify for this checkpoint under the pinned key", None
     label = (getattr(result, "protected_header_ext", None) or {}).get(-65537)
     if label is None:
-        return True, "ok", _COUNTERSIGNED_OBSERVED
-    if label in _RECEIPT_GRADES:
-        return True, "ok", label
-    return True, "ok (unknown grade label ignored)", _COUNTERSIGNED_OBSERVED
+        return True, "ok", GRADE_OBSERVED_ONLY
+    grade = normalize_receipt_grade(label)
+    if grade is not None:
+        return True, "ok", grade
+    return True, "ok (unknown grade label ignored)", GRADE_OBSERVED_ONLY
 
 
 # -- plurality policy ---------------------------------------------------------
@@ -484,7 +487,7 @@ def _verify_one(checkpoint: Any, w: Any, pem: bytes, cose: bytes | None) -> tupl
         ok, reason = verify_rekor_receipt(
             receipt, checkpoint_cose=cose, checkpoint_key_id=checkpoint.key_id, rekor_public_key_pem=pem
         )
-        return ok, reason, _COUNTERSIGNED_OBSERVED if ok else None
+        return ok, reason, GRADE_OBSERVED_ONLY if ok else None
     return verify_scrapi_receipt(
         base64.b64decode(w.receipt_b64), checkpoint_cose=cose, service_public_key_pem=pem
     )

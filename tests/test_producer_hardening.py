@@ -157,36 +157,22 @@ def test_chain_relation_supersedes(tmp_ledger):
     assert verify(cap.capsule).ok
 
 
-def test_chain_relation_escalates(tmp_ledger):
+@pytest.mark.parametrize("relation", ["escalates", "assesses", "adjudicates", "resolves", "sequence", "Confirms", ""])
+def test_an_unregistered_relation_is_refused(tmp_ledger, relation):
+    """capsule-emit writes only the five registered relations; an escalation
+    is a supersedes, an assessment a confirms (see capsule_emit.relations)."""
     parent = seal(None, action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
-    cap = seal(
-        None,
-        action="action_b",
-        operator="org",
-        developer="agent@v1",
-        confirms=parent.capsule_id,
-        relation="escalates",
-        anchor=False,
-        ledger=tmp_ledger,
-    )
-    assert cap.capsule["chain"]["relation"] == "escalates"
-    assert verify(cap.capsule).ok
-
-
-def test_chain_relation_assesses(tmp_ledger):
-    parent = seal(None, action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
-    cap = seal(
-        None,
-        action="action_b",
-        operator="org",
-        developer="agent@v1",
-        confirms=parent.capsule_id,
-        relation="assesses",
-        anchor=False,
-        ledger=tmp_ledger,
-    )
-    assert cap.capsule["chain"]["relation"] == "assesses"
-    assert verify(cap.capsule).ok
+    with pytest.raises(ValueError, match="not a registered chain.relation"):
+        seal(
+            None,
+            action="action_b",
+            operator="org",
+            developer="agent@v1",
+            confirms=parent.capsule_id,
+            relation=relation,
+            anchor=False,
+            ledger=tmp_ledger,
+        )
 
 
 def test_no_chain_when_no_confirms(tmp_ledger):
@@ -212,11 +198,9 @@ def test_relation_none_keeps_chain_without_confirms_assertion(tmp_ledger):
     """relation=None keeps the chain link but drops the relation assertion.
 
     The underlying agent_action_capsule library requires chain.relation to be
-    a non-empty string (§5.4.4) — it has no concept of an omitted relation on
-    an existing chain link, so it falls back to its own generic "sequence"
-    default rather than leaving the field empty. relation=None here means
-    "the caller isn't asserting a relation" (in particular, not "confirms"),
-    not that the sealed capsule ends up with a null/absent relation field.
+    a non-empty string (§5.4.4), so the link carries the registered bare
+    next-link, "follows": it asserts nothing about the parent (in particular,
+    not "confirms").
     """
     parent = seal(None, action="action_a", operator="org", developer="agent@v1", anchor=False, ledger=tmp_ledger)
     cap = seal(
@@ -230,7 +214,7 @@ def test_relation_none_keeps_chain_without_confirms_assertion(tmp_ledger):
         ledger=tmp_ledger,
     )
     assert cap.capsule["chain"]["parent_capsule_id"] == parent.capsule_id
-    assert cap.capsule["chain"]["relation"] != "confirms"
+    assert cap.capsule["chain"]["relation"] == "follows"
     assert verify(cap.capsule).ok
 
 
@@ -333,8 +317,10 @@ def test_verdict_assessed_action_type_not_fyi(tmp_ledger):
 
 def test_judge_verdict_capsule_relation_assesses(tmp_ledger):
     """The daily-judge satellite-capsule shape: a verdict capsule chains to
-    its subject with relation="assesses" and verdict="assessed", never
-    "executed"/"confirmed" — a detection disposition, not an enforcement one."""
+    its subject with relation="confirms" (it observes the subject; the
+    subject's open state remains) and verdict="assessed", never
+    "executed"/"confirmed" — a detection disposition, not an enforcement one.
+    Releases before this one advertised the unregistered "assesses" here."""
     subject = seal(
         {"turn": "the customer was offered two options"},
         action="handle_turn",
@@ -350,12 +336,12 @@ def test_judge_verdict_capsule_relation_assesses(tmp_ledger):
         developer="judge-agent@v1",
         verdict="assessed",
         confirms=subject.capsule_id,
-        relation="assesses",
+        relation="confirms",
         model={"provider": "anthropic", "model_id": "claude-judge-1"},
         anchor=False,
         ledger=tmp_ledger,
     )
-    assert verdict_cap.capsule["chain"]["relation"] == "assesses"
+    assert verdict_cap.capsule["chain"]["relation"] == "confirms"
     assert verdict_cap.capsule["chain"]["parent_capsule_id"] == subject.capsule_id
     assert verdict_cap.capsule["disposition"]["verdict_class"] == "assessed"
     assert verdict_cap.capsule["action_type"] == "decide"

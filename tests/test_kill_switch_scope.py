@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance test for O16 audit item 3 ("Kill-switch scope, incl.
+"""Acceptance test for the kill switch's scope ("Kill-switch scope, incl.
 stamp-fetch + legacy anchor"):
 
 Before this fix, ``witness=False`` / ``CAPSULE_WITNESS=off`` gated only
@@ -10,12 +10,12 @@ alone left the legacy anchor channel, and (once item 17 landed) ``status``'s
 network re-check, fully live.
 
 This is now ONE switch that zeroes all three egress paths:
-- checkpoint posting (already correct pre-O16-03; re-asserted here)
+- checkpoint posting (already correct before the kill-switch change; re-asserted here)
 - ``status``'s read-only witness-receipt re-check (net-new gate)
 - the legacy anchor channel, even when explicitly re-enabled via
   ``anchor=True`` / ``CAPSULE_ANCHOR=legacy-on`` (net-new gate)
 
-Named-test-coverage entry (O16 migration audit, item 3): "a single
+Named-test-coverage entry (the migration audit): "a single
 no-network test asserting zero egress across checkpoint-post, status
 stamp-fetch, and any configured legacy-anchor path." ``test_witness_off_is_zero_egress_across_all_three_paths``
 below is that test, driven against one hermetic stub HTTP server standing in

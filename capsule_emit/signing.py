@@ -5,7 +5,7 @@ Since 0.5.0 every capsule minted by ``seal()``/``received()`` (standalone or
 composed via a slot wrapper -- ``capsule_emit.core._emit_capsule``) carries a
 cryptographic proof over its ``capsule_id`` plus the ``key_id`` that
 produced it -- this is the
-*self-attested* rung of the ladder (frozen dev-surface v4 §2/§4): "your key,
+*self-attested* rung of the ladder: "your key,
 your claim". It is what a lone producer has *before* any witness or anchor
 ever sees the record, and it is what upgrades in place as checkpoints get
 witnessed (see ``capsule_emit.witness``) -- a different, heavier layer that
@@ -28,7 +28,7 @@ and are never part of its preimage (see ``capsule_emit.canonicalization``'s
 
 **Signer protocol.** ``sign(payload: bytes) -> (signature, key_id)`` -- a
 single atomic call returning a hex-encoded signature paired with the
-hex-encoded id of the key that produced it. This is the frozen §7d shape
+hex-encoded id of the key that produced it. This is the stable public API's shape
 verbatim, and it is atomic on purpose: an earlier draft split this into
 ``sign(payload) -> str`` plus a separately-read mutable ``key_id``
 attribute, which let a ``rotate()`` land between the two reads and mint a
@@ -37,7 +37,7 @@ both from one call makes that pairing correct by construction -- there is no
 window between "which key signed" and "which key_id got recorded" for a
 concurrent rotation to land in. KMS/HSM/TPM signers are just other
 implementations of this protocol -- ``capsule_emit`` never imports one
-concretely, matching the frozen surface's "custody is pluggable at the one
+concretely, matching the public API's "custody is pluggable at the one
 seam custody flows through" (§7d). This generic ``sign()`` stays the
 protocol's one REQUIRED method, used verbatim for producer signing by any
 ``Signer`` that does not additionally implement the OPTIONAL
@@ -73,8 +73,7 @@ single producer identity shared across ledgers.
 **Rotation.** :meth:`LocalKeypairSigner.rotate` generates a new keypair and
 returns a :class:`RotationRecord` binding old key to new: the OLD key signs
 the NEW ``key_id``, so a party that already trusted the old key can verify
-the succession without needing the old private key again (frozen surface
-§7a: "the rotation record cites old key, new key, and the binding, so
+the succession without needing the old private key again ("the rotation record cites old key, new key, and the binding, so
 identity survives rotation by construction"). Sealing that record as a
 WHO-slot key-binding receipt is the caller's job -- this module only produces
 the record; it does not seal one.
@@ -107,7 +106,7 @@ SIGNING_KEY_PATH_ENV_VAR = "CAPSULE_SIGNING_KEY_PATH"
 
 
 class Signer(Protocol):
-    """``seal()``'s signing seam (frozen dev-surface v4 §7d). Any object with
+    """``seal()``'s signing seam. Any object with
     a ``sign(payload: bytes) -> (signature, key_id)`` method: signs arbitrary
     bytes and atomically returns the hex-encoded signature together with the
     hex-encoded id of the key that produced it, so a caller never reads
@@ -411,8 +410,7 @@ def verify_capsule_signature_tristate(capsule: dict) -> tuple[AuthorshipVerdict,
     verification reuses ``agent_action_capsule.producer_envelope`` (which in
     turn reuses ``scitt_cose`` for the COSE/CBOR machinery -- boundary rule:
     no hand-rolled COSE). This proves "the holder of this key signed this
-    exact ``capsule_id``"; it does NOT prove who that key belongs to (see the
-    frozen dev-surface v4 §7a identity-binding layers for that), and it does
+    exact ``capsule_id``"; it does NOT prove who that key belongs to (see the identity-binding layers for that), and it does
     NOT by itself prove ``capsule_id`` matches this capsule's carried value
     -- callers that read a carried ``capsule_id`` separately (e.g.
     ``capsule_emit.bundle.verify_bundle``) check that independently.

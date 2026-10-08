@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for O16 audit item 14 — ``capsule_emit.bundle``.
+"""Tests for ``capsule_emit.bundle``.
 
 Builds real checkpoint chains through ``seal()`` + the default witness
 wiring (same stub-TS harness as ``tests/test_checkpoint_signer.py``) and
@@ -98,6 +98,7 @@ def stub_ts(monkeypatch):
     # leak across tests.
     base_url, received, stop = _start_stub_ts()
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", base_url)
+    monkeypatch.setenv("CAPSULE_WITNESS_URL", base_url)
     monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
     yield base_url, received
     stop()
@@ -262,7 +263,7 @@ def test_bundle_ambiguous_prefix_raises(two_checkpoint_ledger):
     # rejected rather than silently picking one — construct that collision
     # directly against the resolver so the test doesn't depend on hash luck.
     # `_find_record` now lives in `cll.checkpoint.bundle` (genericized,
-    # W3.1 CLL extraction, 2026-09-01) -- `capsule_emit.bundle` is a thin
+    # CLL extraction, 2026-09-01) -- `capsule_emit.bundle` is a thin
     # wrapper that no longer defines its own copy.
     from cll.checkpoint.bundle import _find_record
 
@@ -327,7 +328,7 @@ def test_bundle_self_attested_checkpoint_still_verifies(tmp_path, monkeypatch):
 # A well-formed stamp from an UNPINNED
 # witness (no caller-supplied pin, and not the built-in default) must NOT
 # make the bundle INVALID: it is exactly what a self-hosted/zero-egress TS
-# a caller hasn't pinned yet looks like, and frozen §1a.2 promises that
+# a caller hasn't pinned yet looks like, and the public API promises that
 # deployment shape works. Three states: unpinned -> unverified (bundle OK);
 # pinned + genuine -> witnessed; pinned + forged -> INVALID.
 # ---------------------------------------------------------------------------
@@ -678,3 +679,36 @@ def test_checkpoint_times_are_whole_seconds_the_typescript_verifier_accepts(two_
         assert len(t) == 20 and _cll_ts_accepts_time(t), t
         decoded = verify_checkpoint_cose_offline(b.checkpoint_cose).decoded
         assert decoded is not None and decoded.timestamp == t
+
+
+def test_verify_bundle_trusts_no_built_in_witness_key(two_checkpoint_ledger, stub_ts):
+    """cll's log check verifies a stamp at one URL under a key built into the
+    library. capsule-emit's verifier trusts only the caller's keys: here the
+    stub stands in for that built-in witness (its URL and key are cll's), and
+    its stamp is WITNESSED only when the caller supplies the key."""
+    from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM
+    from cll.checkpoint.bundle import verify_bundle_log_integrity
+
+    ts_url, _received = stub_ts
+    ledger_path, caps = two_checkpoint_ledger
+    b = bundle(ledger_path, caps[0]["capsule_id"])
+    assert [w.ts_url for w in b.checkpoint.witnesses] == [ts_url]
+
+    # cll alone would trust it under its built-in key: no "unverified" notice.
+    cll_ok, cll_messages = verify_bundle_log_integrity(b)
+    assert cll_ok and not any("unverified" in m for m in cll_messages)
+
+    # capsule-emit, no key supplied: verifies, but the stamp is not trusted.
+    ok, messages = verify_bundle(b)
+    assert ok is True, messages
+    assert any(f"witnessed by {ts_url}, no key supplied by the caller" in m for m in messages), messages
+    assert not any("no key supplied for witness #" in m for m in messages), "the real URL is reported"
+
+    # With the caller's key, it is witnessed.
+    ok, messages = verify_bundle(b, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM})
+    assert ok is True, messages
+    assert not any("unverified" in m for m in messages)
+
+    # The caller's bundle is not changed. (verify_disclosure checks each of
+    # its bundles with verify_bundle, so the same rule holds there.)
+    assert b.checkpoint.witnesses[0].ts_url == ts_url
