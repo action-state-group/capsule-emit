@@ -13,9 +13,9 @@ import (
 	"time"
 
 	emit "github.com/action-state-group/capsule-emit-go"
-	"github.com/action-state-group/cll-go/checkpoint"
-	"github.com/action-state-group/cll-go/cll"
-	"github.com/action-state-group/cll-go/store/memory"
+	"github.com/action-state-group/checkpointed-local-log/go/checkpoint"
+	"github.com/action-state-group/checkpointed-local-log/go/cll"
+	"github.com/action-state-group/checkpointed-local-log/go/store/memory"
 )
 
 func main() {

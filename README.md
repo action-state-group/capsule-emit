@@ -7,7 +7,7 @@ Producer Envelopes over their raw 32-byte Capsule IDs.
 The Go API keeps persistence explicit: `Seal` builds and signs but does not
 append to a CLL or contact a witness. Applications that need ordered
 persistence and witnessed checkpoints compose it with
-[`cll-go`](https://github.com/action-state-group/cll-go).
+[the CLL Go package](https://github.com/action-state-group/checkpointed-local-log/tree/main/go).
 
 It supports format 4 only. There is no legacy `Create` or signed-payload
 statement API, and verification rejects formats 2 and 3.
@@ -148,8 +148,8 @@ policy, retention, and tests. Application workflow state remains caller-owned.
 
 ## Persist and append to CLL
 
-`capsule-emit-go` and `cll-go` do not depend on each other. An application may
-import both and connect them through their public APIs. Keep the complete
+`capsule-emit-go` and the CLL Go package do not depend on each other. An
+application may import both and connect them through their public APIs. Keep the complete
 Capsule and Producer Envelope in application-owned storage; CLL stores only the
 decoded 32-byte Capsule ID.
 
@@ -165,7 +165,7 @@ import (
 	"time"
 
 	emit "github.com/action-state-group/capsule-emit-go"
-	"github.com/action-state-group/cll-go/cll"
+	"github.com/action-state-group/checkpointed-local-log/go/cll"
 )
 
 // CapsuleStore is application-owned persistence. Its schema and transaction
@@ -231,8 +231,8 @@ and timestamp. The application decides how to make that retry durable, for
 example with its own outbox.
 
 Pass any `cll.EntryStore` implementation to this function. Backend selection,
-checkpointing, and witness delivery remain entirely in `cll-go`; see its
-[backend documentation](https://github.com/action-state-group/cll-go#backends).
+checkpointing, and witness delivery remain entirely in the CLL Go package; see
+its [backend documentation](https://github.com/action-state-group/checkpointed-local-log/tree/main/go#backends).
 
 ## Typed construction
 
@@ -412,10 +412,12 @@ scripts/check-coverage.sh 90.0
 `scripts/check-producer-cll-interop.sh` exercises both producers through both
 Go/TypeScript CLL append and checkpoint runners, then verifies every checkpoint
 with Python. It uses a temporary module so CLL is not a production dependency.
-Build the sibling `capsule-emit-ts` and `cll-ts` packages first, and use a Python
-environment with `checkpointed-local-log` installed. `PYTHON` selects its
+Build the sibling `capsule-emit-ts` and `checkpointed-local-log/ts` packages
+first, and install `checkpointed-local-log/python` into the Python environment. `PYTHON` selects its
 interpreter; sibling locations can be set through `AAC_REPO`,
-`CAPSULE_EMIT_TS_ROOT`, `CLL_GO_ROOT` and `CLL_TS_ROOT`.
+`CAPSULE_EMIT_TS_ROOT`, `CLL_GO_ROOT` and `CLL_TS_ROOT`. The CLL overrides
+point to the module/package directories; their defaults are
+`../checkpointed-local-log/go` and `../checkpointed-local-log/ts`.
 This is an in-memory, offline integration check, not a witness-delivery or
 durable-storage recovery test.
 

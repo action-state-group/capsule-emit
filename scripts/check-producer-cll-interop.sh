@@ -6,8 +6,8 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 aac_root=${AAC_REPO:-"$root/../agent-action-capsule"}
 emit_ts_root=${CAPSULE_EMIT_TS_ROOT:-"$root/../capsule-emit-ts"}
-cll_go_root=${CLL_GO_ROOT:-"$root/../cll-go"}
-cll_ts_root=${CLL_TS_ROOT:-"$root/../cll-ts"}
+cll_go_root=${CLL_GO_ROOT:-"$root/../checkpointed-local-log/go"}
+cll_ts_root=${CLL_TS_ROOT:-"$root/../checkpointed-local-log/ts"}
 python_bin=${PYTHON:-python3}
 temporary=$(mktemp -d)
 temporary=$(cd "$temporary" && pwd -P)
