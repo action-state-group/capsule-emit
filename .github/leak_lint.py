@@ -28,8 +28,8 @@ exits 2 rather than passing on the public rule alone -- a missing list must neve
 Output redaction (same model as the sibling ``neutrality_scan.py``): unless
 ``LEAK_LINT_REVEAL`` is truthy, a run on which any term matched prints one constant verdict --
 no path, line, class or count -- because on a fork run the scanned content is the submitter's,
-and anything that varies with which term matched would let a stranger read the list back out
-of the public log one candidate at a time. Bracketed-id hits carry nothing secret and are
+and detailed output would reveal which candidate matched. The public pass/fail result
+still reveals whether a candidate string matches any term; redaction does not hide membership. Bracketed-id hits carry nothing secret and are
 printed in full, but only when no term matched anywhere (otherwise which lines are printed
 would itself be the oracle).
 
