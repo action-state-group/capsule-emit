@@ -28,7 +28,7 @@ from capsule_emit.settlement import (
     verify_settlements,
 )
 
-DIR = Path(__file__).resolve().parents[1] / "test-vectors" / "settlement-records"
+DIR = Path(__file__).resolve().parents[2] / "test-vectors" / "settlement-records"
 CASES = json.loads((DIR / "cases.json").read_text())
 REGISTRY = json.loads((DIR / "registry.json").read_text())
 

@@ -25,7 +25,7 @@ from capsule_emit.witness_directory import (
     validate_file,
 )
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 DIRECTORY = ROOT / "witnesses.json"
 SCHEMA = ROOT / "docs" / "schemas" / "witnesses.schema.json"
 

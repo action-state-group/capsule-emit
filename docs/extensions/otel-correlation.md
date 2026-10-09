@@ -59,7 +59,7 @@ draft (see [Why v0 defaults every ID to a digest](#why-v0-defaults-every-id-to-a
 **Allow-list, default-deny.** Any attribute not in `SEMCONV_ATTRS` — including everything the
 draft marks `never-enters` (prompt/completion content, tool arguments/results, memory/retrieval
 text, session/end-user identifiers) — is silently dropped. It is never read into a digest,
-never touched, full stop. `tests/test_otel_processor.py`'s
+never touched, full stop. `python/tests/test_otel_processor.py`'s
 `test_LEAK_MUTANT_never_enters_key_promoted_to_clear_safe_leaks_through_real_builder` proves
 this by running the REAL block builder against a deliberately-poisoned allow-list and showing
 the leak, then the same call against the real table showing none.

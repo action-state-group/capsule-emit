@@ -36,7 +36,7 @@ from cryptography.hazmat.primitives.serialization import (  # noqa: E402
 from capsule_emit.evidence_file import check_evidence_file  # noqa: E402
 from capsule_emit.evidence_report import render_report_html  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 VECTOR = ROOT / "test-vectors" / "evidence-file" / "two-node-provider.json"
 WITNESS = "https://witness.example"
 

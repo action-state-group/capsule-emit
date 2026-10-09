@@ -1,0 +1,124 @@
+name: Go
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+          cache: true
+      - name: Check formatting and module files
+        run: |
+          test -z "$(gofmt -l .)"
+          go mod tidy
+          git -C .. diff --exit-code -- go/go.mod go/go.sum
+      - name: Vet
+        run: go vet ./...
+
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: capsule_storage_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      CAPSULE_STORAGE_TEST_DSN: "root@tcp(127.0.0.1:3306)/capsule_storage_test?parseTime=true"
+      AAC_REPO: ${{ github.workspace }}/agent-action-capsule
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the Python reference at the pinned release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: action-state-group/agent-action-capsule
+          # The conformance corpus at the same commit as the Go module go.mod
+          # pins (agent-action-capsule go/v0.7.0), not main: a corpus that moves
+          # ahead of the pinned module turns CI red for no change here.
+          ref: df3af95221da3cd77792a7fd1c24c1db9ce88376
+          path: agent-action-capsule
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+          cache: true
+      - name: Test with coverage
+        run: scripts/check-coverage.sh 90.0
+
+  race:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: capsule_storage_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      CAPSULE_STORAGE_TEST_DSN: "root@tcp(127.0.0.1:3306)/capsule_storage_test?parseTime=true"
+      AAC_REPO: ${{ github.workspace }}/agent-action-capsule
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the Python reference at the pinned release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: action-state-group/agent-action-capsule
+          # The conformance corpus at the same commit as the Go module go.mod
+          # pins (agent-action-capsule go/v0.7.0), not main: a corpus that moves
+          # ahead of the pinned module turns CI red for no change here.
+          ref: df3af95221da3cd77792a7fd1c24c1db9ce88376
+          path: agent-action-capsule
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+          cache: true
+      - name: Race test
+        run: go test -race ./...
+

@@ -13,7 +13,7 @@ Each case in `vectors.json` gives the input capsules, the `bundle` flag and
 `disclosures` passed to `build_url`, the expected Bundle, and three values
 computed by agent-action-capsule's Go reference (`../go-oracle/jcs_oracle.go`),
 not by capsule-emit: `fragment`, `bundle_digest` and `pointer_fragment`.
-`tests/test_permalink_bundle_codec.py` checks capsule-emit against them.
+`python/tests/test_permalink_bundle_codec.py` checks capsule-emit against them.
 
 The cases cover a Bundle of one, a three-capsule chain, the chain with
 non-ASCII and astral-plane disclosures (its fragment contains `-`/`_`), and a

@@ -10,7 +10,7 @@ import {
 } from "../src/aac/index.js";
 import { verifyCapsule } from "../src/verify.js";
 const root = resolve(
-  process.env.AAC_ROOT ?? "../agent-action-capsule",
+  process.env.AAC_ROOT ?? "../../agent-action-capsule",
   "vectors",
   "capsule",
 );

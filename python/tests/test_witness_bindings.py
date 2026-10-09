@@ -230,7 +230,7 @@ def _pushed(tmp_path, urls):
 
 # -- directory helpers: every test builds rows the same way -------------------
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 COMMITTED = json.loads((ROOT / "witnesses.json").read_text())
 
 

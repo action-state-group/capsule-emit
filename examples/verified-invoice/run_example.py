@@ -35,7 +35,7 @@ from pathlib import Path
 _HERE = Path(__file__).parent
 _REPO_ROOT = _HERE.parent.parent
 
-sys.path.insert(0, str(_REPO_ROOT))
+sys.path.insert(0, str(_REPO_ROOT / "python"))
 
 from agent_action_capsule.contracts import (  # noqa: E402  # type: ignore[import-untyped]
     ConstraintRecord,  # noqa: E402  # type: ignore[import-untyped]

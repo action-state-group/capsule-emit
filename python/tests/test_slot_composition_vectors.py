@@ -15,7 +15,7 @@ import pytest
 
 from capsule_emit.verification import verify_capsule as verify
 
-VECTORS = Path(__file__).resolve().parents[1] / "test-vectors" / "slot-composition"
+VECTORS = Path(__file__).resolve().parents[2] / "test-vectors" / "slot-composition"
 CASES = pytest.mark.parametrize("case", ["valid", "valid-v05"], ids=["spec-04", "spec-05"])
 
 

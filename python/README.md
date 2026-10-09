@@ -1,15 +1,10 @@
 # capsule-emit
 
-Language projects: [Python](python/) · [Go](go/) · [TypeScript](ts/) · [Rust](rust/).
-See [consolidation and release boundaries](docs/consolidation.md).
-For a local Python checkout, install with `pip install -e './python[dev]'`;
-run Python tests from `python/`.
-
 [![CI](https://github.com/action-state-group/capsule-emit/actions/workflows/python.yml/badge.svg)](https://github.com/action-state-group/capsule-emit/actions/workflows/python.yml)
 
-> **New here? → [docs/start-here.md](docs/start-here.md)** — the one-page front door.
+> **New here? → [docs/start-here.md](../docs/start-here.md)** — the one-page front door.
 >
-> **Vocabulary:** [TRANSLATION.md](TRANSLATION.md) — the dev / auditor / spec decoder.
+> **Vocabulary:** [TRANSLATION.md](../TRANSLATION.md) — the dev / auditor / spec decoder.
 
 **Know what your AI agent did — and let anyone verify it.**
 
@@ -49,7 +44,7 @@ Your **logs** are your own word. They're mutable, they live in your database, an
 
 A **capsule** is different: its content is committed to a hash the moment the action happens, and that hash is recorded in a public append-only log.\* Anyone can verify it offline, from the bytes alone — *without trusting you*.
 
-> **\* "Public log" ≠ public data.** Only a one-way fingerprint (a SHA-256 digest) and a timestamp are logged — your prompts, payloads, vendors, and amounts never leave your machine. [What's on the log, and what isn't →](docs/the-public-log-explained.md)
+> **\* "Public log" ≠ public data.** Only a one-way fingerprint (a SHA-256 digest) and a timestamp are logged — your prompts, payloads, vendors, and amounts never leave your machine. [What's on the log, and what isn't →](../docs/the-public-log-explained.md)
 
 ## Why your existing stack can't do this
 
@@ -81,18 +76,18 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 
 **Then climb, one rung at a time:**
 
-- **Capture more, write less** — a decorator [adapter](docs/adapters/) (MCP / LangChain / CrewAI / Hermes / Goose / ADK) seals each wrapped tool call automatically; the [agentgateway](docs/adapters/agentgateway.md) adapter seals all consequential traffic at the gateway chokepoint — no per-tool changes needed.
-- **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence. → `seal(payload, confirms=parent_id)` · [within one stream, and across (under revision)](docs/chaining.md)
+- **Capture more, write less** — a decorator [adapter](../docs/adapters/) (MCP / LangChain / CrewAI / Hermes / Goose / ADK) seals each wrapped tool call automatically; the [agentgateway](../docs/adapters/agentgateway.md) adapter seals all consequential traffic at the gateway chokepoint — no per-tool changes needed.
+- **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence. → `seal(payload, confirms=parent_id)` · [within one stream, and across (under revision)](../docs/chaining.md)
 - **Cite external records** — add a cross-record citation to a capsule outside this chain's scope (draft-04 §5.5.5): `seal(payload, references=(ReferenceEntry(type="agent-action-capsule", digest_alg="SHA-256", digest=other_id),))`. On the slot-form `seal(who(...), did(...), references=...)` the citation lands on the composition capsule only, not the individual members. References are committed to `capsule_id` before signing.
 - **Declare now, enforce later** — a `manifest.md` declares your rules; a compatible gateway enforces the *same file*, with no change to your `seal()` calls.
 
-The unit is the **capsule** (one action). What you keep and grow is the **ledger** (the witnessed trail). Chaining links specific capsules within it. Start with the ledger; add the rest when you need it. → walk it end-to-end in the **[tutorials](docs/tutorials/)**.
+The unit is the **capsule** (one action). What you keep and grow is the **ledger** (the witnessed trail). Chaining links specific capsules within it. Start with the ledger; add the rest when you need it. → walk it end-to-end in the **[tutorials](../docs/tutorials/)**.
 
 ## What you get back
 
 `seal()` returns an **`EmitResult`** — `cap.capsule_id`, `cap.signature`, `cap.key_id`, `cap.seq`, `cap.witness_outcome`, and `cap.capsule` (the capsule itself, plain JSON you can store or hand to anyone). It carries the `capsule_id` (a SHA-256 content address), a **self-attested `signature`** over that content by a persisted producer key (verify it straight from the capsule via `verify_capsule_signature` — see `capsule_emit.signing`), the accountable `operator` + `developer`, the **may/did verdict**, the **effect** (and its dispatched-vs-confirmed status), and **digests of your input and output** — your inputs and outputs are committed by hash; **you hold the raw values, the capsule does not** (only their digests). `cap.seq` is its position in your log — already a leaf, ambiently, before any checkpoint — and both `repr(cap)` and `capsule-emit ledger show` render it as `#logged @ leaf <seq>`. (`cap.anchored` / `cap.anchor_status` also exist, but only report the legacy, non-default per-capsule anchor channel below — kept for compatibility, not part of the default story.)
 
-→ Field-by-field, the two-tier structure, and how each layer is captured: **[docs/anatomy.md](docs/anatomy.md)**.
+→ Field-by-field, the two-tier structure, and how each layer is captured: **[docs/anatomy.md](../docs/anatomy.md)**.
 
 ## Anchoring — where the proof lives
 
@@ -108,7 +103,7 @@ against the log by a party who trusts neither you nor your runtime.
 **receipt** back onto the result is on the near-term roadmap — today the
 digest is on the log and checkable there.) That's **self-attested**, not yet
 **witnessed** — a single per-capsule inclusion receipt is a narrower claim
-than the witnessed stream below; see [why anchoring makes it trustworthy](docs/why-anchoring.md)
+than the witnessed stream below; see [why anchoring makes it trustworthy](../docs/why-anchoring.md)
 for the honest ladder.
 
 - **What's logged:** a SHA-256 digest — nothing else. Your payloads never leave your machine.
@@ -123,14 +118,14 @@ for the honest ladder.
 
 Until 0.5.0, your capsule log was like a git repo you never pushed: internally consistent — every capsule content-addressed, every entry chained to the one before it — but nothing *outside* your machine vouches for it. An unpushed commit can be quietly rewritten; a pushed one can't.
 
-**0.5.0 pushes.** Anchoring (above) is per-**capsule**; checkpointing is per-**stream**. `seal()` also folds every capsule into a per-ledger [Merkle Mountain Range](docs/checkpoint.md) and — every ~100 records (`capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`) — builds a signed **checkpoint** and registers it with the witness(es) you name: a summary of the whole stream so far (its size, a root hash, a timestamp), sent to an independent witness's `/checkpoints` route so it can verify the checkpoint's own signature before counter-signing. Async, same as the anchor; your payloads never leave.
+**0.5.0 pushes.** Anchoring (above) is per-**capsule**; checkpointing is per-**stream**. `seal()` also folds every capsule into a per-ledger [Merkle Mountain Range](../docs/checkpoint.md) and — every ~100 records (`capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`) — builds a signed **checkpoint** and registers it with the witness(es) you name: a summary of the whole stream so far (its size, a root hash, a timestamp), sent to an independent witness's `/checkpoints` route so it can verify the checkpoint's own signature before counter-signing. Async, same as the anchor; your payloads never leave.
 
 - **Off is one flag, honored everywhere:** `seal(payload, witness=False)` for one call, `CAPSULE_WITNESS=off` for every call — no code change. With no witness named, nothing is sent at all.
 - **Your log is still your file.** The witness only ever sees the checkpoint (never your capsule content, never a per-record digest); walking away from it loses no history — `ledger.jsonl` is complete on its own, the witness just lets someone else confirm you didn't rewrite it after the fact.
 - **Force a checkpoint on demand.** `push()` builds and registers a checkpoint right now, without waiting for the cadence — useful before a process exits or at a natural audit boundary.
 - **Any witness works, and more than one is stronger.** There is no default: name the one(s) you use with `CAPSULE_WITNESS_URL` / `seal(payload, witness_url=...)`. A free public one runs at `witness.agentactioncapsule.org` (a separate, live witness service, `POST /checkpoints`), and any conforming Transparency Service works the same way; and you can register with several at once (a list, or comma-separated) for a stronger, equivocation-resistant tier. The first checkpoint of a process prints one line to stderr — once — naming exactly what's sent, where, and how to turn it off.
 
-See **[`capsule_emit.checkpoint`](docs/checkpoint.md)** for the cadence, the multi-witness config, and precisely what trust tier a checkpoint does (and doesn't) reach — a single witness upgrades you from *self-attested*, but it isn't the *multi-witness, equivocation-resistant* tier, and a witness never vouches that your capsules' content is true, only that they exist, are ordered, and weren't deleted.
+See **[`capsule_emit.checkpoint`](../docs/checkpoint.md)** for the cadence, the multi-witness config, and precisely what trust tier a checkpoint does (and doesn't) reach — a single witness upgrades you from *self-attested*, but it isn't the *multi-witness, equivocation-resistant* tier, and a witness never vouches that your capsules' content is true, only that they exist, are ordered, and weren't deleted.
 
 ## Verify
 
@@ -189,7 +184,7 @@ already implements informally — declared as a `typing.Protocol`, checkable wit
 Two adapters conform today; the rest keep their existing, adapter-specific surface unchanged.
 
 **Each adapter page has a paste-ready prompt for a coding agent** to wire emission into your
-tools: **[docs/adapters/](docs/adapters/)**.
+tools: **[docs/adapters/](../docs/adapters/)**.
 ## Commands and servers
 
 The package installs three commands:
@@ -208,45 +203,45 @@ Each of these is a module you can import; none is needed for `seal()`.
 
 | Area | Modules | What they do |
 |---|---|---|
-| Two-party records | `bilateral.py`, `settlement.py`, `reconciliation.py`, `period.py` | the bilateral attestation protocol's reference implementation (`draft-mih-agent-bilateral-attestation-00`; see [docs/bilateral-reconciliation.md](docs/bilateral-reconciliation.md)); settlement records, where two parties each record the same payment; reconciling two independently sealed halves of one exchange; and `--period week|month` as sugar over a time window |
+| Two-party records | `bilateral.py`, `settlement.py`, `reconciliation.py`, `period.py` | the bilateral attestation protocol's reference implementation (`draft-mih-agent-bilateral-attestation-00`; see [docs/bilateral-reconciliation.md](../docs/bilateral-reconciliation.md)); settlement records, where two parties each record the same payment; reconciling two independently sealed halves of one exchange; and `--period week|month` as sugar over a time window |
 | Record patterns | `approval.py`, `adjudication.py` | a human approval sealed and chained to the capsule it unblocks; a verdict capsule for a twin comparison (which of two answers an independent recompute matched) |
 | Evidence files | `evidence_file.py`, `evidence_report.py`, `evidence_request.py`, `evidence.py`, `scoped_export.py` | check an Evidence Bundle (`evidence-bundle/v2`) from any producer; render it as one page; answer an evidence request (artifact, signed refusal, or recorded absence); the verification comment built from a ledger; and the scoped export |
 | Handing records over | `bundle.py`, `disclose.py`, `disclosure.py`, `chain_segment.py`, `permalink.py`, `viewer.py` | the bundle anyone can verify; the recorded act of disclosing content to an audience, and its Disclosure Envelope; a run of the chain as history; the demo permalink; and the capsule-native ledger viewer |
-| Witnessing | `witness.py`, `witness_bindings.py`, `witness_directory.py`, `checkpoint/` | the default-on checkpoint and witness wiring behind `seal()`; how one checkpoint reaches more than one kind of transparency service, and the plurality policy applied to the receipts; [`witnesses.json`](witnesses.json), the public witness directory, with its validator; and `checkpoint/`, a compatibility re-export of the checkpointed-local-log library |
+| Witnessing | `witness.py`, `witness_bindings.py`, `witness_directory.py`, `checkpoint/` | the default-on checkpoint and witness wiring behind `seal()`; how one checkpoint reaches more than one kind of transparency service, and the plurality policy applied to the receipts; [`witnesses.json`](../witnesses.json), the public witness directory, with its validator; and `checkpoint/`, a compatibility re-export of the checkpointed-local-log library |
 | OpenTelemetry | `otel/` | a digest-only span exporter for the `org.agentactioncapsule.otel` correlation block (`draft-palanisamy-scitt-aac-otel-00`), plus span classification. Only the exporter needs the `otel` extra |
 | Accounts and holds | `account/`, `holds/` | a neutral fold core (a derivation as data, replayable and re-checkable); and reservation-as-capsule holds for a budget scope (a separate code path that still writes format `2`; see Status) |
 | Producer plumbing | `core.py`, `surface.py`, `signing.py`, `gate.py`, `manifest.py`, `constraints/`, `connector.py`, `ledger.py`, `ledger_io.py`, `canonicalization.py`, `numbers.py`, `verify.py`, `verify_canonicalization.py`, `verification.py`, `relations.py`, `spec_version.py`, `status.py` | capsule construction, the developer surface, the `Signer` seam, a stateless check-then-seal gate, the declare-only manifest parser and illustrative constraints, the adapter contract, ledger I/O, canonicalization and number rules, the verifiers' canonicalization adapters, and the version and relation tokens it writes |
 
 ## Rust
 
-Two crates live in [`rust/`](rust/), each with its own README and CHANGELOG, built and tested by one Rust CI workflow:
+Two crates live in [`rust/`](../rust/), each with its own README and CHANGELOG, built and tested by one Rust CI workflow:
 
-- **[`rust/capsule-emit`](rust/capsule-emit/)**: seal, sign, chain and
+- **[`rust/capsule-emit`](../rust/capsule-emit/)**: seal, sign, chain and
   checkpoint Agent Action Capsule records in Rust. JCS capsule ids, COSE_Sign1
   statements, a durable local ledger and signed checkpoints, checked against the
   Python reference and the conformance vectors.
-- **[`rust/capsule-emit-evidence-request`](rust/capsule-emit-evidence-request/)**:
+- **[`rust/capsule-emit-evidence-request`](../rust/capsule-emit-evidence-request/)**:
   the evidence request protocol (`draft-mih-agent-evidence-request-00`): parse
   and resolve requests, sign and check refusals, build and check artifact
   answers over a checkpointed local log, and classify outcomes.
 
 ## Declare now, enforce later — same file
 
-A `flows/<action>/manifest.md` *declares* autonomy + constraints; `capsule-emit` reads it to **declare** (no enforcement). A compatible gateway reads the **same file** and **enforces** — with **no change** to your `seal()` calls. → [docs/going-deeper.md](docs/going-deeper.md).
+A `flows/<action>/manifest.md` *declares* autonomy + constraints; `capsule-emit` reads it to **declare** (no enforcement). A compatible gateway reads the **same file** and **enforces** — with **no change** to your `seal()` calls. → [docs/going-deeper.md](../docs/going-deeper.md).
 
 ## Documentation
 
 New here? Written to be read top-to-bottom, no standards background needed:
 
-- **[Tutorials](docs/tutorials/)** — five-minute, copy-paste sessions: your first capsule → confirming & chaining → reading your ledger → declaring rules.
-- **[Concepts in plain words](docs/concepts.md)** — the seven words (capsule, seal, may/did, chain, break, witness, ledger), each tied to a field or command.
-- **[Anatomy of a capsule](docs/anatomy.md)** — exactly what gets sealed, the two-tier structure, how each layer is captured.
-- **[Chaining — within one agent, and across agents](docs/chaining.md)** — capsules link by content address into verifiable trails, including **cross-organizational** chains; why the ledger is a DAG, not one line.
-- **[Why anchoring makes it trustworthy](docs/why-anchoring.md)** — why a record *you* keep isn't proof to anyone else, and how a shared append-only log fixes it. The heart of it.
-- **[The public log, explained](docs/the-public-log-explained.md)** — plain-English + FAQ: the transparency log, how Merkle proofs work, what's visible vs hidden, what you can progressively share. For when someone asks *"you're putting our data on a public log?"*
-- **[Adapters](docs/adapters/)** — decorator adapters (MCP / LangChain / CrewAI / Hermes / [Goose](docs/adapters/goose.md) / [ADK](docs/adapters/adk.md)) seal each wrapped tool call; [agentgateway](docs/adapters/agentgateway.md) seals all `tools/call` traffic at the gateway layer. Paste-to-your-coding-agent prompt on each page.
-- **[Going deeper — and popping out](docs/going-deeper.md)** — *down* into the spec + `scitt-cose` substrate to verify it yourself; *up* to a compatible enforcement gateway when you want capsules to **block**, not just record.
-- **[`capsule_emit.checkpoint`](docs/checkpoint.md)** — the CLL (Checkpointed Local Log) core: an MMR index over your own ledger plus signed, TS-registrable peaks checkpoints. Wired in **by default** since 0.5.0 (lazy — zero cost until a ledger is actually checkpoint-worthy); the primitives are also directly usable for your own cadence/keys/TS.
+- **[Tutorials](../docs/tutorials/)** — five-minute, copy-paste sessions: your first capsule → confirming & chaining → reading your ledger → declaring rules.
+- **[Concepts in plain words](../docs/concepts.md)** — the seven words (capsule, seal, may/did, chain, break, witness, ledger), each tied to a field or command.
+- **[Anatomy of a capsule](../docs/anatomy.md)** — exactly what gets sealed, the two-tier structure, how each layer is captured.
+- **[Chaining — within one agent, and across agents](../docs/chaining.md)** — capsules link by content address into verifiable trails, including **cross-organizational** chains; why the ledger is a DAG, not one line.
+- **[Why anchoring makes it trustworthy](../docs/why-anchoring.md)** — why a record *you* keep isn't proof to anyone else, and how a shared append-only log fixes it. The heart of it.
+- **[The public log, explained](../docs/the-public-log-explained.md)** — plain-English + FAQ: the transparency log, how Merkle proofs work, what's visible vs hidden, what you can progressively share. For when someone asks *"you're putting our data on a public log?"*
+- **[Adapters](../docs/adapters/)** — decorator adapters (MCP / LangChain / CrewAI / Hermes / [Goose](../docs/adapters/goose.md) / [ADK](../docs/adapters/adk.md)) seal each wrapped tool call; [agentgateway](../docs/adapters/agentgateway.md) seals all `tools/call` traffic at the gateway layer. Paste-to-your-coding-agent prompt on each page.
+- **[Going deeper — and popping out](../docs/going-deeper.md)** — *down* into the spec + `scitt-cose` substrate to verify it yourself; *up* to a compatible enforcement gateway when you want capsules to **block**, not just record.
+- **[`capsule_emit.checkpoint`](../docs/checkpoint.md)** — the CLL (Checkpointed Local Log) core: an MMR index over your own ledger plus signed, TS-registrable peaks checkpoints. Wired in **by default** since 0.5.0 (lazy — zero cost until a ledger is actually checkpoint-worthy); the primitives are also directly usable for your own cadence/keys/TS.
 
 ## What else is in this repository
 
@@ -290,6 +285,6 @@ Developed by **Action State Group, Inc.** and published as **open-source softwar
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](../LICENSE).
 
 **Patent posture:** All six provisional patent applications related to this specification were expressly abandoned on July 6, 2026. No license is required. See [agentactioncapsule.org/ip](https://agentactioncapsule.org/ip) for details.

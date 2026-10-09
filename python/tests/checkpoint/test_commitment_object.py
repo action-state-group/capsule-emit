@@ -20,7 +20,7 @@ from conftest import FakeLogSource, synthetic_capsule
 from capsule_emit.checkpoint import MmrLedger, core
 
 VECTORS_PATH = (
-    pathlib.Path(__file__).resolve().parents[2] / "commitment-conformance-vectors" / "vectors.json"
+    pathlib.Path(__file__).resolve().parents[3] / "commitment-conformance-vectors" / "vectors.json"
 )
 
 

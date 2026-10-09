@@ -23,7 +23,7 @@ import pytest
 from capsule_emit import bilateral
 
 VECTORS = json.loads(
-    (Path(__file__).resolve().parents[1] / "test-vectors" / "bilateral-payloads" / "vectors.json").read_text(
+    (Path(__file__).resolve().parents[2] / "test-vectors" / "bilateral-payloads" / "vectors.json").read_text(
         encoding="utf-8"
     )
 )["cases"]

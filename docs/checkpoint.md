@@ -29,7 +29,7 @@ checkpoint/witness stream automatically:
   per-record SCITT Receipt specifically, not as an upgrade path from a
   checkpoint stamp; the default sealing path never calls it (see
   "Checkpoint-only" below and
-  `tests/test_witness_no_egress_to_register.py`).
+  `python/tests/test_witness_no_egress_to_register.py`).
 - **An idle log is silent, never a heartbeat.** The age leg is checked
   lazily, only inside `witness.maybe_checkpoint` — which itself only ever
   runs right after a real `seal()` / `received()` call
@@ -285,8 +285,8 @@ object a restart discards. Stamp entries never wake the cadence/idle
 timer — they aren't written through `core._emit_capsule()`, so they never touch
 `witness.maybe_checkpoint`'s per-sealing-call counter *or* its age clock;
 persisting a stamp neither advances the entry count nor resets (nor starts)
-the 15-minute window (`tests/test_witness_stamp_persistence.py`,
-`tests/test_witness_idle_silence_and_age_cadence.py`).
+the 15-minute window (`python/tests/test_witness_stamp_persistence.py`,
+`python/tests/test_witness_idle_silence_and_age_cadence.py`).
 
 `kind`/`v` are the entry's format-version marker: `capsule_emit.ledger.read_ledger`
 filters `checkpoint_stamp` entries out by default, so every capsule-only

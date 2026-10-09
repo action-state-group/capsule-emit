@@ -349,7 +349,7 @@ strict input verification tier is a separate acceptance policy.
 
 Shared Class 1, reference and Producer Envelope vectors live in the AAC source
 checkout under `vectors/`; vocabulary vectors under `go/verify/testdata/`. The producer-to-CLL check is maintained in
-`capsule-emit-go/scripts/check-producer-cll-interop.sh` and runs in both emitters'
+`go/scripts/check-producer-cll-interop.sh` and runs in both emitters'
 CI. It covers in-memory append/checkpoint interoperability without witness I/O.
 
 ```sh
@@ -358,39 +358,27 @@ npm run check
 npm run build
 ```
 
-Interop tests expect `agent-action-capsule` and `capsule-emit-go` as sibling
-checkouts. Override those paths with `AAC_ROOT` and `CAPSULE_EMIT_GO_ROOT`.
+Run these commands from `ts/`. Corpus tests expect an external sibling
+`agent-action-capsule` checkout at the exact pin; Go vectors come from `../go`.
+Override those paths with `AAC_ROOT` and `CAPSULE_EMIT_GO_ROOT`.
+
+The producer root uses `node:crypto` and requires Node.js. Consolidation does
+not introduce browser support. Storage drivers remain optional peers.
+`node scripts/check-packed-consumer.mjs` checks an isolated tarball consumer
+without drivers before exercising all six exports with their optional peers.
 
 ## Release
 
-Releases are published from `main` with the manual
-[Publish npm package](https://github.com/action-state-group/capsule-emit-ts/actions/workflows/publish.yml)
-GitHub Action:
+The npm package remains `@action-state-group/capsule-emit`. Publication from
+this consolidated repository is gated until its npm trusted publisher is
+configured and the release workflow and language-specific tag namespace are
+accepted. No active npm publisher is imported here. The legacy repository's
+publisher binding does not authorize this repository.
 
-1. Update `version` in `package.json` and `package-lock.json`, commit the change,
-   and wait for `main` CI to pass.
-2. In GitHub, open the workflow, choose **Run workflow**, and select `main`.
-3. Verify the workflow published `@action-state-group/capsule-emit` and created
-   the `v<version>` GitHub release and tag on the published commit.
-
-The npm package must have a GitHub Actions trusted publisher configured for
-the `action-state-group/capsule-emit-ts` repository and
-`.github/workflows/publish.yml`. No long-lived npm token is required. Re-running
-the workflow is safe: it skips an existing npm version and verifies that its
-Git tag points to the `gitHead` recorded by npm.
-
-If npm contains the version but its tag is missing after this workflow has
-changed, GitHub may reject recovery with the workflow's `GITHUB_TOKEN`. A
-maintainer with `workflow` scope must create the tag at the npm `gitHead`, then
-rerun the workflow to verify the tag and create any missing GitHub release:
-
-```sh
-version=0.1.2
-git_head=$(npm view "@action-state-group/capsule-emit@$version" gitHead)
-git fetch origin --tags
-git tag -a "v$version" "$git_head" -m "Release v$version"
-git push origin "refs/tags/v$version"
-```
+A release must preserve the six export paths, optional storage peers, and the
+paired AAC runtime/corpus pins. Verify the packed external consumer and real
+MySQL tests before publication; set `ARTIFACT_MYSQL_TEST=1` to run the Docker
+MySQL 8.4 suite locally. Existing published versions are not republished.
 
 ## License
 

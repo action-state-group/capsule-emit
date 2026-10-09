@@ -174,7 +174,7 @@ def main() -> int:
 
         # ── 2. quickstart_demo.py ─────────────────────────────────────────────
         section("2. examples/quickstart_demo.py")
-        demo_path = Path(__file__).parent.parent / "examples" / "quickstart_demo.py"
+        demo_path = Path(__file__).parent.parent.parent / "examples" / "quickstart_demo.py"
         if demo_path.exists():
             r = run_cmd([venv_python, str(demo_path)], timeout=60)
             if r.returncode == 0 and "All acceptance checks passed" in r.stdout:
@@ -325,7 +325,7 @@ def main() -> int:
 
         # ── 6. Tutorial 04 — manifest ─────────────────────────────────────────
         section("6. Tutorial 04 — declaring constraints")
-        manifest_src = Path(__file__).parent.parent / "flows" / "write-po" / "manifest.md"
+        manifest_src = Path(__file__).parent.parent.parent / "flows" / "write-po" / "manifest.md"
         if manifest_src.exists():
             r = run(venv_python, textwrap.dedent(f"""
                 from capsule_emit.manifest import load_manifest

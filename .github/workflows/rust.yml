@@ -9,9 +9,9 @@ name: rust
 on:
   push:
     branches: [main]
-    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py"]
+    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py", "python/**"]
   pull_request:
-    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py"]
+    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py", "python/**"]
   workflow_dispatch:
 
 permissions:
@@ -93,7 +93,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install the Python reference (this repository's package)
-        working-directory: .
+        working-directory: python
         run: |
           python -m venv "$RUNNER_TEMP/ref"
           "$RUNNER_TEMP/ref/bin/pip" install .

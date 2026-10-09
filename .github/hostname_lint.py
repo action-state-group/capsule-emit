@@ -30,7 +30,7 @@ from pathlib import Path
 DISALLOWED = re.compile(r"\b(verify|witness)\.actionstate\.[a-z]+", re.IGNORECASE)
 SCAN_SUFFIXES = (
     ".html", ".py", ".go", ".md", ".rst", ".txt", ".xml", ".toml", ".cfg",
-    ".yml", ".yaml", ".json", ".ts", ".tsx", ".js", ".jsx", ".rs",
+    ".yml", ".yaml", ".json", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs",
 )
 
 

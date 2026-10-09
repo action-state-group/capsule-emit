@@ -18,7 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-EXAMPLES = Path(__file__).parent.parent / "examples"
+EXAMPLES = Path(__file__).parent.parent.parent / "examples"
 
 
 def _run(

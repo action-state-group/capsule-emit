@@ -19,8 +19,8 @@ describe.skipIf(!enabled)("MysqlArtifactStore", () => {
     pool = mysql.createPool(container.getConnectionUri());
   }, 180000);
   afterAll(async () => {
-    await pool.end();
-    await container.stop();
+    await pool?.end();
+    await container?.stop();
   });
   async function store(
     trusted: Uint8Array,

@@ -15,7 +15,7 @@ import {
   type ParsedJson,
 } from "../src/aac/index.js";
 const root = resolve(
-  process.env.AAC_ROOT ?? "../agent-action-capsule",
+  process.env.AAC_ROOT ?? "../../agent-action-capsule",
   "vectors",
   "capsule",
 );

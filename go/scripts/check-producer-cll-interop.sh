@@ -4,10 +4,10 @@ set -euo pipefail
 # Exercise both producers through both real CLL append/checkpoint runners. No
 # witness network is used. CLL remains a test-only dependency in a temp module.
 root=$(cd "$(dirname "$0")/.." && pwd)
-aac_root=${AAC_REPO:-"$root/../agent-action-capsule"}
-emit_ts_root=${CAPSULE_EMIT_TS_ROOT:-"$root/../capsule-emit-ts"}
-cll_go_root=${CLL_GO_ROOT:-"$root/../checkpointed-local-log/go"}
-cll_ts_root=${CLL_TS_ROOT:-"$root/../checkpointed-local-log/ts"}
+aac_root=${AAC_REPO:-"$root/../../agent-action-capsule"}
+emit_ts_root=${CAPSULE_EMIT_TS_ROOT:-"$root/../ts"}
+cll_go_root=${CLL_GO_ROOT:-"$root/../../checkpointed-local-log/go"}
+cll_ts_root=${CLL_TS_ROOT:-"$root/../../checkpointed-local-log/ts"}
 python_bin=${PYTHON:-python3}
 temporary=$(mktemp -d)
 temporary=$(cd "$temporary" && pwd -P)

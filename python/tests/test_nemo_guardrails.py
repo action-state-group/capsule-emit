@@ -769,7 +769,7 @@ def test_demo_runs_hermetically_and_seals_capsules():
     import subprocess
     from pathlib import Path
 
-    demo = Path(__file__).parent.parent / "examples" / "nemo-guardrails" / "demo.py"
+    demo = Path(__file__).parent.parent.parent / "examples" / "nemo-guardrails" / "demo.py"
     proc = subprocess.run(
         [sys.executable, str(demo)], capture_output=True, text=True, timeout=300
     )

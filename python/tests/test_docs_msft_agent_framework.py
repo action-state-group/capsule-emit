@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-GUIDE = Path(__file__).parent.parent / "docs" / "adapters" / "msft-agent-framework.md"
+GUIDE = Path(__file__).parent.parent.parent / "docs" / "adapters" / "msft-agent-framework.md"
 
 pytest.importorskip("agent_framework", reason="needs capsule-emit[msft-agent-framework]")
 

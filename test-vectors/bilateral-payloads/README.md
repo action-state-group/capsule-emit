@@ -8,7 +8,7 @@ of each phase object, UTF-8 encoded.
 expected bytes (`jcs_hex`) and their SHA-256. The expected values were
 computed by agent-action-capsule's Go `canonical.JCS`
 (`../go-oracle/jcs_oracle.go`), not by capsule-emit.
-`tests/test_bilateral_jcs_vectors.py` checks capsule-emit against them.
+`python/tests/test_bilateral_jcs_vectors.py` checks capsule-emit against them.
 
 The non-ASCII cases are the ones the earlier `json.dumps(sort_keys=True)`
 construction got wrong: it escaped every non-ASCII code point. ASCII-only

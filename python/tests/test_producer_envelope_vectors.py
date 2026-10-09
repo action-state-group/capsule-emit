@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-VECTORS = Path(__file__).resolve().parents[1] / "test-vectors" / "producer-envelope"
+VECTORS = Path(__file__).resolve().parents[2] / "test-vectors" / "producer-envelope"
 CASES = pytest.mark.parametrize("case", ["valid", "valid-v05"], ids=["spec-04", "spec-05"])
 
 

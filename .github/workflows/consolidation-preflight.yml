@@ -47,3 +47,4 @@ jobs:
             python .github/messaging_guard.py "$source"
             python .github/neutrality_scan.py "$source"
           done
+          python .github/neutrality_scan.py .

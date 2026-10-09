@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { verifyEnvelope } from "../src/index.js";
 const root = resolve(
-  process.env.AAC_ROOT ?? "../agent-action-capsule",
+  process.env.AAC_ROOT ?? "../../agent-action-capsule",
   "vectors",
   "producer-envelope",
 );

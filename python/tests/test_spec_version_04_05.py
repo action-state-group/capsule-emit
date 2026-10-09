@@ -30,7 +30,7 @@ SPEC_04 = "draft-mih-scitt-agent-action-capsule-04"
 SPEC_05 = "draft-mih-scitt-agent-action-capsule-05"
 UNRECOGNIZED = "draft-mih-scitt-agent-action-capsule-99"
 
-VECTORS = Path(__file__).resolve().parents[1] / "test-vectors"
+VECTORS = Path(__file__).resolve().parents[2] / "test-vectors"
 
 
 def _json(path: Path) -> dict:

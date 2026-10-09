@@ -30,7 +30,7 @@ from capsule_emit.permalink import (
 DEFAULT_BASE_URL = "https://verify.example"
 
 _DOC = json.loads(
-    (Path(__file__).resolve().parents[1] / "test-vectors" / "permalink-bundle" / "vectors.json").read_text(
+    (Path(__file__).resolve().parents[2] / "test-vectors" / "permalink-bundle" / "vectors.json").read_text(
         encoding="utf-8"
     )
 )

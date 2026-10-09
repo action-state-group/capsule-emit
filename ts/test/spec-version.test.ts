@@ -34,7 +34,7 @@ import {
 const SPEC_04 = "draft-mih-scitt-agent-action-capsule-04";
 const SPEC_05 = "draft-mih-scitt-agent-action-capsule-05";
 const UNRECOGNIZED = "draft-mih-scitt-agent-action-capsule-99";
-const aacRoot = resolve(process.env.AAC_ROOT ?? "../agent-action-capsule");
+const aacRoot = resolve(process.env.AAC_ROOT ?? "../../agent-action-capsule");
 const readJson = (...path: string[]): Record<string, ParsedJson> =>
   decodeStrictJson(readFileSync(resolve(aacRoot, ...path))) as Record<
     string,

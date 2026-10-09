@@ -35,7 +35,7 @@ public test material, never a production signing key — same convention as
 python test-vectors/slot-composition/scripts/generate_vectors.py
 ```
 
-`tests/test_slot_composition_vectors.py` checks the checked-in corpus on
+`python/tests/test_slot_composition_vectors.py` checks the checked-in corpus on
 every test run, for both `valid/` and `valid-v05/`: the two capsules verify
 independently, and the byte-identity assertion holds. Both cases also verify
 under the Go and TypeScript references at `agent-action-capsule` main 439dc02

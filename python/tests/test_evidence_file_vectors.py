@@ -15,7 +15,7 @@ pytest.importorskip("cll.checkpoint.index")
 from capsule_emit.evidence_file import check_evidence_file  # noqa: E402
 from capsule_emit.evidence_report import render_report_html  # noqa: E402
 
-VECTORS = Path(__file__).resolve().parents[1] / "test-vectors" / "evidence-file"
+VECTORS = Path(__file__).resolve().parents[2] / "test-vectors" / "evidence-file"
 FILES = ["two-node-provider.json", "two-node-requester.json"]
 
 

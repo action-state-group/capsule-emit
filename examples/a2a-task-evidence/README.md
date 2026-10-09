@@ -43,7 +43,7 @@ in its own pinned virtualenv — the same pattern
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r examples/a2a-task-evidence/requirements.txt -e .
+pip install -r examples/a2a-task-evidence/requirements.txt -e ./python
 
 python examples/a2a-task-evidence/run_demo.py            # writes vectors/positive_vector.json
 python examples/a2a-task-evidence/make_tamper_vector.py   # writes vectors/tamper_negative_vector.json

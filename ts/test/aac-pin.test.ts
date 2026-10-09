@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AAC_COMMIT } from "./aac-pin.js";
 
-const root = resolve(process.env.AAC_ROOT ?? "../agent-action-capsule");
+const root = resolve(process.env.AAC_ROOT ?? "../../agent-action-capsule");
 const git = (...args: string[]): string =>
   execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
 

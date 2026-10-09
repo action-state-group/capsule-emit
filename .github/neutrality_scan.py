@@ -52,7 +52,7 @@ from pathlib import Path
 
 SCAN_SUFFIXES = (
     ".html", ".py", ".go", ".rs", ".md", ".rst", ".txt", ".xml", ".toml",
-    ".cfg", ".yml", ".yaml", ".json", ".ts", ".tsx", ".js", ".jsx",
+    ".cfg", ".yml", ".yaml", ".json", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
 )
 
 

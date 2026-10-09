@@ -735,7 +735,7 @@ def test_two_agents_on_different_models_do_not_cross_attribute(tmp_path):
 
 
 def test_shipped_demo_runs_hermetically_and_every_capsule_verifies():
-    demo = Path(__file__).parent.parent / "examples" / "msft-agent-framework" / "demo.py"
+    demo = Path(__file__).parent.parent.parent / "examples" / "msft-agent-framework" / "demo.py"
     proc = subprocess.run(
         [sys.executable, str(demo)], capture_output=True, text=True, timeout=180
     )

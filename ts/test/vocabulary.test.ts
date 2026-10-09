@@ -6,7 +6,7 @@ import {
   verifyClass1,
   type ParsedJson,
 } from "../src/aac/index.js";
-const root = resolve(process.env.AAC_ROOT ?? "../agent-action-capsule");
+const root = resolve(process.env.AAC_ROOT ?? "../../agent-action-capsule");
 const vectors = JSON.parse(
   readFileSync(resolve(root, "go/verify/testdata/vocabulary.json"), "utf8"),
 ) as {

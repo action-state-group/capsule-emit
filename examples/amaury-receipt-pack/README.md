@@ -39,7 +39,7 @@ disposition invariants; substrate receipt verification is Class 2).
 ```bash
 git clone https://github.com/action-state-group/capsule-emit
 cd capsule-emit
-pip install -e ".[dev]"
+pip install -e "./python[dev]"
 cd examples/amaury-receipt-pack
 python3 generate.py
 capsule-emit verify --store sample_ledger.jsonl

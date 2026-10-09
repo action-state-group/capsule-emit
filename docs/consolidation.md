@@ -49,3 +49,23 @@ its existing MySQL suite is opt-in and skipped tests do not establish parity.
 Rust flattening waits for accepted Evidence Request relocation. Registry
 publication, new publisher identities, consumer module migration, compatibility
 removal and old-repository retirement are separate gates.
+
+## Source-stage validation
+
+The configured incoming-tree preflight passed before import. Both import commits
+retain the original source commit as a merge parent; no source history or tags
+were rewritten. Python's 86 module files remain byte-identical to the frozen
+emit base. Project metadata, dependencies, extras and console entrypoints are
+unchanged. External source, editable, wheel and rebuilt-sdist consumers verify
+sealing, Capsule verification, protobuf imports and CLI availability.
+
+Local Go checks include exact pinned AAC corpus, real MySQL 8.4, race tests and
+90.8% coverage against the existing 90% floor. TypeScript has 240 passing tests,
+including real MySQL 8.4, and a packed consumer proving all six exports plus
+core operation without optional storage drivers. The producer is Node-only;
+its `node:crypto` import is not a browser compatibility claim.
+
+DCO remains a merge gate. Five imported historical TS commits lack sign-off;
+this branch preserves those original commits and does not weaken the DCO job
+or add sign-offs on behalf of their authors. Their disposition requires a
+maintainer decision before merge. New consolidation commits are signed off.

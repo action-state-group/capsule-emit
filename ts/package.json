@@ -6,11 +6,12 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/action-state-group/capsule-emit-ts.git"
+    "url": "git+https://github.com/action-state-group/capsule-emit.git",
+    "directory": "ts"
   },
-  "homepage": "https://github.com/action-state-group/capsule-emit-ts#readme",
+  "homepage": "https://github.com/action-state-group/capsule-emit/tree/main/ts#readme",
   "bugs": {
-    "url": "https://github.com/action-state-group/capsule-emit-ts/issues"
+    "url": "https://github.com/action-state-group/capsule-emit/issues"
   },
   "exports": {
     ".": {

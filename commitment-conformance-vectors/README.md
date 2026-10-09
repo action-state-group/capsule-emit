@@ -19,7 +19,7 @@ the ordered list of peak hashes** — as a COSE Receipt's detached payload.
 The tree math underneath (`interior_hash`/`hash_pospair64`, `peaks()`,
 position commitment) is already MMRIVER-aligned and separately KAT-tested
 against `datatrails/go-datatrails-merklelog` in
-`tests/checkpoint/test_mmr_kat39.py`. This is not a tree rebuild — it is the
+`python/tests/checkpoint/test_mmr_kat39.py`. This is not a tree rebuild — it is the
 missing **commitment-object encoding** layered on top: given the same
 (already-conformant) peak hashes, what exact bytes does an MMRIVER/profile-
 conformant tool need to check inclusion and consistency from?
@@ -40,8 +40,8 @@ This shape (one array, fixed-length byte-string elements, no floats, no
 maps) has exactly one valid RFC 8949 deterministic encoding, so every
 conformant CBOR encoder in any language produces identical bytes — verified
 here against a real library (`cbor2.dumps(peaks, canonical=True)`) in
-`tests/checkpoint/test_commitment_object.py`. It's implemented by hand in
-`capsule_emit/checkpoint/core.py` (`commitment_object`, ~15 lines) rather
+`python/tests/checkpoint/test_commitment_object.py`. It's implemented by hand in
+`python/capsule_emit/checkpoint/core.py` (`commitment_object`, ~15 lines) rather
 than pulled in as a library dependency, precisely so it stays this trivial
 to reproduce in any language — see `reference_verifier.py` for a from-scratch
 Python reimplementation that never imports `capsule_emit` or a CBOR library.
@@ -69,7 +69,7 @@ scope, a sibling item that consumes this encoding.
 ## Provenance of the positive peak sets
 
 The `kat39-*` positive vectors reuse peak-hash sets from
-`tests/checkpoint/test_mmr_kat39.py`'s KAT39 fixture — itself copied
+`python/tests/checkpoint/test_mmr_kat39.py`'s KAT39 fixture — itself copied
 verbatim from `datatrails/go-datatrails-merklelog`'s
 `mmr/draft_kat39_test.go` (MIT licensed) — so the *inputs* to this encoding
 are independently cross-checked MMRIVER tree state, not just an internally

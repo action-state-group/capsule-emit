@@ -44,10 +44,10 @@ No CLA is required — the DCO is the whole agreement.
 ## Dev setup
 
 ```bash
-pip install -e ".[dev]"            # editable install + dev tools
+pip install -e "./python[dev]"            # editable install + dev tools
 pip install agent-action-capsule  # the reference verifier (separate package)
-pytest -q                          # run the suite
-ruff check .                       # lint
+(cd python && pytest -q)                          # run the suite
+ruff check --config python/pyproject.toml python .github examples test-vectors commitment-conformance-vectors # lint
 python examples/quickstart_demo.py # the 5-minute acceptance demo
 ```
 

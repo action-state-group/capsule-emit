@@ -39,7 +39,7 @@ class ConsolidationTests(unittest.TestCase):
             phrase = "https://verify." + "actionstate.example"
             # The incoming tree cannot grant itself an exemption.
             (root / ".github" / "hostname_lint_allowlist.txt").write_text(phrase)
-            for suffix in (".ts", ".tsx", ".js", ".jsx", ".rs"):
+            for suffix in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs"):
                 (root / ("source" + suffix)).write_text(phrase)
             subprocess.run(["git", "-C", str(root), "add", "."], check=True)
             result = subprocess.run(
@@ -47,7 +47,7 @@ class ConsolidationTests(unittest.TestCase):
                  "--allowlist-root", str(ROOT)], capture_output=True, text=True,
             )
             self.assertEqual(result.returncode, 1)
-            for suffix in (".ts", ".tsx", ".js", ".jsx", ".rs"):
+            for suffix in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs"):
                 self.assertIn("source" + suffix, result.stdout)
             env = {**os.environ, "NEUTRALITY_TERMS": json.dumps({"word": ["syntheticmarker"]}),
                    "NEUTRALITY_REVEAL": "false"}

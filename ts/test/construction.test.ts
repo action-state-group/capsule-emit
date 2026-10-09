@@ -91,7 +91,7 @@ describe("shared construction boundary", () => {
   it("rejects an AAC malformed member before composition or signing", async () => {
     const json = readFileSync(
       resolve(
-        process.env.AAC_ROOT ?? "../agent-action-capsule",
+        process.env.AAC_ROOT ?? "../../agent-action-capsule",
         "vectors/capsule/neg-retention-declarant-missing-and-empty/input.json",
       ),
     );

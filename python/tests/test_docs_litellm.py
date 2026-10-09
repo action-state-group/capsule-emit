@@ -25,7 +25,7 @@ import re
 
 import pytest
 
-DOCS = pathlib.Path(__file__).resolve().parents[1] / "docs" / "adapters" / "litellm.md"
+DOCS = pathlib.Path(__file__).resolve().parents[2] / "docs" / "adapters" / "litellm.md"
 PYPROJECT = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
 TEXT = DOCS.read_text()
 

@@ -255,7 +255,7 @@ class TestPartialReachability:
         import pathlib
         import sys
         sys.path.insert(0, str(
-            pathlib.Path(__file__).parent.parent /
+            pathlib.Path(__file__).parent.parent.parent /
             "examples" / "multi-anchor-receipt-demo"
         ))
         from verify_demo import _verify_receipt_entry
@@ -283,7 +283,7 @@ class TestPartialReachability:
         import pathlib
         import sys
         sys.path.insert(0, str(
-            pathlib.Path(__file__).parent.parent /
+            pathlib.Path(__file__).parent.parent.parent /
             "examples" / "multi-anchor-receipt-demo"
         ))
         from verify_demo import _verify_receipt_entry
@@ -322,7 +322,7 @@ class TestPartialReachability:
         import pathlib
         import sys
         sys.path.insert(0, str(
-            pathlib.Path(__file__).parent.parent /
+            pathlib.Path(__file__).parent.parent.parent /
             "examples" / "multi-anchor-receipt-demo"
         ))
         from verify_demo import _verify_receipt_entry

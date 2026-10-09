@@ -412,12 +412,15 @@ scripts/check-coverage.sh 90.0
 `scripts/check-producer-cll-interop.sh` exercises both producers through both
 Go/TypeScript CLL append and checkpoint runners, then verifies every checkpoint
 with Python. It uses a temporary module so CLL is not a production dependency.
-Build the sibling `capsule-emit-ts` and `checkpointed-local-log/ts` packages
+Run Go checks from this `go/` directory. Build the adjacent `../ts` and sibling
+`../../checkpointed-local-log/ts` packages
 first, and install `checkpointed-local-log/python` into the Python environment. `PYTHON` selects its
 interpreter; sibling locations can be set through `AAC_REPO`,
 `CAPSULE_EMIT_TS_ROOT`, `CLL_GO_ROOT` and `CLL_TS_ROOT`. The CLL overrides
 point to the module/package directories; their defaults are
-`../checkpointed-local-log/go` and `../checkpointed-local-log/ts`.
+`../../checkpointed-local-log/go` and `../../checkpointed-local-log/ts`.
+The AAC checkout defaults to `../../agent-action-capsule`; the TypeScript
+producer defaults to `../ts`. CI supplies explicit roots.
 This is an in-memory, offline integration check, not a witness-delivery or
 durable-storage recovery test.
 

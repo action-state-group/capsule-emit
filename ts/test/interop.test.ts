@@ -16,9 +16,7 @@ import {
   type Result,
   verifyCapsule,
 } from "../src/index.js";
-const goRoot = resolve(
-  process.env.CAPSULE_EMIT_GO_ROOT ?? "../capsule-emit-go",
-);
+const goRoot = resolve(process.env.CAPSULE_EMIT_GO_ROOT ?? "../go");
 // capsule-emit-go keeps the released -04 pack in format4-interop/ and its -05
 // twin beside it in format4-interop-v05/. This producer stamps -05, so it
 // replays the -05 pack; until that pack exists upstream, the single pack
