@@ -53,10 +53,11 @@ removal and old-repository retirement are separate gates.
 ## Source-stage validation
 
 The configured incoming-tree preflight passed before import. Both import commits
-retain the source ancestry. With author approval, five historical TS commits
+retain the source ancestry. With author approval, five historical Go commits
 received DCO sign-offs; their descendants were rewritten in the import branch
 without changing file trees, authors or timestamps. The original source repos
-and tags remain unchanged. Python's 86 module files remain byte-identical
+and tags remain unchanged. Rewritten Go commits cannot retain their original
+cryptographic signatures; the source repository remains the signed record. Python's 86 module files remain byte-identical
 to the frozen emit base. Project metadata, dependencies, extras and console entrypoints are
 unchanged. External source, editable, wheel and rebuilt-sdist consumers verify
 sealing, Capsule verification, protobuf imports and CLI availability.
