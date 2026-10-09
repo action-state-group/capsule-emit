@@ -1,0 +1,7 @@
+d59f6a7b6eb5cabacb776e9f7a8e02d0f21b7f75356510efa7f150b66502bd15  fail-zero-size-proof/expected.json
+1b4894577db7df7180ac28883219971fae4444a0bf840f0845edfcafd5551d51  fail-zero-size-proof/log-key.pub
+a6265644a5316cad92f1d1446c6512fa187580eaca47945def94b60e04dd76d9  fail-zero-size-proof/receipt.cose
+9954bc535a6c2960211fa7be88003ce12bfedeb49dbdc72a3a3e3002c45a2051  valid-eddsa-multi-proof/expected.json
+1b4894577db7df7180ac28883219971fae4444a0bf840f0845edfcafd5551d51  valid-eddsa-multi-proof/log-key.pub
+98e9a488dea986a9950c343fcf51287c92e212d791aa59c00fe489e67a97c0b0  valid-eddsa-multi-proof/receipt-reordered.cose
+7996731e10f5298a3435d2272f6a19c5e35ec3bca3933cf0fd453a445675e4c2  valid-eddsa-multi-proof/receipt.cose

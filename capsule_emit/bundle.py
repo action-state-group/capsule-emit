@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``bundle()`` — the hand-to-anyone artifact (O16 audit item 14, frozen
-surface §2.5).
+"""``bundle()`` — the hand-to-anyone artifact.
 
-**Thin wrapper over ``cll.checkpoint.bundle`` (2026-09-01, W3.1 CLL
+**Thin wrapper over ``cll.checkpoint.bundle`` (2026-09-01, the CLL
 extraction).** The generic record/range-level disclosure-bundle mechanism
 (MMR inclusion, checkpoint signature, consistency, witness stamps, COSE
 wire — everything the LOG proves) now lives in ``cll.checkpoint.bundle``,
@@ -28,7 +27,7 @@ Once built, a ``Bundle`` is offline-verifiable by a stranger — no account,
 no further help from the producer, no network (see :func:`verify_bundle`;
 witness-stamp re-confirmation is a separate, explicitly optional step since
 it may need a network fetch of the Transparency Service's public key). It
-gives the two-sided append bracket the frozen surface names (§2.4): the
+gives the two-sided append bracket the public API names: the
 record provably entered the log no later than the covering checkpoint's
 stamp and no earlier than the prior checkpoint (it wasn't in that one yet)
 — except for a record covered by the very first checkpoint a log ever had,
@@ -85,7 +84,7 @@ def verify_bundle(
 ) -> tuple[bool, list[str]]:
     """Pure, offline, total verification of a standalone :class:`Bundle` —
     no reader, no network, never raises. ``trust_anchor``
-    [verify-threestate-trustanchor] is an optional caller-supplied mapping
+    is an optional caller-supplied mapping
     of ``ts_url -> pubkey_pem`` — the Transparency Services the caller
     trusts, and the only keys a stamp is verified under: a stamp with no key
     here reads UNVERIFIED at best (no witness has a built-in key).
@@ -98,10 +97,10 @@ def verify_bundle(
          receipt body was tampered but whose ``capsule_id`` was left alone
          is caught here; AND its self-attested producer-authorship claim is
          graded THREE-STATE
-         (``capsule_emit.signing.verify_capsule_signature_tristate``)
-         [verify-entry-authorship-tristate-and-log]: claimed-and-verifies is
+         (``capsule_emit.signing.verify_capsule_signature_tristate``):
+         claimed-and-verifies is
          fine; claimed-and-fails — a receipt body rewritten with a matching,
-         recomputed ``capsule_id`` (the [verify-checks-producer-signature]
+         recomputed ``capsule_id`` (a producer-signature
          forgery, replayed against a bundle) — is FATAL here; absent (a
          :func:`capsule_emit.surface.log` entry, no ``signature``/``key_id``
          at all) is a non-fatal notice, never treated as forgery. This step
@@ -143,7 +142,7 @@ def verify_bundle(
                 )
                 step1_ok = False
 
-        # Three-state, not two [verify-entry-authorship-tristate-and-log]:
+        # Three-state, not two:
         # UNCLAIMED (no signature/key_id at all -- a log() entry) is a
         # non-fatal notice, never treated the same as a claimed-and-failing
         # (INVALID) signature.

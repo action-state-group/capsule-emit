@@ -86,7 +86,7 @@ def main() -> int:
         # ── In progress: the agent's work, sealed as it happens ──────────
         # Payloads carry the issue linkage so every record is issue-linked
         # the way the policy requires PRs to be, and each capsule cites the
-        # one before it (relation="sequence") so the ORDER of work is part
+        # one before it (relation="follows") so the ORDER of work is part
         # of the record — repro before patch before tests, provably.
 
         _section("Ready → In progress: three sealed, chained tool calls")
@@ -111,7 +111,7 @@ def main() -> int:
             action_type="decide",
             effect={"status": "dispatched", "type": "patch"},
             prior_capsule_id=r1.capsule_id,
-            relation="sequence",
+            relation="follows",
         )
 
         results = {"passed": 462, "failed": 0, "previously_failing_now_passing": 1}
@@ -125,7 +125,7 @@ def main() -> int:
             action_type="decide",
             effect={"status": "dispatched", "type": "test_run"},
             prior_capsule_id=r2.capsule_id,
-            relation="sequence",
+            relation="follows",
         )
 
         capsules = read_ledger(ledger)

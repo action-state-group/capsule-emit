@@ -119,7 +119,7 @@ or side-file queue:
   any later backfill -- see below) is, by definition, that witness's
   pending backlog. :func:`checkpoint_witness_backlog` computes it fresh
   from the ledger on every call -- same precedent as ``MmrLedger.sync()``'s
-  full rescan (O16-18: "no persisted cursor spanning an off period ...
+  full rescan (the retroactive-witnessing rule: "no persisted cursor spanning an off period ...
   this already holds structurally"). There is nothing to lose on restart
   because there is nothing kept only in memory: the pending set is a pure
   function of what is already durably on disk, so it cannot desync from a
@@ -205,7 +205,7 @@ WITNESS_ENV_VAR = "CAPSULE_WITNESS"
 _OFF_VALUES = {"off", "0", "false", "no"}
 _STUB_VALUES = {"stub"}
 
-#: Deployment-posture env var (frozen surface §1a.4). Only ever consulted to
+#: Deployment-posture env var. Only ever consulted to
 #: refuse ``CAPSULE_WITNESS=stub`` at startup -- it names no other behavior
 #: here. Case-insensitive; only the literal value below is production.
 CAPSULE_ENV_VAR = "CAPSULE_ENV"
@@ -227,7 +227,7 @@ class WitnessRequiredError(RuntimeError):
     register the checkpoint covering the just-sealed capsule.
 
     A profile that sets ``require_witness=True`` is asking for the fail-closed
-    posture named in [capsule-emit-witness-required-profile] (per
+    posture named above (per
     JamesCarnley's projnanda/nandatown#217 review): "if a profile requires a
     witness, its absence must remain explicit." This exception is that
     explicitness -- the alternative (returning a normal, ok-looking
@@ -250,7 +250,7 @@ DEFAULT_CADENCE_ENTRIES = 100
 
 #: How many seconds may elapse since the first unwitnessed entry after the
 #: last checkpoint before one comes due on age alone -- the other leg of
-#: "100 entries or 15 minutes, whichever first" (frozen surface §0). Only
+#: "100 entries or 15 minutes, whichever first". Only
 #: ever consulted when at least one unwitnessed entry exists (see the module
 #: docstring's "due" section) -- an idle log never trips this.
 AGE_CADENCE_ENV_VAR = "CAPSULE_WITNESS_CADENCE_SECONDS"
@@ -263,7 +263,7 @@ _ATEXIT_WITNESS_TIMEOUT = float(os.environ.get("CAPSULE_EMIT_ATEXIT_WITNESS_TIME
 
 def witness_mode(explicit: bool | None) -> str:
     """Resolve the three-way mode: ``"off"``, ``"on"`` (real witness), or
-    ``"stub"`` (in-process, zero-network -- frozen surface §1a.4).
+    ``"stub"`` (in-process, zero-network).
 
     ``explicit`` (the ``witness=`` kwarg) always wins when set -- ``True`` is
     ``"on"``, ``False`` is ``"off"``; there is no explicit-kwarg spelling of
@@ -284,8 +284,7 @@ def witness_mode(explicit: bool | None) -> str:
 
 def witness_enabled(explicit: bool | None) -> bool:
     """Resolve the on/off decision: ``True`` whenever checkpoint mechanics
-    should run at all -- i.e. mode is ``"on"`` OR ``"stub"`` (frozen surface
-    §1a.4: the stub runs "the full mechanics ... against a local in-process
+    should run at all -- i.e. mode is ``"on"`` OR ``"stub"`` (the stub runs "the full mechanics ... against a local in-process
     stub"). Callers that need to distinguish real vs. stub use
     :func:`witness_mode` or :func:`witness_is_stub`."""
     return witness_mode(explicit) != "off"
@@ -297,7 +296,7 @@ def witness_is_stub(explicit: bool | None) -> bool:
 
 
 def refuse_stub_in_production(explicit: bool | None) -> None:
-    """Hard, synchronous refusal (frozen surface §1a.4): ``CAPSULE_WITNESS=stub``
+    """Hard, synchronous refusal: ``CAPSULE_WITNESS=stub``
     together with ``CAPSULE_ENV=production`` must never run -- "teams cannot
     ship to prod on stub without noticing." Raises
     :class:`StubWitnessInProductionError` immediately; never a warning, never
@@ -396,7 +395,7 @@ def _print_first_use_notice_once(urls: list[str], *, stub: bool = False) -> None
     must not break emit().
 
     ``stub=True`` (``CAPSULE_WITNESS=stub``) prints the distinct scream this
-    mode requires (frozen surface §1a.4: "the scream is everywhere the
+    mode requires ("the scream is everywhere the
     developer is: at the first stub-armed seal()...") instead of the normal
     witnessing notice -- it cannot be mistaken for the real thing, states
     plainly that nothing leaves the process, and names both exits (point at
@@ -462,7 +461,7 @@ class _AutoSigner:
 
 
 class _PersistedCheckpointSigner:
-    """Adapts a ``capsule_emit.signing.Signer`` (frozen §7d: atomic
+    """Adapts a ``capsule_emit.signing.Signer`` (the stable public API: atomic
     ``sign(bytes) -> (signature, key_id)``) to the checkpoint layer's own
     ``Signer`` protocol (a static ``key_id`` attribute plus
     ``sign(digest_hex) -> str``, see ``capsule_emit.checkpoint.emit.Signer``)
@@ -494,7 +493,7 @@ class _PersistedCheckpointSigner:
         extra_cwt_claims: dict | None = None,
     ) -> bytes:
         """Pass through to the wrapped ``signing.Signer``'s own
-        ``sign_cose_statement`` ([cll-checkpoint-cose-wire]) -- so THIS
+        ``sign_cose_statement`` -- so THIS
         adapter (what ``_build_and_register`` already holds as
         ``state.signer``) can also serve directly as the COSE-capable signer
         ``capsule_emit.checkpoint.cose_wire.checkpoint_to_cose`` needs,
@@ -690,9 +689,9 @@ def _build_checkpoint_cose_hex(
     consistency_proof: Any | None,
 ) -> str | None:
     """Best-effort COSE-wire serialization of ``cp``
-    ([cll-checkpoint-cose-wire]) -- built HERE, at production time, because
+    -- built HERE, at production time, because
     this is the one place the signing key AND the live MMR (``mmr``, for
-    [cll-commitment-interop]'s conformant peak-list commitment) are both
+    the conformant peak-list commitment) are both
     actually available; a later ``bundle()`` call may run keyless, in a
     different process, handed only the ledger file, so it can only ever
     READ this back, never mint it itself (see ``checkpoint.cose_wire``'s
@@ -705,7 +704,7 @@ def _build_checkpoint_cose_hex(
     yet -- the JSON checkpoint and its own signature, verified
     independently, are unaffected. This is why ``mmr.peak_hashes_at`` is
     called IN HERE rather than by the caller: every step that touches
-    [cll-commitment-interop]'s peak lists must stay inside this same
+    the interoperable peak-list commitment must stay inside this same
     try/except, not run unguarded before it.
     """
     try:
@@ -994,7 +993,7 @@ class CheckpointWitnessState:
     entry_digest: str
     checkpoint: Any  # capsule_emit.checkpoint.CheckpointRecord
     effective_witnesses: dict  # ts_url -> capsule_emit.checkpoint.WitnessRecord
-    #: Hex COSE_Sign1 bytes ([cll-checkpoint-cose-wire]) this stamp was
+    #: Hex COSE_Sign1 bytes this stamp was
     #: persisted with (see ``_build_checkpoint_cose_hex``), or ``None`` for a
     #: stamp that predates the COSE wire form / whose COSE build failed at
     #: the time. This is the exact wire body a retry re-POSTs to
@@ -1173,7 +1172,7 @@ def retry_pending_witness_stamps(
     (or not) never affects another's -- each URL's loop is independent.
 
     Gated by :func:`witness_enabled` exactly like :func:`maybe_checkpoint`
-    (O16-03: the kill switch is a single, absolute zero-egress guarantee --
+    (the kill switch is a single, absolute zero-egress guarantee --
     a retry pass must honor it too, not just the original registration
     attempt). Synchronous -- callers that want this off the calling thread
     (``maybe_checkpoint``'s dispatched worker) call it from there.
@@ -1184,7 +1183,7 @@ def retry_pending_witness_stamps(
     (``CheckpointWitnessState.checkpoint_cose_hex`` -- see
     :func:`_build_checkpoint_cose_hex`), never rebuilt here: the witness
     route is COSE-only (single-host witness ruling, 2026-08-27,
-    [cll-checkpoint-cose-wire] wire alignment), and rebuilding would need the
+    wire alignment), and rebuilding would need the
     live MMR this process may no longer hold for an old checkpoint. A stamp
     with no persisted COSE form (pre-migration, or a COSE build that failed
     at the time) has nothing to (re)send and is skipped -- not counted as a
@@ -1330,7 +1329,7 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # around it.
     #
     # The real (non-stub) path registers the checkpoint's COSE-wire form
-    # ([cll-checkpoint-cose-wire]) -- the witness route independently decodes
+    # -- the witness route independently decodes
     # and verifies that envelope before ever counter-signing, never a plain
     # JSON CheckpointRecord dict. A checkpoint whose COSE form failed to
     # build (see ``_build_checkpoint_cose_hex``) has nothing to register with
@@ -1379,7 +1378,7 @@ def _build_and_register(state: _WitnessState, ts_urls: list[str], *, stub: bool 
     # next checkpoint's root genuinely covers this one's stamp. Written
     # regardless of registration outcome: even a self-attested checkpoint is
     # history worth logging, and item 5's idle-silence/stamp-exclusion rule
-    # (audit item 5) depends on stamp entries existing in the log at all.
+    # depends on stamp entries existing in the log at all.
     _persist_checkpoint_stamp(cp, state.ledger_path, checkpoint_cose_hex=checkpoint_cose_hex)
 
 
@@ -1390,7 +1389,7 @@ def push(
     witness: bool | None = None,
     signer: _signing.Signer | None = None,
 ) -> Any:
-    """Force an immediate checkpoint now — frozen surface §1's "one verb for
+    """Force an immediate checkpoint now: the "one verb for
     urgency" (``capsule_emit.push()`` is the public re-export of this).
 
     Unlike :func:`maybe_checkpoint` (dispatched from every ``seal()``/

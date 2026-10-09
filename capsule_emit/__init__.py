@@ -23,7 +23,7 @@ foreign bytes, and the slot-composition semantics of ``who``/``can``/
 ``did``/``audit``.
 
 ``push()`` forces an immediate checkpoint (the write family's second verb —
-"one verb for urgency", frozen surface §1) instead of waiting on cadence.
+"one verb for urgency") instead of waiting on cadence.
 
 **Clean break (2026-08-22):** ``emit()`` was renamed. It remains importable
 for one release as a raising stub — ``from capsule_emit import emit`` still
@@ -31,7 +31,7 @@ works, but calling it raises ``RuntimeError`` pointing at ``seal()``/
 ``received()`` — and will be removed entirely in a future release.
 
 **Clean break (2026-08-27):** ``compose()`` and ``carry()`` — the v3 flat-bind
-verbs — are removed from the public surface (frozen surface §1/§9's slot-form
+verbs — are removed from the public surface (the slot-form
 supersedes them; no deprecation period, there were no users yet).
 ``compose()``'s flat-bind body survives internally as the private helper the
 slot-form calls; ``carry()``'s body was already ``received()``'s.
@@ -46,8 +46,8 @@ cryptographically signed, always, by a persisted producer key (see
 ``capsule_emit.signing``) — neither has an off switch, only a choice of
 *which* key signs (``signer=``/``signing_key_path=``). The ONE way to append
 unsigned is the distinct ``log()`` verb — see ``capsule_emit.surface.log``
-and ``capsule_emit.signing.verify_capsule_signature_tristate``
-[verify-entry-authorship-tristate-and-log]. Ledger is written to
+and ``capsule_emit.signing.verify_capsule_signature_tristate``.
+Ledger is written to
 ``ledger.jsonl`` by default. All of the above are configurable.
 """
 from typing import Any, NoReturn

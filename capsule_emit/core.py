@@ -19,10 +19,9 @@ It wraps ``agent_action_capsule.emit()`` with:
   .key_id, and .witness_outcome (.anchored / .anchor_status report the
   legacy, non-default anchor channel — see below; .witness_outcome reports
   the default checkpoint/witness stream's outcome, and pairs with the
-  fail-closed ``require_witness=True`` profile —
-  [capsule-emit-witness-required-profile])
+  fail-closed ``require_witness=True`` profile)
 
-**Single egress (2026-08, O16 items 1-2):** the per-seal SCITT anchor
+**Single egress (2026-08):** the per-seal SCITT anchor
 submission that used to dispatch on every ``seal()``/``received()`` call by
 default has been killed as a default. The checkpoint/witness stream
 is now the only default network path. The old anchor channel still exists as
@@ -31,7 +30,7 @@ an explicit, non-default opt-in — pass ``anchor=True``, or set
 on-values, so an existing ``CAPSULE_ANCHOR=true`` config does not silently
 keep double-egress alive across the upgrade) — kept only as a rollback path
 for one release. **Even when opted back in, the legacy channel stays subject
-to the witness kill switch (O16-03)** — ``witness=False`` /
+to the witness kill switch** — ``witness=False`` /
 ``CAPSULE_WITNESS=off`` is the one switch that zeroes ALL egress, anchor
 included. See ``docs/why-anchoring.md`` and ``docs/checkpoint.md``.
 
@@ -84,6 +83,7 @@ from . import witness as _witness
 from .canonicalization import compute_capsule_id
 from .ledger import append_to_ledger
 from .numbers import CANONICALIZATION_ID
+from .relations import REGISTERED_RELATIONS
 from .signing import Signer
 from .spec_version import SPEC_VERSION
 
@@ -94,7 +94,7 @@ _DEFAULT_LEDGER = "ledger.jsonl"
 AnchorStatus = Literal["confirmed", "submitted", "failed", "skipped"]
 
 #: The witness/anchoring outcome for one ``_emit_capsule()`` call --
-#: [capsule-emit-witness-required-profile], per JamesCarnley's
+#: per JamesCarnley's
 #: projnanda/nandatown#217 review, which asked for outcome states more
 #: granular than a single ``anchored`` bool. Distinct from ``anchor_status``
 #: above (which reports only the legacy, non-default per-record anchor
@@ -132,14 +132,14 @@ _ATEXIT_ANCHOR_TIMEOUT = float(
 #: Explicit ``anchor=`` always wins; this env var is consulted only when the
 #: caller leaves ``anchor`` at its default (``None``). Unlike
 #: ``capsule_emit.witness.WITNESS_ENV_VAR`` (which defaults ON), this
-#: defaults OFF as of 0.5.0 (O16 items 1-2: the per-seal anchor channel is
+#: defaults OFF as of 0.5.0 (the per-seal anchor channel is
 #: killed as a default egress path) — only the exact value ``"legacy-on"``
 #: re-enables it, kept as a one-release rollback escape hatch. Pre-0.5.0
 #: on-values (``"true"``/``"1"``/``"yes"``/unset) no longer enable anchor —
 #: an existing ``CAPSULE_ANCHOR=true`` config silently downgrades to
 #: single-egress (checkpoint-only) rather than continuing double-egress.
 #:
-#: **O16-03: this switch alone is not sufficient to enable the channel.**
+#: **this switch alone is not sufficient to enable the channel.**
 #: The result of :func:`_anchor_enabled` is further gated by the witness
 #: kill switch at the ``_emit_capsule`` call site -- ``witness=False`` /
 #: ``CAPSULE_WITNESS=off`` disables the legacy anchor channel too, even when
@@ -148,7 +148,7 @@ _ATEXIT_ANCHOR_TIMEOUT = float(
 ANCHOR_ENV_VAR = "CAPSULE_ANCHOR"
 _ANCHOR_LEGACY_ON_VALUE = "legacy-on"
 
-#: The pre-0.5.0 on-values. Kept solely to detect the O16-01-02 breaking
+#: The pre-0.5.0 on-values. Kept solely to detect the single-egress breaking
 #: change at runtime: a caller who wrote one of these before the flip now
 #: gets a silent no-op (single-egress) instead of the anchor channel they
 #: asked for, with nothing in the docs surfacing that unless they read them
@@ -160,7 +160,7 @@ _stale_anchor_notice_printed = False
 
 
 def _print_legacy_anchor_env_stale_notice_once(value: str) -> None:
-    """One-time stderr notice for the O16-01-02 breaking change: a pre-0.5.0
+    """One-time stderr notice for the single-egress breaking change: a pre-0.5.0
     affirmative ``CAPSULE_ANCHOR`` value (``true``/``1``/``yes``) used to
     enable the per-seal anchor channel; as of 0.5.0 it is off by default and
     that value is now silently ignored. Never raises; a broken stderr must
@@ -192,7 +192,7 @@ def _anchor_enabled(explicit: bool | None) -> bool:
     channel stays off unless ``CAPSULE_ANCHOR=legacy-on`` — the deliberately
     narrow escape hatch described on ``ANCHOR_ENV_VAR`` above. Callers must
     additionally AND this with the witness kill switch (see
-    ``ANCHOR_ENV_VAR``'s O16-03 note) -- this function alone does not apply
+    the ``ANCHOR_ENV_VAR`` note on the kill switch) -- this function alone does not apply
     it."""
     if explicit is not None:
         return explicit
@@ -467,14 +467,14 @@ class EmitResult:
     ``capsule["key_id"]`` — the self-attested producer proof over
     ``capsule_id`` and the producer key that made it. ``signature`` is a
     hex-encoded COSE_Sign1 envelope (the frozen AAC producer-envelope
-    profile, [capsule-cose-sign1]), not a bare signature; ``key_id`` is the
+    profile), not a bare signature; ``key_id`` is the
     raw Ed25519 public key, hex (see ``capsule_emit.signing``). Always
     present; every ``EmitResult`` is signed, not just anchored/witnessed
     ones.
 
     ``seq`` is this capsule's 1-indexed position in its ledger file (see
     ``capsule_emit.ledger.append_to_ledger``) — the log is where every
-    capsule already lives ambiently, per the frozen surface's "already a
+    capsule already lives ambiently, per the public API's "already a
     leaf in your log" (§2.1): once a checkpoint covers this position, ``seq``
     is the MMR leaf index too. Rendered as ``#logged @ leaf <seq>`` by
     ``__repr__`` and by ``ledger.show()``.
@@ -486,8 +486,7 @@ class EmitResult:
     callers). See :data:`WitnessOutcome` above for the four states. Pass
     ``require_witness=True`` to ``_emit_capsule()`` to demand
     ``"witness_receipt_obtained"`` synchronously — see that parameter's
-    docs and ``capsule_emit.witness.WitnessRequiredError``
-    ([capsule-emit-witness-required-profile]).
+    docs and ``capsule_emit.witness.WitnessRequiredError``.
     """
 
     capsule_id: str
@@ -511,7 +510,7 @@ class EmitResult:
 @dataclass
 class LogEntry:
     """The result of a :func:`capsule_emit.surface.log` call --
-    [verify-entry-authorship-tristate-and-log] RULING 3: deliberately NOT an
+    deliberately NOT an
     :class:`EmitResult`. ``EmitResult``'s own docstring guarantees
     ``signature``/``key_id`` are "Always present; every EmitResult is
     signed" -- a ``log()`` entry never carries a producer signature, so
@@ -589,21 +588,22 @@ def _emit_capsule(
         verdict: Disposition verdict_class (e.g. ``"executed"``, ``"confirmed"``).
         effect: Effect dict with ``"type"`` and ``"status"`` (and optional ``"autonomy"``).
         confirms: capsule_id of the prior capsule this one chains to.
-        relation: Chain relation (``"confirms"`` | ``"supersedes"`` | ``"escalates"``
-            | ``"assesses"`` | ``"adjudicates"`` | …), or ``None`` to keep the chain
-            link (``confirms``) without asserting a relation value on it — e.g. a
-            human refusal that chains to the capsule it denies without claiming to
-            "confirm" it. ``"assesses"`` is for a judge/verdict capsule that cites a
-            subject capsule by digest without confirming its outcome (a detection
-            relation, never an enforcement one). ``"adjudicates"`` is for a
-            twin-comparison referee capsule that cites two compared halves and
-            records a ``corroborated``/``inconclusive``/``contradicted:<owner_id>``
-            verdict — see :mod:`capsule_emit.adjudication`. Passing a non-``None``,
-            non-default relation without ``confirms`` set raises ``ValueError``
-            (a chain relation needs a chain target); ``relation=None`` never
-            raises regardless of ``confirms``. Default ``"confirms"``.
-        anchor: Legacy, non-default channel — killed as a default in 0.5.0 (O16
-            items 1-2). ``None`` (default) never dispatches. Pass ``True``, or
+        relation: Chain relation, one of the five registered values
+            (:data:`capsule_emit.relations.REGISTERED_RELATIONS`): ``"follows"``
+            (ordering only), ``"confirms"`` (observes or records the parent's
+            outcome; its open state remains), ``"supersedes"`` (terminal:
+            resolution, expiry or escalation closes or replaces the parent's
+            open state), ``"epoch_opens"``, ``"duplicates"``; or ``None`` to keep
+            the chain link (``confirms``) without asserting a relation value on
+            it (written as ``"follows"``, the registered bare next-link). Any other
+            value raises ``ValueError``: capsule-emit writes only
+            registered relations (earlier unregistered tokens are still read,
+            see :data:`capsule_emit.relations.LEGACY_RELATION_ALIASES`). Passing
+            a non-``None``, non-default relation without ``confirms`` set raises
+            ``ValueError`` (a chain relation needs a chain target);
+            ``relation=None`` never raises regardless of ``confirms``. Default
+            ``"confirms"``.
+        anchor: Legacy, non-default channel — killed as a default in 0.5.0. ``None`` (default) never dispatches. Pass ``True``, or
             set ``CAPSULE_ANCHOR=legacy-on``, to opt back into the old
             per-seal, async, digest-only SCITT anchor submission
             (:func:`agent_action_capsule.anchor.async_anchor`) — kept only as
@@ -659,7 +659,7 @@ def _emit_capsule(
             what climbs from *witnessed (single witness)* to *multi-witness,
             equivocation-resistant* (see ``docs/checkpoint.md``).
         require_witness: Fail-closed witness profile
-            ([capsule-emit-witness-required-profile], per JamesCarnley's
+            (per JamesCarnley's
             projnanda/nandatown#217 review). ``False`` (default): unchanged
             best-effort behavior — witnessing (if enabled) runs on its usual
             async, cadence-batched schedule and this call never blocks on it
@@ -761,13 +761,18 @@ def _emit_capsule(
             "human_disposed=True requires approver='human' — "
             "pass approver='human' or set human_disposed=False"
         )
+    if relation is not None and relation not in REGISTERED_RELATIONS:
+        raise ValueError(
+            f"relation={relation!r} is not a registered chain.relation; capsule-emit writes only "
+            f"{sorted(REGISTERED_RELATIONS)} (agent-action-capsule REGISTRY.md section 6)"
+        )
     if relation is not None and relation != "confirms" and confirms is None:
         raise ValueError(
             f"relation={relation!r} requires confirms=<capsule_id> — "
             "a chain relation needs a chain target"
         )
     # CAPSULE_WITNESS=stub + CAPSULE_ENV=production refuses to run, before
-    # anything is written (frozen surface §1a.4) — see
+    # anything is written — see
     # capsule_emit.witness.refuse_stub_in_production.
     _witness.refuse_stub_in_production(witness)
 
@@ -829,7 +834,10 @@ def _emit_capsule(
 
     chain_relation: str | None = None
     if confirms is not None:
-        chain_relation = relation
+        # relation=None keeps the link without asserting anything about the
+        # parent: the registered bare next-link, "follows" (left unset, the
+        # library underneath would fill in its own unregistered default).
+        chain_relation = relation if relation is not None else "follows"
 
     _action_type = action_type if action_type is not None else (
         "decide" if verdict in ("executed", "confirmed", "denied", "blocked", "assessed") else "fyi"
@@ -853,8 +861,7 @@ def _emit_capsule(
 
     # Write canonicalization_id into the self-describing binding slot
     # (top-level, inside the signed payload), then compute the PURE,
-    # signer-independent capsule_id, THEN sign it -- draft-04 reversal
-    # ([capsule-cose-sign1]):
+    # signer-independent capsule_id, THEN sign it -- draft-04 reversal:
     #
     # 1. capsule_id = compute_capsule_id(capsule) over everything above
     #    (canonicalization_id AND chain committed under "jcs"; capsule_id
@@ -892,11 +899,11 @@ def _emit_capsule(
 
     seq = append_to_ledger(capsule, ledger)
 
-    # O16-03: the witness kill switch (``witness=False`` / ``CAPSULE_WITNESS=off``)
+    # the witness kill switch (``witness=False`` / ``CAPSULE_WITNESS=off``)
     # is the ONE switch that zeroes all egress -- including the legacy anchor
     # channel, even when a caller has explicitly opted it back in via
     # ``anchor=True`` / ``CAPSULE_ANCHOR=legacy-on``. This is what makes the
-    # "local-only" posture (frozen surface §1a.3) an honest zero-network
+    # "local-only" posture an honest zero-network
     # guarantee rather than a promise the legacy channel can quietly violate.
     witness_enabled_now = _witness.witness_enabled(witness)
     witness_endpoint = witness_url or os.environ.get(_witness.WITNESS_URL_ENV_VAR, None)
@@ -910,11 +917,11 @@ def _emit_capsule(
     # must run first and print at most once per process. Stub witnessing
     # (CAPSULE_WITNESS=stub) is deliberately excluded from "network path
     # active" here — it never dials out, and _witness.maybe_checkpoint()
-    # below prints its OWN, stub-specific scream instead (frozen surface
-    # §1a.4); this notice must never claim a network attempt that isn't real.
+    # below prints its OWN, stub-specific scream instead;
+    # this notice must never claim a network attempt that isn't real.
     _print_first_run_disclosure_once(
         anchor_active=anchor_enabled,
-        # NOT witness_enabled_now (the O16-03 kill-switch gate, True for
+        # NOT witness_enabled_now (the kill-switch gate, True for
         # both "on" and "stub" -- stub is not the kill switch, and anchor's
         # own decision must still govern when a caller explicitly opts it
         # back in). This notice specifically claims a NETWORK attempt, which
@@ -926,7 +933,7 @@ def _emit_capsule(
         witness_endpoint=witness_endpoint,
     )
 
-    # [capsule-emit-witness-required-profile]: require_witness=True trades the
+    # require_witness=True trades the
     # default async, cadence-batched maybe_checkpoint() for a synchronous
     # push() that must actually be confirmed by a witness -- WitnessRequiredError
     # propagates uncaught (fail-closed: never a silent local-only capsule for a
@@ -1000,8 +1007,8 @@ def _emit_log_entry(
     signer: Signer | None = None,
     signing_key_path: str | os.PathLike | None = None,
 ) -> LogEntry:
-    """Internal primitive behind :func:`capsule_emit.surface.log` --
-    [verify-entry-authorship-tristate-and-log] RULING 3. Builds and appends
+    """Internal primitive behind :func:`capsule_emit.surface.log`.
+    Builds and appends
     an entry that NEVER carries a producer signature: no ``sign`` parameter
     exists on this function, by design -- ``log()``'s whole point is that
     the weaker guarantee is reached through a distinct, honestly-named verb,

@@ -87,7 +87,7 @@ endpoint (or add more) with `seal(..., witness_url=...)` or
 `CAPSULE_WITNESS_CADENCE_ENTRIES=…` and the age-based cadence with
 `CAPSULE_WITNESS_CADENCE_SECONDS=…`.
 
-### Kill switch scope (O16-03)
+### Kill switch scope
 
 **`witness=False` / `CAPSULE_WITNESS=off` is ONE switch that zeroes ALL
 egress, not just the checkpoint stream.** It also gates:
@@ -334,7 +334,7 @@ records. So does `CAPSULE_WITNESS=off` (the kill switch, see
 process reports each witness as `unconfirmed (witness disabled)` and never
 attempts the GET, whether or not `--offline` was also given.
 
-## Witness outage: durable retry, not a drop (O5)
+## Witness outage: durable retry, not a drop
 
 Witnessing is default-on, so **outage handling is launch behavior, not an
 edge case.** When a configured witness is unreachable, the checkpoint it
@@ -384,7 +384,7 @@ backlog = witness.checkpoint_witness_backlog(ledger_path, ["https://witness.exam
 witness.retry_pending_witness_stamps(ledger_path, ts_url="https://witness.example")
 ```
 
-## Fail-closed: `require_witness=True` ([capsule-emit-witness-required-profile])
+## Fail-closed: `require_witness=True`
 
 Everything above — the default cadence, the outage backlog, the retry drain —
 is deliberately **best-effort**: a `seal()`/`received()` call never blocks on
@@ -435,14 +435,14 @@ Default behavior (`require_witness=False`, i.e. every existing caller) is
 unchanged: it is exactly the best-effort path described earlier in this
 document.
 
-## Bundle — the hand-to-anyone artifact (O16 audit item 14)
+## Bundle — the hand-to-anyone artifact
 
 The verification chain above (`checkpoint/emit.py`'s module docstring) is four
 separate, caller-composed primitives — inclusion, checkpoint signature, TS
 receipt, rollback/consistency. `capsule_emit.bundle.bundle()` assembles all
 of them, plus the record's own receipt and the *prior* checkpoint's
 consistency proof, into one standalone object for a single record — the
-frozen surface's §2.5 shape:
+the shape the public API defines:
 
 ```python
 from capsule_emit.bundle import bundle, verify_bundle
@@ -524,8 +524,8 @@ history *within this bundle* wasn't reordered/truncated) — never "no fork" /
 "not equivocated", since one offline bundle can never rule out a divergent
 history it doesn't see; that guarantee is the witness's and multi-witness
 config's job. It also checks witness-stamp authenticity
-(`checkpoint.verify_witness_stamp_offline` per `WitnessRecord`, per
-[stamp-authenticity-on-read-not-presence]): a stamp from the pinned default
+(`checkpoint.verify_witness_stamp_offline` per `WitnessRecord`): a stamp
+from the pinned default
 witness (`DEFAULT_TS_PUBLIC_KEY_PEM`) is signature-verified with no network
 call and no caller setup; a stamp from any other Transparency Service, with
 no caller-supplied `ts_pubkey_pem`, verifies as a genuine receipt *shape*
@@ -536,7 +536,7 @@ stamps but has none that verify at all is fatal (`ok=False`).
 the point of "standalone": a bundle survives being written to a file and
 handed to someone else's process.
 
-### `checkpoint_cose` — the COSE_Sign1 wire form ([cll-checkpoint-cose-wire])
+### `checkpoint_cose` — the COSE_Sign1 wire form
 
 `Bundle.checkpoint_cose` carries the covering checkpoint as a COSE_Sign1
 statement over a CBOR claims map, built once at production time (in
@@ -554,8 +554,8 @@ CWT `iss` header, `key_id` onto the COSE `kid` header. The full dev↔I-D
 field-mapping table — plus a known `iss`/`sub` semantics deviation from
 the I-D's producer/log identity split, worth reading before relying on
 those two claims for cross-implementation identity matching — lives in
-`cll.checkpoint.cose_wire`'s module docstring (this is the
-[cll-id-field-mapping-doc] resolution: ship the mapping table, don't rename
+`cll.checkpoint.cose_wire`'s module docstring (the resolution here was to
+ship the mapping table, not rename
 `CheckpointRecord`'s own fields). `capsule_emit.checkpoint.cose_wire` is a
 deprecated alias for the same module — import `cll.checkpoint.cose_wire`
 directly.
@@ -583,7 +583,7 @@ if b.checkpoint_cose is not None:
 `Bundle.checkpoint` and failing the bundle if they disagree; absence is
 never fatal.
 
-## Disclose — bundle's conscious sibling (O16 audit item 10)
+## Disclose — bundle's conscious sibling
 
 `bundle` above is always safe — digests only, no producer decision needed.
 `capsule-emit disclose` is the deliberate, recorded act of handing
@@ -704,7 +704,7 @@ cp = emit_checkpoint(mmr, MySigner("node-a", b"..."), log_id="my-log")
 ## Provenance
 
 Ported from `capsule-ledger`'s `capsule_ledger/mmr/{core,index,store}.py`
-per Amendment E (2026-08-21): the CLL core is substrate a counterparty needs
+per a 2026-08-21 decision: the CLL core is substrate a counterparty needs
 in order to verify a log, so it lives in the neutral producer library rather
 than forked per consumer. `capsule-ledger` consumes this package through its
 public interface — see its own docs for the ledger-specific wiring.

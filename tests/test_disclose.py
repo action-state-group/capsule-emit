@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for O16 audit item 10 — ``capsule_emit.disclose``.
+"""Tests for ``capsule_emit.disclose``.
 
 Builds real checkpoint chains through ``seal()`` + the default witness
 wiring (same stub-TS harness as ``tests/test_bundle.py``), then checks that

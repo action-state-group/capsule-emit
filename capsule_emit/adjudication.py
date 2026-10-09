@@ -1,17 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 """Adjudication record pattern — seal a twin-comparison verdict capsule.
 
-One new ``chain.relation`` value, ``"adjudicates"``, and one public helper:
+One public helper, :func:`seal_adjudication`, and a reader, :func:`is_adjudication`:
 
 ``seal_adjudication(half_a_capsule_id, half_b_capsule_id, verdict, ...)``
     Seals a capsule carrying:
 
     - ``chain.parent_capsule_id`` — *half_a_capsule_id*
-    - ``chain.relation`` — ``"adjudicates"``
+    - ``chain.relation`` — ``"confirms"`` (the registered non-terminal
+      relation: the verdict observes the compared half and leaves its open
+      state as it was, whatever the verdict). Releases before this one wrote
+      the unregistered ``"adjudicates"``; :func:`is_adjudication` reads both.
     - ``disposition.verdict_class`` — ``"assessed"`` (a detection
-      disposition, never ``"executed"``/``"confirmed"`` — same discipline as
-      the ``"assesses"`` relation; see ``capsule_emit.core``'s ``relation``
-      parameter docs)
+      disposition, never ``"executed"``/``"confirmed"``, the same as a judge's
+      verdict capsule; see ``capsule_emit.core``'s ``relation`` parameter
+      docs)
     - ``compute_attestation.adjudication`` — ``source: "twin_comparison"``,
       ``capture_method: "deterministic_replay"``, the *verdict*, and the
       properties that back it (``divergence_index``, ``margin``,
@@ -25,8 +28,8 @@ corroborated/inconclusive/contradicted from it is a caller concern (see
 ``adjudicate``, which reuses ``replay_spot_check.SpotCheckResult``'s digest
 domain). No coordinator, no scorer, no new record type — this is the same
 ``chain``/``compute_attestation`` shape every other capsule already has,
-with one new registry-governed (open, never rejecting — see
-``agent_action_capsule.registries``) relation value.
+with a registered relation value. What marks the capsule as an adjudication
+is its ``compute_attestation.adjudication`` block, not the relation.
 
 **No verdict is not an error.** A twin comparison that can't be adjudicated
 (mismatched ``weights_digest``, or a same-owner "twin") has *nothing to
@@ -47,6 +50,8 @@ from .numbers import float_to_str
 
 __all__ = [
     "RELATION_ADJUDICATES",
+    "LEGACY_RELATION_ADJUDICATES",
+    "is_adjudication",
     "SOURCE_TWIN_COMPARISON",
     "CAPTURE_METHOD_DETERMINISTIC_REPLAY",
     "VERDICT_CORROBORATED",
@@ -56,10 +61,13 @@ __all__ = [
     "seal_adjudication",
 ]
 
-#: The new chain.relation value this module adds. Registry-governed but
-#: open (agent_action_capsule.registries: an unregistered chain.relation is
-#: informational, never a rejection) — no spec change required to use it.
-RELATION_ADJUDICATES = "adjudicates"
+#: The chain.relation an adjudication writes: the registered non-terminal
+#: ``confirms`` (it observes the compared half; the half's open state remains).
+RELATION_ADJUDICATES = "confirms"
+
+#: Deployed legacy alias: the unregistered token releases before this one
+#: wrote. Read (never written) by :func:`is_adjudication`.
+LEGACY_RELATION_ADJUDICATES = "adjudicates"
 
 #: Honesty labels carried on every adjudication capsule (module docstring).
 SOURCE_TWIN_COMPARISON = "twin_comparison"
@@ -199,3 +207,20 @@ def seal_adjudication(
         ledger=ledger,
         anchor=anchor,
     )
+
+
+def is_adjudication(entry: Any) -> bool:
+    """Whether a ledger entry is an adjudication capsule: it carries this
+    module's ``compute_attestation.adjudication`` block (twin comparison), or
+    it is a record from an earlier release with the legacy
+    ``chain.relation == "adjudicates"``."""
+    if not isinstance(entry, dict):
+        return False
+    chain = entry.get("chain")
+    if isinstance(chain, dict) and chain.get("relation") == LEGACY_RELATION_ADJUDICATES:
+        return True
+    try:
+        block = entry["model_attestation"]["compute_attestation"]["adjudication"]
+    except (KeyError, TypeError):
+        return False
+    return isinstance(block, dict) and block.get("source") == SOURCE_TWIN_COMPARISON

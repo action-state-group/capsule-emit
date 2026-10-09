@@ -537,7 +537,7 @@ def test_anchor_defaults_to_none_resolving_off_via_capsule_anchor_env(monkeypatc
     """MCPCapsuleEmitter must default anchor=None -- left unresolved at
     construction so CAPSULE_ANCHOR can be consulted at emit time (same shape
     as capsule_emit.core._emit_capsule's own anchor param). As of 0.5.0
-    (O16-01-02: per-seal anchor killed as a default) an unset env var
+    (the single-egress change: per-seal anchor killed as a default) an unset env var
     resolves to OFF -- the legacy anchor channel needs an explicit
     CAPSULE_ANCHOR=legacy-on or anchor=True to engage."""
     monkeypatch.delenv("CAPSULE_ANCHOR", raising=False)

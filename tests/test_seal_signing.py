@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for [O16-13]: seal() cryptographically signs every capsule.
+"""Acceptance tests for the signer seam: seal() cryptographically signs every capsule.
 
-O16 audit item 13 ("Signer protocol seam") found that ``seal()`` never
+The signer seam review found that ``seal()`` never
 touched a ``Signer`` at all -- no cryptographic signature existed over sealed
 capsule content outside the opt-in checkpoint layer, and that layer's own
 default signer (``witness._AutoSigner``) is ephemeral HMAC, not a persisted
@@ -74,7 +74,7 @@ def test_tampering_with_signed_content_invalidates_signature(tmp_path, monkeypat
 
 
 def test_capsule_id_is_signer_independent(tmp_path, monkeypatch):
-    """[capsule-cose-sign1] draft-04 reversal: capsule_id is a PURE content
+    """draft-04 reversal: capsule_id is a PURE content
     address again -- computed over the signature-free payload, exactly as
     pre-#94. signature/key_id are added to the dict AFTER capsule_id is
     computed and set, and are permanently excluded from its preimage (see
@@ -96,7 +96,7 @@ def test_capsule_id_is_signer_independent(tmp_path, monkeypatch):
 
 
 def test_two_signers_over_identical_content_share_one_capsule_id(tmp_path, monkeypatch):
-    """[capsule-cose-sign1] MANAGER FLAG 4(b): two signers, same content ->
+    """draft-04 reversal, flagged item 4(b): two signers, same content ->
     ONE shared capsule_id, TWO distinct COSE_Sign1 envelopes, order-
     independent (the content-unique-not-record-unique semantic). Within a
     single producer, behavior is identical to before the reversal (Ed25519
@@ -240,7 +240,7 @@ def test_rotation_persists_the_new_key(tmp_path):
 
 
 def test_rotation_landing_between_sign_and_label_cannot_mismatch(tmp_path, monkeypatch):
-    """[O16-13-signer-tuple-fix] Forces the exact race the PR #80 gate review
+    """The signer tuple fix Forces the exact race the PR #80 gate review
     flagged: a `rotate()` landing between a capsule's producer envelope being
     built and its `key_id` being read to label it. Under a hypothetical
     `sign_envelope(payload) -> bytes` + separately-read mutable `.key_id`
@@ -248,8 +248,8 @@ def test_rotation_landing_between_sign_and_label_cannot_mismatch(tmp_path, monke
     `capsule["key_id"]` as two unsynchronized steps, so a rotation racing in
     between would mint a capsule enveloped by the OLD key but labeled with
     the NEW key_id -- an honestly-produced capsule that fails verification.
-    The frozen §7d atomic `sign_envelope(bytes) -> (envelope, key_id)` return
-    (see `LocalKeypairSigner.sign_envelope`, [capsule-cose-sign1]) closes the
+    The stable public API's atomic `sign_envelope(bytes) -> (envelope, key_id)` return
+    (see `LocalKeypairSigner.sign_envelope`) closes the
     window the same way `sign()` always has: both the key and its `key_id`
     are read from ONE lock-protected snapshot inside the same call, so
     `_emit_capsule` can only ever see an envelope and key_id pulled from the

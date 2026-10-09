@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Signed peaks-checkpoint emission: log_id-scoped signing, monotonicity,
-rollback detection, and the mutant-must-fail discipline (QUEUE_PROTOCOL §7).
+rollback detection, and the mutant-must-fail discipline.
 """
 from __future__ import annotations
 
@@ -132,7 +132,7 @@ def test_emit_checkpoint_rejects_non_monotonic_size():
 
 
 def test_verify_checkpoint_consistency_mutant_rolled_back_log_fails():
-    """RED case per QUEUE_PROTOCOL §7: cp2 CLAIMS to extend cp1 (its
+    """RED case: cp2 CLAIMS to extend cp1 (its
     prev_size/prev_root fields say so), but the log backing cp2 actually has
     DIFFERENT content at that size -- a rollback-and-rewrite. The live root
     recomputed at prev_size must not match, so verify_checkpoint_consistency
@@ -208,13 +208,13 @@ def test_digest_changes_with_log_id():
     assert cp_a.signature != cp_b.signature  # signer covers the digest, so this must differ too
 
 
-# -- grade: the self-attested -> witnessed ladder transition (O16 item 11) --
+# -- grade: the self-attested -> witnessed ladder transition --
 
 
 def _genuine_witness_record(cp, ts_url: str = "https://witness.example") -> WitnessRecord:
     """A ``WitnessRecord`` bound to ``cp`` with a real, structurally valid
     COSE Receipt -- what ``grade()``'s stamp-authenticity check
-    ([stamp-authenticity-on-read-not-presence]) requires. A hand-fabricated
+    requires. A hand-fabricated
     ``entry_hash``/``receipt_b64`` (this helper's pre-fix shape) is now
     exactly the file-forger attack ``grade()`` must reject -- see
     ``test_grade_rejects_a_hand_fabricated_witness_record`` below."""
@@ -269,7 +269,7 @@ def test_grade_is_witnessed_once_a_single_stamp_lands(monkeypatch):
 
 
 def test_grade_is_any_of_not_all_of_across_multiple_witnesses(monkeypatch):
-    # Multi-witness any-of (frozen surface §2a.3): the first stamp already
+    # Multi-witness any-of: the first stamp already
     # flips the grade; a second, independently-operated (here: unpinned,
     # shape-valid-but-identity-unverified -- item D) witness compounds
     # independence without gating the grade back down.
@@ -283,7 +283,7 @@ def test_grade_is_any_of_not_all_of_across_multiple_witnesses(monkeypatch):
 
 
 def test_grade_rejects_a_hand_fabricated_witness_record():
-    """[stamp-authenticity-on-read-not-presence]: a file-level forger who
+    """Stamp authenticity is checked on read, not presence: a file-level forger who
     appends a fabricated ``WitnessRecord`` (no real TS ever contacted) does
     NOT launder a checkpoint to WITNESSED -- presence in ``witnesses`` alone
     no longer counts."""
@@ -343,8 +343,7 @@ def test_verify_witness_stamp_offline_rejects_entry_hash_not_bound_to_this_check
 
 
 def test_verify_witness_stamp_offline_unpinned_ts_reports_shape_valid_identity_unverified():
-    """[verify-threestate-trustanchor] (revises [verify-batch-fastfollow]
-    item D's message text): a genuine, structurally valid receipt from a TS
+    """Revises this suite's earlier message text: a genuine, structurally valid receipt from a TS
     that is neither the pinned default nor caller-supplied does NOT confer
     WITNESSED on shape alone -- it must fail closed on the two-state
     ``bool`` projection (ok is False) with the honest "pin not supplied"
@@ -358,7 +357,7 @@ def test_verify_witness_stamp_offline_unpinned_ts_reports_shape_valid_identity_u
 
 
 def test_verify_witness_stamp_tristate_unpinned_ts_is_unverified_not_invalid():
-    """[verify-threestate-trustanchor]: the THREE-STATE form must resolve
+    """The three-state trust-anchor form must resolve
     this exact case to UNVERIFIED, not INVALID -- an unpinned TS is not
     evidence of forgery, only evidence we cannot check. This is the state
     ``verify_bundle``/``verify_disclosure`` key off of to avoid false-
@@ -524,7 +523,7 @@ def test_due_for_checkpoint_and_lag_exceeded():
     assert lag_exceeded(cfg, 201)
 
 
-# -- O16 audit item 5: the age-based cadence leg (+ idle-silence guard) -----
+# -- the age-based cadence leg (+ idle-silence guard) -----
 
 
 def test_checkpoint_config_defaults_cadence_seconds_to_15_minutes():
@@ -617,7 +616,7 @@ def test_default_ts_url_is_the_witness_host():
 
 
 #: register_checkpoint no longer knows anything about ``CheckpointRecord``
-#: shape ([cll-checkpoint-cose-wire] alignment) -- it POSTs whatever COSE
+#: shape -- it POSTs whatever COSE
 #: bytes it is handed and parses the JSON stamp response. A fixed dummy
 #: payload is enough for these dispatch/routing tests; the wire body's own
 #: content (a real COSE_Sign1) is covered by ``tests/checkpoint/test_cose_wire.py``.
@@ -720,8 +719,8 @@ def test_register_checkpoint_never_dispatches_to_register_route(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# register_checkpoint_stub -- the in-process stub witness (0.5.0 migration
-# audit item 6, frozen surface §1a.4). Zero network, exercises the real
+# register_checkpoint_stub -- the in-process stub witness (0.5.0
+# migration). Zero network, exercises the real
 # checkpoint-build path, and the grade must never leave self-attested no
 # matter how many stub stamps land.
 # ---------------------------------------------------------------------------
@@ -748,7 +747,7 @@ def test_register_checkpoint_stub_grade_stays_self_attested():
 
     assert cp.witnesses, "stub registration should still produce a WitnessRecord"
     assert cp.grade() == Grade.SELF_ATTESTED, (
-        "frozen surface §1a.4: stub stamps never reach rung 2 -- the grade "
+        "stub stamps never reach rung 2 -- the grade "
         "must never leave self-attested"
     )
 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""One log, one writer (O16 audit item 12, frozen surface §7d).
+"""One log, one writer.
 
 ``append_to_ledger`` takes an OS-level flock on a sidecar ``<ledger>.lock``
 file for the duration of one append. A second writer that finds the lock

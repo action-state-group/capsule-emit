@@ -5,13 +5,13 @@ Since 0.5.0 every capsule minted by ``seal()``/``received()`` (standalone or
 composed via a slot wrapper -- ``capsule_emit.core._emit_capsule``) carries a
 cryptographic proof over its ``capsule_id`` plus the ``key_id`` that
 produced it -- this is the
-*self-attested* rung of the ladder (frozen dev-surface v4 §2/§4): "your key,
+*self-attested* rung of the ladder: "your key,
 your claim". It is what a lone producer has *before* any witness or anchor
 ever sees the record, and it is what upgrades in place as checkpoints get
 witnessed (see ``capsule_emit.witness``) -- a different, heavier layer that
 signs MMR checkpoint digests, not capsule content, and is not this module.
 
-**draft-04 reversal ([capsule-cose-sign1], 2026-08-24).** The producer proof
+**draft-04 reversal (2026-08-24).** The producer proof
 is a **COSE_Sign1 envelope** over the raw 32-byte ``capsule_id`` digest (the
 frozen AAC producer-envelope profile: ``alg=EdDSA``, ``content_type``
 ``application/agent-action-capsule-id``, ``kid`` = the raw 32-byte Ed25519
@@ -28,7 +28,7 @@ and are never part of its preimage (see ``capsule_emit.canonicalization``'s
 
 **Signer protocol.** ``sign(payload: bytes) -> (signature, key_id)`` -- a
 single atomic call returning a hex-encoded signature paired with the
-hex-encoded id of the key that produced it. This is the frozen §7d shape
+hex-encoded id of the key that produced it. This is the stable public API's shape
 verbatim, and it is atomic on purpose: an earlier draft split this into
 ``sign(payload) -> str`` plus a separately-read mutable ``key_id``
 attribute, which let a ``rotate()`` land between the two reads and mint a
@@ -37,7 +37,7 @@ both from one call makes that pairing correct by construction -- there is no
 window between "which key signed" and "which key_id got recorded" for a
 concurrent rotation to land in. KMS/HSM/TPM signers are just other
 implementations of this protocol -- ``capsule_emit`` never imports one
-concretely, matching the frozen surface's "custody is pluggable at the one
+concretely, matching the public API's "custody is pluggable at the one
 seam custody flows through" (§7d). This generic ``sign()`` stays the
 protocol's one REQUIRED method, used verbatim for producer signing by any
 ``Signer`` that does not additionally implement the OPTIONAL
@@ -61,8 +61,7 @@ the unrelated checkpoint-signing path, see ``capsule_emit.witness``'s
 signing -- see :func:`sign_producer_envelope`), AND
 ``sign_cose_statement()`` (a generic SCITT Signed Statement with caller-
 supplied content type and CWT ``iss``/``sub`` claims -- used by
-``capsule_emit.checkpoint.cose_wire`` to put a CLL checkpoint on the wire,
-[cll-checkpoint-cose-wire]).
+``capsule_emit.checkpoint.cose_wire`` to put a CLL checkpoint on the wire).
 
 **Persistence path.** One key per ledger by default -- ``<ledger>.signing_key.pem``
 next to the ledger file, mirroring the per-ledger-path scoping
@@ -74,8 +73,7 @@ single producer identity shared across ledgers.
 **Rotation.** :meth:`LocalKeypairSigner.rotate` generates a new keypair and
 returns a :class:`RotationRecord` binding old key to new: the OLD key signs
 the NEW ``key_id``, so a party that already trusted the old key can verify
-the succession without needing the old private key again (frozen surface
-§7a: "the rotation record cites old key, new key, and the binding, so
+the succession without needing the old private key again ("the rotation record cites old key, new key, and the binding, so
 identity survives rotation by construction"). Sealing that record as a
 WHO-slot key-binding receipt is the caller's job -- this module only produces
 the record; it does not seal one.
@@ -108,7 +106,7 @@ SIGNING_KEY_PATH_ENV_VAR = "CAPSULE_SIGNING_KEY_PATH"
 
 
 class Signer(Protocol):
-    """``seal()``'s signing seam (frozen dev-surface v4 §7d). Any object with
+    """``seal()``'s signing seam. Any object with
     a ``sign(payload: bytes) -> (signature, key_id)`` method: signs arbitrary
     bytes and atomically returns the hex-encoded signature together with the
     hex-encoded id of the key that produced it, so a caller never reads
@@ -247,7 +245,7 @@ class LocalKeypairSigner:
         ``payload``, with this signer's key as ``kid`` and CWT ``iss``/
         ``sub`` identity claims in the protected header -- the profile
         ``capsule_emit.checkpoint.cose_wire`` uses to put a CLL checkpoint on
-        the wire ([cll-checkpoint-cose-wire]), and any future caller wanting
+        the wire, and any future caller wanting
         the same signed-statement shape over a different payload/claims.
 
         Reuses ``scitt_cose.statement.build_signed_statement`` for the
@@ -363,8 +361,8 @@ def sign_producer_envelope(signer: Signer, capsule_id: str) -> tuple[str, str]:
 
 
 class AuthorshipVerdict(str, Enum):
-    """Three-state per-entry authorship verdict
-    [verify-entry-authorship-tristate-and-log] -- the SAME shape already
+    """Three-state per-entry authorship verdict --
+    the SAME shape already
     shipped for witness-stamp authenticity (see
     ``cll.checkpoint.emit.StampVerdict``, which folds in the self-hosted-TS
     pin case too): a claim, once made, is either upheld or a forgery: never
@@ -412,14 +410,13 @@ def verify_capsule_signature_tristate(capsule: dict) -> tuple[AuthorshipVerdict,
     verification reuses ``agent_action_capsule.producer_envelope`` (which in
     turn reuses ``scitt_cose`` for the COSE/CBOR machinery -- boundary rule:
     no hand-rolled COSE). This proves "the holder of this key signed this
-    exact ``capsule_id``"; it does NOT prove who that key belongs to (see the
-    frozen dev-surface v4 §7a identity-binding layers for that), and it does
+    exact ``capsule_id``"; it does NOT prove who that key belongs to (see the identity-binding layers for that), and it does
     NOT by itself prove ``capsule_id`` matches this capsule's carried value
     -- callers that read a carried ``capsule_id`` separately (e.g.
     ``capsule_emit.bundle.verify_bundle``) check that independently.
 
-    ``capsule_id`` is signer-independent (draft-04 reversal,
-    [capsule-cose-sign1]): computed over the signature-free payload,
+    ``capsule_id`` is signer-independent (draft-04 reversal):
+    computed over the signature-free payload,
     excluding only ``capsule_id`` itself plus ``signature``/``key_id`` (see
     ``capsule_emit.canonicalization`` -- never folded in, so no strip-and-
     recompute dance is needed here; ``compute_capsule_id`` already excludes
@@ -478,7 +475,7 @@ def verify_capsule_signature(capsule: dict) -> bool:
     :func:`verify_store_signed` -- use the tristate function instead; this
     bool form flattens :attr:`AuthorshipVerdict.UNCLAIMED` and
     :attr:`AuthorshipVerdict.INVALID` together, which is exactly the
-    conflation [verify-entry-authorship-tristate-and-log] fixes at those two
+    conflation the tristate verdict fixes at those two
     call sites.
     """
     verdict, _ = verify_capsule_signature_tristate(capsule)
@@ -512,7 +509,7 @@ def verify_store_signed(records: list[dict], *, require_signature: bool = False)
     producer-authorship verdict) so every existing caller of ``verify_store``
     becomes a drop-in caller of this instead. Never raises.
 
-    **Three-state, not two** [verify-entry-authorship-tristate-and-log]: an
+    **Three-state, not two:** an
     entry with no producer signature at all (e.g. a
     :func:`capsule_emit.surface.log` entry) gets a ``severity="warning"``
     finding (``producer_signature_unclaimed``) that does NOT gate

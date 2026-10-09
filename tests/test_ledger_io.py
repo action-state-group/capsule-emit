@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""[emit-ledger-io-home] capsule_emit.ledger_io -- the read/verify seam
+"""capsule_emit.ledger_io -- the read/verify seam
 moved here from capsule-ledger's (archived) cli/ledger_io.py.
 
 ``open_ledger``/``require_ledger_path``/``add_scan_query_args``/

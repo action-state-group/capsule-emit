@@ -9,7 +9,7 @@ digest-only field's committed content, per the companion profile in
 :func:`verify_input_digest` uses; this module defines no second hashing path.
 
 This module is the single-capsule payload primitive. The ledger-level
-``disclose`` CLI verb (O16 audit item 10, frozen dev-surface v4 §7b —
+``disclose`` CLI verb (
 bundle + selected payload content + completeness statement + audience
 suppression + its own sealed disclosure record, over an ``<id|range>``
 selection) is ``capsule_emit.disclose``, which calls

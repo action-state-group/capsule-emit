@@ -1,23 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Permanent regression tests for the [verify-authenticates-nothing] PM
-escalation (2026-08-24): an adversarial run against ``origin/main``
-(``_work/adv-migration-run-2026-08-24.md``) found the offline read/verify
+"""Permanent regression tests for an adversarial review (2026-08-24): a run
+against ``origin/main`` found the offline read/verify
 surface authenticated almost nothing -- structure was checked, cryptography
 was not. The original attack scripts lived at ``/tmp/atk/*.py`` in that run
 and are gone; this file reconstructs the three repros from the run report as
 permanent in-tree tests, one per closed finding:
 
-- BLOCKER-1 / [verify-checks-producer-signature] --
+- BLOCKER-1 / producer-signature is now checked on verify --
   ``attack_forge_sig.py``: a key-less forgery (attacker-authored content,
   invented signature/key_id, ``capsule_id`` recomputed to match) reported
   ``1/1 VALID``.
-- HIGH-2 / [bundle-authenticates-receipt-and-stamp] -- ``attack6b.py``: a
+- HIGH-2 / bundle now authenticates receipt and stamp -- ``attack6b.py``: a
   bundle with its receipt BODY tampered but ``capsule_id`` left alone
   verified ``(True, [])``.
-- HIGH-3 / [stamp-authenticity-on-read-not-presence] -- ``attack45.py``
-  §ATTACK 5: a hand-written checkpoint-stamp entry with a fabricated
-  ``witnesses`` array (no TS ever contacted, ``receipt_b64="forged"``)
-  graded ``witnessed`` and passed ``verify_bundle``/``status --offline``.
+- HIGH-3 / stamp authenticity is now checked on read, not just presence --
+  ``attack45.py`` §ATTACK 5: a hand-written checkpoint-stamp entry with a
+  fabricated ``witnesses`` array (no TS ever contacted,
+  ``receipt_b64="forged"``) graded ``witnessed`` and passed
+  ``verify_bundle``/``status --offline``.
 """
 from __future__ import annotations
 
@@ -379,7 +379,7 @@ def test_attack45_positive_control_genuine_stamp_still_grades_witnessed(two_chec
 
 
 # ---------------------------------------------------------------------------
-# [verify-batch-fastfollow] item D -- manager-review finding: the
+# A review finding: the
 # sophisticated file-forger one level up from attack45. attack45's forger
 # writes garbage receipt_b64 ("forged") and is caught by the structural
 # probe. This forger instead runs the PUBLIC scitt_cose.build_receipt (no
@@ -462,7 +462,7 @@ def test_attack_sophisticated_forger_correct_entry_hash_attacker_key_stays_self_
     result = status.compute_status(str(ledger_path), offline=True)
     assert result["latest_checkpoint"]["grade"] == "self-attested"
 
-    # (c) bundle/verify_bundle -- REVISED by [verify-threestate-trustanchor]
+    # (c) bundle/verify_bundle -- REVISED by the three-state trust-anchor rules
     # (supersedes the two-state assertion this test used to make): with no
     # trust_anchor supplied, an unpinned ts_url is cryptographically
     # indistinguishable from a legitimate self-hosted/zero-egress TS the

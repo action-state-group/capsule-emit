@@ -2,13 +2,13 @@
 """``status`` — ladder position, checkpoint/stamp lag, and (unless
 ``--offline``) a read-only witness re-check.
 
-O16 audit item 17 ("status's fetch-fold", frozen-surface §7): there was no
+Before this module there was no
 ``status`` verb and no separate ``fetch`` verb to fold into it -- this module
 is the net-new implementation of both in one. ``status`` answers, from a
 ledger alone: how many capsules are sealed, how many checkpoints exist and
 what ladder rung each is on (``self-attested``/``witnessed`` -- see
 ``capsule_emit.checkpoint.Grade``), and the two honest lag numbers the
-frozen surface names: records awaiting the next checkpoint, and checkpoints
+the public API names: records awaiting the next checkpoint, and checkpoints
 still awaiting a witness stamp.
 
 **Reads never write** (the read-verb family's standing rule). Unless
@@ -19,11 +19,10 @@ the ledger *already* holds. It never registers a *new* stamp for a
 self-attested checkpoint -- that is a write (it creates a TS log entry),
 and ``push`` -- not ``status`` -- is the verb that writes checkpoints.
 
-**O16-03: the witness kill switch also gates this fetch.** ``--offline`` is
+**The witness kill switch also gates this fetch.** ``--offline`` is
 one way to skip the re-check; ``witness=False`` / ``CAPSULE_WITNESS=off`` is
 the other, and it applies here even without ``--offline`` -- the kill switch
-is meant to be a single, absolute "zero network egress" guarantee (frozen
-surface §1a.3, "local-only"), and a `status` call that quietly re-opened a
+is meant to be a single, absolute "zero network egress" guarantee ("local-only"), and a `status` call that quietly re-opened a
 network path around it would violate that. See ``docs/checkpoint.md``'s
 "Kill switch scope" section.
 
@@ -38,7 +37,7 @@ original list would show "awaiting stamp" forever even after a real stamp
 landed; crediting a backfill that never happened would show "witnessed"
 during an outage that is still ongoing. ``witness_backlog`` below reports,
 per currently-configured witness, how many checkpoints it specifically has
-not yet confirmed -- the per-witness-cursor view (frozen surface's O5 item):
+not yet confirmed -- the per-witness-cursor view (a planned follow-up):
 one witness being down never hides that the others have already advanced.
 """
 from __future__ import annotations
@@ -49,7 +48,7 @@ from typing import Any
 def _fetch_witness_identity(ts_url: str, *, timeout: float = 15.0) -> dict:
     """Best-effort GET of the witness's own ``/.well-known/did.json``, purely
     for display -- this is NEVER used as a trust anchor (verification uses
-    only a caller-supplied key / ``trust_anchor``; see [anchor-did-from-host]).
+    only a caller-supplied key / ``trust_anchor``).
 
     Returns ``{"kid_tail": str | None, "operator": str}``. Any failure
     (witness offline, no did.json, malformed response) degrades to
@@ -155,7 +154,7 @@ def compute_status(
 
     if last_state is not None:
         witnesses_info = []
-        # O16-03: the kill switch (CAPSULE_WITNESS=off) skips this network
+        # the kill switch (CAPSULE_WITNESS=off) skips this network
         # re-check even when --offline was NOT passed -- it is the one
         # switch that zeroes all egress, not just an alias for --offline.
         skip_network_recheck = offline or not witnessing_enabled_now
@@ -163,7 +162,7 @@ def compute_status(
             from urllib.parse import urlsplit
 
             host = urlsplit(w.ts_url).netloc or w.ts_url
-            # [anchor-did-from-host]: display identity defaults to "unknown"
+            # Display identity defaults to "unknown"
             # operator / no key -- never our own brand -- until a live
             # did.json fetch (below) says otherwise.
             info: dict[str, Any] = {
@@ -187,7 +186,7 @@ def compute_status(
                     info["errors"] = errors
                 info.update(_fetch_witness_identity(w.ts_url))
             witnesses_info.append(info)
-        # Stub scream (frozen surface §1a.4): the latest checkpoint's grade
+        # Stub scream: the latest checkpoint's grade
         # already stays self-attested when its witnesses are stub-only (see
         # CheckpointRecord.grade()) -- this flag is what render_status uses
         # to make that loud instead of silently correct.
@@ -289,7 +288,7 @@ def render_status(status: dict, *, out: Any = None) -> None:
             else:
                 detail = f" ({w['errors'][0]})" if w.get("errors") else ""
                 state = f"NOT confirmed{detail}"
-            # [anchor-did-from-host]: identify the witness by the host it is
+            # Identify the witness by the host it is
             # actually served from + its self-declared operator (from its own
             # did.json) -- never a hard-coded brand name.
             label = f"witness: {w.get('host', w['ts_url'])}"

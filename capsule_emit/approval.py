@@ -12,15 +12,18 @@ Two public helpers:
     - ``disposition.decision`` — ``"approve"`` | ``"deny"``
     - ``disposition.verdict_class`` — ``"executed"`` if approved, ``"denied"`` if denied
     - ``chain.parent_capsule_id`` — the blocked capsule's ID
-    - ``chain.relation`` — ``"resolves"``
+    - ``chain.relation`` — ``"supersedes"`` (the registered terminal relation:
+      an approval or a denial closes the blocked capsule's open state; every
+      path through ``seal_approval`` does, so none uses ``"confirms"``)
 
 ``list_pending(ledger_path)``
     Returns every capsule in the ledger whose ``verdict_class == "blocked"`` or
     ``effect.status == "planned"`` and for which no downstream capsule carries
-    ``chain.relation == "resolves"`` pointing at it.
+    a resolving relation pointing at it: ``"supersedes"``, or the deployed
+    legacy alias ``"resolves"`` (see :data:`LEGACY_RESOLVES`).
 
     Fail-closed: absence of a chained approval capsule means the action is still
-    pending.  Nothing is ever marked resolved unless an explicit ``"resolves"``
+    pending.  Nothing is ever marked resolved unless an explicit resolving
     chain entry is found.
 
 No engine imports.  This is pure format + ledger pattern — ``seal_approval``'s
@@ -39,7 +42,20 @@ from typing import Any
 from .core import EmitResult, _emit_capsule
 from .ledger import read_ledger
 
-__all__ = ["seal_approval", "list_pending"]
+__all__ = ["seal_approval", "list_pending", "RESOLVING_RELATIONS", "LEGACY_RESOLVES"]
+
+#: The registered relation a resolution writes: a terminal transition over
+#: the blocked capsule (agent-action-capsule REGISTRY.md section 6).
+SUPERSEDES = "supersedes"
+
+#: Deployed legacy alias. Releases before this one wrote ``"resolves"`` on
+#: approval capsules; it is not a registered relation value. Records already
+#: written with it are read as ``"supersedes"`` (they still close a pending
+#: item); nothing writes it any more.
+LEGACY_RESOLVES = "resolves"
+
+#: Relations that close a blocked capsule's pending state.
+RESOLVING_RELATIONS = frozenset({SUPERSEDES, LEGACY_RESOLVES})
 
 
 def seal_approval(
@@ -166,9 +182,9 @@ def seal_approval(
         approver="human",
         decision=decision,
         verdict=verdict,
-        # Chain: resolves the blocked capsule
+        # Chain: closes the blocked capsule's open state (approve and deny alike)
         confirms=blocked_capsule_id,
-        relation="resolves",
+        relation=SUPERSEDES,
         # Effect (only for approvals; denied actions have no dispatched effect)
         effect=_effect,
         # Ledger + anchor
@@ -186,15 +202,16 @@ def list_pending(ledger_path: str | os.PathLike) -> list[dict[str, Any]]:
 
     1. Its ``disposition.verdict_class == "blocked"`` OR its
        ``effect.status == "planned"``
-    2. No other capsule in the same ledger has
-       ``chain.relation == "resolves"`` **and**
+    2. No other capsule in the same ledger has a ``chain.relation`` in
+       :data:`RESOLVING_RELATIONS` (``"supersedes"``, or the legacy
+       ``"resolves"`` older releases wrote) **and**
        ``chain.parent_capsule_id == <this capsule's capsule_id>``
 
     Fail-closed semantics: if the resolution capsule is absent (e.g. the
     process crashed before :func:`seal_approval` ran), the blocked capsule
     remains in the pending list on every subsequent call.  A blocked capsule
-    is only removed from pending once an explicit ``"resolves"`` chain entry
-    is present in the same ledger.
+    is only removed from pending once an explicit resolving chain entry is
+    present in the same ledger.
 
     Args:
         ledger_path: Path to the JSONL ledger file.  Returns ``[]`` when the
@@ -211,7 +228,8 @@ def list_pending(ledger_path: str | os.PathLike) -> list[dict[str, Any]]:
     resolved_ids: set[str] = set()
     for cap in capsules:
         chain = cap.get("chain") or {}
-        if chain.get("relation") == "resolves":
+        # "resolves" is the legacy alias older releases wrote; read as supersedes.
+        if chain.get("relation") in RESOLVING_RELATIONS:
             parent = chain.get("parent_capsule_id")
             if parent:
                 resolved_ids.add(parent)

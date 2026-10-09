@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Acceptance tests for O16 audit item 17 ("status's fetch-fold"):
+"""Acceptance tests for `status` ("status's fetch-fold"):
 
 Net-new ``status`` verb: ladder position (self-attested/witnessed grade,
 item 11), checkpoint/stamp lag (records awaiting checkpoint, checkpoints
@@ -400,7 +400,7 @@ def test_status_text_differs_between_self_attested_and_witnessed(
 
 # ---------------------------------------------------------------------------
 # (i) witness identity render — host/kid/operator from the witness's own
-#     did.json, never our brand [anchor-did-from-host]
+#     did.json, never our own brand
 # ---------------------------------------------------------------------------
 
 

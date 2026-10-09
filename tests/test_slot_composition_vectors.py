@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""O8 conformance: capsule-emit's own committed slot-composition vector
+"""Slot-composition conformance: capsule-emit's own committed slot-composition vector
 (``test-vectors/slot-composition/``) — the carry-form and slot-form produce
 byte-identical records, and each verifies independently under
 ``capsule_emit.verification``. Every case runs over both the released -04
@@ -36,7 +36,7 @@ def test_carry_form_and_slot_form_both_verify_independently(case):
 
 @CASES
 def test_can_slot_member_is_byte_identical_to_the_standalone_carry_form(case):
-    # O8: "the carry-form and slot-form produce byte-identical records" --
+    # The acceptance criterion: "the carry-form and slot-form produce byte-identical records" --
     # the can-slot member ref must digest-match the standalone received()
     # capsule's own capsule_id exactly (can() referenced it, never re-minted).
     carry_form, slot_form, expected = _load(case)
