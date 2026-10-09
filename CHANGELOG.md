@@ -4,6 +4,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Changed — requires `checkpointed-local-log` 0.5
+
+The dependency is now `checkpointed-local-log>=0.5,<0.6`. CLL 0.5 has no default witness
+and does not use a built-in witness key. Bundle and disclosure verification now delegate
+log integrity checks directly to CLL, trusting only the caller's `trust_anchor` keys.
+The compatibility guard needed for CLL 0.4 is removed; no-key stamps remain `UNVERIFIED`.
+
 ## 0.9.0 — 2026-10-07
 
 ### Changed — agent-action-capsule floor raised to 0.7.0
@@ -61,12 +70,6 @@ The dependency is now `checkpointed-local-log>=0.4.1,<0.5`. cll 0.5 drops its de
 built-in witness key (a breaking change capsule-emit adopts in its own release), so a cll release
 can no longer change this package's behaviour under it.
 
-### Changed — requires `checkpointed-local-log` 0.5
-
-The dependency is now `checkpointed-local-log>=0.5,<0.6`: cll 0.5 has no default witness and no
-built-in witness key, so every verification path here (including `bundle.verify_bundle`, through
-cll's log check) trusts only the caller's keys without a guard of its own.
-
 ### Changed — BREAKING: no default witness, anchor or verify surface
 
 The library no longer sends anything to, or builds links for, a service its caller did not name.
@@ -92,8 +95,8 @@ The library no longer sends anything to, or builds links for, a service its call
   `status.compute_status()` takes `trust_anchor=` / `witness_directory=` (reported as
   `grade_keys`), and `capsule-emit status` takes `--witness-directory`; with no keys the latest
   checkpoint grades self-attested and says its receipts were not checked. `bundle.verify_bundle`
-  and `disclose.verify_disclosure` trust only `trust_anchor`'s keys (cll 0.5's log check has no
-  built-in key).
+  and `disclose.verify_disclosure` judge a stamp that cll's log check would verify under its own
+  built-in key as having no key: `UNVERIFIED` unless `trust_anchor` names it.
 - `capsule_emit.checkpoint` no longer re-exports `DEFAULT_TS_PUBLIC_KEY_PEM` or
   `DEFAULT_TS_PUBLIC_KEY_ID`.
 - **Permalinks have no default verify surface.** `permalink.DEFAULT_BASE_URL` is removed;

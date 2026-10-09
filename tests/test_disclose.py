@@ -764,12 +764,17 @@ def test_ADV_RUN2_verify_disclosure_rejects_forged_top_level_completeness(three_
     assert any("suppressed_fields" in e for e in errors3)
 
 
-def test_verify_disclosure_trusts_no_built_in_witness_key(three_record_ledger, stub_ts):
+def test_verify_disclosure_trusts_no_built_in_witness_key(three_record_ledger, stub_ts, monkeypatch):
     """No witness has a built-in key: with no key from the caller a stamp
     counts for nothing, so a checkpoint whose only other stamp does not verify
     fails, and the errors say the stamp had no key. With the caller's key,
     the stamp counts and the disclosure verifies."""
     ts_url, _received = stub_ts
+    import cll.checkpoint.emit as cll_emit
+
+    # If CLL ever reuses its legacy default pin, these checks must fail.
+    monkeypatch.setattr(cll_emit, "DEFAULT_TS_URL", ts_url, raising=False)
+    monkeypatch.setattr(cll_emit, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM, raising=False)
     ledger_path, caps, payloads = three_record_ledger
     cid = caps[0]["capsule_id"]
     d = disclose(

@@ -670,11 +670,16 @@ def test_checkpoint_times_are_whole_seconds_the_typescript_verifier_accepts(two_
         assert decoded is not None and decoded.timestamp == t
 
 
-def test_verify_bundle_trusts_no_built_in_witness_key(two_checkpoint_ledger, stub_ts):
+def test_verify_bundle_trusts_no_built_in_witness_key(two_checkpoint_ledger, stub_ts, monkeypatch):
     """No witness has a built-in key: a stamp is WITNESSED only when the
     caller supplies its key."""
 
     ts_url, _received = stub_ts
+    import cll.checkpoint.emit as cll_emit
+
+    # If CLL ever reuses its legacy default pin, these checks must fail.
+    monkeypatch.setattr(cll_emit, "DEFAULT_TS_URL", ts_url, raising=False)
+    monkeypatch.setattr(cll_emit, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM, raising=False)
     ledger_path, caps = two_checkpoint_ledger
     b = bundle(ledger_path, caps[0]["capsule_id"])
     assert [w.ts_url for w in b.checkpoint.witnesses] == [ts_url]

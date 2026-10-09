@@ -524,13 +524,16 @@ history *within this bundle* wasn't reordered/truncated) — never "no fork" /
 "not equivocated", since one offline bundle can never rule out a divergent
 history it doesn't see; that guarantee is the witness's and multi-witness
 config's job. It also checks witness-stamp authenticity
-(`checkpoint.verify_witness_stamp_offline` per `WitnessRecord`): a stamp
-from the pinned default
-witness (`DEFAULT_TS_PUBLIC_KEY_PEM`) is signature-verified with no network
-call and no caller setup; a stamp from any other Transparency Service, with
-no caller-supplied `ts_pubkey_pem`, verifies as a genuine receipt *shape*
-only and does not confer full trust — a checkpoint that claims witness
-stamps but has none that verify at all is fatal (`ok=False`).
+(`checkpoint.verify_witness_stamp_tristate` per `WitnessRecord`), using
+only the caller's `trust_anchor` mapping of witness URL to public key. A
+checkpoint-bound, structurally valid receipt with no supplied key is
+`UNVERIFIED`: it proves receipt shape, not the witness's identity, and is
+non-fatal by itself. Under a supplied key, a valid signature is `WITNESSED`;
+a bad signature, malformed receipt, or wrong checkpoint binding is `INVALID`.
+If any stamp is `INVALID` and none is `WITNESSED`, verification is fatal
+(`ok=False`). When an authentic stamp exists, other invalid stamps are
+reported as non-fatal notices. These checks are offline, with no built-in
+trusted witness key.
 
 `Bundle.to_dict()` / `Bundle.from_dict()` round-trip through plain JSON —
 the point of "standalone": a bundle survives being written to a file and
