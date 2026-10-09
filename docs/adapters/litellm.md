@@ -212,7 +212,7 @@ side effects while the loader still gets a live object.
 `config_file_path` — which is exactly what config load does — it first checks for
 a *file* at `<dirname(config.yaml)>/capsule_emit/adapters/litellm_listener.py`
 and only falls back to importing the installed package if that path does not
-exist. A stray `python/capsule_emit/` directory next to your `config.yaml` will shadow
+exist. A stray `capsule_emit/` directory next to your `config.yaml` will shadow
 the installed package silently.
 
 ### Configuration

@@ -46,7 +46,7 @@ jobs:
 
       - name: ruff
         working-directory: .
-        run: python -m ruff check --config python/pyproject.toml python .github examples commitment-conformance-vectors test-vectors
+        run: python -m ruff check --config python/pyproject.toml python .github examples commitment-conformance-vectors test-vectors docs skills rust
 
       - name: pytest
         run: python -m pytest -q

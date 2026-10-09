@@ -74,7 +74,7 @@ no artifact. Use `NeverRetained` only when non-retention is known, not as a fall
 for a failed lookup. `Purged` is created exclusively by `Purge`.
 
 `PutTx` and `GetTx` join a caller-owned transaction on the same database, allowing
-atomic artifact writes and application workflow/outbox updates. Roll back the
+atomic artifact writes and other application-owned SQL writes. Roll back the
 whole transaction on any error. No CLL append belongs inside this SQL transaction
 unless its backend explicitly supports that same transaction contract.
 

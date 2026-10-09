@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -19,6 +20,16 @@ def load(name, path):
 
 
 class ConsolidationTests(unittest.TestCase):
+    def test_python_readme_matches_root_with_relative_links(self):
+        root = (ROOT / "README.md").read_text()
+        root = root[:root.index("Language projects:")] + root[root.index("[![CI]"):]
+        root = re.sub(
+            r"\]\((docs/|rust/|TRANSLATION.md|ADOPT.md|LICENSE|NOTICE|examples/|test-vectors/|witnesses.json)",
+            r"](../\1", root,
+        )
+        root = root.replace("](python/capsule_emit/", "](capsule_emit/")
+        self.assertEqual(root, (ROOT / "python/README.md").read_text())
+
     def test_all_language_pitch_roots_and_source_exclusion(self):
         guard = load("messaging", ".github/messaging_guard.py")
         with tempfile.TemporaryDirectory() as directory:

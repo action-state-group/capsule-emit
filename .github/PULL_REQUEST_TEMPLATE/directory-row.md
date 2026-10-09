@@ -22,6 +22,6 @@
 - [ ] `since` is the date the service began issuing receipts at this endpoint (YYYY-MM-DD)
 - [ ] A receipt from `endpoint` verifies under the listed key
 - [ ] `python -m capsule_emit.witness_directory witnesses.json` prints `ok`
-- [ ] `pytest tests/test_witness_directory.py` passes
+- [ ] `pytest python/tests/test_witness_directory.py` passes
 - [ ] The row carries no rating, score, tier, or claim of compliance (the validator refuses unknown fields)
 - [ ] DCO sign-off: `git commit -s`

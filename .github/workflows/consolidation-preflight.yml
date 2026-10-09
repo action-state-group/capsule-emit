@@ -3,9 +3,7 @@
 name: Consolidation preflight
 
 on:
-  pull_request:
-  push:
-    branches: [codex/emit-language-roots]
+  workflow_dispatch:
 
 permissions:
   contents: read

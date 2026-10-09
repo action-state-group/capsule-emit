@@ -227,8 +227,7 @@ func PersistAndAppend(
 
 If application persistence succeeds but the CLL append fails, retry the append
 with the same identity. CLL append is idempotent and returns the original entry
-and timestamp. The application decides how to make that retry durable, for
-example with its own outbox.
+and timestamp. The application owns durable retries.
 
 Pass any `cll.EntryStore` implementation to this function. Backend selection,
 checkpointing, and witness delivery remain entirely in the CLL Go package; see

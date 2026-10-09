@@ -155,7 +155,7 @@ emitter = MCPCapsuleEmitter(operator="acme-co", developer="my-agent@v1")
 def write_order(vendor: str, total: float) -> dict: ...
 ```
 
-| Adapter | What it wraps | [`ConnectorPort`](capsule_emit/connector.py) |
+| Adapter | What it wraps | [`ConnectorPort`](python/capsule_emit/connector.py) |
 |---------|---------------|:---:|
 | **MCP** | Model Context Protocol tool endpoints — any Python callable, decorator-based | ✅ `decorator` |
 | **Google ADK** | Google Agent Development Kit tool calls, one capsule per completed tool invocation | — |

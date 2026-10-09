@@ -16,6 +16,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Consolidation regression tests
+        run: python -m unittest discover -s .github/tests -v
+
       - name: messaging guard self-test
         run: python .github/messaging_guard.py --self-test
 
