@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Keep this filename: it is part of the existing PyPI Trusted Publisher identity.
+# PyPI Trusted Publisher must name publish-python.yml before this rename merges.
 name: Publish Python package
 
 on:
