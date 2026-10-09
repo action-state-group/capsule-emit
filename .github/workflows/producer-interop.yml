@@ -1,0 +1,74 @@
+name: Producer interoperability
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: producer-interop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  interoperability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AAC_REPO: ${{ github.workspace }}/agent-action-capsule
+      CAPSULE_EMIT_TS_ROOT: ${{ github.workspace }}/ts
+      CAPSULE_EMIT_GO_ROOT: ${{ github.workspace }}/go
+      CLL_GO_ROOT: ${{ github.workspace }}/checkpointed-local-log/go
+      CLL_TS_ROOT: ${{ github.workspace }}/checkpointed-local-log/ts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the AAC corpus matching the Go dependency
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: action-state-group/agent-action-capsule
+          ref: df3af95221da3cd77792a7fd1c24c1db9ce88376
+          path: agent-action-capsule
+      - name: Check out consolidated CLL
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: action-state-group/checkpointed-local-log
+          ref: 77d453079b1964220ac7e66a90b0d6a0e83d2691
+          path: checkpointed-local-log
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ts/package-lock.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install Python emit and CLL verifiers
+        run: |
+          python -m pip install -e ./agent-action-capsule/python
+          python -m pip install -e ./python
+          python -m pip install -e ./checkpointed-local-log/python
+      - name: Generate live Python vectors
+        run: python go/testdata/capsule-emit/format4-interop/scripts/generate_vectors.py
+      - name: Verify Python vectors with Go
+        working-directory: go
+        run: scripts/check-format4-interop.sh
+      - name: Install TypeScript producer
+        working-directory: ts
+        run: npm ci
+      - name: Verify Python vectors with TypeScript
+        working-directory: ts
+        run: npm run test:interop
+      - name: Build TypeScript producer and CLL
+        run: |
+          npm --prefix ts run build
+          npm --prefix checkpointed-local-log/ts ci
+          npm --prefix checkpointed-local-log/ts run build
+      - name: Verify both producers with both CLL runners
+        working-directory: go
+        run: scripts/check-producer-cll-interop.sh

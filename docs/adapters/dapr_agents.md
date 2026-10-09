@@ -367,7 +367,7 @@ receivers that do not recognise it MUST ignore it (Class-1 extensibility).
 ## Limitations
 
 The following are open questions for Dapr Agents maintainers.  See the adapter
-source (`capsule_emit/adapters/dapr_agents.py`) for the full numbered list.
+source (`python/capsule_emit/adapters/dapr_agents.py`) for the full numbered list.
 Re-verified 2026-07-30 against `dapr-agents==1.0.5` (see drift note below):
 
 - **L1 Callback surface — PARTIALLY RESOLVED as of dapr-agents ≥1.0.x.**

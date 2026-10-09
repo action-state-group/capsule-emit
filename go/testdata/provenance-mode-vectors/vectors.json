@@ -1,0 +1,31 @@
+{
+  "spec": "draft-mih-scitt-agent-action-capsule-05",
+  "count": 5,
+  "cases": [
+    {
+      "name": "pos-provenance-mode-backfilled",
+      "kind": "positive",
+      "description": "a well-formed backfilled record: provenance_mode.mode='backfilled' with all four REQUIRED companion fields present and well-formed, time_rung absent (implies self_attested) -> verifies clean; derived.provenance_mode='backfilled' and derived.provenance_time_rung='self_attested' are always reported (check 9)."
+    },
+    {
+      "name": "neg-provenance-mode-time-rung-overclaim",
+      "kind": "negative",
+      "description": "provenance_mode.time_rung='witnessed' claimed with no references[] entry citing citation_purpose='corroborates_source_time' -> provenance_time_rung_overclaim (check 9, gating \u2014 unlike the informational overclaim treatment check 7 gives attestation_mode/ledger_mode/cross_party_rung, this profile treats an unsupported provenance_mode time claim as a falsifiable dishonesty claim); derived.provenance_time_rung stays 'self_attested', the rederived value, never the claim."
+    },
+    {
+      "name": "neg-provenance-mode-backfilled-missing-fields",
+      "kind": "negative",
+      "description": "provenance_mode.mode='backfilled' with none of the four REQUIRED companion fields (source_ref, source_asserted_at, import_batch, imported_at) present -> four provenance_mode_missing_required_field failures (check 9)."
+    },
+    {
+      "name": "neg-provenance-mode-time-laundering",
+      "kind": "negative",
+      "description": "provenance_mode.imported_at equals source_asserted_at on a backfilled record -- the shape a laundering producer would construct to make an import look contemporaneous -> provenance_time_laundering_shape (check 9, gating); equality is never treated as corroboration, regardless of any other assurance value the record carries."
+    },
+    {
+      "name": "pos-chain-duplicates-collapsed-once",
+      "kind": "store",
+      "description": "a backfilled import of the same logical event a contemporaneous capsule already recorded, chained to it via chain.relation='duplicates': both capsules verify ok; the store-level pass reports duplicate_collapsed (info, check 9) on the backfilled member -- verifiers and downstream evidence evaluators count the pair once, the contemporaneous record governing, never twice."
+    }
+  ]
+}

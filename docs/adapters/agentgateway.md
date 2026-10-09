@@ -318,7 +318,7 @@ a per-call identifier in the proto would make them paired.
 
 ## Integration surface
 
-capsule-emit implements the `agentgateway.dev.ext_mcp.ExtMcp` gRPC service, defined in agentgateway's `ext_mcp.proto`. The Python stubs (`capsule_emit/adapters/ext_mcp_pb2.py`) are committed to the repo and require only `grpcio>=1.60` at runtime.
+capsule-emit implements the `agentgateway.dev.ext_mcp.ExtMcp` gRPC service, defined in agentgateway's `ext_mcp.proto`. The Python stubs (`python/capsule_emit/adapters/ext_mcp_pb2.py`) are committed to the repo and require only `grpcio>=1.60` at runtime.
 
 ## Running it against a real gateway
 

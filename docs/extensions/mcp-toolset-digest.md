@@ -78,7 +78,7 @@ list of tool descriptors for any other agent-tool framework):
    introduced for this extension.
 
 Reference implementation: `_project_tool`, `_project_toolset` in
-[`capsule_emit/adapters/mcp.py`](../../capsule_emit/adapters/mcp.py).
+[`python/capsule_emit/adapters/mcp.py`](../../python/capsule_emit/adapters/mcp.py).
 
 **Known limitation:** a JSON Schema numeric field expressed as a float (e.g.
 `"minimum": 0.5`) fails the digest with `FloatInDigestError` — the same fail-closed rule the

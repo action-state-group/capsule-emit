@@ -15,3 +15,5 @@ build/
 # Local secrets: never commit an env file.
 .env
 .env.*
+
+.venv/

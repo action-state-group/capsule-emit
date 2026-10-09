@@ -12,7 +12,7 @@ kept out of the shared CI dependency surface, matching
 Run in the pinned venv (see ``README.md``):
 
     python -m venv .venv && source .venv/bin/activate
-    pip install -r examples/a2a-task-evidence/requirements.txt -e .
+    pip install -r examples/a2a-task-evidence/requirements.txt -e ./python
     pytest examples/a2a-task-evidence/test_flow.py -v
 """
 from __future__ import annotations

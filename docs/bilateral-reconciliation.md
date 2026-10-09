@@ -39,7 +39,7 @@ the fold that does that.
   is the state a spoofed tool result (or any post-hoc edit to what a
   transcript shows) produces once reconciled against the harness's sealed
   record of what actually executed. See
-  `tests/test_reconciliation.py::test_spoofed_tool_result_reconciles_as_contradicted`
+  `python/tests/test_reconciliation.py::test_spoofed_tool_result_reconciles_as_contradicted`
   for the vector and the two mutants recorded alongside it.
 
 ## What a fold establishes, and what it does not

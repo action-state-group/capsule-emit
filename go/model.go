@@ -1,0 +1,167 @@
+package emit
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// Input contains the application-owned values needed to build one Capsule.
+// ActionID and Timestamp are supplied explicitly so the library never invents
+// business identity or wall-clock semantics. Timestamp is normalized to
+// microsecond precision, matching capsule-emit's UTC datetime wire form.
+type Input struct {
+	ActionID   string
+	ActionType ActionType
+	Operator   string
+	Developer  string
+	Timestamp  time.Time
+	EpochID    string
+	Domain     Domain
+	Provenance Provenance
+
+	Disposition    *Disposition
+	Effect         *Effect
+	Chain          *Chain
+	References     []Reference
+	Model          *Model
+	Compute        *ComputeAttestation
+	compute        *computeAttestation
+	ProvenanceMode *ProvenanceMode
+	Extensions     []Extension
+
+	// specVersion overrides SpecVersion for in-package replay of released -04
+	// vectors only. No exported API sets it: every Capsule a caller builds
+	// carries SpecVersion.
+	specVersion string
+}
+
+// Extension is one additional top-level Capsule member that a companion
+// document defines (for example a settlement record's `settlement` member).
+// Value is JSON; it participates in capsule_id like every other member. Build
+// checks only that Name is not a base-profile member and that Value is
+// well-formed, float-free JSON. What the member means, and whether it is
+// valid under its own document, is the caller's to check.
+type Extension struct {
+	Name  string
+	Value json.RawMessage
+}
+
+// ProvenanceMode marks a Capsule as a backfilled import of a pre-existing
+// external event, rather than a contemporaneous observation (draft -05
+// §5.3(bis), a MODE on the ordinary Capsule -- never a distinct record type,
+// and a different key from the unrelated Input.Provenance dedup-rank
+// signal above). Mode "backfilled" REQUIRES the four companion fields;
+// TimeRung is meaningful only when Mode is "backfilled".
+type ProvenanceMode struct {
+	Mode             ProvenanceModeValue
+	SourceRef        *Reference
+	SourceAssertedAt string
+	ImportBatch      string
+	ImportedAt       string
+	TimeRung         TimeRung
+}
+
+// Model identifies the provider and model that performed the recorded work.
+// Either field may be omitted when the application did not observe it.
+type Model struct {
+	Provider string
+	ModelID  string
+}
+
+// ComputeAttestation binds the model invocation to its input, output, and
+// runtime. Digests are AAC JSON-DIGEST values produced by DigestJSON.
+type ComputeAttestation struct {
+	AgentInputDigest  string
+	AgentOutputDigest string
+	Runtime           string
+}
+
+// SealInput is the application-facing one-call producer API. For a regular
+// Capsule, non-nil Payload is digest-committed as agent_input_digest and
+// non-nil AgentOutput is digest-committed as agent_output_digest. Nil includes
+// typed nil pointer, map, and slice values. Use a non-nil
+// json.RawMessage("null") to commit explicit JSON null. For a
+// composition, set Members to values returned by Who, Can, Did, or Audit;
+// Payload and AgentOutput must then be nil.
+type SealInput struct {
+	Capsule     Input
+	Payload     any
+	AgentOutput any
+	Model       *Model
+	Runtime     string
+	Members     []SlotMember
+	Identity    SigningIdentity
+}
+
+type digestReference struct {
+	Type      string
+	DigestAlg string
+	Digest    string
+	Slot      string
+}
+
+type computeAttestation struct {
+	CarriedArtifact    *digestReference
+	CarriedInputDigest string
+	ComposedMembers    []digestReference
+}
+
+// Disposition records how a decision was disposed.
+type Disposition struct {
+	Decision      Decision
+	Approver      Approver
+	HumanDisposed bool
+	VerdictClass  VerdictClass
+	ReasonDigest  string
+}
+
+// Effect describes an external side effect and binds request and response JSON by digest.
+type Effect struct {
+	Type                 string
+	Status               EffectStatus
+	IrreversibilityClass IrreversibilityClass
+	EffectAttestation    EffectAttestation
+	RequestDigest        string
+	ResponseDigest       string
+	ExternalRef          string
+}
+
+// Chain links a format-4 Capsule to one parent Capsule.
+type Chain struct {
+	ParentCapsuleID string
+	Relation        ChainRelation
+}
+
+// Reference cites an external artifact under its own CPB digest context
+// (draft-04 §5.5.5). Digest representation is defined by Type, not by AAC.
+// LogCoordinates, when present, carries log_id, leaf_index and inclusion_proof
+// as an opaque recorded claim. The producer does not verify that proof.
+type Reference struct {
+	Type            string
+	DigestAlg       string
+	Digest          string
+	CitationPurpose string
+	LogCoordinates  map[string]any
+}
+
+// BuiltPayload is a validated signature-free format-4 Capsule.
+type BuiltPayload struct {
+	CapsuleID string
+	Value     map[string]any
+	JSON      []byte
+}
+
+// SlotMember binds an existing built or sealed Capsule to one composition
+// role. Valid values come from Who, Can, Did, or Audit; its zero value is
+// rejected.
+type SlotMember struct {
+	slot   string
+	member compositionCapsule
+}
+
+// Result contains a signature-free Capsule and one Producer Envelope.
+type Result struct {
+	CapsuleID string
+	Payload   []byte
+	Envelope  []byte
+}

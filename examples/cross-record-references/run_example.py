@@ -22,7 +22,7 @@ import tempfile
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(_ROOT))
+sys.path.insert(0, str(_ROOT / "python"))
 
 from capsule_emit import ReferenceEntry, did, seal, who  # noqa: E402
 

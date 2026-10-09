@@ -10,7 +10,7 @@ They are distributed there under the BSD 3-Clause License, reproduced in `LICENS
 `README.md`, `manifest.json` and `SHA256SUMS` were not copied; `SHA256SUMS` here is ours, over
 `cases.json`, `registry.json` and `LICENSE`.
 
-`tests/test_settlement_records_vectors.py` runs `capsule_emit.settlement.verify_settlements`
+`python/tests/test_settlement_records_vectors.py` runs `capsule_emit.settlement.verify_settlements`
 over every case and requires the derived states, failures and findings to equal
 each case's `expect`. `SHA256SUMS` pins the copied bytes; to update, copy both files from
 a newer commit, update the commit above and regenerate `SHA256SUMS`.

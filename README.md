@@ -1,5 +1,10 @@
 # capsule-emit
 
+Language projects: [Python](python/) · [Go](go/) · [TypeScript](ts/) · [Rust](rust/).
+See [consolidation and release boundaries](docs/consolidation.md).
+For a local Python checkout, install with `pip install -e './python[dev]'`;
+run Python tests from `python/`.
+
 [![CI](https://github.com/action-state-group/capsule-emit/actions/workflows/python.yml/badge.svg)](https://github.com/action-state-group/capsule-emit/actions/workflows/python.yml)
 
 > **New here? → [docs/start-here.md](docs/start-here.md)** — the one-page front door.
@@ -150,7 +155,7 @@ emitter = MCPCapsuleEmitter(operator="acme-co", developer="my-agent@v1")
 def write_order(vendor: str, total: float) -> dict: ...
 ```
 
-| Adapter | What it wraps | [`ConnectorPort`](capsule_emit/connector.py) |
+| Adapter | What it wraps | [`ConnectorPort`](python/capsule_emit/connector.py) |
 |---------|---------------|:---:|
 | **MCP** | Model Context Protocol tool endpoints — any Python callable, decorator-based | ✅ `decorator` |
 | **Google ADK** | Google Agent Development Kit tool calls, one capsule per completed tool invocation | — |

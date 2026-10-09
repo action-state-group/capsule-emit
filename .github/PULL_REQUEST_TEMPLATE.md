@@ -4,7 +4,7 @@
 
 ## Type of change
 
-- [ ] Core emission (`capsule_emit/core.py`)
+- [ ] Core emission (`python/capsule_emit/core.py`)
 - [ ] Adapter (mcp / langchain / crewai / hermes)
 - [ ] Documentation / examples
 - [ ] Tests

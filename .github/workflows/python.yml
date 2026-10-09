@@ -6,6 +6,10 @@ on:
     branches: [main]
   pull_request:
 
+defaults:
+  run:
+    working-directory: python
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -41,7 +45,8 @@ jobs:
           print(a.__file__, a.DEFAULT_SPEC_VERSION)"
 
       - name: ruff
-        run: python -m ruff check .
+        working-directory: .
+        run: python -m ruff check --config python/pyproject.toml python .github examples commitment-conformance-vectors test-vectors docs skills rust
 
       - name: pytest
         run: python -m pytest -q
@@ -49,7 +54,7 @@ jobs:
       # The leak-lint tests live next to the lint in .github/, outside testpaths. They use
       # synthetic terms only, so this pull_request job needs no secret.
       - name: leak-lint tests
-        run: python -m pytest -q .github/test_leak_lint.py
+        run: python -m pytest -q ../.github/test_leak_lint.py
 
   # seal_eval_log drives a real inspect_ai eval; its tests importorskip the
   # package, so they only run where the inspect-ai extra is installed. This

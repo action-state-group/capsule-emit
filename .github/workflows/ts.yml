@@ -1,0 +1,53 @@
+name: TypeScript
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ts-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: emit/ts
+    env:
+      AAC_ROOT: ${{ github.workspace }}/agent-action-capsule
+      CAPSULE_EMIT_GO_ROOT: ../go
+      ARTIFACT_MYSQL_TEST: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: emit
+      - name: Read exact AAC corpus pin
+        id: aac
+        run: |
+          commit="$(sed -n 's/^export const AAC_COMMIT = "\([0-9a-f]\{40\}\)";$/\1/p' test/aac-pin.ts)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: action-state-group/agent-action-capsule
+          ref: ${{ steps.aac.outputs.commit }}
+          path: agent-action-capsule
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: emit/ts/package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Unit, frozen interoperability and real MySQL 8.4 tests
+        run: npm test
+      - run: npm run build
+      - name: Packed external consumer and optional-driver isolation
+        run: node scripts/check-packed-consumer.mjs

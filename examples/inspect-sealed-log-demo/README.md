@@ -204,7 +204,7 @@ Run the viewer locally from the `#47` branch instead:
 ```bash
 git clone https://github.com/action-state-group/scitt-cose
 cd scitt-cose && git fetch origin pull/47/head:pr-47 && git checkout pr-47
-pip install -e ".[serve]"
+pip install -e "./python[serve]"
 uvicorn hosted_profiles.hosted:make_asgi_app --factory --port 8080
 ```
 

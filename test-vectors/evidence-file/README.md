@@ -13,7 +13,7 @@ Each file carries:
 - a range proof over the log as it stood just after the record (`range_root`, size 1), bound to the
   checkpoint (size 63) by a consistency proof (`completeness_certificate.consistency_proof`).
 
-`tests/test_evidence_file_vectors.py` runs `check_evidence_file` on both:
+`python/tests/test_evidence_file_vectors.py` runs `check_evidence_file` on both:
 
 - **Checks today:** the record, its producer signature, citation closure, and the signed checkpoint.
   `checkpointed-local-log`'s Python verifier accepts this producer's COSE checkpoint.

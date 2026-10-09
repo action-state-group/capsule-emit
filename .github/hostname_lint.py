@@ -22,15 +22,15 @@ Exit 0 = clean; 1 = stale reference(s) found (prints file:line).
 """
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 DISALLOWED = re.compile(r"\b(verify|witness)\.actionstate\.[a-z]+", re.IGNORECASE)
 SCAN_SUFFIXES = (
     ".html", ".py", ".go", ".md", ".rst", ".txt", ".xml", ".toml", ".cfg",
-    ".yml", ".yaml", ".json",
+    ".yml", ".yaml", ".json", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs",
 )
 
 
@@ -53,8 +53,13 @@ def _load_allowlist(root: Path) -> set[str]:
 
 
 def main() -> int:
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
-    allow = _load_allowlist(root)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("root", nargs="?", type=Path, default=Path("."))
+    parser.add_argument("--allowlist-root", type=Path,
+                        help="Use the destination repository's approved exemptions during import preflight")
+    args = parser.parse_args()
+    root = args.root
+    allow = _load_allowlist(args.allowlist_root or root)
     hits: list[str] = []
     for f in _tracked_files(root):
         if f.suffix not in SCAN_SUFFIXES:

@@ -29,7 +29,7 @@ from decimal import Decimal
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(_ROOT))
+sys.path.insert(0, str(_ROOT / "python"))
 
 from a2a_sandbox import (  # noqa: E402
     A2ATask,

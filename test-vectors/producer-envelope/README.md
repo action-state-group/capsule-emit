@@ -44,7 +44,7 @@ go run test-vectors/producer-envelope/scripts/verify_with_go.go \
     test-vectors/producer-envelope/valid/envelope.cose
 ```
 
-`tests/test_producer_envelope_vectors.py` checks the checked-in corpus
+`python/tests/test_producer_envelope_vectors.py` checks the checked-in corpus
 against the Python reference verifier on every test run (no Go dependency
 needed in CI); the Go cross-check above was run manually against
 `agent-action-capsule` main to confirm this exact corpus before it was

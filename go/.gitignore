@@ -1,0 +1,8 @@
+/coverage.out
+/.idea
+__pycache__/
+*.py[cod]
+
+# Local secrets: never commit an env file.
+.env
+.env.*

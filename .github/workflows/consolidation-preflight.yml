@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# Incoming trees are inert data: no incoming script, build, action or install runs.
+name: Consolidation preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  incoming-trees:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: action-state-group/capsule-emit-go
+          ref: 415c38f21449941c43c4729f23da8a7ebbae04ac
+          path: incoming/go
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: action-state-group/capsule-emit-ts
+          ref: e73735ba3ec1029c5fba0544c2f6a421f7176621
+          path: incoming/ts
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Scanner self-tests and migration regression tests
+        run: |
+          python .github/messaging_guard.py --self-test
+          python .github/neutrality_scan.py --self-test
+          python -m unittest discover -s .github/tests -v
+      - name: Scan incoming pitch and source using destination policy
+        env:
+          NEUTRALITY_TERMS: ${{ secrets.NEUTRALITY_TERMS }}
+          NEUTRALITY_REVEAL: "false"
+        run: |
+          for source in incoming/go incoming/ts; do
+            python .github/hostname_lint.py "$source" --allowlist-root .
+            python .github/messaging_guard.py "$source"
+            python .github/neutrality_scan.py "$source"
+          done
+          python .github/neutrality_scan.py .
