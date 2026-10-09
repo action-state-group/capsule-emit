@@ -87,9 +87,7 @@ def verify_bundle(
     is an optional caller-supplied mapping
     of ``ts_url -> pubkey_pem`` — the Transparency Services the caller
     trusts, and the only keys a stamp is verified under: a stamp with no key
-    here reads UNVERIFIED at best. (The log check underneath,
-    ``cll.checkpoint.bundle``, pins one built-in key of its own; such a stamp
-    is checked here as if it had none.)
+    here reads UNVERIFIED at best (no witness has a built-in key).
     Confirms every link the two-sided append bracket
     depends on:
 
@@ -159,36 +157,5 @@ def verify_bundle(
     except Exception as exc:  # noqa: BLE001 — pure verifier, never raises
         return False, step1_errors + [f"unexpected error: {exc}"]
 
-    unpinned, renamed = _without_built_in_pin(b, trust_anchor)
-    log_ok, log_messages = verify_bundle_log_integrity(unpinned, trust_anchor=trust_anchor)
-    for placeholder, url in renamed.items():
-        log_messages = [
-            m.replace(f"witnessed by {placeholder}, pin not supplied", f"witnessed by {url}, no key supplied by the caller")
-            .replace(placeholder, url)
-            for m in log_messages
-        ]
+    log_ok, log_messages = verify_bundle_log_integrity(b, trust_anchor=trust_anchor)
     return step1_ok and log_ok, step1_errors + log_messages
-
-
-def _without_built_in_pin(b: Bundle, trust_anchor: dict | None) -> tuple[Bundle, dict[str, str]]:
-    """``b`` with every witness stamp that cll's log check would verify under
-    its own built-in key (a stamp at that key's URL, with no key for it in
-    ``trust_anchor``) given a placeholder URL, so it is judged with no key:
-    UNVERIFIED at best, never WITNESSED. A verifier here trusts only the keys
-    its caller supplies. Returns the copy and ``{placeholder: real URL}``."""
-    import dataclasses
-
-    from cll.checkpoint import emit as _emit
-
-    anchors = trust_anchor or {}
-    renamed: dict[str, str] = {}
-    witnesses = []
-    for i, w in enumerate(b.checkpoint.witnesses):
-        if w.ts_url == _emit.DEFAULT_TS_URL and w.ts_url not in anchors:
-            placeholder = f"(no key supplied for witness #{i})"
-            renamed[placeholder] = w.ts_url
-            w = dataclasses.replace(w, ts_url=placeholder)
-        witnesses.append(w)
-    if not renamed:
-        return b, {}
-    return dataclasses.replace(b, checkpoint=dataclasses.replace(b.checkpoint, witnesses=witnesses)), renamed

@@ -34,7 +34,6 @@ from _stub_receipt import (
 )
 
 from capsule_emit import ledger, seal, status, witness
-from capsule_emit.checkpoint import emit as checkpoint_emit_mod
 
 # ---------------------------------------------------------------------------
 # Hermetic stub Transparency Service -- same shape as the other witness test
@@ -199,9 +198,7 @@ def test_restart_mid_outage_loses_nothing(tmp_path, dead_ts, monkeypatch):
     # so the no-key grade() read path
     # signature-verifies the backfilled stamp instead of merely structurally
     # validating it.
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", dead_url)
     monkeypatch.setenv("CAPSULE_WITNESS_URL", dead_url)
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
 
     for i in range(2):
         seal(None, action=f"action-{i}", operator="acme", anchor=False,
@@ -297,9 +294,7 @@ def test_partial_multi_witness_one_down_does_not_block_the_other(tmp_path, stub_
     ledger_path = tmp_path / "ledger.jsonl"
     # Simulate that this hermetic stub IS the pinned default witness so the
     # no-key grade() read path signature-verifies the live stamp.
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", live_url)
     monkeypatch.setenv("CAPSULE_WITNESS_URL", live_url)
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
 
     for i in range(2):
         seal(None, action=f"action-{i}", operator="acme", anchor=False,
@@ -433,9 +428,7 @@ def test_status_shows_backlog_during_outage_and_clears_it_after_retry(tmp_path, 
     ledger_path = tmp_path / "ledger.jsonl"
     # Simulate that this hermetic stub IS the pinned default witness so the
     # no-key grade() read path signature-verifies the backfilled stamp.
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_URL", url)
     monkeypatch.setenv("CAPSULE_WITNESS_URL", url)
-    monkeypatch.setattr(checkpoint_emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM)
 
     for i in range(2):
         seal(None, action=f"action-{i}", operator="acme", anchor=False,

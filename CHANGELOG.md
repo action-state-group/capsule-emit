@@ -4,6 +4,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+### Changed — requires `checkpointed-local-log` 0.5
+
+The dependency is now `checkpointed-local-log>=0.5,<0.6`. CLL 0.5 has no default witness
+and does not use a built-in witness key. Bundle and disclosure verification now delegate
+log integrity checks directly to CLL, trusting only the caller's `trust_anchor` keys.
+The compatibility guard needed for CLL 0.4 is removed; no-key stamps remain `UNVERIFIED`.
+
 ## 0.9.0 — 2026-10-07
 
 ### Changed — agent-action-capsule floor raised to 0.7.0

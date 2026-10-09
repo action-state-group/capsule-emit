@@ -51,18 +51,6 @@ def _test_ts_public_key_pem() -> bytes:
     )
 
 
-def _pin_test_key_as_default(monkeypatch) -> None:
-    """Simulate that ``DEFAULT_TS_URL`` is
-    pinned to this file's fixed test keypair, so a genuine ``WitnessRecord``
-    built with ``ts_url=DEFAULT_TS_URL`` and signed with
-    ``_TEST_TS_PRIVATE_KEY_PEM`` auto-verifies via the DEFAULT (no
-    ``ts_pubkey_pem``) read path -- exactly the common-case guarantee the
-    pin exists to provide. monkeypatch reverts per test."""
-    from capsule_emit.checkpoint import emit as emit_mod
-
-    monkeypatch.setattr(emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", _test_ts_public_key_pem())
-
-
 class HmacSigner:
     """A minimal Signer for tests: HMAC-SHA256 over a fixed secret."""
 
@@ -273,12 +261,11 @@ def test_grade_is_self_attested_with_no_witnesses():
 
 
 def test_grade_is_witnessed_once_a_single_stamp_lands(monkeypatch):
-    _pin_test_key_as_default(monkeypatch)
     mmr = _mmr_with(5)
     cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
                           timestamp="2026-08-21T00:00:00Z")
     cp.witnesses.append(_genuine_witness_record(cp, DEFAULT_TS_URL))
-    assert cp.grade() == Grade.WITNESSED
+    assert cp.grade(ts_pubkey_pem=_test_ts_public_key_pem()) == Grade.WITNESSED
 
 
 def test_grade_is_any_of_not_all_of_across_multiple_witnesses(monkeypatch):
@@ -286,14 +273,13 @@ def test_grade_is_any_of_not_all_of_across_multiple_witnesses(monkeypatch):
     # flips the grade; a second, independently-operated (here: unpinned,
     # shape-valid-but-identity-unverified -- item D) witness compounds
     # independence without gating the grade back down.
-    _pin_test_key_as_default(monkeypatch)
     mmr = _mmr_with(5)
     cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
                           timestamp="2026-08-21T00:00:00Z")
     cp.witnesses.append(_genuine_witness_record(cp, DEFAULT_TS_URL))
-    assert cp.grade() == Grade.WITNESSED
+    assert cp.grade(ts_pubkey_pem=_test_ts_public_key_pem()) == Grade.WITNESSED
     cp.witnesses.append(_genuine_witness_record(cp, "https://witness-b.example"))
-    assert cp.grade() == Grade.WITNESSED
+    assert cp.grade(ts_pubkey_pem=_test_ts_public_key_pem()) == Grade.WITNESSED
 
 
 def test_grade_rejects_a_hand_fabricated_witness_record():
@@ -312,13 +298,12 @@ def test_grade_any_of_one_genuine_one_forged_still_witnessed(monkeypatch):
     """Any-of holds for authenticity too: one genuine, identity-verified
     stamp is enough even alongside a forged one appended into the same
     list."""
-    _pin_test_key_as_default(monkeypatch)
     mmr = _mmr_with(5)
     cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a",
                           timestamp="2026-08-21T00:00:00Z")
     cp.witnesses.append(_genuine_witness_record(cp, DEFAULT_TS_URL))
     cp.witnesses.append(_forged_witness_record())
-    assert cp.grade() == Grade.WITNESSED
+    assert cp.grade(ts_pubkey_pem=_test_ts_public_key_pem()) == Grade.WITNESSED
 
 
 # -- verify_witness_stamp_offline: each sub-check in isolation --------------
@@ -434,40 +419,39 @@ def test_verify_witness_stamp_tristate_garbage_receipt_is_invalid_even_unpinned(
     assert verdict is StampVerdict.INVALID
 
 
-def test_verify_witness_stamp_offline_auto_pins_default_witness_url(monkeypatch):
-    """The DEFAULT (no ``ts_pubkey_pem``) read path auto-verifies a genuine
-    stamp from the pinned default witness -- the common case gets the full
-    identity-bound guarantee with no caller setup."""
-    _pin_test_key_as_default(monkeypatch)
+def test_no_witness_has_a_built_in_key():
+    """A stamp is trusted only under a key the caller supplies -- whatever its
+    URL, including cll's deprecated DEFAULT_TS_URL."""
+    from capsule_emit.checkpoint.emit import StampVerdict, verify_witness_stamp_tristate
+
     cp = _cp_for_stamp_tests()
     genuine = _genuine_witness_record(cp, DEFAULT_TS_URL)
-    ok, errors = verify_witness_stamp_offline(cp, genuine)
-    assert ok is True
-    assert errors == []
+    ok, _errors = verify_witness_stamp_offline(cp, genuine)
+    assert ok is False
+    verdict, _errors = verify_witness_stamp_tristate(cp, genuine)
+    assert verdict is StampVerdict.UNVERIFIED
+    cp.witnesses.append(genuine)
+    assert cp.grade() == Grade.SELF_ATTESTED
+    assert cp.grade(ts_pubkey_pem=_test_ts_public_key_pem()) == Grade.WITNESSED
+    ok, errors = verify_witness_stamp_offline(cp, genuine, ts_pubkey_pem=_test_ts_public_key_pem())
+    assert ok is True, errors
 
-
-def test_verify_witness_stamp_offline_default_url_wrong_pinned_key_fails_closed(monkeypatch):
-    """A stamp claiming ``ts_url == DEFAULT_TS_URL`` but signed with a key
-    other than the pinned one must fail -- the pin is keyed to a fixed
-    constant, never trusted just because a ``WitnessRecord`` claims the
-    right URL. Also the sophisticated-forger shape one level up from
-    attack45's garbage-bytes forger: real receipt, correct entry_hash,
-    wrong (attacker's) key."""
-    _pin_test_key_as_default(monkeypatch)
+def test_verify_witness_stamp_offline_wrong_supplied_key_fails_closed():
+    """A stamp checked under a key other than the one that signed it fails,
+    whatever URL it claims (here the deprecated DEFAULT_TS_URL). The
+    sophisticated-forger shape one level up from attack45's garbage-bytes
+    forger: real receipt, correct entry_hash, wrong key."""
     cp = _cp_for_stamp_tests()
     genuine = _genuine_witness_record(cp, DEFAULT_TS_URL)  # signed with _TEST_TS_PRIVATE_KEY_PEM
 
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-    from capsule_emit.checkpoint import emit as emit_mod
-
-    attacker_pubkey_pem = Ed25519PrivateKey.generate().public_key().public_bytes(
+    other_pubkey_pem = Ed25519PrivateKey.generate().public_key().public_bytes(
         Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
     )
-    monkeypatch.setattr(emit_mod, "DEFAULT_TS_PUBLIC_KEY_PEM", attacker_pubkey_pem)
 
-    ok, errors = verify_witness_stamp_offline(cp, genuine)
+    ok, errors = verify_witness_stamp_offline(cp, genuine, ts_pubkey_pem=other_pubkey_pem)
     assert ok is False
     assert errors
 
@@ -639,7 +623,9 @@ def test_default_ts_url_is_the_witness_host():
 _FAKE_COSE_BYTES = b"\xd2\x84\xa0\xa0\xf6\xa0"  # not a valid COSE_Sign1 -- opaque bytes are enough here
 
 
-def test_register_checkpoint_default_url_dispatches_to_anchor_host_today(monkeypatch):
+def test_register_checkpoint_sends_to_the_url_given_verbatim(monkeypatch):
+    """There is no default witness and no host alias: the request goes to
+    exactly the URL the caller passes, recorded as given."""
     from capsule_emit.checkpoint import emit as emit_mod
 
     captured = {}
@@ -660,13 +646,10 @@ def test_register_checkpoint_default_url_dispatches_to_anchor_host_today(monkeyp
 
     monkeypatch.setattr(emit_mod.urllib.request, "urlopen", fake_urlopen)
 
-    witness_record = emit_mod.register_checkpoint(_FAKE_COSE_BYTES)  # default ts_url
+    public = "https://witness.agentactioncapsule.org"
+    witness_record = emit_mod.register_checkpoint(_FAKE_COSE_BYTES, public)
 
-    assert captured["full_url"] == "https://anchor.agentactioncapsule.org/checkpoints", (
-        "the default (domain-mapping-pending) witness URL must still dispatch "
-        "to the anchor host's /checkpoints route today (same deployment, "
-        "single-host ruling), or registration would silently start failing"
-    )
+    assert captured["full_url"] == "https://witness.agentactioncapsule.org/checkpoints"
     assert captured["body"] == _FAKE_COSE_BYTES, (
         "the COSE-wire checkpoint bytes must be sent verbatim as the request "
         "body to /checkpoints, never re-encoded as JSON"
@@ -674,10 +657,9 @@ def test_register_checkpoint_default_url_dispatches_to_anchor_host_today(monkeyp
     from capsule_emit.checkpoint.cose_wire import CLL_CHECKPOINT_CONTENT_TYPE
 
     assert captured["content_type"] == CLL_CHECKPOINT_CONTENT_TYPE
-    assert witness_record.ts_url == DEFAULT_TS_URL == "https://witness.agentactioncapsule.org", (
-        "the WitnessRecord must record the semantic witness URL, not the "
-        "host the request was actually dispatched to"
-    )
+    assert witness_record.ts_url == public
+    with pytest.raises(TypeError):
+        emit_mod.register_checkpoint(_FAKE_COSE_BYTES)  # no default URL
 
 
 def test_register_checkpoint_explicit_non_default_url_is_never_rewritten(monkeypatch):
@@ -728,7 +710,7 @@ def test_register_checkpoint_never_dispatches_to_register_route(monkeypatch):
 
     monkeypatch.setattr(emit_mod.urllib.request, "urlopen", fake_urlopen)
 
-    emit_mod.register_checkpoint(_FAKE_COSE_BYTES)
+    emit_mod.register_checkpoint(_FAKE_COSE_BYTES, "https://witness.example")
 
     assert captured_urls, "the fake transport was never called"
     assert all(url.endswith("/checkpoints") for url in captured_urls)
@@ -774,14 +756,13 @@ def test_one_real_stamp_still_grades_witnessed_even_with_a_stub_stamp_present(mo
     # A stub stamp must never be able to drag a genuinely witnessed
     # checkpoint back down, nor substitute for a real one -- the any-of is
     # over REAL, cryptographically-verified stamps only, in both directions.
-    _pin_test_key_as_default(monkeypatch)
     mmr = _mmr_with(3)
     cp = emit_checkpoint(mmr, HmacSigner("node-a"), log_id="log-a")
     cp.witnesses.append(register_checkpoint_stub(cp))
     assert cp.grade() == Grade.SELF_ATTESTED
 
     cp.witnesses.append(_genuine_witness_record(cp, DEFAULT_TS_URL))
-    assert cp.grade() == Grade.WITNESSED
+    assert cp.grade(ts_pubkey_pem=_test_ts_public_key_pem()) == Grade.WITNESSED
 
 
 def test_register_checkpoint_stub_receipt_is_not_a_real_cose_receipt():
