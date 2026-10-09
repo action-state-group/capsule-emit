@@ -9,7 +9,7 @@ Code moving to AAC, EvidenceBook or capsule-viewer is tracked separately in
 | Source | Frozen commit | Tracked files | Destination |
 |---|---|---|---|
 | capsule-emit | `6c18d2608e383b64d631f5fffae1f640e42d1415` | Existing Python/Rust tree | Python project moves to `python/`; Rust workspace stays |
-| capsule-emit-go | `2d2ec479397badb03a58f986cc6c0b9cc53802dc` | 117 | `go/` |
+| capsule-emit-go | `415c38f21449941c43c4729f23da8a7ebbae04ac` | 119 | `go/`; initial history import plus #11 port |
 | capsule-emit-ts | `e73735ba3ec1029c5fba0544c2f6a421f7176621` | 41 | `ts/` |
 
 Import preflight checks incoming tracked trees with this repository's hostname,
@@ -90,3 +90,14 @@ metadata and parent relationships through the rewrite.
 | `cd566cbbff5160dcf0d91d549fee4f8cfeff0013` | `e388ecae069ac22b617ea05fccfc012d0dd8885a` |
 | `3210173c86c8b646421be2c8a9e67f539f6ebd5a` | `0b031ce9b0ec8a5c7c7550ea5f7f1ac3b9875135` |
 | `5185fed4e5c47b6f545e936927641e3b36e68ba4` | `6c49fb628ac07e247a3eec3433ddebe4bb4bc8f6` |
+
+## Go source refresh
+
+The initial import above used `2d2ec479`; the source advanced to
+[`415c38f21449941c43c4729f23da8a7ebbae04ac`](https://github.com/action-state-group/capsule-emit-go/commit/415c38f21449941c43c4729f23da8a7ebbae04ac)
+through [Go #11](https://github.com/action-state-group/capsule-emit-go/pull/11).
+That commit is ported under `go/`, including extension-member construction,
+validation, tests and documentation, preserving original authorship and sign-off.
+Go source files now match that revision; destination-specific README/script
+adaptations remain. The earlier DCO provenance mapping still describes the
+initial history import, not a new source freeze at its older tip.

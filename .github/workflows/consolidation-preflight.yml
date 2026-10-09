@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: action-state-group/capsule-emit-go
-          ref: 2d2ec479397badb03a58f986cc6c0b9cc53802dc
+          ref: 415c38f21449941c43c4729f23da8a7ebbae04ac
           path: incoming/go
           persist-credentials: false
       - uses: actions/checkout@v4
