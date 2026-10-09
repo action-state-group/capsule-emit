@@ -1,0 +1,95 @@
+{
+  "name": "@action-state-group/capsule-emit",
+  "version": "0.3.0",
+  "license": "Apache-2.0",
+  "description": "TypeScript producer and verifier for AAC format 4",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/action-state-group/capsule-emit-ts.git"
+  },
+  "homepage": "https://github.com/action-state-group/capsule-emit-ts#readme",
+  "bugs": {
+    "url": "https://github.com/action-state-group/capsule-emit-ts/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./aac": {
+      "types": "./dist/aac/index.d.ts",
+      "import": "./dist/aac/index.js"
+    },
+    "./artifact": {
+      "types": "./dist/artifact/index.d.ts",
+      "import": "./dist/artifact/index.js"
+    },
+    "./artifact/sqlite": {
+      "types": "./dist/artifact/sqlite.d.ts",
+      "import": "./dist/artifact/sqlite.js"
+    },
+    "./artifact/mysql": {
+      "types": "./dist/artifact/mysql.d.ts",
+      "import": "./dist/artifact/mysql.js"
+    },
+    "./artifact/jsonl": {
+      "types": "./dist/artifact/jsonl.d.ts",
+      "import": "./dist/artifact/jsonl.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "oxlint src test",
+    "test": "vitest run --coverage",
+    "test:interop": "vitest run test/interop.test.ts",
+    "test:unit": "vitest run --coverage --exclude test/interop.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@action-state-group/agent-action-capsule": "0.1.0"
+  },
+  "peerDependencies": {
+    "@types/better-sqlite3": ">=7",
+    "better-sqlite3": ">=11",
+    "mysql2": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "@types/better-sqlite3": {
+      "optional": true
+    },
+    "better-sqlite3": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@testcontainers/mysql": "11.7.2",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "22.20.2",
+    "@vitest/coverage-v8": "4.1.11",
+    "better-sqlite3": "13.0.3",
+    "mysql2": "3.24.3",
+    "oxlint": "1.81.0",
+    "prettier": "3.6.2",
+    "tsup": "8.5.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  }
+}

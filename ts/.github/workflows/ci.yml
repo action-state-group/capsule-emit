@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Check formatting
+        run: npm run format:check
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out capsule-emit-ts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: capsule-emit-ts
+      - name: Read the pinned AAC commit
+        id: aac
+        run: |
+          commit="$(sed -n 's/^export const AAC_COMMIT = "\([0-9a-f]\{40\}\)";$/\1/p' capsule-emit-ts/test/aac-pin.ts)"
+          [ -n "$commit" ] || { echo "::error::no AAC_COMMIT in test/aac-pin.ts"; exit 1; }
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: Check out the pinned AAC commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: action-state-group/agent-action-capsule
+          ref: ${{ steps.aac.outputs.commit }}
+          path: agent-action-capsule
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: capsule-emit-ts/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: capsule-emit-ts
+      - name: Test
+        run: npm run test:unit
+        working-directory: capsule-emit-ts
+      - name: Build
+        run: npm run build
+        working-directory: capsule-emit-ts
+
+  interoperability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out capsule-emit-ts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: capsule-emit-ts
+      - name: Check out capsule-emit-go main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: action-state-group/capsule-emit-go
+          ref: main
+          path: capsule-emit-go
+      - name: Check out Python emit main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: action-state-group/capsule-emit
+          ref: main
+          path: capsule-emit
+      - name: Read the pinned AAC commit
+        id: aac
+        run: |
+          commit="$(sed -n 's/^export const AAC_COMMIT = "\([0-9a-f]\{40\}\)";$/\1/p' capsule-emit-ts/test/aac-pin.ts)"
+          [ -n "$commit" ] || { echo "::error::no AAC_COMMIT in test/aac-pin.ts"; exit 1; }
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: Check out the pinned AAC commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: action-state-group/agent-action-capsule
+          ref: ${{ steps.aac.outputs.commit }}
+          path: agent-action-capsule
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: capsule-emit-ts/package-lock.json
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: capsule-emit-go/go.mod
+          cache-dependency-path: capsule-emit-go/go.sum
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install Python emit main
+        run: |
+          python -m pip install -e ./agent-action-capsule/python
+          python -m pip install -e ./capsule-emit
+      - name: Generate live Python interoperability vectors
+        run: python capsule-emit-go/testdata/capsule-emit/format4-interop/scripts/generate_vectors.py
+      - name: Install capsule-emit-ts dependencies
+        run: npm ci
+        working-directory: capsule-emit-ts
+      - name: Verify Python vectors with TypeScript
+        run: npm run test:interop
+        working-directory: capsule-emit-ts
+      - name: Verify Python vectors with Go main
+        run: scripts/check-format4-interop.sh
+        working-directory: capsule-emit-go
+      - name: Check out consolidated CLL main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: action-state-group/checkpointed-local-log
+          ref: main
+          path: checkpointed-local-log
+      - name: Install consolidated CLL Python verifier
+        run: python -m pip install -e ./checkpointed-local-log/python
+      - name: Build TypeScript producer and CLL
+        run: |
+          npm --prefix capsule-emit-ts run build
+          npm --prefix checkpointed-local-log/ts ci
+          npm --prefix checkpointed-local-log/ts run build
+      - name: Adapt peer fixture to async producer APIs
+        run: |
+          python - <<'PYTHON'
+          from pathlib import Path
+
+          # The peer fixture calls emit's former synchronous APIs. Keep its
+          # interop orchestration and adapt only these test-only calls.
+          path = Path("capsule-emit-go/testdata/producer-cll/driver.mjs")
+          source = path.read_text()
+          for name in ("seal", "verifyCapsule", "verifyEnvelope"):
+              old = f"= emit.{name}("
+              new = f"= await emit.{name}("
+              if source.count(old) == 1 and source.count(new) == 0:
+                  source = source.replace(old, new)
+              elif source.count(old) != 0 or source.count(new) != 1:
+                  raise RuntimeError(f"unexpected peer fixture call shape: {name}")
+          path.write_text(source)
+          PYTHON
+      - name: Verify producer to CLL interoperability
+        run: scripts/check-producer-cll-interop.sh
+        working-directory: capsule-emit-go
