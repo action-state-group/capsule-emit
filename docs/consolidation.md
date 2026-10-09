@@ -76,7 +76,7 @@ complete; regular root policy workflows scan subsequent changes.
 
 ## Go import provenance after DCO repair
 
-The frozen Go source remains `2d2ec479397badb03a58f986cc6c0b9cc53802dc`
+The initial Go history import source is `2d2ec479397badb03a58f986cc6c0b9cc53802dc`
 in the [original repository](https://github.com/action-state-group/capsule-emit-go/commit/2d2ec479397badb03a58f986cc6c0b9cc53802dc).
 Its corresponding import parent is `554188c4b4cd682c3e9b7d88d53f165c5426c63d`.
 These parents have identical file trees. The five sign-off additions below
