@@ -40,6 +40,10 @@ SCAN_PATHS = (
     "ADOPT.md",
     "TRANSLATION.md",
     "docs/",
+) + tuple(
+    f"{language}/{surface}"
+    for language in ("python", "rust", "go", "ts")
+    for surface in ("README.md", "ADOPT.md", "TRANSLATION.md", "docs/")
 )
 
 #: Forbidden ONLY as a repositioning claim — see the GATE text above.
