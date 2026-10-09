@@ -394,6 +394,27 @@ func run() error {
 The reference enters through `Input`, including `SealInput.Capsule` when using
 `Seal`. There is no separate reference builder or closed purpose enum.
 
+## Extension members
+
+A companion document can define an additional top-level Capsule member (for
+example the `settlement` member of a settlement leg record). `Input.Extensions`
+carries such members as JSON:
+
+```go
+input.Extensions = []emit.Extension{{
+	Name:  "settlement",
+	Value: json.RawMessage(`{"version":"0","leg":"terms","sealer_role":"payee"}`),
+}}
+```
+
+Each value participates in `capsule_id` like every other member. `Build`
+refuses a name the base profile defines (including `capsule_id`, `cross_party`
+and the other members this library never writes), a repeated name, a name that
+is not lowercase letters, digits and underscores, and a value that is not one
+well-formed JSON value or that carries `null` at the top, a duplicate key, a
+float, or an integer outside the interoperable range. It does not interpret
+the member: validating it under its own document is the caller's job.
+
 ## Development
 
 `DigestJSON` keeps JCS negative-zero normalization. Python's optional strict

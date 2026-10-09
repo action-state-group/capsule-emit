@@ -1,6 +1,9 @@
 package emit
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Input contains the application-owned values needed to build one Capsule.
 // ActionID and Timestamp are supplied explicitly so the library never invents
@@ -24,11 +27,23 @@ type Input struct {
 	Compute        *ComputeAttestation
 	compute        *computeAttestation
 	ProvenanceMode *ProvenanceMode
+	Extensions     []Extension
 
 	// specVersion overrides SpecVersion for in-package replay of released -04
 	// vectors only. No exported API sets it: every Capsule a caller builds
 	// carries SpecVersion.
 	specVersion string
+}
+
+// Extension is one additional top-level Capsule member that a companion
+// document defines (for example a settlement record's `settlement` member).
+// Value is JSON; it participates in capsule_id like every other member. Build
+// checks only that Name is not a base-profile member and that Value is
+// well-formed, float-free JSON. What the member means, and whether it is
+// valid under its own document, is the caller's to check.
+type Extension struct {
+	Name  string
+	Value json.RawMessage
 }
 
 // ProvenanceMode marks a Capsule as a backfilled import of a pre-existing

@@ -84,6 +84,13 @@ func Build(input Input) (BuiltPayload, error) {
 		}
 		payload["references"] = references
 	}
+	for _, extension := range input.Extensions {
+		value, err := extensionValue(extension, payload)
+		if err != nil {
+			return BuiltPayload{}, err
+		}
+		payload[extension.Name] = value
+	}
 	if err := validatePayloadText(payload, "$"); err != nil {
 		return BuiltPayload{}, err
 	}
