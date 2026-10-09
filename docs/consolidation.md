@@ -52,8 +52,8 @@ removal and old-repository retirement are separate gates.
 
 ## Source-stage validation
 
-The configured incoming-tree preflight passed before import. Both import commits
-retain the source ancestry. With author approval, five historical Go commits
+The configured incoming-tree preflight passed before import. TS retains its exact source ancestry;
+Go retains ancestry through the author-approved rewritten commits below. With author approval, five historical Go commits
 received DCO sign-offs; their descendants were rewritten in the import branch
 without changing file trees, authors or timestamps. The original source repos
 and tags remain unchanged. Rewritten Go commits cannot retain their original
@@ -73,3 +73,20 @@ sign-offs. Nested workflows under `go/.github/` and `ts/.github/` are retained
 only as imported history; active workflows live in the repository root.
 The incoming-tree preflight is now manual because its pre-import check is
 complete; regular root policy workflows scan subsequent changes.
+
+## Go import provenance after DCO repair
+
+The frozen Go source remains `2d2ec479397badb03a58f986cc6c0b9cc53802dc`
+in the [original repository](https://github.com/action-state-group/capsule-emit-go/commit/2d2ec479397badb03a58f986cc6c0b9cc53802dc).
+Its corresponding import parent is `554188c4b4cd682c3e9b7d88d53f165c5426c63d`.
+These parents have identical file trees. The five sign-off additions below
+change their descendant hashes while preserving all original author/committer
+metadata and parent relationships through the rewrite.
+
+| Original Go commit | Commit with author-approved sign-off |
+|---|---|
+| `c022f71e699bbb9fb00d7f13e182219fb0a94039` | `6384ab6dbd16066cd25f10c53dee8ad787d7e2eb` |
+| `7f78287490384571e949cf963bf23911ab8e040f` | `a54dee29e6d1d4d62a05cba3ba17e7e1a5be3cdf` |
+| `cd566cbbff5160dcf0d91d549fee4f8cfeff0013` | `e388ecae069ac22b617ea05fccfc012d0dd8885a` |
+| `3210173c86c8b646421be2c8a9e67f539f6ebd5a` | `0b031ce9b0ec8a5c7c7550ea5f7f1ac3b9875135` |
+| `5185fed4e5c47b6f545e936927641e3b36e68ba4` | `6c49fb628ac07e247a3eec3433ddebe4bb4bc8f6` |
