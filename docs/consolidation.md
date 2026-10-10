@@ -33,10 +33,17 @@ Future Python releases use `python/v<project.version>` tags. Only published
 GitHub releases in that namespace enter the Python publisher; Go `go/v*`,
 TS `ts/v*` and Rust `crates/*` release events cannot upload Python artifacts.
 The checked-out tag must match package metadata and be an ancestor of main.
-The filename `.github/workflows/release.yml` and `pypi` environment remain the
-existing PyPI Trusted Publisher identity. No publisher configuration changes
-or registry uploads are part of source consolidation. Historical tags and
-published versions remain unchanged.
+Publisher workflow filenames follow `publish-<language>.yml`: Python uses
+`publish-python.yml`, Rust uses `publish-rust.yml`, and the pending TypeScript
+publisher will use `publish-ts.yml`. Python retains the `pypi` environment and
+Rust retains `crates-io`.
+
+Before merging these filename changes, update the PyPI Trusted Publisher from
+`release.yml` to `publish-python.yml` and each affected crates.io Trusted
+Publisher from `publish-crates.yml` to `publish-rust.yml`. Renaming files does
+not update registry-side bindings. Registry uploads, the TypeScript publisher
+migration and Go module/release cutover remain separate work. Historical tags
+and published versions remain unchanged.
 
 ## Acceptance still required
 
