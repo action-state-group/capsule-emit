@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: Apache-2.0
+# Publish @action-state-group/capsule-emit to npm when a ts/v<version> GitHub
+# release is published. The npm Trusted Publisher must name this repository
+# and publish-ts.yml before the first release from it.
+#
+# Versions published from the former capsule-emit-ts repository (up to 0.3.0)
+# have no commit here, so an already-published version is refused rather than
+# skipped: every release from this workflow is a new version built from the
+# tagged commit.
+name: Publish TypeScript package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-ts
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: startsWith(github.event.release.tag_name, 'ts/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: emit/ts
+    env:
+      AAC_ROOT: ${{ github.workspace }}/agent-action-capsule
+      CAPSULE_EMIT_GO_ROOT: ../go
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          path: emit
+      - name: Validate TypeScript release identity and source
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          python3 ../.github/scripts/check_release.py ts "$RELEASE_TAG" package.json
+      - name: Read exact AAC corpus pin
+        id: aac
+        run: |
+          commit="$(sed -n 's/^export const AAC_COMMIT = "\([0-9a-f]\{40\}\)";$/\1/p' test/aac-pin.ts)"
+          test -n "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: action-state-group/agent-action-capsule
+          ref: ${{ steps.aac.outputs.commit }}
+          path: agent-action-capsule
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Refuse a version that is already published
+        run: |
+          spec="$(node -p "const p = require('./package.json'); p.name + '@' + p.version")"
+          if npm view "$spec" version >published.txt 2>view-error.txt; then
+            echo "::error::$spec is already published; release a new version" >&2
+            exit 1
+          fi
+          grep -q E404 view-error.txt || { cat view-error.txt >&2; exit 1; }
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - name: Packed external consumer and optional-driver isolation
+        run: node scripts/check-packed-consumer.mjs
+      - run: npm publish

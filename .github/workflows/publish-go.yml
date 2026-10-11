@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: Apache-2.0
+# Validate a Go module release when its go/v<version> tag is pushed.
+#
+# A Go release is the tag itself; there is no upload. This workflow refuses a
+# tag that is not on main or does not match go/go.mod, then proves an empty
+# consumer outside this checkout (GOWORK=off, no replace directives) retrieves
+# and builds the tagged version through both the public proxy and direct VCS
+# access, and that both resolve to the tagged commit.
+name: Publish Go module
+
+on:
+  push:
+    tags: ["go/v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-go-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOWORK: "off"
+      MODULE: github.com/action-state-group/capsule-emit/go
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Validate Go release identity and source
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          python3 .github/scripts/check_release.py go "$TAG" go/go.mod
+          echo "TAGGED_COMMIT=$(git rev-parse 'HEAD^{commit}')" >> "$GITHUB_ENV"
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go/go.mod
+          cache: false
+      - name: Vet and test the tagged module
+        working-directory: go
+        run: |
+          go vet ./...
+          go test ./...
+      - name: Retrieve the release from an empty consumer
+        run: |
+          version="${TAG#go/}"
+          consumer="$(mktemp -d)"
+          printf '%s\n' \
+            'package main' \
+            '' \
+            'import (' \
+            '  "fmt"' \
+            '' \
+            '  emit "github.com/action-state-group/capsule-emit/go"' \
+            '  _ "github.com/action-state-group/capsule-emit/go/artifact"' \
+            ')' \
+            '' \
+            'func main() { fmt.Println(emit.SpecVersion) }' >"$consumer/main.go"
+          # Direct VCS retrieval must resolve to the tagged commit; the proxy
+          # must then serve the same module checksum.
+          for proxy in direct https://proxy.golang.org; do
+            rm -f "$consumer/go.mod" "$consumer/go.sum"
+            (
+              cd "$consumer"
+              export GOPROXY="$proxy" GOFLAGS=-mod=mod GOMODCACHE="$(mktemp -d)"
+              go mod init example.invalid/consumer
+              go get "$MODULE@$version"
+              go build ./...
+              go mod download -json "$MODULE@$version" >"$RUNNER_TEMP/download-${proxy//[^a-z]/}.json"
+            )
+          done
+          python3 - "$RUNNER_TEMP/download-direct.json" "$RUNNER_TEMP/download-httpsproxygolangorg.json" <<'PY'
+          import json, os, sys
+          direct, proxied = (json.load(open(path)) for path in sys.argv[1:])
+          if direct["Origin"]["Hash"] != os.environ["TAGGED_COMMIT"]:
+              sys.exit(f"direct retrieval resolved {direct['Origin']['Hash']}, not the tagged commit")
+          if proxied["Sum"] != direct["Sum"]:
+              sys.exit(f"proxy checksum {proxied['Sum']} differs from direct {direct['Sum']}")
+          print(f"{direct['Path']}@{direct['Version']} at {direct['Origin']['Hash']}, {direct['Sum']}")
+          PY

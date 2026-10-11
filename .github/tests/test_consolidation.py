@@ -77,13 +77,57 @@ class ConsolidationTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 2)
 
-    def test_python_tag_matches_metadata_and_rejects_other_languages(self):
-        guard = load("release", ".github/scripts/check_python_release.py")
+    def test_release_tags_match_metadata_and_reject_other_languages(self):
+        guard = load("release", ".github/scripts/check_release.py")
         with tempfile.TemporaryDirectory() as directory:
-            metadata = Path(directory) / "pyproject.toml"
-            metadata.write_text('[project]\nversion = "0.9.0"\n')
-            guard.check("python/v0.9.0", metadata)
-            for tag in ("v0.9.0", "go/v0.9.0", "ts/v0.9.0", "crates/capsule-emit-v0.9.0",
-                        "python/v0.8.0", "python/v0.9.0;echo unsafe", "python/v0.9.0-rc1"):
-                with self.subTest(tag=tag), self.assertRaises(ValueError):
-                    guard.check(tag, metadata)
+            root = Path(directory)
+            metadata = {
+                "python": root / "pyproject.toml",
+                "ts": root / "package.json",
+                "go": root / "go.mod",
+            }
+            metadata["python"].write_text('[project]\nversion = "0.9.0"\n')
+            metadata["ts"].write_text('{"name": "@action-state-group/capsule-emit", "version": "0.4.0"}')
+            metadata["go"].write_text(f"module {guard.GO_MODULE}\n\ngo 1.27.0\n")
+            accepted = {
+                "python": ("python/v0.9.0",),
+                "ts": ("ts/v0.4.0",),
+                "go": ("go/v0.3.0", "go/v1.0.0", "go/v0.3.0-rc.1"),
+            }
+            for language, tags in accepted.items():
+                for tag in tags:
+                    with self.subTest(language=language, tag=tag):
+                        guard.check(language, tag, metadata[language])
+            refused = {
+                "python": ("v0.9.0", "go/v0.9.0", "ts/v0.9.0", "crates/capsule-emit-v0.9.0",
+                           "python/v0.8.0", "python/v0.9.0;echo unsafe", "python/v0.9.0-rc1"),
+                "ts": ("v0.4.0", "python/v0.4.0", "go/v0.4.0", "ts/v0.3.0", "ts/v0.4",
+                       "ts/v0.4.0;echo unsafe"),
+                "go": ("v0.3.0", "python/v0.3.0", "ts/v0.3.0", "crates/capsule-emit-v0.3.0",
+                       "go/v2.0.0", "go/v0.3", "go/v01.0.0", "go/v0.3.0;echo unsafe"),
+            }
+            for language, tags in refused.items():
+                for tag in tags:
+                    with self.subTest(language=language, tag=tag), self.assertRaises(ValueError):
+                        guard.check(language, tag, metadata[language])
+            metadata["go"].write_text("module github.com/action-state-group/capsule-emit-go\n")
+            with self.assertRaises(ValueError):
+                guard.check("go", "go/v0.3.0", metadata["go"])
+            with self.assertRaises(ValueError):
+                guard.check("rust", "rust/v0.1.0", metadata["go"])
+
+    def test_publishers_route_only_their_own_tag_namespace(self):
+        workflows = ROOT / ".github/workflows"
+        routes = {
+            "publish-python.yml": "startsWith(github.event.release.tag_name, 'python/v')",
+            "publish-ts.yml": "startsWith(github.event.release.tag_name, 'ts/v')",
+            "publish-go.yml": 'tags: ["go/v*"]',
+            "publish-rust.yml": 'tags: ["crates/*-v*"]',
+        }
+        for name, route in routes.items():
+            with self.subTest(workflow=name):
+                self.assertIn(route, (workflows / name).read_text())
+        for name in ("publish-python.yml", "publish-ts.yml", "publish-go.yml"):
+            language = name.removeprefix("publish-").removesuffix(".yml")
+            with self.subTest(workflow=name):
+                self.assertIn(f"check_release.py {language} ", (workflows / name).read_text())

@@ -19,31 +19,49 @@ Missing neutrality configuration fails the check. TypeScript source and each
 language root's pitch documents are included in scanning.
 
 Preserve licenses, executable modes, generated modules, package data and frozen
-vectors. Go and TS history must remain traceable to the source commits. Keep
-Go's current module identity until a separately accepted consumer cutover;
-source staging does not redirect existing Go consumers to this repository.
+vectors. Go and TS history must remain traceable to the source commits.
 Preserve TS's npm identity and six exports, runtime AAC 0.1.0 and source-corpus
 pin `36d6770cf1856ed9043d98782275a14ce221fdde`. Preserve Go's separate AAC
 corpus pin `df3af95221da3cd77792a7fd1c24c1db9ce88376` and Python's declared
 CLL `>=0.5,<0.6` bound.
 
-## Python release isolation
+## Go module path
 
-Future Python releases use `python/v<project.version>` tags. Only published
-GitHub releases in that namespace enter the Python publisher; Go `go/v*`,
-TS `ts/v*` and Rust `crates/*` release events cannot upload Python artifacts.
-The checked-out tag must match package metadata and be an ancestor of main.
-Publisher workflow filenames follow `publish-<language>.yml`: Python uses
-`publish-python.yml`, Rust uses `publish-rust.yml`, and the pending TypeScript
-publisher will use `publish-ts.yml`. Python retains the `pypi` environment and
-Rust retains `crates-io`.
+The Go module is `github.com/action-state-group/capsule-emit/go`. Versions up
+to v0.2.0 remain published as `github.com/action-state-group/capsule-emit-go`
+from the former repository. The changed path gives Go a different module and
+type identity, so a consumer moves every import in its build together; the old
+path is not redirected. Known consumers on the old path are capsule-cli
+(v0.2.0) and evidencebook Go (v0.1.0).
 
-Before merging these filename changes, update the PyPI Trusted Publisher from
-`release.yml` to `publish-python.yml` and each affected crates.io Trusted
-Publisher from `publish-crates.yml` to `publish-rust.yml`. Renaming files does
-not update registry-side bindings. Registry uploads, the TypeScript publisher
-migration and Go module/release cutover remain separate work. Historical tags
-and published versions remain unchanged.
+## Release isolation
+
+Each language publishes only from its own tag namespace, and
+`.github/scripts/check_release.py` refuses a tag that disagrees with that
+language's metadata before anything is built:
+
+| Language | Tag | Trigger | Metadata check |
+|---|---|---|---|
+| Python | `python/v<project.version>` | published GitHub release, `publish-python.yml` | `python/pyproject.toml` version |
+| TypeScript | `ts/v<package version>` | published GitHub release, `publish-ts.yml` | `ts/package.json` version, not already on npm |
+| Go | `go/vX.Y.Z` | pushed tag, `publish-go.yml` | `go/go.mod` module path; v2+ is refused without a `/vN` path |
+| Rust | `crates/<crate>-v<version>` | pushed tag, `publish-rust.yml` | crate `Cargo.toml` version |
+
+Every publisher also requires the tagged commit to be an ancestor of main.
+TypeScript versions up to 0.3.0 were published from capsule-emit-ts and have
+no commit here; `publish-ts.yml` refuses any version already on npm, so the
+first release from this repository needs a new version in `ts/package.json`.
+A Go release is the tag itself: `publish-go.yml` vets and tests the tagged
+module, then retrieves it into an empty consumer outside the checkout
+(`GOWORK=off`, no replace) directly and through proxy.golang.org, requiring the
+direct fetch to resolve to the tagged commit and the proxy to serve the same
+checksum. Python retains the `pypi` environment and Rust retains `crates-io`.
+
+Registry-side bindings are configured outside this repository. The PyPI and
+crates.io Trusted Publishers must name `publish-python.yml` and
+`publish-rust.yml`, and the npm Trusted Publisher must name this repository and
+`publish-ts.yml`, before the next release from each. Historical tags and
+published versions remain unchanged.
 
 ## Acceptance still required
 
@@ -53,9 +71,10 @@ checks, frozen AAC corpus and live producer interoperability. TS requires
 packed consumers, explicit real-MySQL coverage and relevant browser coverage;
 its existing MySQL suite is opt-in and skipped tests do not establish parity.
 
-Rust flattening waits for accepted Evidence Request relocation. Registry
-publication, new publisher identities, consumer module migration, compatibility
-removal and old-repository retirement are separate gates.
+Rust flattening waits for accepted Evidence Request relocation (#290).
+Registry publication, publisher bindings, consumer module migration after the
+first `go/v*` release, compatibility removal and old-repository retirement are
+separate gates.
 
 ## Source-stage validation
 
