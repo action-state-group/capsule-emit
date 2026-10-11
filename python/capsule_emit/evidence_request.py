@@ -82,8 +82,8 @@ selection ended, not that the door refused to page. A ``record`` or
 ``chain_segment`` subject never produces more than one answer object, so a
 ``page`` field on those requests is accepted and ignored. ``record``/
 ``range`` subjects a stranger drills into by capsule id; ``correlation``
-(``{kind: "correlation", by: "nonce" | "exchange_id" | "counterparty",
-value}``) asks instead about a CORRELATOR this node's own records carry —
+(``{kind: "correlation", by: "nonce" | "exchange_id" | "counterparty" |
+"deal_id", value}``) asks instead about a CORRELATOR this node's own records carry —
 every record (both halves this node holds for a shared ``nonce``, every
 exchange naming a ``counterparty``, and every adjudication whose verdict
 names one) that matches resolves the same way a ``range`` selection does:
@@ -186,7 +186,7 @@ DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
 
 #: ``subject.by`` values a ``correlation`` subject accepts.
-CORRELATION_BY_VALUES = frozenset({"nonce", "exchange_id", "counterparty"})
+CORRELATION_BY_VALUES = frozenset({"nonce", "exchange_id", "counterparty", "deal_id"})
 
 #: Which ``compute_attestation``-nested key name(s) carry each correlator.
 #: More than one alias exists per correlator because it is free-form
@@ -196,6 +196,7 @@ CORRELATION_BY_VALUES = frozenset({"nonce", "exchange_id", "counterparty"})
 _CORRELATION_KEY_ALIASES: dict[str, frozenset[str]] = {
     "nonce": frozenset({"nonce", "client_nonce"}),
     "exchange_id": frozenset({"exchange_id"}),
+    "deal_id": frozenset({"deal_id"}),
     "counterparty": frozenset({"counterparty_ref"}),
 }
 
