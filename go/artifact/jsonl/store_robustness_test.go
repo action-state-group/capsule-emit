@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/action-state-group/capsule-emit-go/artifact"
-	"github.com/action-state-group/capsule-emit-go/artifact/internal/testutil"
-	jsonlstore "github.com/action-state-group/capsule-emit-go/artifact/jsonl"
+	"github.com/action-state-group/capsule-emit/go/artifact"
+	"github.com/action-state-group/capsule-emit/go/artifact/internal/testutil"
+	jsonlstore "github.com/action-state-group/capsule-emit/go/artifact/jsonl"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -1,4 +1,4 @@
-# capsule-emit-go
+# capsule-emit Go module
 
 Go emission core for Agent Action Capsule format 4. The library builds
 deterministic, signature-free Capsules and creates independent COSE_Sign1
@@ -24,8 +24,14 @@ is not a rejection. Released -04 records keep verifying.
 Requires Go 1.27 or newer. `DigestJSON` uses `encoding/json/v2`.
 
 ```bash
-go get github.com/action-state-group/capsule-emit-go
+go get github.com/action-state-group/capsule-emit/go
 ```
+
+Releases are tagged `go/vX.Y.Z` in this repository. Versions up to v0.2.0 were
+published as `github.com/action-state-group/capsule-emit-go` and stay
+resolvable there. The import path changed, so Go treats the two as different
+modules: move every import in a build to the new path together, because types
+from one are not assignable to the other.
 
 ## Build, sign, and verify
 
@@ -40,7 +46,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/action-state-group/capsule-emit-go"
+	emit "github.com/action-state-group/capsule-emit/go"
 )
 
 func main() {
@@ -148,7 +154,7 @@ policy, retention, and tests. Application workflow state remains caller-owned.
 
 ## Persist and append to CLL
 
-`capsule-emit-go` and the CLL Go package do not depend on each other. An
+The Go module and the CLL Go package do not depend on each other. An
 application may import both and connect them through their public APIs. Keep the complete
 Capsule and Producer Envelope in application-owned storage; CLL stores only the
 decoded 32-byte Capsule ID.
@@ -164,7 +170,7 @@ import (
 	"fmt"
 	"time"
 
-	emit "github.com/action-state-group/capsule-emit-go"
+	emit "github.com/action-state-group/capsule-emit/go"
 	"github.com/action-state-group/checkpointed-local-log/go/cll"
 )
 
@@ -355,7 +361,7 @@ import (
 	"fmt"
 	"time"
 
-	emit "github.com/action-state-group/capsule-emit-go"
+	emit "github.com/action-state-group/capsule-emit/go"
 )
 
 func main() {

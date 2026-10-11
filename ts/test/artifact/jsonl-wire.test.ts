@@ -12,7 +12,7 @@ import { decodeRecord, encodeRecord } from "../../src/artifact/jsonl.js";
 import { utf8 } from "./fixture.js";
 
 // Shared cross-language golden line. The identical bytes are pinned in
-// capsule-emit-go/artifact/jsonl/wire_golden_test.go over the same synthetic
+// go/artifact/jsonl/wire_golden_test.go over the same synthetic
 // record, proving the Go and TypeScript JSONL stores agree on one byte-identical
 // wire format. A drift in either encoder (key name, key order, base64, or
 // omitempty behavior) fails both suites. The synthetic record uses opaque bytes

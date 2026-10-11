@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/action-state-group/capsule-emit-go/artifact"
-	"github.com/action-state-group/capsule-emit-go/artifact/internal/testutil"
-	sqlitestore "github.com/action-state-group/capsule-emit-go/artifact/sqlite"
+	"github.com/action-state-group/capsule-emit/go/artifact"
+	"github.com/action-state-group/capsule-emit/go/artifact/internal/testutil"
+	sqlitestore "github.com/action-state-group/capsule-emit/go/artifact/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"

@@ -1,6 +1,6 @@
 # Artifact storage
 
-Optional persistence packages for capsule-emit-go. Root emit APIs retain their
+Optional persistence packages for the capsule-emit Go module. Root emit APIs retain their
 existing storage-free behavior.
 
 ## Storage boundary
@@ -50,8 +50,8 @@ import (
     "database/sql"
     "errors"
 
-    "github.com/action-state-group/capsule-emit-go/artifact"
-    mysqlstore "github.com/action-state-group/capsule-emit-go/artifact/mysql"
+    "github.com/action-state-group/capsule-emit/go/artifact"
+    mysqlstore "github.com/action-state-group/capsule-emit/go/artifact/mysql"
     _ "github.com/go-sql-driver/mysql"
 )
 

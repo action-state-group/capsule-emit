@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/action-state-group/capsule-emit-go/artifact"
+	"github.com/action-state-group/capsule-emit/go/artifact"
 
 	driver "github.com/go-sql-driver/mysql"
 )

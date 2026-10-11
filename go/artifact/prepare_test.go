@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/action-state-group/capsule-emit-go/artifact"
-	"github.com/action-state-group/capsule-emit-go/artifact/internal/testutil"
+	"github.com/action-state-group/capsule-emit/go/artifact"
+	"github.com/action-state-group/capsule-emit/go/artifact/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
