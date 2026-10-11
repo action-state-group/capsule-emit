@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	emit "github.com/action-state-group/capsule-emit-go"
+	emit "github.com/action-state-group/capsule-emit/go"
 )
 
 // DigestField is a supported AAC format-4 JSON-DIGEST location, not a free-form

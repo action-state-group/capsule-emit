@@ -17,7 +17,7 @@ import {
   verifyCapsule,
 } from "../src/index.js";
 const goRoot = resolve(process.env.CAPSULE_EMIT_GO_ROOT ?? "../go");
-// capsule-emit-go keeps the released -04 pack in format4-interop/ and its -05
+// The Go module keeps the released -04 pack in format4-interop/ and its -05
 // twin beside it in format4-interop-v05/. This producer stamps -05, so it
 // replays the -05 pack; until that pack exists upstream, the single pack
 // (regenerated live from Python main in CI) is the one to replay. Every pack

@@ -140,7 +140,7 @@ read-only permissions and immutable action revisions.
 The optional `./artifact` subpath persists exact sealed Capsules, Producer
 Envelopes, and business originals. It neither seals nor appends to a CLL and is
 distinct from ledger maintenance, checkpointing, and witnessing. It is the
-byte-compatible TypeScript port of `capsule-emit-go`'s `artifact` package.
+byte-compatible TypeScript port of the Go module's `artifact` package.
 
 `./artifact` exports the storage-driver-free core: the `Record`/`Artifact`
 model, retention states (`present`, `purged`, `never_retained`), digest bindings

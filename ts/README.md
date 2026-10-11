@@ -2,7 +2,7 @@
 
 TypeScript-native AAC format-4 producer and verifier. The package is ESM-first,
 uses strict TypeScript, preserves signer-independent Capsule IDs, and emits the
-same attached-payload COSE Producer Envelopes as `capsule-emit-go`.
+same attached-payload COSE Producer Envelopes as the Go module in [`../go`](../go).
 
 The root entry point builds records only. It does not execute actions, generate
 business IDs or timestamps, persist Capsules, retry effects, contact witnesses,
@@ -323,7 +323,7 @@ const record = await store.get(sealed.capsuleId);
 ```
 
 `./artifact/mysql` exposes the same API over a `mysql2` pool. The inventory
-checksum is byte-compatible with `capsule-emit-go`, so a Go writer and a
+checksum is byte-compatible with the Go module's, so a Go writer and a
 TypeScript reader interoperate over a shared database. See
 [DESIGN.md](DESIGN.md#artifact-storage) for the full contract.
 
@@ -331,7 +331,7 @@ TypeScript reader interoperate over a shared database. See
 `init`/`put`/`get`/`purge` API over a single flat JSONL file and needs no peer
 dependency — it uses Node's built-in `fs`. Each record is one line in the same
 `snake_case` wire shape as the other backends, so its files are byte-compatible
-with the `capsule-emit-go` `artifact/jsonl` store in either direction. `put`
+with the Go `artifact/jsonl` store in either direction. `put`
 appends a line and `get` seeks to an in-memory `capsuleId`-to-offset index built
 on open; `purge` rewrites the file through a temp file and atomic rename. It
 assumes a single writer and provides no file locking, no crash-atomicity beyond
