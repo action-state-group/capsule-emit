@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Validate a Go module release when its go/v<version> tag is pushed.
 #
-# A Go release is the tag itself; there is no upload. This workflow refuses a
-# tag that is not on main or does not match go/go.mod, then proves an empty
+# A Go release is the tag itself; there is no upload, and the tagged version is
+# fetchable as soon as it is pushed, so this workflow cannot prevent a bad
+# release. Restrict who may create go/v* tags with a repository tag ruleset;
+# a failure here means the version must be retracted (a `retract` directive in
+# a later release), not that it was withheld. The workflow fails a tag that is
+# not on main or does not match go/go.mod, then proves an empty
 # consumer outside this checkout (GOWORK=off, no replace directives) retrieves
 # and builds the tagged version through both the public proxy and direct VCS
 # access, and that both resolve to the tagged commit.

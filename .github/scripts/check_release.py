@@ -4,7 +4,9 @@
 
 Each publisher calls this before building, so a tag from another language's
 namespace, or one that disagrees with the version or module path it would
-publish, never reaches a registry.
+publish, never reaches PyPI or npm. A Go tag is the release itself and is
+fetchable as soon as it is pushed, so for Go this check reports a bad tag
+after the fact instead of preventing it.
 """
 import argparse
 import json

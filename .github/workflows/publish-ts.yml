@@ -34,6 +34,9 @@ jobs:
     env:
       AAC_ROOT: ${{ github.workspace }}/agent-action-capsule
       CAPSULE_EMIT_GO_ROOT: ../go
+      # Run the real MySQL 8.4 suite (Testcontainers) as ts.yml does, so the
+      # release gate is not weaker than pull-request CI.
+      ARTIFACT_MYSQL_TEST: '1'
       RELEASE_TAG: ${{ github.event.release.tag_name }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -74,4 +77,12 @@ jobs:
       - run: npm run build
       - name: Packed external consumer and optional-driver isolation
         run: node scripts/check-packed-consumer.mjs
-      - run: npm publish
+      - name: Publish, keeping prereleases off the latest dist-tag
+        run: |
+          # npm refuses a prerelease without an explicit --tag, and older npm
+          # would make it `latest`; publish ts/vX.Y.Z-<pre> under `next`.
+          case "$RELEASE_TAG" in
+            *-*) dist_tag=next ;;
+            *) dist_tag=latest ;;
+          esac
+          npm publish --tag "$dist_tag"
