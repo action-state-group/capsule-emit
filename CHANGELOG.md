@@ -19,6 +19,14 @@ different modules, so move every import in a build together.
 releases and refuses versions already on npm. `publish-go.yml` validates
 `go/v*` tags and proves direct and proxy retrieval from an empty consumer.
 
+### Added — evidence-request correlation subject `by: "deal_id"`
+
+A `correlation` subject may now name a deal by `by: "deal_id"`: the one deal id both
+parties to a deal hold (for example, capsulectl's `deal open --deal-id`). It matches a
+record carrying that value under a `deal_id` key anywhere in the record, including the
+top-level `deal_id` member a deal step's Capsule carries. Before this change a Python
+responder refused the subject as malformed.
+
 ### Changed — requires `checkpointed-local-log` 0.5
 
 The dependency is now `checkpointed-local-log>=0.5,<0.6`. CLL 0.5 has no default witness
