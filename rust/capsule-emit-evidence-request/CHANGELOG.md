@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.0.4
+
+- **`request::parse_cbor` accepts only core deterministic CBOR** (RFC 8949
+  §4.2.1, as §10 requires of the stream binding's frames), checked on the
+  bytes as received and at every depth, including inside members the crate
+  ignores. A request is `request_malformed` when it has a duplicate map key,
+  map keys out of the bytewise order of their encodings (JCS order is not
+  that order: a shorter key comes first), a non-text map key, an argument not
+  in its shortest form, an indefinite length, a tag, a floating-point value,
+  a byte string, a simple value other than `false`/`true`/`null`, or an
+  integer outside 0 to 2^53 - 1 (`evidence-interop/0` §5.2). A request then
+  has one CBOR encoding, so one digest wherever it is carried as CBOR. Breaking for a
+  caller that sent non-deterministic CBOR: it was accepted before.
+  `parse_json` is unchanged.
+
 ## 0.0.3
 
 - Receipt verification tries every structurally valid inclusion proof, independent

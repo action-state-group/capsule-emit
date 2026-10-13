@@ -7,7 +7,8 @@
 //!
 //! This crate implements what both sides need to agree on:
 //!
-//! - [`request`]: parse a request from its JSON or CBOR binding and check it
+//! - [`request`]: parse a request from its JSON or CBOR binding (the CBOR
+//!   binding in core deterministic encoding only) and check it
 //!   against -00 (the six subject forms, exactly one coverage member, the
 //!   optional fields), giving the exact refusal reason when it is not
 //!   well formed.
@@ -44,6 +45,7 @@
 //! guarantee.
 
 pub mod answer;
+mod det_cbor;
 pub mod digest;
 pub mod invariance;
 pub mod jcs;

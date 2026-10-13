@@ -1,6 +1,6 @@
 [package]
 name = "capsule-emit-evidence-request"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2021"
 license = "Apache-2.0"
 description = "The evidence request protocol (draft-mih-agent-evidence-request-00): parse, digest and resolve requests; sign and verify refusals; build and verify artifact answers over a checkpointed local log; classify outcomes, invariance and retention."
