@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/action-state-group/capsule-emit-go/artifact"
-	"github.com/action-state-group/capsule-emit-go/artifact/internal/testutil"
-	mysqlstore "github.com/action-state-group/capsule-emit-go/artifact/mysql"
+	"github.com/action-state-group/capsule-emit/go/artifact"
+	"github.com/action-state-group/capsule-emit/go/artifact/internal/testutil"
+	mysqlstore "github.com/action-state-group/capsule-emit/go/artifact/mysql"
 	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

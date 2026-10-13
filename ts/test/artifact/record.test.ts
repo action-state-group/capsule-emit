@@ -65,7 +65,7 @@ async function fixture(actionId = "identity-regression"): Promise<{
 }
 describe("storageChecksum", () => {
   it("reproduces the Go golden value byte-for-byte", () => {
-    // Same synthetic record as capsule-emit-go artifact/regression_test.go.
+    // Same synthetic record as go/artifact/regression_test.go.
     const record = prepare({
       capsuleId: "a".repeat(64),
       capsule: utf8("{}"),
@@ -99,7 +99,7 @@ describe("storageChecksum", () => {
     expect(storageChecksum(purged)).toBe(golden);
   });
   it("matches Go for an empty inventory (json/v2 encodes it as [])", () => {
-    // Authoritative value from capsule-emit-go Record.StorageChecksum() with no
+    // Authoritative value from the Go Record.StorageChecksum() with no
     // artifacts. encoding/json/v2 encodes the empty inventory as `"artifacts":[]`,
     // which JSON.stringify reproduces; the v1 `null` form would diverge.
     const record: Record = {

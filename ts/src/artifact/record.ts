@@ -1,7 +1,7 @@
 // Neutral artifact record model: it persists exact sealed Capsules, Producer
 // Envelopes, and associated business originals. It neither seals nor appends to
 // a CLL. This module imports no storage driver; the sqlite and mysql backends
-// build on it. It is the byte-compatible TypeScript port of capsule-emit-go's
+// build on it. It is the byte-compatible TypeScript port of the Go module's
 // artifact package.
 import { createHash } from "node:crypto";
 

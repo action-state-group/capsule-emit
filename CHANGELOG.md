@@ -6,6 +6,19 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed: Go module path is `github.com/action-state-group/capsule-emit/go`
+
+The Go module now declares `github.com/action-state-group/capsule-emit/go` and
+releases as `go/vX.Y.Z` tags here. Versions up to v0.2.0 stay published as
+`github.com/action-state-group/capsule-emit-go`; Go treats the paths as
+different modules, so move every import in a build together.
+
+### Added: TypeScript and Go release workflows
+
+`publish-ts.yml` publishes `@action-state-group/capsule-emit` from `ts/v*`
+releases and refuses versions already on npm. `publish-go.yml` validates
+`go/v*` tags and proves direct and proxy retrieval from an empty consumer.
+
 ### Added — evidence-request correlation subject `by: "deal_id"`
 
 A `correlation` subject may now name a deal by `by: "deal_id"`: the one deal id both
