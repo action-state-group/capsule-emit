@@ -13,11 +13,11 @@ releases as `go/vX.Y.Z` tags here. Versions up to v0.2.0 stay published as
 `github.com/action-state-group/capsule-emit-go`; Go treats the paths as
 different modules, so move every import in a build together.
 
-### Added: TypeScript and Go release workflows
+### Added: TypeScript release workflow
 
 `publish-ts.yml` publishes `@action-state-group/capsule-emit` from `ts/v*`
-releases and refuses versions already on npm. `publish-go.yml` validates
-`go/v*` tags and proves direct and proxy retrieval from an empty consumer.
+releases and refuses versions already on npm. A Go release is the pushed
+`go/v*` tag itself and has no workflow.
 
 ### Added — evidence-request correlation subject `by: "deal_id"`
 
