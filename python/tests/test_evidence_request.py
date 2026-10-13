@@ -472,6 +472,38 @@ def test_correlation_matches_rust_shaped_top_level_fields(tmp_path, stub_witness
     assert other["capsule_id"] not in matched
 
 
+def test_correlation_by_deal_id_matches_the_agreed_deal_id(tmp_path, stub_witness):
+    """Both parties to a deal seal the one deal id they agreed; a
+    ``by: "deal_id"`` subject names it, and only records carrying it match."""
+    ledger_path = tmp_path / "ledger.jsonl"
+    step = seal(
+        None, action="deal_step", operator="acme", anchor=False, ledger=ledger_path,
+        extra_compute={"deal_id": "deal-0b11a7e2a1c0ffee"},
+    ).capsule
+    seal(
+        None, action="other_deal", operator="acme", anchor=False, ledger=ledger_path,
+        extra_compute={"deal_id": "deal-1111111111111111"},
+    )
+    assert witness.push(str(ledger_path)) is not None
+
+    result = answer(_correlation_request("deal_id", "deal-0b11a7e2a1c0ffee"), ledger=ledger_path)
+    assert isinstance(result, Artifact)
+    assert {b.capsule_id for b in result.bundles} == {step["capsule_id"]}
+
+
+def test_correlation_by_deal_id_matches_a_top_level_deal_id_member():
+    """A deal step's Capsule carries the deal id as its own top-level
+    ``deal_id`` member (capsulectl, x-deal-v0); the subject matches it there
+    as well as under ``compute_attestation``."""
+    from capsule_emit.evidence_request import _entry_matches_correlation
+
+    entry = {"capsule_id": "c" * 64, "action_id": "deal-0b11a7e2a1c0ffee/3", "deal_id": "deal-0b11a7e2a1c0ffee"}
+    assert _entry_matches_correlation(entry, "deal_id", "deal-0b11a7e2a1c0ffee")
+    assert not _entry_matches_correlation(entry, "deal_id", "deal-1111111111111111")
+    assert not _entry_matches_correlation({"capsule_id": "c" * 64, "action_id": "deal-0b11a7e2a1c0ffee/3"},
+                                          "deal_id", "deal-0b11a7e2a1c0ffee"), "an action_id is not a deal_id"
+
+
 def test_correlation_by_exchange_id_matches_nested_sidecar_shape(tmp_path, stub_witness):
     """The Python-sidecar capsule shape namespaces its correlators under a
     free-form ``x-mesh-poc-v1.serving_provenance`` block — resolution must
