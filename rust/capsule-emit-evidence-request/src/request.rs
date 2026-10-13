@@ -117,7 +117,11 @@ pub fn parse_json(bytes: &[u8]) -> Result<Request, RequestError> {
 }
 
 /// Parse and check a request in the CBOR binding, from the bytes as
-/// received. Trailing bytes after the request item are malformed.
+/// received. Trailing bytes after the request item are malformed, and so is
+/// a request not in core deterministic encoding (§10; RFC 8949 §4.2.1),
+/// at any depth: a duplicate or out-of-order map key, a non-shortest
+/// argument, an indefinite length, a tag, a float, a byte string, or an
+/// integer outside 0 to 2^53 - 1 ([`crate::det_cbor`]).
 pub fn parse_cbor(bytes: &[u8]) -> Result<Request, RequestError> {
     let mut reader = bytes;
     let value: ciborium::Value = ciborium::from_reader(&mut reader)
@@ -125,6 +129,7 @@ pub fn parse_cbor(bytes: &[u8]) -> Result<Request, RequestError> {
     if !reader.is_empty() {
         return Err(RequestError::Malformed("bytes after the request item"));
     }
+    crate::det_cbor::check(bytes).map_err(RequestError::Malformed)?;
     from_val(&Val::from_cbor(&value))
 }
 
@@ -351,9 +356,123 @@ mod tests {
         ]);
         let mut bytes = Vec::new();
         ciborium::into_writer(&map, &mut bytes).unwrap();
+        // The determinism check names the duplicate. The value model would
+        // also refuse it ("the request is not a map"), so the reason alone
+        // would not show which check caught it.
         assert_eq!(
-            parse_cbor(&bytes).unwrap_err().reason(),
-            Reason::RequestMalformed
+            parse_cbor(&bytes),
+            Err(RequestError::Malformed("a duplicate map key"))
+        );
+    }
+
+    /// A key repeated with the same value is still a duplicate.
+    #[test]
+    fn a_duplicate_with_an_equal_value_is_malformed() {
+        let mut entries = request_b_members(&["nonce", "nonce", "profile", "subject", "coverage"]);
+        entries[1].1 = entries[0].1.clone();
+        assert_eq!(
+            parse_cbor(&encode(entries)),
+            Err(RequestError::Malformed("a duplicate map key"))
+        );
+    }
+
+    /// `evidence-interop/0` §10 request B: the 228 deterministic CBOR
+    /// octets the stream, A2A and MCP bindings all carry.
+    const REQUEST_B: &str = "a4656e6f6e636576323032362d31302d31325430303a30303a30355a2f626770726f66696c657265766964656e63652d696e7465726f702f30677375626a656374a1667265636f726478403261623335303839356638363764353461356366646331646431616132313463626337323363363539363633343630653735313164666631366135636363383568636f766572616765a16c65787065637465645f70696e784036343431333730393535643262343038383834373933393632613636346461656336626232356530366437366132663533643861383066363661363735323032";
+
+    /// Request B's members, in the order given.
+    fn request_b_members(order: &[&str]) -> Vec<(ciborium::Value, ciborium::Value)> {
+        use ciborium::Value as C;
+        let member = |k: &str| {
+            let v = match k {
+                "nonce" => C::Text("2026-10-12T00:00:05Z/b".into()),
+                "profile" => C::Text("evidence-interop/0".into()),
+                "subject" => C::Map(vec![(
+                    C::Text("record".into()),
+                    C::Text(
+                        "2ab350895f867d54a5cfdc1dd1aa214cbc723c659663460e7511dff16a5ccc85".into(),
+                    ),
+                )]),
+                "coverage" => C::Map(vec![(C::Text("expected_pin".into()), C::Text(PIN.into()))]),
+                _ => unreachable!(),
+            };
+            (C::Text(k.into()), v)
+        };
+        order.iter().map(|k| member(k)).collect()
+    }
+
+    fn encode(entries: Vec<(ciborium::Value, ciborium::Value)>) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&ciborium::Value::Map(entries), &mut bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn request_b_is_accepted_byte_for_byte() {
+        let bytes = hex::decode(REQUEST_B).unwrap();
+        assert_eq!(bytes.len(), 228);
+        assert_eq!(
+            crate::digest::request_digest(&bytes),
+            "ba7fee76b7afe9f3ec5ce46975865e06040492f0da733b28cbc86bd2be609d5e"
+        );
+        let r = parse_cbor(&bytes).unwrap();
+        assert_eq!(r.coverage, Coverage::ExpectedPin(PIN.into()));
+        assert_eq!(r.nonce.as_deref(), Some("2026-10-12T00:00:05Z/b"));
+        // The same members in length-first key order are the same octets.
+        let rebuilt = encode(request_b_members(&[
+            "nonce", "profile", "subject", "coverage",
+        ]));
+        assert_eq!(rebuilt, bytes);
+    }
+
+    /// The same request with its keys in JCS (lexical) order is a different
+    /// encoding of it, and not the deterministic one.
+    #[test]
+    fn request_b_in_jcs_key_order_is_malformed() {
+        let jcs_order = encode(request_b_members(&[
+            "coverage", "nonce", "profile", "subject",
+        ]));
+        assert_eq!(
+            parse_cbor(&jcs_order),
+            Err(RequestError::Malformed(
+                "map keys not in the bytewise order of their encodings"
+            ))
+        );
+    }
+
+    #[test]
+    fn request_b_with_a_second_subject_is_malformed() {
+        let mut entries =
+            request_b_members(&["nonce", "profile", "subject", "subject", "coverage"]);
+        entries[3].1 = ciborium::Value::Map(vec![(
+            ciborium::Value::Text("checkpoints".into()),
+            ciborium::Value::Null,
+        )]);
+        assert_eq!(
+            parse_cbor(&encode(entries)),
+            Err(RequestError::Malformed("a duplicate map key"))
+        );
+    }
+
+    /// A duplicate inside a member this crate ignores is still a duplicate:
+    /// the frame is not deterministic, whatever the parser reads of it.
+    #[test]
+    fn a_duplicate_inside_an_ignored_member_is_malformed() {
+        use ciborium::Value as C;
+        let mut entries = request_b_members(&["nonce", "subject", "coverage"]);
+        entries.insert(
+            0,
+            (
+                C::Text("x".into()),
+                C::Map(vec![
+                    (C::Text("a".into()), C::Null),
+                    (C::Text("a".into()), C::Null),
+                ]),
+            ),
+        );
+        assert_eq!(
+            parse_cbor(&encode(entries)),
+            Err(RequestError::Malformed("a duplicate map key"))
         );
     }
 
