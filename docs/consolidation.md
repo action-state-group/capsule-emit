@@ -36,7 +36,7 @@ path is not redirected. Known consumers on the old path are capsule-cli
 
 ## Release isolation
 
-Each language publishes only from its own tag namespace, and
+Each registry publisher runs only for its own tag namespace, and
 `.github/scripts/check_release.py` fails a release whose tag disagrees with
 that language's metadata before anything is built:
 
@@ -44,21 +44,17 @@ that language's metadata before anything is built:
 |---|---|---|---|
 | Python | `python/v<project.version>` | published GitHub release, `publish-python.yml` | `python/pyproject.toml` version |
 | TypeScript | `ts/v<package version>` | published GitHub release, `publish-ts.yml` | `ts/package.json` version, not already on npm; prereleases publish under the `next` dist-tag |
-| Go | `go/vX.Y.Z` | pushed tag, `publish-go.yml` | `go/go.mod` module path; v2+ is refused without a `/vN` path |
+| Go | `go/vX.Y.Z` | the pushed tag is the release; no workflow | none |
 | Rust | `crates/<crate>-v<version>` | pushed tag, `publish-rust.yml` | crate `Cargo.toml` version |
 
-Every publisher also requires the tagged commit to be an ancestor of main.
+Every registry publisher also requires the tagged commit to be an ancestor of main.
 TypeScript versions up to 0.3.0 were published from capsule-emit-ts and have
 no commit here; `publish-ts.yml` refuses any version already on npm, so the
 first release from this repository needs a new version in `ts/package.json`.
-A Go release is the tag itself: `publish-go.yml` vets and tests the tagged
-module, then retrieves it into an empty consumer outside the checkout
-(`GOWORK=off`, no replace) directly and through proxy.golang.org, requiring the
-direct fetch to resolve to the tagged commit and the proxy to serve the same
-checksum. Because the pushed tag is already fetchable, these checks report a
-bad Go release rather than prevent it: a repository tag ruleset must limit who
-can create `go/v*` tags, and a failed release is withdrawn with a `retract`
-directive in a later version. Python retains the `pypi` environment and Rust retains `crates-io`.
+A Go release is the tag itself and is fetchable as soon as it is pushed, so
+no workflow could prevent a bad one. The repository tag ruleset limits who can
+create `go/v*` tags, CI on main covers the module's tests, and a bad release is
+withdrawn with a `retract` directive in a later version. Python retains the `pypi` environment and Rust retains `crates-io`.
 
 Registry-side bindings are configured outside this repository. The PyPI and
 crates.io Trusted Publishers must name `publish-python.yml` and
