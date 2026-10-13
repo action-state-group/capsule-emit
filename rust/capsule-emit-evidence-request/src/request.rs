@@ -356,9 +356,23 @@ mod tests {
         ]);
         let mut bytes = Vec::new();
         ciborium::into_writer(&map, &mut bytes).unwrap();
+        // The determinism check names the duplicate. The value model would
+        // also refuse it ("the request is not a map"), so the reason alone
+        // would not show which check caught it.
         assert_eq!(
-            parse_cbor(&bytes).unwrap_err().reason(),
-            Reason::RequestMalformed
+            parse_cbor(&bytes),
+            Err(RequestError::Malformed("a duplicate map key"))
+        );
+    }
+
+    /// A key repeated with the same value is still a duplicate.
+    #[test]
+    fn a_duplicate_with_an_equal_value_is_malformed() {
+        let mut entries = request_b_members(&["nonce", "nonce", "profile", "subject", "coverage"]);
+        entries[1].1 = entries[0].1.clone();
+        assert_eq!(
+            parse_cbor(&encode(entries)),
+            Err(RequestError::Malformed("a duplicate map key"))
         );
     }
 
