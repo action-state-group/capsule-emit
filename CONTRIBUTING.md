@@ -51,6 +51,11 @@ ruff check --config python/pyproject.toml python .github examples test-vectors c
 python examples/quickstart_demo.py # the 5-minute acceptance demo
 ```
 
+## Releasing
+
+Releases are cut through a reviewed version-bump pull request; see
+[RELEASING.md](RELEASING.md).
+
 ## Adding a witness to the directory
 
 `witnesses.json` at the repository root lists transparency services that

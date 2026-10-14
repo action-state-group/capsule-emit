@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-# Publish @action-state-group/capsule-emit to npm when a ts/v<version> GitHub
-# release is published. The npm Trusted Publisher must name this repository
-# and publish-ts.yml before the first release from it.
+# Publish @action-state-group/capsule-emit to npm for a ts/v<version> tag:
+# tag-release.yml dispatches this on the tag it creates when a version bump
+# merges (see RELEASING.md), and publishing a GitHub Release for such a tag
+# also runs it. The npm trusted publisher names this repository, publish-ts.yml
+# and the npm environment (or none).
 #
 # Versions published from the former capsule-emit-ts repository (up to 0.3.0)
 # have no commit here, so an already-published version is refused rather than
@@ -12,19 +14,27 @@ name: Publish TypeScript package
 on:
   release:
     types: [published]
+  # tag-release.yml dispatches this on the ts/v<version> tag it creates.
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
+# One publish at a time for this package, so the dist-tag choice below sees
+# npm as the previous publish left it. GitHub keeps one pending run per group,
+# so a third release queued behind two is cancelled; re-run it.
 concurrency:
   group: publish-ts
   cancel-in-progress: false
 
 jobs:
   publish:
-    if: startsWith(github.event.release.tag_name, 'ts/v')
+    if: >-
+      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'ts/v')) ||
+      (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/ts/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: npm
     permissions:
       contents: read
       id-token: write
@@ -37,29 +47,27 @@ jobs:
       # Run the real MySQL 8.4 suite (Testcontainers) as ts.yml does, so the
       # release gate is not weaker than pull-request CI.
       ARTIFACT_MYSQL_TEST: '1'
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.ref_name }}
           fetch-depth: 0
           path: emit
       - name: Validate TypeScript release identity and source
-        run: |
-          git merge-base --is-ancestor HEAD origin/main
-          python3 ../.github/scripts/check_release.py ts "$RELEASE_TAG" package.json
+        run: python3 ../.github/release.py --repo .. check ts "$RELEASE_TAG"
       - name: Read exact AAC corpus pin
         id: aac
         run: |
           commit="$(sed -n 's/^export const AAC_COMMIT = "\([0-9a-f]\{40\}\)";$/\1/p' test/aac-pin.ts)"
           test -n "$commit"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: action-state-group/agent-action-capsule
           ref: ${{ steps.aac.outputs.commit }}
           path: agent-action-capsule
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -77,12 +85,25 @@ jobs:
       - run: npm run build
       - name: Packed external consumer and optional-driver isolation
         run: node scripts/check-packed-consumer.mjs
-      - name: Publish, keeping prereleases off the latest dist-tag
+      - name: Choose the dist-tag
+        # npm refuses a prerelease without an explicit dist-tag, and `latest`
+        # must never move backward: a stable version older than npm's current
+        # `latest` (a backport, or a release that finished out of order)
+        # publishes under `backport` instead.
         run: |
-          # npm refuses a prerelease without an explicit --tag, and older npm
-          # would make it `latest`; publish ts/vX.Y.Z-<pre> under `next`.
-          case "$RELEASE_TAG" in
-            *-*) dist_tag=next ;;
-            *) dist_tag=latest ;;
-          esac
-          npm publish --tag "$dist_tag"
+          version=$(node -p "require('./package.json').version")
+          # Only a clean answer or an explicit "not found" counts: treating a
+          # registry or network error as "no latest" could move latest backward.
+          if ! latest=$(npm view "$(node -p "require('./package.json').name")" dist-tags.latest 2>"$RUNNER_TEMP/latest-error.txt"); then
+            grep -q E404 "$RUNNER_TEMP/latest-error.txt" || { cat "$RUNNER_TEMP/latest-error.txt" >&2; exit 1; }
+            latest=""
+          fi
+          dist_tag=$(node -e '
+            const [version, latest] = process.argv.slice(1);
+            const core = (v) => v.split("-")[0].split(".").map(Number);
+            const older = (a, b) => { for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i]; return false; };
+            console.log(version.includes("-") ? "next" : latest && older(core(version), core(latest)) ? "backport" : "latest");
+          ' "$version" "$latest")
+          echo "DIST_TAG=$dist_tag" >> "$GITHUB_ENV"
+      - name: Publish
+        run: npm publish --tag "$DIST_TAG"

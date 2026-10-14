@@ -12,22 +12,22 @@ jobs:
   incoming-trees:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: action-state-group/capsule-emit-go
           ref: 415c38f21449941c43c4729f23da8a7ebbae04ac
           path: incoming/go
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: action-state-group/capsule-emit-ts
           ref: e73735ba3ec1029c5fba0544c2f6a421f7176621
           path: incoming/ts
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Scanner self-tests and migration regression tests
