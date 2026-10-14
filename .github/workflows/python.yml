@@ -17,9 +17,9 @@ jobs:
       matrix:
         python-version: ["3.9", "3.12"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "${{ matrix.python-version }}"
 
@@ -56,6 +56,9 @@ jobs:
       - name: leak-lint tests
         run: python -m pytest -q ../.github/test_leak_lint.py
 
+      - name: release helper tests
+        run: python -m pytest -q ../.github/test_release.py
+
   # seal_eval_log drives a real inspect_ai eval; its tests importorskip the
   # package, so they only run where the inspect-ai extra is installed. This
   # job installs it and fails if the import does not work, so those tests
@@ -63,9 +66,9 @@ jobs:
   inspect-ai:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 

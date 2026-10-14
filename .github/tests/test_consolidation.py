@@ -77,39 +77,6 @@ class ConsolidationTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 2)
 
-    def test_release_tags_match_metadata_and_reject_other_languages(self):
-        guard = load("release", ".github/scripts/check_release.py")
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            metadata = {
-                "python": root / "pyproject.toml",
-                "ts": root / "package.json",
-            }
-            metadata["python"].write_text('[project]\nversion = "0.9.0"\n')
-            metadata["ts"].write_text('{"name": "@action-state-group/capsule-emit", "version": "0.4.0"}')
-            accepted = {
-                "python": ("python/v0.9.0",),
-                "ts": ("ts/v0.4.0",),
-            }
-            for language, tags in accepted.items():
-                for tag in tags:
-                    with self.subTest(language=language, tag=tag):
-                        guard.check(language, tag, metadata[language])
-            refused = {
-                "python": ("v0.9.0", "go/v0.9.0", "ts/v0.9.0", "crates/capsule-emit-v0.9.0",
-                           "python/v0.8.0", "python/v0.9.0;echo unsafe", "python/v0.9.0-rc1"),
-                "ts": ("v0.4.0", "python/v0.4.0", "go/v0.4.0", "ts/v0.3.0", "ts/v0.4",
-                       "ts/v0.4.0;echo unsafe"),
-            }
-            for language, tags in refused.items():
-                for tag in tags:
-                    with self.subTest(language=language, tag=tag), self.assertRaises(ValueError):
-                        guard.check(language, tag, metadata[language])
-            with self.assertRaises(ValueError):
-                guard.check("go", "go/v0.3.0", metadata["python"])
-            with self.assertRaises(ValueError):
-                guard.check("rust", "rust/v0.1.0", metadata["python"])
-
     def test_publishers_route_only_their_own_tag_namespace(self):
         workflows = ROOT / ".github/workflows"
         routes = {
@@ -120,10 +87,12 @@ class ConsolidationTests(unittest.TestCase):
         for name, route in routes.items():
             with self.subTest(workflow=name):
                 self.assertIn(route, (workflows / name).read_text())
+        # The tag guard itself is tested in .github/test_release.py.
         for name in ("publish-python.yml", "publish-ts.yml"):
             language = name.removeprefix("publish-").removesuffix(".yml")
             with self.subTest(workflow=name):
-                self.assertIn(f"check_release.py {language} ", (workflows / name).read_text())
+                self.assertIn(f"check {language} ", (workflows / name).read_text())
+                self.assertIn("release.py", (workflows / name).read_text())
         publish_ts = (workflows / "publish-ts.yml").read_text()
         self.assertIn("ARTIFACT_MYSQL_TEST: '1'", publish_ts)
         self.assertIn('npm publish --tag "$dist_tag"', publish_ts)

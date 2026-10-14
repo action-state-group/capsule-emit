@@ -1,0 +1,28 @@
+{
+  "python": {
+    "kind": "python",
+    "manifest": "python/pyproject.toml",
+    "tag_prefix": "python/v",
+    "workflow": "publish-python.yml"
+  },
+  "ts": {
+    "kind": "npm",
+    "manifest": "ts/package.json",
+    "tag_prefix": "ts/v",
+    "workflow": "publish-ts.yml"
+  },
+  "crates/capsule-emit": {
+    "kind": "cargo",
+    "manifest": "rust/capsule-emit/Cargo.toml",
+    "lockfile": "rust/Cargo.lock",
+    "tag_prefix": "crates/capsule-emit-v",
+    "workflow": "publish-rust.yml"
+  },
+  "crates/capsule-emit-evidence-request": {
+    "kind": "cargo",
+    "manifest": "rust/capsule-emit-evidence-request/Cargo.toml",
+    "lockfile": "rust/Cargo.lock",
+    "tag_prefix": "crates/capsule-emit-evidence-request-v",
+    "workflow": "publish-rust.yml"
+  }
+}
