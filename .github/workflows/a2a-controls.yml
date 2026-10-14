@@ -3,7 +3,7 @@
 # against the live anchor: daily, on demand, and when the check itself changes.
 # GETs only (examples/a2a-ap2/boundary-seal/check_controls.py); it never
 # registers anything. A control that changes fails this workflow.
-name: a2a-controls
+name: A2A controls
 
 on:
   schedule:

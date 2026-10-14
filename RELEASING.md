@@ -18,14 +18,14 @@ The prefix is only on the Git tag. The registry version stays plain (`0.9.1`).
 
 ## Cutting a release
 
-1. **Prepare.** Run [Prepare release](https://github.com/action-state-group/capsule-emit/actions/workflows/prepare-release.yml)
+1. **Prepare.** Run [Release · Prepare](https://github.com/action-state-group/capsule-emit/actions/workflows/prepare-release.yml)
    on `main`, choosing the package and `patch`, `minor` or `major`. It raises
    the version from the current one, commits the bump with a sign-off, and
    pushes `release/<package>-v<version>`.
 2. **Review.** Open the pull request from the link in the run summary. Open it
    yourself: a pull request opened by the workflow would not start CI. Add the
    CHANGELOG entry on the same branch if it is not in yet.
-3. **Merge.** [Tag release](https://github.com/action-state-group/capsule-emit/actions/workflows/tag-release.yml)
+3. **Merge.** [Release · Tag](https://github.com/action-state-group/capsule-emit/actions/workflows/tag-release.yml)
    runs on the merge. For each package whose version changed it creates the
    tag and GitHub Release on the merge commit and dispatches the package's
    publisher on that tag.
@@ -51,8 +51,8 @@ If a publish fails after the tag exists:
 - **A defect in the code or the workflow:** a re-run uses the tagged commit
   again, so a fix merged to `main` does not reach it. Release the fix as a new
   version.
-- **Tag release failed before dispatching** (no publisher run exists): re-run
-  the Tag release run. It accepts a tag and GitHub Release it already created on
+- **Release · Tag failed before dispatching** (no publisher run exists): re-run
+  the Release · Tag run. It accepts a tag and GitHub Release it already created on
   the same commit and dispatches the publisher again.
 
 ## Safeguards
