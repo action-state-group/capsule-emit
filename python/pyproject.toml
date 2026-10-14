@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "capsule-emit"
-version = "0.9.0"
+version = "0.9.1"
 description = "One-call seal() for Agent Action Capsules — checkpointed and witnessed by the witness you name, ledger view CLI, thin framework adapters."
 readme = "README.md"
 requires-python = ">=3.9"
