@@ -45,8 +45,9 @@ logs can't do that.
 ### Witness
 Writing a fingerprint (just the fingerprint — never your data) where an independent
 party can confirm it, so there's outside evidence the capsule existed at a certain
-time. Witnessing (the checkpoint stream) is on by default, free, no signup — anyone
-can later check your log against it. → off with `seal(..., witness=False)` /
+time. Checkpointing is on by default; checkpoints are witnessed once you name a
+witness with `CAPSULE_WITNESS_URL` (there is no default; a public one is
+`witness.agentactioncapsule.org`), and anyone can later check your log against it. → off with `seal(..., witness=False)` /
 `CAPSULE_WITNESS=off`. The older per-capsule **anchor** channel (submitting one
 capsule's digest for its own inclusion receipt) still exists but is a legacy,
 non-default opt-in as of 0.5.0 (`seal(..., anchor=True)`). *Why this is what turns

@@ -316,9 +316,9 @@ def refuse_stub_in_production(explicit: bool | None) -> None:
         raise StubWitnessInProductionError(
             f"capsule-emit: {WITNESS_ENV_VAR}=stub is set while {CAPSULE_ENV_VAR}=production -- "
             "refusing to run. The stub witness proves nothing beyond self-attested and must "
-            "never ship to production. Fix one of: unset CAPSULE_WITNESS (uses the default "
-            "hosted witness), set CAPSULE_WITNESS_URL to point at your own witness, or unset "
-            "CAPSULE_ENV if this process is not actually production."
+            "never ship to production. Fix one of: unset CAPSULE_WITNESS and set "
+            "CAPSULE_WITNESS_URL to the witness you use (there is no default witness), or "
+            "unset CAPSULE_ENV if this process is not actually production."
         )
 
 
@@ -1033,8 +1033,8 @@ class CheckpointWitnessState:
         reached a real witness, so it has no receipt to grade.
 
         With ``ts_pubkey_pem`` every receipt is checked against that one
-        pinned key. Without it only the library's default witness, under its
-        built-in key, can have a grade. Never makes a network call."""
+        pinned key. Without it no receipt can have a grade: there is no
+        built-in witness key. Never makes a network call."""
         return {
             ts_url: _receipt_grade(self.checkpoint, w, ts_pubkey_pem=ts_pubkey_pem)
             for ts_url, w in self.effective_witnesses.items()

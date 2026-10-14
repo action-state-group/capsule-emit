@@ -17,7 +17,9 @@ authorized?" has a checkable answer, not just your word.
 self-attested Ed25519 signature (always present, no opt-out). Every call also
 appends to a local JSONL ledger. Checkpoints of that ledger (digests only, never
 capsule content) are sent to a witness once you name one with `witness_url=` or
-`CAPSULE_WITNESS_URL`; with none named, nothing leaves the machine.
+`CAPSULE_WITNESS_URL`; with none named, no checkpoint leaves the machine.
+(`witness=False` / `CAPSULE_WITNESS=off` stops all network traffic, the legacy
+anchor included.)
 
 ## Composing one action's whole story
 

@@ -43,8 +43,8 @@ checkpoint/witness stream automatically:
 - **Multiple witnesses.** `witness_url=` (and `CAPSULE_WITNESS_URL`) accept a
   single endpoint or several — a list, or a comma-separated string — and the
   same checkpoint is registered with *every* endpoint named, independently;
-  one endpoint failing never blocks the others. A single default endpoint is
-  used unless you opt into more.
+  one endpoint failing never blocks the others. There is no default endpoint:
+  with none named, no checkpoint is registered anywhere.
 - **Checkpoint-only** — what crosses the wire is the checkpoint itself (its
   size, a root hash, a timestamp, and the signing key's id —
   `CheckpointRecord.to_dict()`, POSTed to `/checkpoints`) so the witness can

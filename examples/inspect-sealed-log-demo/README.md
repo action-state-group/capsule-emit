@@ -64,8 +64,8 @@ list.
 
 3. `witness.push()` forces one checkpoint over those 12 records and
    registers it with the live public witness
-   (`witness.agentactioncapsule.org`) — the same witness `capsule-emit`
-   registers checkpoints with by default. The receipt is saved to
+   (`witness.agentactioncapsule.org`), named by `CAPSULE_WITNESS_URL` in the run
+   command below (capsule-emit has no default witness). The receipt is saved to
    `checkpoint_receipt.json`.
 
 4. Two bundles are built with `capsule_emit.disclose`:
@@ -95,7 +95,7 @@ Run it yourself:
 
 ```bash
 pip install inspect_ai "capsule-emit[dev]"
-python run_demo.py --out-dir out
+CAPSULE_WITNESS_URL=https://witness.agentactioncapsule.org python run_demo.py --out-dir out
 ```
 
 `--no-witness` skips the live registration and stops after sealing (useful
@@ -164,7 +164,7 @@ python -m uvicorn capsule_anchor.app:create_app --factory
 python -c "from capsule_emit import witness; witness.push('ledger.jsonl', ts_url=['https://witness.agentactioncapsule.org', 'https://your-witness.example'])"
 ```
 
-A single default witness is a **single-witness** trust tier: it upgrades the
+A single witness is a **single-witness** trust tier: it upgrades the
 log from self-attested to third-party-checkable, but it is not yet the
 multi-witness tier that lets a verifier cross-check independent operators
 against each other (see `docs/checkpoint.md` in `capsule-emit`).
