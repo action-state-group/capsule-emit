@@ -76,6 +76,9 @@ def _tristate(result) -> str:
     return "VALID"
 
 LEDGER_PATH = Path(tempfile.mkdtemp()) / "mcp_capsule_ledger.jsonl"
+# capsule-emit has no default anchor endpoint, so the demo names the public
+# log itself (AAC_ANCHOR_URL overrides it).
+ANCHOR_URL = os.environ.get("AAC_ANCHOR_URL") or "https://anchor.agentactioncapsule.org/v1/digest"
 
 
 def run_demo(anchor: bool) -> int:
@@ -87,6 +90,7 @@ def run_demo(anchor: bool) -> int:
         developer="order-agent@v1",
         ledger=LEDGER_PATH,
         anchor=anchor,  # True → submit a digest to the public log
+        anchor_url=ANCHOR_URL if anchor else None,
         # anchor_wait blocks for a real confirmed/failed outcome instead of
         # the default non-blocking "submitted" — so this flagship demo shows
         # a genuine anchored=True, not an apology for anchored=False.
