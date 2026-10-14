@@ -15,7 +15,9 @@ python -m pytest -q .github/test_release.py          # release helper
 python -m unittest discover -s .github/tests          # consolidation and guard tests
 python .github/messaging_guard.py .                   # forbidden repositioning phrases
 
-# TypeScript (ts/)
+# TypeScript (ts/). The tests read agent-action-capsule's corpus: check that
+# repository out at the commit in ts/test/aac-pin.ts and point AAC_ROOT at it
+# (default ../../agent-action-capsule), as ts.yml does.
 npm ci && npm run format:check && npm run lint && npm run typecheck && npm test && npm run build
 
 # Go (go/): see go/CLAUDE.md

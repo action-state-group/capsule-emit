@@ -95,5 +95,5 @@ class ConsolidationTests(unittest.TestCase):
                 self.assertIn("release.py", (workflows / name).read_text())
         publish_ts = (workflows / "publish-ts.yml").read_text()
         self.assertIn("ARTIFACT_MYSQL_TEST: '1'", publish_ts)
-        self.assertIn('npm publish --tag "$dist_tag"', publish_ts)
+        self.assertIn('npm publish --tag "$DIST_TAG"', publish_ts)
         self.assertNotIn("run: npm publish\n", publish_ts)
