@@ -5,6 +5,11 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## 0.0.7
+
+No code changes from 0.0.6. The first crate release through the release-PR
+workflow (see RELEASING.md).
+
 ## 0.0.6
 
 The first release after 0.0.4. 0.0.5 was never published: everything listed
