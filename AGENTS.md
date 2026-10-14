@@ -52,8 +52,9 @@ this is what makes `can(received(...))` byte-identical to calling
   already-signed foreign artifact, standalone or nested:
   `seal(received(bytes, type="..."))` or `can(received(bytes, type="..."))`.
 - **Don't disable witnessing unless the integration is genuinely
-  local-only.** Checkpointing is on by default, but nothing is witnessed until
-  you name a witness; turn it off with `witness=False` / `CAPSULE_WITNESS=off`
+  local-only.** Witnessing is enabled by default but does nothing until you
+  name a witness (then checkpoints are built and registered with it); turn it
+  off with `witness=False` / `CAPSULE_WITNESS=off`
   only for a real zero-network-egress case. (The older per-capsule `anchor=` /
   `CAPSULE_ANCHOR` channel is a separate, already-off-by-default legacy path
   — leave it alone unless you specifically need it.)

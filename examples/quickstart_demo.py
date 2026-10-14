@@ -39,7 +39,7 @@ def main() -> int:
         ledger=LEDGER_PATH,
     )
     print(f"  capsule_id : {cap.capsule_id}")
-    print(f"  {cap}  (checkpointed by default; witnessed once CAPSULE_WITNESS_URL names a witness)")
+    print(f"  {cap}  (checkpointed and witnessed once CAPSULE_WITNESS_URL names a witness)")
     assert len(cap.capsule_id) == 64, "capsule_id must be 64-char hex"
     print("  ✓ sealed\n")
 

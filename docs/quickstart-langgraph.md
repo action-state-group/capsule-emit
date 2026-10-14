@@ -1,6 +1,6 @@
 # Quickstart: LangGraph + capsule-emit
 
-**One callback. Every tool call in your graph on the record, checkpointed by default and witnessed once you name a witness.**
+**One callback. Every tool call in your graph on the record, checkpointed and witnessed once you name a witness.**
 
 ## Install
 
@@ -34,8 +34,8 @@ def my_node(state):
 ```
 
 `on_tool_start` / `on_tool_end` fire per tool invocation. Input + output are
-digest-committed, and — by default — folded into a checkpoint stream, witnessed
-once `CAPSULE_WITNESS_URL` names a witness. Check where your ledger stands:
+digest-committed and written to the signed ledger, which is checkpointed and
+witnessed once `CAPSULE_WITNESS_URL` names a witness. Check where your ledger stands:
 
 ```bash
 capsule-emit status graph-capsules.jsonl

@@ -7,10 +7,10 @@ It wraps ``agent_action_capsule.emit()`` with:
 - Digest-only commitment of agent_input / agent_output (content stays local)
 - Optional per-emit digest salting (``salt_digests=True``), for a privacy-sensitive
   deployment that wants cross-capsule input correlation resistance
-- Async checkpointing on by default, lazy per ledger (checkpoint-only,
-  never capsule content; see ``capsule_emit.witness`` and
-  ``docs/checkpoint.md``); checkpoints are registered only with the witness(es)
-  you name (there is no default witness) — the only egress channel the
+- Async checkpoint/witness enabled by default, lazy per ledger
+  (checkpoint-only, never capsule content; see ``capsule_emit.witness`` and
+  ``docs/checkpoint.md``); it does nothing until you name a witness (there
+  is no default witness), then checkpoints are built and registered with it — the only egress channel the
   library opens on its own as of 0.5.0
   (see "Single egress" below)
 - Every capsule cryptographically signed over its ``capsule_id`` by a

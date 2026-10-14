@@ -12,9 +12,10 @@ Run:
   pip install "capsule-emit" fastapi uvicorn
   python seal_server.py          # listens on :8042
 
-Every sealed capsule is folded into an async, digest-only CLL checkpoint
-stream (see docs/checkpoint.md); checkpoints are witnessed once
-CAPSULE_WITNESS_URL names a witness -- there is no default witness. Opt out
+Every sealed capsule goes into a signed local ledger. Once CAPSULE_WITNESS_URL
+names a witness, async, digest-only CLL checkpoints of that ledger are built
+and registered with it (see docs/checkpoint.md) -- there is no default
+witness. Opt out
 entirely (witness=False / CAPSULE_WITNESS=off) for a genuinely offline
 deployment.
 The older, non-default per-capsule anchor channel this server used to

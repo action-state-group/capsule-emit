@@ -1,6 +1,6 @@
 # Quickstart: CrewAI + capsule-emit
 
-**One wrap call. Every consequential tool call on the record, checkpointed by default and witnessed once you name a witness.**
+**One wrap call. Every consequential tool call on the record, checkpointed and witnessed once you name a witness.**
 
 ## Install
 
@@ -8,8 +8,8 @@
 pip install "capsule-emit" "crewai>=0.40"
 ```
 
-No anchor setup required. As of 0.5.0, every `seal()`-family call folds into
-a checkpoint stream by default; to have it witnessed, name a witness with
+No anchor setup required. Every `seal()`-family call writes a signed local
+ledger; to have it checkpointed and witnessed, name a witness with
 `CAPSULE_WITNESS_URL` (a public one is `https://witness.agentactioncapsule.org`).
 There is no default witness. See [`docs/checkpoint.md`](checkpoint.md).
 
@@ -33,9 +33,9 @@ emitter.wrap(my_base_tool_instance)
 agent = Agent(role="...", tools=[safe_tool, my_base_tool_instance])
 ```
 
-Each tool call emits one capsule: input + output digest-committed, and — by
-default — folded into a checkpoint stream, witnessed once `CAPSULE_WITNESS_URL`
-names a witness. Check
+Each tool call emits one capsule: input + output digest-committed and
+written to the signed ledger, which is checkpointed and witnessed once
+`CAPSULE_WITNESS_URL` names a witness. Check
 where your ledger stands:
 
 ```bash
