@@ -2,6 +2,14 @@
 
 **capsule-emit records your agent's actions as verifiable capsules; `seal()` is the one call you make.**
 
+**Arrived from a witness?** If you followed a link from a checkpoint or a receipt and want to
+understand what you're looking at before you write any code, start with
+[you've reached a witness](https://agentactioncapsule.org/docs/witness-landing.html) instead —
+it explains what a checkpoint proves (and doesn't) in about five minutes. Come back here when
+you're ready to seal your own first capsule. Quick links: [quickstart](https://agentactioncapsule.org/docs/quickstart.html) ·
+[verify a capsule](https://agentactioncapsule.org/docs/verify-a-capsule.html) ·
+[translation (dev/auditor/spec)](https://agentactioncapsule.org/docs/translation.html).
+
 ## 1. What it is
 
 `capsule-emit` turns each consequential thing your AI agent does into a **capsule** — a hashed, signed, content-addressed record that anyone can verify offline, without trusting you.
