@@ -96,9 +96,8 @@ from capsule_emit.adapters.mcp import MCPCapsuleEmitter
 emitter = MCPCapsuleEmitter(
     operator="your-org",        # stable identifier for your tenant
     developer="your-agent@v1",  # agent name + version
-    # anchor=True by default → fire-and-forget POST to the public log
-    # Set AAC_ANCHOR_URL to point at a private anchor (see below)
-    # Pass anchor=False to skip anchoring entirely (offline / CI)
+    # anchor is off by default; pass anchor=True and an endpoint
+    # (anchor_url=... or AAC_ANCHOR_URL) to submit digests to a log
 )
 ```
 
@@ -176,13 +175,15 @@ Every capsule commits the following — all by SHA-256 digest:
 **Raw values stay local.** Only digests leave the process. The capsule can be
 shared, anchored, or audited without exposing tool inputs or outputs.
 
-## 5. Anchor by default
+## 5. Anchoring (opt-in)
 
-`anchor=True` is the constructor default. On every `@emitter.tool()` call,
-`capsule-emit` fires a background POST with only the `capsule_id` hex string to
-the SCITT transparency log — your tool call is never blocked.
+Anchoring is off by default. With `anchor=True` and an endpoint, every
+`@emitter.tool()` call fires a background POST with only the `capsule_id` hex
+string to the SCITT transparency log — your tool call is never blocked. There
+is no default endpoint; the demo names the public log
+(`https://anchor.agentactioncapsule.org/v1/digest`).
 
-**Override the endpoint:**
+**Set the endpoint:**
 
 ```bash
 export AAC_ANCHOR_URL=https://your-private-anchor.example.com
@@ -279,11 +280,11 @@ testing.
 
 | | |
 |---|---|
-| Constructor | `MCPCapsuleEmitter(operator, developer, ledger="ledger.jsonl", anchor=True, anchor_url=None, model=None, action_type=None, host_provenance=False, seal_reads=True, emit_manifest_artifact=True, manifest_artifact_dir=None)` |
+| Constructor | `MCPCapsuleEmitter(operator, developer, ledger="ledger.jsonl", anchor=None, anchor_url=None, model=None, action_type=None, host_provenance=False, seal_reads=True, emit_manifest_artifact=True, manifest_artifact_dir=None)` |
 | Decorator | `@emitter.tool(action=None, *, effect_type=None, verdict="executed", action_type=None, model=None)` |
 | Direct emit | `emitter.emit_capsule(action, tool_input, tool_output, *, verdict, effect, ...)` |
 | Toolset digest | `emitter.capture_toolset(tools)` — see [`docs/extensions/mcp-toolset-digest.md`](../../docs/extensions/mcp-toolset-digest.md) |
-| Env var | `AAC_ANCHOR_URL` — override the anchor endpoint |
+| Env var | `AAC_ANCHOR_URL` — the anchor endpoint (no default) |
 | Last capsule | `emitter.last` — the most recent `EmitResult` |
 | All capsules | `emitter.results` — list of all `EmitResult`s this session |
 
