@@ -124,5 +124,5 @@ The verifier is independent of `capsule-emit` on purpose: *any* tool can produce
 
 - **`emit()` → `seal()`.** The top-level producer verb was renamed. `emit()` remains importable for one release as a raising stub that points you at `seal()`.
 - **`compose()` / `carry()` are retired as public verbs.** There is no `compose()`/`carry()` call. "Composition" is now nesting the slot verbs `who`/`can`/`did`/`audit` inside `seal(...)`; bringing in a foreign signed artifact is `received(bytes, type=...)` (nested in `seal()` or standalone).
-- **Anchor is now legacy and off by default.** The per-capsule anchor channel is an explicit, non-default opt-in (`anchor=True` / `CAPSULE_ANCHOR=legacy-on`), kept for one release as a rollback path.
+- **Anchor is now legacy and off by default.** The per-capsule anchor channel is an explicit, non-default opt-in (`anchor=True` / `CAPSULE_ANCHOR=legacy-on`), kept as a rollback path.
 - **Checkpoint/witness is the default push.** Every sealed ledger is folded into a per-ledger Merkle Mountain Range and, at the cadence, a signed checkpoint is registered with the witness — the separate, live `witness.agentactioncapsule.org` service at its `POST /checkpoints` route. This is the only default egress channel as of 0.5.0.

@@ -15,8 +15,9 @@ authorized?" has a checkable answer, not just your word.
 
 `capsule.capsule_id` is the content address; `capsule.signature` is a
 self-attested Ed25519 signature (always present, no opt-out). Every call also
-appends to a local JSONL ledger and, by default, feeds an async, digest-only
-witness (checkpoint) stream — no code required beyond `seal()`.
+appends to a local JSONL ledger. Checkpoints of that ledger (digests only, never
+capsule content) are sent to a witness once you name one with `witness_url=` or
+`CAPSULE_WITNESS_URL`; with none named, nothing leaves the machine.
 
 ## Composing one action's whole story
 
@@ -49,9 +50,9 @@ this is what makes `can(received(...))` byte-identical to calling
   already-signed foreign artifact, standalone or nested:
   `seal(received(bytes, type="..."))` or `can(received(bytes, type="..."))`.
 - **Don't disable witnessing unless the integration is genuinely
-  local-only.** The checkpoint/witness stream is on by default; turn it off
-  with `witness=False` / `CAPSULE_WITNESS=off` only for a real
-  zero-network-egress case. (The older per-capsule `anchor=` /
+  local-only.** Checkpointing is on by default, but nothing is witnessed until
+  you name a witness; turn it off with `witness=False` / `CAPSULE_WITNESS=off`
+  only for a real zero-network-egress case. (The older per-capsule `anchor=` /
   `CAPSULE_ANCHOR` channel is a separate, already-off-by-default legacy path
   — leave it alone unless you specifically need it.)
 
