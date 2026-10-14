@@ -36,31 +36,12 @@ path is not redirected. Known consumers on the old path are capsule-cli
 
 ## Release isolation
 
-Each registry publisher runs only for its own tag namespace, and
-`.github/scripts/check_release.py` fails a release whose tag disagrees with
-that language's metadata before anything is built:
-
-| Language | Tag | Trigger | Metadata check |
-|---|---|---|---|
-| Python | `python/v<project.version>` | published GitHub release, `publish-python.yml` | `python/pyproject.toml` version |
-| TypeScript | `ts/v<package version>` | published GitHub release, `publish-ts.yml` | `ts/package.json` version, not already on npm; prereleases publish under the `next` dist-tag |
-| Go | `go/vX.Y.Z` | the pushed tag is the release; no workflow | none |
-| Rust | `crates/<crate>-v<version>` | pushed tag, `publish-rust.yml` | crate `Cargo.toml` version |
-
-Every registry publisher also requires the tagged commit to be an ancestor of main.
-TypeScript versions up to 0.3.0 were published from capsule-emit-ts and have
-no commit here; `publish-ts.yml` refuses any version already on npm, so the
-first release from this repository needs a new version in `ts/package.json`.
-A Go release is the tag itself and is fetchable as soon as it is pushed, so
-no workflow could prevent a bad one. The repository tag ruleset limits who can
-create `go/v*` tags, CI on main covers the module's tests, and a bad release is
-withdrawn with a `retract` directive in a later version. Python retains the `pypi` environment and Rust retains `crates-io`.
-
-Registry-side bindings are configured outside this repository. The PyPI and
-crates.io Trusted Publishers must name `publish-python.yml` and
-`publish-rust.yml`, and the npm Trusted Publisher must name this repository and
-`publish-ts.yml`, before the next release from each. Historical tags and
-published versions remain unchanged.
+Each registry publisher runs only for its own tag namespace (`python/v*`,
+`ts/v*`, `crates/<crate>-v*`) and checks the tag against that package's
+metadata before anything is built; a Go release is the admin-pushed `go/v*`
+tag itself. Releases are cut through a reviewed version-bump pull request.
+[RELEASING.md](../RELEASING.md) describes the process, the safeguards and the
+registry bindings.
 
 ## Acceptance still required
 
