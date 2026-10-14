@@ -139,7 +139,7 @@ Optional environment variables:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AAC_ANCHOR_URL` | `https://anchor.agentactioncapsule.org` (via capsule-emit) | Override the transparency log URL |
+| `AAC_ANCHOR_URL` | unset (no default) | Transparency log for the legacy anchor channel; it is used only with an explicit anchor opt-in and an endpoint |
 | `CAPSULE_LEDGER` | `capsule_ledger.jsonl` | Path to the local JSONL ledger |
 | `CAPSULE_SEAL_PORT` | `8042` | Port the server listens on |
 

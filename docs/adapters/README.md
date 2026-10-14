@@ -44,8 +44,10 @@ Emitter(
 )
 ```
 
-Sealing is witnessed by default (no config needed): the checkpoint/witness push
-goes to `witness.agentactioncapsule.org` (`POST /checkpoints`) — see
+Sealing writes a signed local ledger. Once you name a witness with
+`CAPSULE_WITNESS_URL` (a public one is `witness.agentactioncapsule.org`,
+`POST /checkpoints`), checkpoints of that ledger are built and registered with
+it; there is no default witness — see
 [`docs/checkpoint.md`](../checkpoint.md). The legacy `anchor` channel is off by
 default as of 0.5.0 — `anchor=True` (or `CAPSULE_ANCHOR=legacy-on`) opts back into
 the older, non-default per-capsule anchor channel.

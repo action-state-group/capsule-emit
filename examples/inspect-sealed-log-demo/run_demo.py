@@ -127,8 +127,12 @@ def register_checkpoint(ledger_path: Path, out_dir: Path, use_witness: bool) -> 
         return None
     cp = witness.push(str(ledger_path))
     if cp is None:
-        print("  nothing to checkpoint (unexpected -- ledger should be non-empty)")
-        return None
+        # push() returns None when no witness is configured (there is no
+        # default); the bundle steps that follow need a checkpoint.
+        raise SystemExit(
+            "  no witness configured: set CAPSULE_WITNESS_URL "
+            "(e.g. https://witness.agentactioncapsule.org) or pass --no-witness"
+        )
     receipt = cp.to_dict()
     (out_dir / "checkpoint_receipt.json").write_text(json.dumps(receipt, indent=2))
     if cp.witnesses:

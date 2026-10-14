@@ -7,9 +7,11 @@ It wraps ``agent_action_capsule.emit()`` with:
 - Digest-only commitment of agent_input / agent_output (content stays local)
 - Optional per-emit digest salting (``salt_digests=True``), for a privacy-sensitive
   deployment that wants cross-capsule input correlation resistance
-- Async checkpoint/witness on by default, lazy per ledger (checkpoint-only,
-  never capsule content; see ``capsule_emit.witness`` and
-  ``docs/checkpoint.md``) — the only default egress channel as of 0.5.0
+- Async checkpoint/witness enabled by default, lazy per ledger
+  (checkpoint-only, never capsule content; see ``capsule_emit.witness`` and
+  ``docs/checkpoint.md``); it does nothing until you name a witness (there
+  is no default witness), then checkpoints are built and registered with it — the only egress channel the
+  library opens on its own as of 0.5.0
   (see "Single egress" below)
 - Every capsule cryptographically signed over its ``capsule_id`` by a
   persisted producer key -- self-attested strength, by default, on every
@@ -28,8 +30,9 @@ is now the only default network path. The old anchor channel still exists as
 an explicit, non-default opt-in — pass ``anchor=True``, or set
 ``CAPSULE_ANCHOR=legacy-on`` (a deliberately distinct value from the old
 on-values, so an existing ``CAPSULE_ANCHOR=true`` config does not silently
-keep double-egress alive across the upgrade) — kept only as a rollback path
-for one release. **Even when opted back in, the legacy channel stays subject
+keep double-egress alive across the upgrade) — kept as a rollback path, and it
+needs an endpoint (``anchor_url=`` / ``AAC_ANCHOR_URL``; there is no default).
+**Even when opted back in, the legacy channel stays subject
 to the witness kill switch** — ``witness=False`` /
 ``CAPSULE_WITNESS=off`` is the one switch that zeroes ALL egress, anchor
 included. See ``docs/why-anchoring.md`` and ``docs/checkpoint.md``.
@@ -134,7 +137,7 @@ _ATEXIT_ANCHOR_TIMEOUT = float(
 #: ``capsule_emit.witness.WITNESS_ENV_VAR`` (which defaults ON), this
 #: defaults OFF as of 0.5.0 (the per-seal anchor channel is
 #: killed as a default egress path) — only the exact value ``"legacy-on"``
-#: re-enables it, kept as a one-release rollback escape hatch. Pre-0.5.0
+#: re-enables it, kept as a rollback escape hatch. Pre-0.5.0
 #: on-values (``"true"``/``"1"``/``"yes"``/unset) no longer enable anchor —
 #: an existing ``CAPSULE_ANCHOR=true`` config silently downgrades to
 #: single-egress (checkpoint-only) rather than continuing double-egress.
@@ -299,7 +302,7 @@ def _print_missing_anchor_dependency_notice_once() -> None:
         _dep_notice_printed = True
     try:
         print(
-            "capsule-emit: anchor is on by default but the optional SCITT anchor "
+            "capsule-emit: the legacy anchor is enabled but the optional SCITT anchor "
             "dependency isn't installed (pip install 'agent-action-capsule[anchor]') "
             "-- anchor submissions in this process cannot succeed. Disable with "
             "anchor=False or CAPSULE_ANCHOR=off. (This notice prints once per process.)",
@@ -606,8 +609,8 @@ def _emit_capsule(
         anchor: Legacy, non-default channel — killed as a default in 0.5.0. ``None`` (default) never dispatches. Pass ``True``, or
             set ``CAPSULE_ANCHOR=legacy-on``, to opt back into the old
             per-seal, async, digest-only SCITT anchor submission
-            (:func:`agent_action_capsule.anchor.async_anchor`) — kept only as
-            a one-release rollback path (see ``docs/why-anchoring.md``). Non-
+            (:func:`agent_action_capsule.anchor.async_anchor`) — kept as a
+            rollback path (see ``docs/why-anchoring.md``). Non-
             blocking by default — see ``anchor_wait`` to block for a confirmed
             outcome, and ``EmitResult.anchor_status`` for the non-blocking
             outcome signal. Pass ``False`` (or leave unset) to keep it off; an

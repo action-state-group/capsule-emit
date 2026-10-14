@@ -1,4 +1,4 @@
-# capsule-emit-ts
+# capsule-emit (TypeScript)
 
 TypeScript-native AAC format-4 producer and verifier. The package is ESM-first,
 uses strict TypeScript, preserves signer-independent Capsule IDs, and emits the
@@ -369,11 +369,11 @@ without drivers before exercising all six exports with their optional peers.
 
 ## Release
 
-The npm package remains `@action-state-group/capsule-emit`. Publication from
-this consolidated repository is gated until its npm trusted publisher is
-configured and the release workflow and language-specific tag namespace are
-accepted. No active npm publisher is imported here. The legacy repository's
-publisher binding does not authorize this repository.
+The npm package remains `@action-state-group/capsule-emit`. It is released from
+this repository through a merged version bump tagged `ts/v<version>` and
+published by `publish-ts.yml`; see [RELEASING.md](../RELEASING.md). Versions up
+to 0.3.0 came from the former capsule-emit-ts repository and are not
+republished.
 
 A release must preserve the six export paths, optional storage peers, and the
 paired AAC runtime/corpus pins. Verify the packed external consumer and real

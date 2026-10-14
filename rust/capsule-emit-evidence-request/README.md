@@ -15,7 +15,7 @@ refusal, or the requester's own record that nothing arrived.
 | `invariance` | caller invariance: the same subject under the same anchor gives the same bytes |
 | `retention` | retention commitments and the breach table |
 | `receipt` (0.0.3) | check RFC 9162 Ed25519 receipt form and authenticate any matching inclusion proof under a pinned service key |
-| `answer` (0.0.3) | build the artifact response over a checkpointed local log (`cll`): records with inclusion proofs, a range or the full history with a range proof, the checkpoints, or the `history_card/1` derivation with consistency proofs; the artifact is deterministic and the same for every requester, the envelope is signed by the responder and binds the request digest and the anchor. `answer::verify` checks it all offline |
+| `answer` (0.0.2; receipts checked from 0.0.3) | build the artifact response over a checkpointed local log (`cll`): records with inclusion proofs, a range or the full history with a range proof, the checkpoints, or the `history_card/1` derivation with consistency proofs; the artifact is deterministic and the same for every requester, the envelope is signed by the responder and binds the request digest and the anchor. `answer::verify` checks it all offline |
 
 ```rust
 use capsule_emit_evidence_request::{digest, request, resolve};

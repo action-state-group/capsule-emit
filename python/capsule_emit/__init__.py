@@ -38,7 +38,9 @@ slot-form calls; ``carry()``'s body was already ``received()``'s.
 
 Witnessing is on by default (the CLL checkpoint/witness stream — async,
 checkpoint-only (never capsule content), lazy per ledger — see
-``capsule_emit.witness`` and ``docs/checkpoint.md``). The older per-capsule
+``capsule_emit.witness`` and ``docs/checkpoint.md``), but there is no default
+witness: checkpoints are sent only to a witness named with ``witness_url=`` or
+``CAPSULE_WITNESS_URL``. The older per-capsule
 anchor channel is a legacy,
 non-default opt-in (``anchor=True`` / ``CAPSULE_ANCHOR=legacy-on``) kept only
 as a rollback path. Every capsule minted by ``seal()``/``received()`` is also

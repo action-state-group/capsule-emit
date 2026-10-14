@@ -114,11 +114,11 @@ A transparency log **you** run isn't proof to an outsider — it has the same
 control — lets a counterparty check your capsule without trusting *you*; it
 does not, by itself, mean nobody has to trust the log's *operator* (that's the
 per-capsule-receipt-vs-witnessed-stream distinction above). `capsule-emit`
-witnesses by default to the free hosted log at `witness.agentactioncapsule.org`
-(a separate, live witness service, `POST /checkpoints`), a
-single-operator log; you can self-host or repoint (`CAPSULE_WITNESS_URL`), but
-either way the trust property only holds when the log is one the *verifier*
-also trusts.
+witnesses only to a witness you name (`witness_url=` or `CAPSULE_WITNESS_URL`);
+there is no default. A public one is `witness.agentactioncapsule.org` (a
+separate, live witness service, `POST /checkpoints`), a single-operator log;
+you can use it, self-host or repoint, but either way the trust property only
+holds when the log is one the *verifier* also trusts.
 
 ## In practice
 
@@ -126,7 +126,7 @@ also trusts.
 checkpoint/witness stream (see [`docs/checkpoint.md`](checkpoint.md)) is the
 only default egress path. Older guides showing `anchor=True` per seal
 describe the pre-0.5.0 surface. The channel still exists, as an explicit,
-non-default opt-in kept for one release as a rollback path:
+non-default opt-in kept as a rollback path:
 
 - **Opt-in only** — pass `seal(..., anchor=True)`, or set
   `CAPSULE_ANCHOR=legacy-on` process-wide. Async and non-blocking either way

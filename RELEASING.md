@@ -11,8 +11,8 @@ merging it tags and publishes. The packages are listed in
 |---|---|---|---|---|
 | `python` | `python/pyproject.toml` | `python/v<version>` | `publish-python.yml` | `pypi` (tag rule `python/v*`) |
 | `ts` | `ts/package.json` and `ts/package-lock.json` | `ts/v<version>` | `publish-ts.yml` | `npm` (tag rule `ts/v*`) |
-| `crates/capsule-emit` | `rust/capsule-emit/Cargo.toml` and `rust/Cargo.lock` | `crates/capsule-emit-v<version>` | `publish-rust.yml` | `crates-io` (tag rule `crates/*-v*`, required reviewer) |
-| `crates/capsule-emit-evidence-request` | `rust/capsule-emit-evidence-request/Cargo.toml` and `rust/Cargo.lock` | `crates/capsule-emit-evidence-request-v<version>` | `publish-rust.yml` | `crates-io` (tag rule `crates/*-v*`, required reviewer) |
+| `crates/capsule-emit` | `rust/capsule-emit/Cargo.toml` and `rust/Cargo.lock` | `crates/capsule-emit-v<version>` | `publish-rust.yml` | `crates-io` (tag rule `crates/*-v*`) |
+| `crates/capsule-emit-evidence-request` | `rust/capsule-emit-evidence-request/Cargo.toml` and `rust/Cargo.lock` | `crates/capsule-emit-evidence-request-v<version>` | `publish-rust.yml` | `crates-io` (tag rule `crates/*-v*`) |
 
 The prefix is only on the Git tag. The registry version stays plain (`0.9.1`).
 
@@ -31,8 +31,7 @@ The prefix is only on the Git tag. The registry version stays plain (`0.9.1`).
    publisher on that tag.
 4. **Publish.** The publisher checks that the tag is the package's prefix plus
    its manifest version and that the commit is on `main`, then uploads through
-   OIDC trusted publishing from its environment. A crate upload waits for a
-   reviewer to approve the `crates-io` deployment. Confirm the run and the new
+   OIDC trusted publishing from its environment. Confirm the run and the new
    version on the registry.
 
 Bumping a version by hand in any pull request releases it the same way when it
