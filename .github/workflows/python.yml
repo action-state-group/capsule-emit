@@ -87,3 +87,44 @@ jobs:
           tests/test_inspect_ai_core.py
           tests/test_inspect_ai_eval_log.py
           tests/test_reconciliation.py
+
+  # agent-action-capsule's registry-conformance check (agent-action-capsule
+  # PR #241, not merged or released yet) over one record from each core
+  # helper (tests/_library_emissions.py says which). Pinned to one
+  # agent-action-capsule commit; move AAC_REF when #241 merges. The pytest step
+  # is report-only (continue-on-error) until then; effect.type stays
+  # report-only inside the test after that too.
+  registry-conformance:
+    runs-on: ubuntu-latest
+    env:
+      AAC_REF: 4c4cd202327d02fce9af08bf968477e6116b4202
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install capsule-emit
+        run: pip install -e ".[dev]"
+
+      - name: install agent-action-capsule at AAC_REF
+        run: >
+          pip install --force-reinstall --no-deps
+          "agent-action-capsule @ git+https://github.com/action-state-group/agent-action-capsule.git@${AAC_REF}#subdirectory=python"
+
+      - name: agent-action-capsule is the -05 build (so nothing below tests against -04)
+        run: >
+          python -c "import agent_action_capsule as a;
+          assert a.DEFAULT_SPEC_VERSION == 'draft-mih-scitt-agent-action-capsule-05', a.DEFAULT_SPEC_VERSION;
+          print(a.__file__, a.DEFAULT_SPEC_VERSION)"
+
+      - name: registry_conformance is importable (so nothing below skips)
+        run: python -c "import agent_action_capsule.registry_conformance as r; print(r.__file__)"
+
+      - name: pytest (registry conformance; effect.type report-only)
+        continue-on-error: true
+        run: >
+          python -m pytest -v -s
+          tests/test_registry_conformance_aac.py
+          tests/test_verdict_class_registered.py

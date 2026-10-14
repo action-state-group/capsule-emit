@@ -51,7 +51,6 @@ def main() -> int:
         operator="acme-co",
         developer="po-agent@v1",
         confirms=cap.capsule_id,
-        verdict="confirmed",
         effect={"type": "write_po", "status": "confirmed"},
         ledger=LEDGER_PATH,
     )

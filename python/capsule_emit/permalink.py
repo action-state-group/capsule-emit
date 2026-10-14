@@ -30,6 +30,8 @@ from typing import Any
 
 from agent_action_capsule.bundle import bundle_digest, encode_fragment
 
+from .display import verdict_label
+
 #: There is no default verify surface: callers name the one they use. A
 #: public one is, for example, ``https://verify.agentactioncapsule.org``.
 
@@ -108,8 +110,7 @@ def _capsule_id_of(capsule: dict) -> str:
 
 
 def _verdict_of(capsule: dict) -> str:
-    disposition = capsule.get("disposition") or {}
-    return disposition.get("verdict_class") or disposition.get("decision") or "?"
+    return verdict_label(capsule, "?")
 
 
 def summarize(capsules: list[dict]) -> str:

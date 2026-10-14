@@ -3,7 +3,7 @@
 
 Covers:
 - seal_adjudication produces correct chain (parent_capsule_id + relation="confirms")
-- disposition.verdict_class == "assessed" (detection, never enforcement)
+- disposition.verdict_class is absent (no registered value fits an adjudication)
 - compute_attestation.adjudication carries source/capture_method/verdict/margin/margin_tau
 - corroborated / inconclusive / contradicted:<owner_id> verdict shapes
 - invalid verdict strings are rejected
@@ -75,13 +75,13 @@ def test_seal_adjudication_chains_to_half_a(tmp_path):
     assert chain.get("relation") == RELATION_ADJUDICATES == "confirms"
 
 
-def test_seal_adjudication_verdict_class_is_assessed(tmp_path):
+def test_seal_adjudication_omits_verdict_class(tmp_path):
     half_a = _half(tmp_path, "serve_a")
     half_b = _half(tmp_path, "serve_b")
 
     result = _adjudication_result(tmp_path, half_a["capsule_id"], half_b["capsule_id"], VERDICT_INCONCLUSIVE)
 
-    assert result.capsule["disposition"]["verdict_class"] == "assessed"
+    assert "verdict_class" not in result.capsule["disposition"]
     assert result.capsule["action_type"] == "decide"
 
 

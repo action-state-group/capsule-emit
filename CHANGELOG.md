@@ -6,6 +6,37 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed: helpers write only registered `verdict_class` values
+
+Three helpers wrote a `disposition.verdict_class` that agent-action-capsule's
+registry does not define. New records change as follows; records already sealed
+are not touched, and readers still accept the old values.
+
+- `seal_adjudication` leaves `verdict_class` absent (was `assessed`).
+  `action_type` stays `decide`.
+- `log()` leaves `verdict_class` absent (was `logged`).
+- `seal_bilateral` writes `executed` (was `confirmed`). `effect.status` stays
+  `confirmed`, which is where that value belongs.
+
+The ledger table and HTML view, the evidence table and the permalink summary
+label a capsule with no `verdict_class` by record type: an adjudication shows
+the verdict it records (for example `contradicted:<owner_id>`), and a log
+entry shows `logged` (a display label, never written to the capsule). Only
+other capsules fall back to `disposition.decision`, so neither shows `accept`.
+
+`seal_ghost` still writes `countersign_refused` until
+draft-mih-agent-bilateral-attestation registers it. The docs, the
+quickstart example and the OpenClaw skill no longer show `verdict="confirmed"`.
+
+### Added: registry-conformance CI job
+
+The `registry-conformance` job in `python.yml` runs agent-action-capsule's
+registry-conformance check over one record from each of `seal`, `log`,
+`seal_adjudication`, the four `bilateral` helpers and `seal_approval`
+(adapters, `gate_and_emit`, holds and settlement are not covered). It is pinned to an agent-action-capsule commit until that
+check is released, and is report-only until then. `effect.type` is
+report-only in the test.
+
 ### Changed: Go module path is `github.com/action-state-group/capsule-emit/go`
 
 The Go module now declares `github.com/action-state-group/capsule-emit/go` and

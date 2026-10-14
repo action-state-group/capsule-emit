@@ -29,7 +29,6 @@ attempt = seal(
 # 2) later, your system confirms it really landed
 done = seal(
     None, action="write_order", operator="acme-co", developer="po-agent@v1",
-    verdict="confirmed",
     effect={"type": "write_order", "status": "confirmed"},    # observed
     confirms=attempt.capsule_id,                           # ← the chain link
 )
