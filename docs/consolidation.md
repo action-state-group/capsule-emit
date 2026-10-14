@@ -77,8 +77,9 @@ its `node:crypto` import is not a browser compatibility claim.
 DCO remains an unchanged merge gate. All imported and new commits carry
 sign-offs. Nested workflows under `go/.github/` and `ts/.github/` are retained
 only as imported history; active workflows live in the repository root.
-The incoming-tree preflight is now manual because its pre-import check is
-complete; regular root policy workflows scan subsequent changes.
+The incoming-tree preflight (`consolidation-preflight.yml`) completed its
+pre-import check and was removed; the root policy workflows (Messaging guard,
+Neutrality, Hostname lint, Leak lint) scan subsequent changes.
 
 ## Go import provenance after DCO repair
 
