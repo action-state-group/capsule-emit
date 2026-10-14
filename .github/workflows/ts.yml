@@ -1,4 +1,4 @@
-name: TypeScript
+name: TypeScript CI
 on:
   push:
     branches: [main]

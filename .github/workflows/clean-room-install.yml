@@ -2,7 +2,7 @@
 # Guards against the capsule-emit#123 class: a fresh `pip install` from PyPI-only
 # deps must actually run seal() AND verify --store — NOT tested against source/editable
 # installs, which previously masked a missing transitive module + an interop mismatch.
-name: clean-room-install
+name: Clean-room install
 
 on:
   push:

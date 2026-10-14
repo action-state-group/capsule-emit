@@ -57,8 +57,8 @@ verification rather than reimplementing them.
 
 ## Releases
 
-Follow [RELEASING.md](RELEASING.md). In short: run **Prepare release**, merge
-its pull request, and the Tag release workflow tags and publishes. Never
+Follow [RELEASING.md](RELEASING.md). In short: run **Release · Prepare**, merge
+its pull request, and the Release · Tag workflow tags and publishes. Never
 create release tags by hand, except `go/v*`, which an admin pushes. Do not
 rename `publish-python.yml`, `publish-ts.yml` or `publish-rust.yml`: the
 registries' trusted publishers name them, so publishing breaks until the

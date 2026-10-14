@@ -9,7 +9,7 @@
 # have no commit here, so an already-published version is refused rather than
 # skipped: every release from this workflow is a new version built from the
 # tagged commit.
-name: Publish TypeScript package
+name: Release · Publish TypeScript
 
 on:
   release:
