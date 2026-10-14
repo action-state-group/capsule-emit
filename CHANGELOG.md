@@ -6,6 +6,8 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+## 0.9.1 — 2026-10-14
+
 ### Changed: Go module path is `github.com/action-state-group/capsule-emit/go`
 
 The Go module now declares `github.com/action-state-group/capsule-emit/go` and
