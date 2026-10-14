@@ -557,7 +557,7 @@ def seal_bilateral(
         action=f"{action}:bilateral",
         operator=party_org,
         developer=developer,
-        verdict="confirmed",
+        verdict="executed",
         effect={"type": action, "status": "confirmed"},
         confirms=prior_capsule_id,
         relation="confirms",

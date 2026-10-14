@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .display import verdict_label
 from .permalink import (
     PermalinkError,
     build_url,
@@ -52,13 +53,12 @@ def _action_name(capsule: dict) -> str:
 
 
 def _row(index: int, capsule: dict) -> str:
-    disposition = capsule.get("disposition") or {}
     effect = capsule.get("effect") or {}
     return (
         f"| {index} "
         f"| `{_action_name(capsule)}` "
         f"| {capsule.get('action_type') or '?'} "
-        f"| {disposition.get('verdict_class') or disposition.get('decision') or '?'} "
+        f"| {verdict_label(capsule, '?')} "
         f"| {effect.get('status') or '—'} "
         f"| `{_short(capsule.get('capsule_id') or '')}` |"
     )

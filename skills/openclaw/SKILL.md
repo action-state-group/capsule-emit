@@ -166,7 +166,7 @@ Seal one capsule.  Call at MAY and again at DID.
 | `developer` | string | | Agent name + version, e.g. `"billing-agent@v1"`. |
 | `input` | any JSON | | Agent input.  Only a digest is committed; raw content stays local. |
 | `output` | any JSON | | Agent output.  Digest-only by default. |
-| `verdict` | string | | `"executed"` (MAY) · `"confirmed"` (DID) · `"blocked"` (refusal).  Default `"executed"`. |
+| `verdict` | string | | `"executed"` (MAY and DID; `effect_status` says which) · `"blocked"` (refusal).  Default `"executed"`. `"confirmed"` is an `effect_status` value, not a verdict. |
 | `effect_status` | string | | `"dispatched"` (MAY) · `"confirmed"` (DID) · `"planned"` (refusal/blocked).  Default `"dispatched"`. |
 | `confirms` | string | | `capsule_id` of the prior MAY capsule.  Required for DID capsules. |
 | `ledger` | string | | Path to JSONL ledger.  Default `capsule_ledger.jsonl`. |
@@ -227,7 +227,7 @@ DID=$(curl -s -X POST http://localhost:8042/seal \
     \"operator\":      \"acme-corp\",
     \"developer\":     \"billing-agent@v1\",
     \"output\":        {\"payment_ref\": \"PAY-9182\", \"status\": \"settled\"},
-    \"verdict\":       \"confirmed\",
+    \"verdict\":       \"executed\",
     \"effect_status\": \"confirmed\",
     \"confirms\":      \"$MAY\"
   }" | jq -r .capsule_id)
@@ -297,7 +297,7 @@ curl -s "http://localhost:8042/ledger?limit=5" | jq .
   "count": 3,
   "recent": [
     {"capsule_id": "3a7f…", "action": "pay_invoice", "verdict": "executed"},
-    {"capsule_id": "b91c…", "action": "pay_invoice", "verdict": "confirmed"},
+    {"capsule_id": "b91c…", "action": "pay_invoice", "verdict": "executed"},
     {"capsule_id": "f44e…", "action": "pay_invoice", "verdict": "blocked"}
   ]
 }
@@ -333,7 +333,7 @@ did = capsule_emit.seal(
     operator="acme-corp",
     developer="billing-agent@v1",
     agent_output={"payment_ref": "PAY-9182", "status": "settled"},
-    verdict="confirmed",
+    verdict="executed",
     effect={"type": "pay_invoice", "status": "confirmed"},
     confirms=may_id,
 )
@@ -477,7 +477,7 @@ curl -s -X POST http://localhost:8042/seal \
 curl -s -X POST http://localhost:8042/seal \
   -H "Content-Type: application/json" \
   -d '{"action":"send_order","operator":"test","developer":"agent@v1",
-       "output":{"confirmation":"C-9182"},"verdict":"confirmed",
+       "output":{"confirmation":"C-9182"},"verdict":"executed",
        "effect_status":"confirmed","confirms":"a3f2..."}'
 # → {"capsule_id":"b91c...","anchored":true}
 ```
@@ -499,7 +499,7 @@ curl -s "http://localhost:8042/verify?id=a3f2"
 # → {"ok":true,"capsule_id":"a3f2...","action":"send_order","verdict":"executed","anchored":true,"findings":[]}
 
 curl -s "http://localhost:8042/verify?id=b91c"
-# → {"ok":true,"capsule_id":"b91c...","action":"send_order","verdict":"confirmed","anchored":true,"findings":[]}
+# → {"ok":true,"capsule_id":"b91c...","action":"send_order","verdict":"executed","anchored":true,"findings":[]}
 
 curl -s "http://localhost:8042/verify?id=f44e"
 # → {"ok":true,"capsule_id":"f44e...","action":"send_order","verdict":"blocked","anchored":true,"findings":[]}

@@ -11,10 +11,11 @@ One public helper, :func:`seal_adjudication`, and a reader, :func:`is_adjudicati
       relation: the verdict observes the compared half and leaves its open
       state as it was, whatever the verdict). Releases before this one wrote
       the unregistered ``"adjudicates"``; :func:`is_adjudication` reads both.
-    - ``disposition.verdict_class`` — ``"assessed"`` (a detection
-      disposition, never ``"executed"``/``"confirmed"``, the same as a judge's
-      verdict capsule; see ``capsule_emit.core``'s ``relation`` parameter
-      docs)
+    - no ``disposition.verdict_class``: an adjudication records an
+      observation, not a gate verdict, and the verdict_class registry
+      (agent-action-capsule ``spec/REGISTRY.md``) has no value for one, so
+      it is left absent. Releases before this one wrote the unregistered
+      ``"assessed"``. ``action_type`` stays ``"decide"``.
     - ``compute_attestation.adjudication`` — ``source: "twin_comparison"``,
       ``capture_method: "deterministic_replay"``, the *verdict*, and the
       properties that back it (``divergence_index``, ``margin``,
@@ -200,7 +201,8 @@ def seal_adjudication(
         action=action,
         operator=operator,
         developer=developer,
-        verdict="assessed",
+        verdict=None,
+        action_type="decide",
         confirms=half_a_capsule_id,
         relation=RELATION_ADJUDICATES,
         extra_compute=extra_compute,

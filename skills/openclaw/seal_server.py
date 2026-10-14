@@ -78,7 +78,7 @@ class SealRequest(BaseModel):
     """Agent output.  Digest-only by default (same as input)."""
 
     verdict: str = "executed"
-    """'executed' (MAY), 'confirmed' (DID), or 'blocked' (refusal)."""
+    """'executed' (MAY and DID; effect_status says which) or 'blocked' (refusal)."""
 
     effect_status: str = "dispatched"
     """'dispatched' (MAY), 'confirmed' (DID), or 'blocked' (refusal)."""
@@ -165,7 +165,7 @@ def verify(id: str, ledger: str = _DEFAULT_LEDGER) -> JSONResponse:
         ok         — True when the capsule passes all invariant checks
         capsule_id — full 64-char id
         action     — the action name sealed in this capsule
-        verdict    — 'executed' | 'confirmed' | 'blocked'
+        verdict    — 'executed' | 'blocked'
         findings   — list of detail strings when ok=False
 
     Anchor status is a property of /seal's EmitResult, not the ledger record,

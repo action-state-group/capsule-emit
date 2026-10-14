@@ -15,6 +15,8 @@ import html as _html
 import sys
 from typing import Any
 
+from .display import verdict_label
+
 __all__ = ["render_table", "render_html"]
 
 # ---------------------------------------------------------------------------
@@ -77,7 +79,7 @@ def _row(cap: dict, verify_ok: bool | None = None) -> dict:
     effect_status = effect_d.get("status")
     effect_type = effect_d.get("type", "")
     disp_decision = disp_d.get("decision", "")
-    verdict = disp_d.get("verdict_class", "") or disp_d.get("decision", "")
+    verdict = verdict_label(cap)
     chain_relation = chain_d.get("relation")
     chain_parent = chain_d.get("parent_capsule_id")
 

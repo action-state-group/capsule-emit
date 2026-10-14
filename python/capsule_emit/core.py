@@ -550,7 +550,7 @@ def _emit_capsule(
     agent_input: Any = None,
     agent_output: Any = None,
     model: dict[str, str] | None = None,
-    verdict: str = "executed",
+    verdict: str | None = "executed",
     effect: dict[str, Any] | None = None,
     confirms: str | None = None,
     relation: str | None = "confirms",
@@ -585,7 +585,8 @@ def _emit_capsule(
             the raw value never leaves the process.
         agent_output: The agent's output. Digest-committed.
         model: Dict with ``"provider"`` and ``"model_id"`` keys.
-        verdict: Disposition verdict_class (e.g. ``"executed"``, ``"confirmed"``).
+        verdict: Disposition verdict_class (e.g. ``"executed"``, ``"blocked"``),
+            or ``None`` to leave ``verdict_class`` absent.
         effect: Effect dict with ``"type"`` and ``"status"`` (and optional ``"autonomy"``).
         confirms: capsule_id of the prior capsule this one chains to.
         relation: Chain relation, one of the five registered values
@@ -684,10 +685,11 @@ def _emit_capsule(
         action_type: ``"decide"`` | ``"act"`` | ``"retrieve"`` | ``"fyi"`` override.
             When ``None`` (default), auto-derived from *verdict* — disposition verbs
             (``"executed"``, ``"confirmed"``, ``"denied"``, ``"blocked"``,
-            ``"assessed"``) map to ``"decide"``; anything else maps to ``"fyi"``.
-            ``"assessed"`` is a disposition class for judge/verdict capsules —
-            it is detection, never enforcement, and must never be conflated
-            with ``"executed"``/``"confirmed"``.
+            ``"assessed"``) map to ``"decide"``; anything else, including an
+            absent verdict, maps to ``"fyi"``. ``"confirmed"`` and
+            ``"assessed"`` are not registered verdict_class values; they stay
+            in this list only for callers that still pass them. capsule-emit's
+            own helpers no longer write either.
         extra_compute: Extra key/value pairs merged into ``compute_attestation``.
             Use for framework-specific context (MCP request ID, host info, etc.).
         disposition_authority: Opaque grant reference stored in
@@ -1043,11 +1045,13 @@ def _emit_log_entry(
     if extra_compute:
         compute_att.update(extra_compute)
 
+    # No verdict_class: a log entry records that something happened, not a
+    # gate verdict, and the registry has no value for that. Releases before
+    # this one wrote the unregistered "logged".
     disposition = Disposition(
         decision="accept",
         approver="policy",
         human_disposed=False,
-        verdict_class="logged",
     )
 
     entry = _base_emit(

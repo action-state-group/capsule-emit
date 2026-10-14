@@ -31,8 +31,7 @@ attempt = seal({"po_id": "PO-7781"}, action="write_po", operator="acme-co", deve
 
 # later, your system confirms it landed — chained to the attempt
 done = seal({"po_id": "PO-7781"}, action="write_po", operator="acme-co", developer="po-agent@v1",
-            verdict="confirmed",
-            effect={"type": "write_po", "status": "confirmed"},
+            effect={"type": "write_po", "status": "confirmed"},   # verdict stays "executed"
             confirms=attempt.capsule_id)        # ← chain.parent_capsule_id
 ```
 
