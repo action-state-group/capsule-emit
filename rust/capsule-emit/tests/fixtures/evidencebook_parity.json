@@ -161,6 +161,7 @@
       }
     }
   ],
+  "mmr_nodes_sha256": "d0433202d9ac8ddc7228cc5a07a8e160cdee2a0afbaa71cdf4101af53671e4fe",
   "padded": {
     "capsule_ids": [
       "25208f2ab7cd217b9aea6309f95b17e252553dca65f0af2521556d3f0ad5046a",
@@ -379,6 +380,7 @@
           "peaks_right": []
         }
       }
-    ]
+    ],
+    "mmr_nodes_sha256": "51b9674a7c243c1c75c967fa4a252d0037667cb411864813cf0033dd1258515d"
   }
 }

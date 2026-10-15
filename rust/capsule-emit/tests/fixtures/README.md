@@ -8,7 +8,8 @@
   historical and are kept byte for byte, because the pinned capsule ids are
   computed over them. This crate does not interpret them. The `padded` member
   of `evidencebook_parity.json` pins the same records cut with padding on
-  (fixed store nonces), written over the `evidencebook` substrate.
+  (fixed store nonces), and `mmr_nodes_sha256` pins each scenario's node
+  file; both were written over the `evidencebook` substrate.
 - `python_produced_noncanonical_envelope.hex`: a COSE_Sign1 producer envelope
   from the Python reference whose protected header is in non-canonical label
   order (3, 4, 1). `cross_language_conformance.rs` checks that it verifies as

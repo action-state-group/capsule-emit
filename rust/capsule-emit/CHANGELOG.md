@@ -16,10 +16,13 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   serde shapes (`CheckpointRecord`, `CheckpointWitness`, `InclusionProof`,
   `CheckpointSigner`, `OpenReport`, `verify_inclusion`), but are now this
   crate's own types rather than `evidencebook::substrate`'s, so code that
-  passed them to `evidencebook` directly needs converting. New:
-  `CheckpointSignError` (what a `CheckpointSigner` returns, so a signer can
-  be implemented without depending on `evidencebook`) and `SubstrateError`
-  (what `CheckpointRecord::leaf_count` returns).
+  passed them to `evidencebook` directly needs converting. **Breaking for a
+  custom `CheckpointSigner`:** `sign` now returns
+  `Result<[u8; 64], CheckpointSignError>` (exported from `checkpoint`)
+  instead of `evidencebook::substrate::SignError`; an implementation changes
+  that one type name. Signing with an `ed25519_dalek::SigningKey` is
+  unchanged. `SubstrateError` (what `CheckpointRecord::leaf_count` returns)
+  is exported too.
 - Requires `checkpointed-local-log` 0.3.1 and `evidencebook` 0.0.4, so the
   dependency graph holds one CLL version. evidencebook 0.0.4 is the first
   release from the evidencebook repository and builds its request handling on

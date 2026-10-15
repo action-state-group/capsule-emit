@@ -17,7 +17,10 @@
 //!
 //! The live checkpoint timestamp is the wall clock (minute-granular), so it is
 //! the one field not pinned; the test re-signs a copy with the timestamp set to
-//! `FIXED_TIMESTAMP` and compares that signature instead.
+//! `FIXED_TIMESTAMP` and compares that signature instead. The SHA-256 of
+//! `mmr_nodes.dat` is pinned. The persisted `checkpoints.jsonl` and each COSE
+//! wire form carry the live timestamp, so instead of pinning them the test
+//! rebuilds them byte for byte through `cll` from `capsules.jsonl` alone.
 //!
 //! Beyond the fixture, the test checks what the live timestamp prevents
 //! pinning: the production signature equals an Ed25519 signature over the live
@@ -49,8 +52,11 @@ use capsule_emit::cose::{build_signed_statement, SignedStatementInput};
 use capsule_emit::jcs::compute_capsule_id;
 use capsule_emit::ledger::Ledger;
 use capsule_emit::padding::{PADDING_CONTENT_TYPE, PADDING_EPISTEMIC_TYPE, RECORD_TYPE_PADDING};
+use cll::checkpoint::checkpoint_to_cose;
+use cll::mmr::{add_leaf, consistency_proof, leaf_hash, peaks, MemoryNodeStore, NodeReader};
 use ed25519_dalek::{Signer, SigningKey};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -303,6 +309,52 @@ fn observe(pad_bucket: u64) -> Value {
     }
 
     let ids = read_capsule_ids(dir.path());
+
+    // Byte level. The wall-clock timestamp sits inside every persisted line
+    // and its COSE form, so those are rebuilt rather than pinned: an MMR
+    // rebuilt from `capsules.jsonl` alone gives the node file byte for byte
+    // and, through `cll`'s own encoder, each line's COSE bytes; `cll`'s own
+    // writer, fed the parsed lines, gives `checkpoints.jsonl` byte for byte.
+    let mut mem = MemoryNodeStore::new();
+    for id in &ids {
+        let id: [u8; 32] = hex::decode(id).unwrap().try_into().unwrap();
+        add_leaf(&mut mem, leaf_hash(&id)).unwrap();
+    }
+    let node_file = std::fs::read(dir.path().join("mmr_nodes.dat")).unwrap();
+    let rebuilt: Vec<u8> = (0..mem.size()).flat_map(|pos| mem.node(pos)).collect();
+    assert_eq!(node_file, rebuilt, "mmr_nodes.dat is the MMR's node array");
+    let peak_hashes = |size: u64| -> Vec<[u8; 32]> {
+        peaks(size).unwrap().iter().map(|&p| mem.node(p)).collect()
+    };
+    for line in &lines {
+        let cp = &line.record;
+        let prev = (cp.prev_size > 0).then(|| peak_hashes(cp.prev_size));
+        let consistency =
+            (cp.prev_size > 0).then(|| consistency_proof(&mem, cp.prev_size, cp.mmr_size).unwrap());
+        let cose = checkpoint_to_cose(
+            cp,
+            &key,
+            &peak_hashes(cp.mmr_size),
+            prev.as_deref(),
+            consistency.as_ref(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            Some(hex::encode(cose)),
+            line.checkpoint_cose_hex,
+            "the persisted COSE form is cll's encoding of the record"
+        );
+    }
+    let rewritten = dir.path().join("checkpoints-rewritten.jsonl");
+    for line in &lines {
+        cll::store::append_checkpoint(&rewritten, line).unwrap();
+    }
+    assert_eq!(
+        std::fs::read(dir.path().join("checkpoints.jsonl")).unwrap(),
+        std::fs::read(&rewritten).unwrap(),
+        "checkpoints.jsonl is cll's own line format"
+    );
     let proofs: Vec<Value> = ids
         .iter()
         .map(|id| {
@@ -320,6 +372,7 @@ fn observe(pad_bucket: u64) -> Value {
         "capsule_ids": ids,
         "checkpoints": [pinned(&first, &key), pinned(&second, &key)],
         "inclusion_under_second": proofs,
+        "mmr_nodes_sha256": hex::encode(Sha256::digest(&node_file)),
     })
 }
 
@@ -354,5 +407,6 @@ fn checkpoint_substrate_output_is_byte_identical_to_the_pre_move_fixture() {
         observed["inclusion_under_second"],
         expected["inclusion_under_second"]
     );
+    assert_eq!(observed["mmr_nodes_sha256"], expected["mmr_nodes_sha256"]);
     assert_eq!(observed["padded"], expected["padded"]);
 }
