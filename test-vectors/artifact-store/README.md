@@ -78,8 +78,12 @@ artifacts sorted by name.
 - `write`: each language writes the sequence to its own store. Every report
   must equal `interlock-write.txt`, and the JSONL files, or the SQL rows as
   dumped by `.github/scripts/artifact_store_rows.py`, must be byte-identical.
-- `read`: every language reads every language's store, all pairs. Every report
-  must equal `interlock-read.txt`, and the storage must be unchanged afterwards.
+- `read`: every language runs the read phase on its own copy of every
+  language's store, all pairs: each record's outcome, StorageChecksum and line,
+  then retries, a conflict and purges of retained content against that data.
+  Every report must equal `interlock-read.txt`, every copy must end in the same
+  state, and existing SQL rows must keep their exact `created_at` (a retry
+  writes nothing).
 
 `interlock-write.txt` and `interlock-read.txt` come from the Go adapter
 (`go run ./artifact/internal/interlock`); every other adapter must reproduce

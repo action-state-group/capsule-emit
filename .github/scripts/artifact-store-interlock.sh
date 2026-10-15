@@ -10,10 +10,11 @@
 #    must be byte-identical to each other and to interlock-write.txt.
 # 2. storage: the JSONL files, or the SQL rows (artifact_store_rows.py), must
 #    be byte-identical across languages.
-# 3. read: every language reads every language's store (all pairs): each
-#    record's outcome, StorageChecksum and wire line, and retry, conflict and
-#    purge outcomes against that data. All reports must equal
-#    interlock-read.txt, and the reads must leave the storage unchanged.
+# 3. read: every language reads its own copy of every language's store (all
+#    pairs): each record's outcome, StorageChecksum and wire line, then
+#    retries, a conflict and purges of retained content against that data.
+#    All reports must equal interlock-read.txt, every copy must end in the
+#    same state, and existing SQL rows must keep their exact created_at.
 #
 # A language joins by adding its adapter (il_<lang>, and setup_<lang> if it
 # needs a build) below, and its name and toolchain to
@@ -40,21 +41,22 @@ for lang in "${languages[@]}"; do
   if declare -F "setup_$lang" > /dev/null; then "setup_$lang"; fi
 done
 
-target() {
+rows() { "$python_bin" "$repo/.github/scripts/artifact_store_rows.py" "$@"; }
+
+# store <name> prints "<target> <namespace>" for a store: a file per store for
+# jsonl and sqlite, a namespace per store in the one MySQL database.
+store() {
   case "$format" in
-    jsonl) echo "$work/$1.jsonl" ;;
-    sqlite) echo "$work/$1.db" ;;
-    mysql) echo "${CAPSULE_STORAGE_TEST_MYSQL:?set CAPSULE_STORAGE_TEST_MYSQL}" ;;
+    jsonl) echo "$work/$1.jsonl interlock" ;;
+    sqlite) echo "$work/$1.db interlock" ;;
+    mysql) echo "${CAPSULE_STORAGE_TEST_MYSQL:?set CAPSULE_STORAGE_TEST_MYSQL} interlock-$1" ;;
     *) echo "unknown format $format" >&2; exit 2 ;;
   esac
 }
-namespace() { if test "$format" = mysql; then echo "interlock-$1"; else echo interlock; fi; }
 
-storage() {
-  case "$format" in
-    jsonl) cat "$(target "$1")" ;;
-    *) "$python_bin" "$repo/.github/scripts/artifact_store_rows.py" dump "$format" "$(target "$1")" "$(namespace "$1")" ;;
-  esac
+# dump <target> <namespace>: the store's bytes (jsonl) or normalized rows.
+dump() {
+  if test "$format" = jsonl; then cat "$1"; else rows dump "$format" "$1" "$2"; fi
 }
 
 same() {
@@ -65,31 +67,45 @@ same() {
   fi
 }
 
+# 1. write: every language writes the sequence to its own store.
 for lang in "${languages[@]}"; do
-  if test "$format" = mysql; then
-    "$python_bin" "$repo/.github/scripts/artifact_store_rows.py" reset mysql "$(target "$lang")" "$(namespace "$lang")"
-  fi
-  "il_$lang" write "$format" "$(target "$lang")" "$(namespace "$lang")" "$vectors" > "$work/write-$lang.txt"
+  read -r target ns <<< "$(store "$lang")"
+  if test "$format" = mysql; then rows reset mysql "$target" "$ns"; fi
+  "il_$lang" write "$format" "$target" "$ns" "$vectors" > "$work/write-$lang.txt"
   same "$vectors/interlock-write.txt" "$work/write-$lang.txt" "$lang write report ($format)"
 done
 echo "write: ${languages[*]} produce the expected report ($format)"
 
+# 2. storage: every language wrote the same bytes or rows.
 first=${languages[0]}
-storage "$first" > "$work/storage-$first.txt"
 for lang in "${languages[@]}"; do
-  storage "$lang" > "$work/storage-$lang.txt"
+  dump $(store "$lang") > "$work/storage-$lang.txt"
   same "$work/storage-$first.txt" "$work/storage-$lang.txt" "$lang storage differs from $first ($format)"
 done
 echo "storage: ${languages[*]} wrote identical $format data"
 
+# 3. read: every reader against a fresh copy of every writer's store (all
+# pairs). The read phase also retries, conflicts and purges retained content,
+# so each pair gets its own copy; every copy must end in the same state, and
+# the SQL rows that existed before must keep their exact created_at.
 for reader in "${languages[@]}"; do
   for writer in "${languages[@]}"; do
-    "il_$reader" read "$format" "$(target "$writer")" "$(namespace "$writer")" "$vectors" > "$work/read-$reader-$writer.txt"
-    same "$vectors/interlock-read.txt" "$work/read-$reader-$writer.txt" "$reader reading $writer's $format store"
+    pair="$reader-$writer"
+    read -r source source_ns <<< "$(store "$writer")"
+    read -r target ns <<< "$(store "pair-$pair")"
+    case "$format" in
+      jsonl | sqlite) cp "$source" "$target" ;;
+      mysql) rows reset mysql "$target" "$ns" && rows copy mysql "$target" "$source_ns" "$ns" ;;
+    esac
+    if test "$format" != jsonl; then rows created "$format" "$target" "$ns" > "$work/created-before-$pair.txt"; fi
+    "il_$reader" read "$format" "$target" "$ns" "$vectors" > "$work/read-$pair.txt"
+    same "$vectors/interlock-read.txt" "$work/read-$pair.txt" "$reader reading $writer's $format store"
+    dump "$target" "$ns" > "$work/after-$pair.txt"
+    same "$work/after-$first-$first.txt" "$work/after-$pair.txt" "$reader left $writer's $format store differently from $first"
+    if test "$format" != jsonl; then
+      rows created "$format" "$target" "$ns" > "$work/created-after-$pair.txt"
+      same "$work/created-before-$pair.txt" "$work/created-after-$pair.txt" "$reader rewrote existing rows in $writer's $format store"
+    fi
   done
 done
-for lang in "${languages[@]}"; do
-  storage "$lang" > "$work/after-$lang.txt"
-  same "$work/storage-$lang.txt" "$work/after-$lang.txt" "reads changed $lang's $format storage"
-done
-echo "read: every pair of ${languages[*]} reads and verifies the other's $format store"
+echo "read: every pair of ${languages[*]} reads, retries and purges the other's $format store alike"

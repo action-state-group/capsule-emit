@@ -167,6 +167,22 @@
     {
       "op": "get",
       "record": "empty"
+    },
+    {
+      "op": "purge",
+      "record": "rotated"
+    },
+    {
+      "op": "purge",
+      "record": "rotated"
+    },
+    {
+      "op": "get",
+      "record": "rotated"
+    },
+    {
+      "op": "put",
+      "record": "rotated"
     }
   ]
 }
