@@ -337,7 +337,7 @@ struct ChecksumArtifact<'a> {
     name: &'a str,
     #[serde(skip_serializing_if = "str::is_empty")]
     binding: &'a str,
-    state: RetentionState,
+    state: &'a str,
     #[serde(skip_serializing_if = "str::is_empty")]
     content_sha256: &'a str,
 }
@@ -356,28 +356,102 @@ struct ChecksumRecord<'a> {
 /// complete artifact inventory with each original's SHA-256, unchanged by
 /// purge. It is NOT a producer authentication claim.
 pub fn storage_checksum(record: &Record) -> String {
-    let mut artifacts: Vec<ChecksumArtifact> = record
-        .artifacts
-        .iter()
-        .map(|a| ChecksumArtifact {
-            name: &a.name,
-            binding: &a.binding,
-            state: match a.state {
-                RetentionState::Purged => RetentionState::Present,
-                other => other,
-            },
-            content_sha256: &a.content_sha256,
+    checksum_of(
+        &record.capsule_id,
+        &record.capsule,
+        &record.producer_envelope,
+        record.artifacts.iter().map(|a| {
+            (
+                a.name.as_str(),
+                a.binding.as_str(),
+                a.state.as_str(),
+                a.content_sha256.as_str(),
+            )
+        }),
+    )
+}
+
+/// The storage checksum over raw inventory rows, with states as stored text:
+/// `(name, binding, state, content_sha256)`.
+fn checksum_of<'a>(
+    capsule_id: &str,
+    capsule: &[u8],
+    producer_envelope: &[u8],
+    rows: impl Iterator<Item = (&'a str, &'a str, &'a str, &'a str)>,
+) -> String {
+    let mut artifacts: Vec<ChecksumArtifact> = rows
+        .map(|(name, binding, state, content_sha256)| ChecksumArtifact {
+            name,
+            binding,
+            state: if state == "purged" { "present" } else { state },
+            content_sha256,
         })
         .collect();
     artifacts.sort_by(|x, y| x.name.as_bytes().cmp(y.name.as_bytes()));
     let encoded = serde_json::to_vec(&ChecksumRecord {
-        capsule_id: &record.capsule_id,
-        capsule: &record.capsule,
-        producer_envelope: &record.producer_envelope,
+        capsule_id,
+        capsule,
+        producer_envelope,
         artifacts,
     })
     .expect("checksum preimage serializes");
     sha256_hex(&encoded)
+}
+
+/// An artifact row as a SQL backend reads it, with the state as stored text.
+pub(crate) struct StoredArtifact {
+    pub name: String,
+    pub binding: String,
+    pub content: Option<Vec<u8>>,
+    pub content_sha256: String,
+    pub state: String,
+}
+
+/// Builds a record from SQL rows, checking the stored checksum over the rows
+/// as stored (`corrupt` on a mismatch) before a state this codec cannot
+/// represent is reported (`invalid`), in the contract's order.
+pub(crate) fn from_rows(
+    capsule_id: &str,
+    capsule: Vec<u8>,
+    producer_envelope: Vec<u8>,
+    rows: Vec<StoredArtifact>,
+    expected_checksum: &str,
+) -> Result<Record> {
+    let checksum = checksum_of(
+        capsule_id,
+        &capsule,
+        &producer_envelope,
+        rows.iter().map(|a| {
+            (
+                a.name.as_str(),
+                a.binding.as_str(),
+                a.state.as_str(),
+                a.content_sha256.as_str(),
+            )
+        }),
+    );
+    if checksum != expected_checksum {
+        return Err(ArtifactError::Corrupt("record checksum".into()));
+    }
+    let artifacts = rows
+        .into_iter()
+        .map(|a| {
+            Ok(Artifact {
+                state: RetentionState::parse(&a.state)
+                    .ok_or_else(|| ArtifactError::Invalid("retention state".into()))?,
+                name: a.name,
+                binding: a.binding,
+                content: a.content,
+                content_sha256: a.content_sha256,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Record {
+        capsule_id: capsule_id.to_string(),
+        capsule,
+        producer_envelope,
+        artifacts,
+    })
 }
 
 /// Copies the caller's record, fills exact-byte checksums and enforces the v1
@@ -471,6 +545,8 @@ pub fn decode_record(line: &[u8]) -> Result<Record> {
             binding: String,
             #[serde(default, deserialize_with = "de_opt_b64")]
             content: Option<Vec<u8>>,
+            // Absent, as in Go, decodes as "" and is then an invalid state.
+            #[serde(default)]
             state: String,
             #[serde(default)]
             content_sha256: String,

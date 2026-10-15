@@ -34,7 +34,6 @@ fn decode_rejects_malformed_lines_as_corrupt() {
         "not json",
         "null",
         r#"{"capsule_id":"a","capsule":"!!","producer_envelope":"AA==","artifacts":[]}"#,
-        r#"{"capsule_id":"a","capsule":"e30=","producer_envelope":"AA==","artifacts":[{"name":"x"}]}"#,
         r#"{"capsule_id":"a","capsule":"!!","producer_envelope":"AA==","artifacts":[{"name":"x","state":"gone"}]}"#,
     ] {
         assert_eq!(
@@ -45,11 +44,16 @@ fn decode_rejects_malformed_lines_as_corrupt() {
     }
     // A well-formed record whose state the codec cannot represent is invalid,
     // as in Go, TypeScript and Python, which carry the state as a string.
-    let unknown = r#"{"capsule_id":"a","capsule":"e30=","producer_envelope":"AA==","artifacts":[{"name":"x","state":"gone"}]}"#;
-    assert_eq!(
-        decode_record(unknown.as_bytes()).unwrap_err().code(),
-        Some("invalid")
-    );
+    for unknown in [
+        r#"{"capsule_id":"a","capsule":"e30=","producer_envelope":"AA==","artifacts":[{"name":"x","state":"gone"}]}"#,
+        r#"{"capsule_id":"a","capsule":"e30=","producer_envelope":"AA==","artifacts":[{"name":"x"}]}"#,
+    ] {
+        assert_eq!(
+            decode_record(unknown.as_bytes()).unwrap_err().code(),
+            Some("invalid"),
+            "{unknown}"
+        );
+    }
 }
 
 #[test]
@@ -79,6 +83,8 @@ fn jsonl_get_of_an_unknown_state_is_invalid() {
     let store = JsonlStore::new(&path, "ns", trusted(&v)).unwrap();
     let id = v.record("basic").unwrap().capsule_id;
     assert_eq!(store.get(&id).unwrap_err().code(), Some("invalid"));
+    // The line cannot be rewritten, so purge reports it corrupt.
+    assert_eq!(store.purge(&id).unwrap_err().code(), Some("corrupt"));
 }
 
 #[test]
@@ -241,6 +247,82 @@ mod sqlite {
             )
             .unwrap();
         assert_eq!(store.get(&id).unwrap_err().code(), Some("corrupt"));
+    }
+
+    /// The contract's storage checksum over raw rows, with the state as text.
+    fn raw_checksum(record: &Record, state_of: impl Fn(&str) -> String) -> String {
+        use base64::Engine;
+        use sha2::Digest;
+        let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        let mut artifacts: Vec<_> = record.artifacts.iter().collect();
+        artifacts.sort_by(|a, b| a.name.cmp(&b.name));
+        let items: Vec<String> = artifacts
+            .iter()
+            .map(|a| {
+                let mut item = format!(r#"{{"name":"{}""#, a.name);
+                if !a.binding.is_empty() {
+                    item += &format!(r#","binding":"{}""#, a.binding);
+                }
+                item += &format!(r#","state":"{}""#, state_of(&a.name));
+                if !a.content_sha256.is_empty() {
+                    item += &format!(r#","content_sha256":"{}""#, a.content_sha256);
+                }
+                item + "}"
+            })
+            .collect();
+        let preimage = format!(
+            r#"{{"capsule_id":"{}","capsule":"{}","producer_envelope":"{}","artifacts":[{}]}}"#,
+            record.capsule_id,
+            b64(&record.capsule),
+            b64(&record.producer_envelope),
+            items.join(",")
+        );
+        hex::encode(sha2::Sha256::digest(preimage.as_bytes()))
+    }
+
+    #[test]
+    fn unknown_states_are_checked_after_the_checksum() {
+        let v = vectors();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.db");
+        let store = SqliteStore::new(open(&path), "ns", trusted(&v)).unwrap();
+        store.init().unwrap();
+        let stored = prepare(&v.record("basic").unwrap()).unwrap();
+        store.put(&stored).unwrap();
+        let other = open(&path);
+        other
+            .execute_batch("PRAGMA ignore_check_constraints=ON;")
+            .unwrap();
+        other
+            .execute(
+                "UPDATE capsule_store_artifacts SET retention_state='archived' WHERE name='private_note'",
+                [],
+            )
+            .unwrap();
+        // The stored checksum still commits to "present": corrupt comes first.
+        assert_eq!(
+            store.get(&stored.capsule_id).unwrap_err().code(),
+            Some("corrupt")
+        );
+        let checksum = raw_checksum(&stored, |name| {
+            if name == "private_note" {
+                "archived"
+            } else {
+                "present"
+            }
+            .to_string()
+        });
+        other
+            .execute(
+                "UPDATE capsule_store_capsules SET record_sha256=?",
+                [&checksum],
+            )
+            .unwrap();
+        // With a checksum over the stored rows, the unknown state is invalid.
+        assert_eq!(
+            store.get(&stored.capsule_id).unwrap_err().code(),
+            Some("invalid")
+        );
     }
 
     #[test]

@@ -10,8 +10,8 @@ use mysql::{params::Params, AccessMode, Pool, Transaction, TxOpts, Value};
 
 use crate::error::{ArtifactError, Result};
 use crate::record::{
-    check_config, has_purged, prepare, storage_checksum, valid_id, verify, Artifact, Record,
-    RetentionState,
+    check_config, from_rows, has_purged, prepare, storage_checksum, valid_id, verify, Record,
+    StoredArtifact,
 };
 use crate::store::{Store, TxStore};
 
@@ -122,24 +122,21 @@ impl MysqlStore {
         let mut artifacts = Vec::with_capacity(rows.len());
         for (name, binding, content, sha, state) in rows {
             let state = text(state)?;
-            artifacts.push(Artifact {
+            artifacts.push(StoredArtifact {
                 name: text(name)?,
                 binding: text(binding)?,
                 content: bytes(content)?,
                 content_sha256: text(sha)?,
-                state: RetentionState::parse(&state)
-                    .ok_or_else(|| ArtifactError::Invalid("retention state".into()))?,
+                state,
             });
         }
-        let record = Record {
-            capsule_id: id.to_string(),
-            capsule: bytes(capsule)?.unwrap_or_default(),
-            producer_envelope: bytes(producer_envelope)?.unwrap_or_default(),
+        let record = from_rows(
+            id,
+            bytes(capsule)?.unwrap_or_default(),
+            bytes(producer_envelope)?.unwrap_or_default(),
             artifacts,
-        };
-        if storage_checksum(&record) != text(expected)? {
-            return Err(ArtifactError::Corrupt("record checksum".into()));
-        }
+            &text(expected)?,
+        )?;
         verify(&record, &self.trusted)?;
         Ok(record)
     }

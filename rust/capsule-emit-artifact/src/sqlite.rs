@@ -9,8 +9,8 @@ use rusqlite::{params, Connection, ErrorCode, OptionalExtension, Transaction};
 
 use crate::error::{ArtifactError, Result};
 use crate::record::{
-    check_config, has_purged, prepare, storage_checksum, valid_id, verify, Artifact, Record,
-    RetentionState,
+    check_config, from_rows, has_purged, prepare, storage_checksum, valid_id, verify, Record,
+    StoredArtifact,
 };
 use crate::store::{Store, TxStore};
 
@@ -124,24 +124,15 @@ impl SqliteStore {
                 _ => return Err(ArtifactError::Corrupt("content_bytes is not a BLOB".into())),
             };
             let state: String = row.get(4).map_err(storage)?;
-            artifacts.push(Artifact {
+            artifacts.push(StoredArtifact {
                 name: row.get(0).map_err(storage)?,
                 binding: row.get(1).map_err(storage)?,
                 content,
                 content_sha256: row.get(3).map_err(storage)?,
-                state: RetentionState::parse(&state)
-                    .ok_or_else(|| ArtifactError::Invalid("retention state".into()))?,
+                state,
             });
         }
-        let record = Record {
-            capsule_id: id.to_string(),
-            capsule,
-            producer_envelope,
-            artifacts,
-        };
-        if storage_checksum(&record) != expected {
-            return Err(ArtifactError::Corrupt("record checksum".into()));
-        }
+        let record = from_rows(id, capsule, producer_envelope, artifacts, &expected)?;
         verify(&record, &self.trusted)?;
         Ok(record)
     }

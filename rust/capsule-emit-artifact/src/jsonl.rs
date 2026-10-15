@@ -313,7 +313,13 @@ impl Store for JsonlStore {
         }
         let mut index = self.index();
         let span = *index.get(id).ok_or(ArtifactError::NotFound)?;
-        let replacement = encode_record(&purged(&self.read_at(id, span)?));
+        // A line that no longer decodes as a record cannot be rewritten: that
+        // is corrupt here even when get would call its state invalid.
+        let stored = self.read_at(id, span).map_err(|e| match e {
+            ArtifactError::Invalid(why) => ArtifactError::Corrupt(why),
+            other => other,
+        })?;
+        let replacement = encode_record(&purged(&stored));
         self.rewrite(&mut index, id, replacement.as_bytes())
     }
 }
