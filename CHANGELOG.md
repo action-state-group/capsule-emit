@@ -26,6 +26,16 @@ handle first, and the old forms are deprecated. New subpaths:
 
 Both stores wrote a zero-length original and then could not read the record
 back. Go JSONL now writes `"content":""` as TypeScript does.
+### Added: Python artifact store
+
+`capsule_emit.artifact` stores exact sealed Capsules, Producer Envelopes and
+originals with retention and purge, under the shared contract in
+`docs/artifact-store.md`: `jsonl`, `memory`, `sqlite` (standard library) and
+`mysql` (PyMySQL, the new `mysql` extra) backends behind the `Store` protocol,
+with `TxStore` for the SQL backends. Files and rows match the Go and TypeScript
+stores byte for byte, and `capsule_emit.artifact.conformance.run` runs the
+shared conformance suite against any store. Importing the package loads no
+database driver.
 
 ### Deprecated: `capsule_emit.evidence_request`
 
