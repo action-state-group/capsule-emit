@@ -267,8 +267,24 @@ export class JsonlArtifactStore implements Store {
     // a silent provision, matching the Go and sqlite backends.
     const line = encodeRecord(prepared) + "\n";
     const lineBuf = Buffer.from(line, "utf8");
-    const offset = fs.statSync(this.filePath).size;
-    fs.appendFileSync(this.filePath, lineBuf);
+    let offset = fs.statSync(this.filePath).size;
+    // Terminate a torn last line first, so the new record starts its own line
+    // instead of merging into the damaged one and vanishing on the next open.
+    let prefix = Buffer.alloc(0);
+    if (offset > 0) {
+      const last = Buffer.alloc(1);
+      const fd = fs.openSync(this.filePath, "r");
+      try {
+        fs.readSync(fd, last, 0, 1, offset - 1);
+      } finally {
+        fs.closeSync(fd);
+      }
+      if (last[0] !== 0x0a) {
+        prefix = Buffer.from("\n");
+        offset += 1;
+      }
+    }
+    fs.appendFileSync(this.filePath, Buffer.concat([prefix, lineBuf]));
     this.index.set(prepared.capsuleId, { offset, length: lineBuf.length });
   }
 

@@ -233,4 +233,18 @@ describe("JsonlArtifactStore", () => {
     const note = got.artifacts.find((a) => a.name === "private_note");
     expect(note?.content?.length).toBe(80 * 1024);
   });
+
+  it("starts a new line after a torn last line, so the record survives reopening", async () => {
+    const { record, trusted } = await makeRecord("torn-tail");
+    const s = await store(trusted);
+    fs.appendFileSync(filePath, '{"capsule_id":');
+    await s.put(record);
+    const reopened = new JsonlArtifactStore(filePath, "test", [trusted]);
+    expect((await reopened.get(record.capsuleId)).capsuleId).toBe(
+      record.capsuleId,
+    );
+    expect(
+      fs.readFileSync(filePath, "utf8").startsWith('{"capsule_id":\n'),
+    ).toBe(true);
+  });
 });

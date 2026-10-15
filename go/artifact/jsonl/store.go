@@ -179,7 +179,7 @@ func (s *Store) Put(ctx context.Context, record artifact.Record) error {
 		return err
 	}
 
-	f, err := os.OpenFile(s.path, os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(s.path, os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}
@@ -190,10 +190,21 @@ func (s *Store) Put(ctx context.Context, record artifact.Record) error {
 		return err
 	}
 
+	// Terminate a torn last line first, so the new record starts its own line
+	// instead of merging into the damaged one and vanishing on the next open.
+	var line []byte
+	if offset > 0 {
+		last := make([]byte, 1)
+		if _, err := f.ReadAt(last, offset-1); err != nil {
+			return err
+		}
+		if last[0] != '\n' {
+			line = append(line, '\n')
+			offset++
+		}
+	}
 	// Write data + newline as a single call to avoid a partial line on error.
-	line := make([]byte, len(data)+1)
-	copy(line, data)
-	line[len(data)] = '\n'
+	line = append(append(line, data...), '\n')
 	if _, err := f.Write(line); err != nil {
 		return err
 	}

@@ -227,7 +227,8 @@ Data written by any language opens in the others:
   when empty; `content` is omitted when absent and written as `""` when
   zero-length; an empty inventory is `[]`. The namespace is not stored per line:
   a file holds one namespace. Readers index by `capsule_id`, last line wins. Put
-  appends one line; purge rewrites the file through a temporary file and an
+  appends one line, first ending a torn last line (one without `\n`) so the
+  new record is not merged into it; purge rewrites the file through a temporary file and an
   atomic rename. Single writer, no locking. The conformance vectors pin exact
   lines.
 - **`mysql` and `sqlite`**: the same two tables, `capsule_store_capsules`
