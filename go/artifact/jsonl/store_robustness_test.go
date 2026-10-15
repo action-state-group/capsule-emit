@@ -1,7 +1,9 @@
 package jsonl_test
 
 import (
+	"bytes"
 	"crypto/ed25519"
+	jsonv2 "encoding/json/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,4 +161,27 @@ func TestJSONLPutAfterTornTailStartsNewLine(t *testing.T) {
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(string(data), "{\"capsule_id\":\n"))
+}
+
+// TestJSONLTornLastLineIsNotIndexed: a complete record missing only its final
+// '\n' counts as torn, as in the TypeScript, Python and Rust stores: it is not
+// indexed, and a purge keeps its bytes verbatim.
+func TestJSONLTornLastLineIsNotIndexed(t *testing.T) {
+	record, pub := testutil.Record(t, "jsonl-unterminated")
+	other, _ := testutil.Record(t, "jsonl-unterminated-other")
+	store, path := newStore(t, "test-unterminated", []ed25519.PublicKey{pub})
+	require.NoError(t, store.Put(t.Context(), record))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	tail, err := jsonv2.Marshal(other)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, append(data, tail...), 0o644))
+	reopened, err := jsonlstore.New(path, "test-unterminated", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	_, err = reopened.Get(t.Context(), other.CapsuleID)
+	require.ErrorIs(t, err, artifact.ErrNotFound)
+	require.NoError(t, reopened.Purge(t.Context(), record.CapsuleID))
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.True(t, bytes.HasSuffix(after, append([]byte{'\n'}, tail...)), "torn tail kept verbatim")
 }

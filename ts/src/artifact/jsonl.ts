@@ -275,7 +275,8 @@ export class JsonlArtifactStore implements Store {
       const last = Buffer.alloc(1);
       const fd = fs.openSync(this.filePath, "r");
       try {
-        fs.readSync(fd, last, 0, 1, offset - 1);
+        if (fs.readSync(fd, last, 0, 1, offset - 1) !== 1)
+          throw new ArtifactError("corrupt", "store shrank during put");
       } finally {
         fs.closeSync(fd);
       }
