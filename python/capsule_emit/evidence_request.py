@@ -1,5 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``answer()`` — the one evidence-request responder (draft-mih-agent-evidence-request-00).
+"""``answer()`` — the pre-00 evidence-request responder (deprecated).
+
+**Deprecated.** This module implements a pre-00 profile of the Evidence Request protocol
+(``chain_segment`` subjects, the ``subject.kind`` shape, map-valued
+``expected_pin``). The -00 implementation is
+:mod:`agent_action_capsule.evidence_request` (agent-action-capsule 0.8.0),
+tested against the draft's conformance vectors in Python, Go and Rust; use it
+for new code. This module stays only while capsule-emit-mesh still speaks the
+pre-00 profile (action-state-group/capsule-emit-mesh#219), and is removed
+after that. Importing it raises a ``DeprecationWarning``.
 
 Cites the *shape* of the local, pre-consent evidence-request draft — a
 request map ``{subject, coverage, derivation?, deadline?, nonce}`` — never
@@ -112,6 +121,14 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+
+warnings.warn(
+    "capsule_emit.evidence_request is a deprecated pre-00 profile; use "
+    "agent_action_capsule.evidence_request (agent-action-capsule>=0.8.0), "
+    "which implements draft-mih-agent-evidence-request-00",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 __all__ = [
     "REASON_REQUEST_MALFORMED",

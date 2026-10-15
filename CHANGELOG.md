@@ -6,6 +6,18 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Deprecated: `capsule_emit.evidence_request`
+
+The module implements a pre-00 profile of the Evidence Request protocol. The
+-00 implementation is `agent_action_capsule.evidence_request`
+(agent-action-capsule 0.8.0), and the Rust crate is
+[`evidence-request`](https://crates.io/crates/evidence-request); both live in
+agent-action-capsule next to the draft and its vectors
+(action-state-group/agent-action-capsule#262). Importing the module now
+raises a `DeprecationWarning`. It stays while capsule-emit-mesh still speaks
+the pre-00 profile (action-state-group/capsule-emit-mesh#219) and is removed
+after that.
+
 ### Removed: the `capsule-emit-evidence-request` crate
 
 The Evidence Request protocol crate moved to agent-action-capsule with its

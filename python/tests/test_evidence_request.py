@@ -7,6 +7,7 @@ negative case flips exactly one thing and confirms the mutant is caught.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import warnings
 
@@ -763,3 +764,14 @@ def test_normalize_refusal_reason_passes_through_current_tokens_unchanged():
 
 def test_legacy_refusal_reason_aliases_maps_only_the_one_known_rename():
     assert LEGACY_REFUSAL_REASON_ALIASES == {REASON_NO_SUCH_RECORD: REASON_NO_SUCH_SUBJECT}
+
+
+def test_import_emits_deprecation_warning():
+    """The module is a deprecated pre-00 profile: importing it warns and names
+    the -00 module to use instead."""
+    # Execute a separate copy from the module's spec: the warning fires
+    # without replacing the module (and its classes) the other tests use.
+    spec = importlib.util.find_spec("capsule_emit.evidence_request")
+    copy = importlib.util.module_from_spec(spec)
+    with pytest.warns(DeprecationWarning, match="agent_action_capsule.evidence_request"):
+        spec.loader.exec_module(copy)
