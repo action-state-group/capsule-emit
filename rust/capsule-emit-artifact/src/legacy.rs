@@ -215,8 +215,10 @@ impl LegacyLedger {
     }
 
     fn raw_line(&self, offset: u64) -> Result<Vec<u8>> {
-        let mut file = File::open(self.dir.join("capsules.jsonl")).map_err(ArtifactError::storage)?;
-        file.seek(SeekFrom::Start(offset)).map_err(ArtifactError::storage)?;
+        let mut file =
+            File::open(self.dir.join("capsules.jsonl")).map_err(ArtifactError::storage)?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(ArtifactError::storage)?;
         let mut line = Vec::new();
         BufReader::new(file)
             .read_until(b'\n', &mut line)
@@ -237,7 +239,10 @@ impl LegacyLedger {
         let object = line
             .as_object_mut()
             .ok_or_else(|| ArtifactError::Invalid("capsule is not an object".into()))?;
-        let claimed = ENVELOPE_MEMBERS.iter().filter(|m| object.contains_key(**m)).count();
+        let claimed = ENVELOPE_MEMBERS
+            .iter()
+            .filter(|m| object.contains_key(**m))
+            .count();
         let signature = object.remove("signature");
         let key_id = object.remove("key_id");
         let envelope = match claimed {
@@ -338,7 +343,10 @@ fn sync(state: &mut State) -> Result<()> {
             .filter(|t| t.is_portable())
             .unwrap_or(previous);
         let seq = state.entries.len() as u64 + 1;
-        state.first.entry(value.clone()).or_insert(state.entries.len());
+        state
+            .first
+            .entry(value.clone())
+            .or_insert(state.entries.len());
         state.entries.push(Entry {
             seq,
             value,
@@ -480,7 +488,9 @@ impl EntrySource for LegacyLedger {
             if after_seq > MAX_PORTABLE_INTEGER || limit == 0 || limit > MAX_SCAN_LIMIT {
                 return Err(invalid("scan arguments are outside the contract's limits"));
             }
-            let start = usize::try_from(after_seq).unwrap_or(usize::MAX).min(state.entries.len());
+            let start = usize::try_from(after_seq)
+                .unwrap_or(usize::MAX)
+                .min(state.entries.len());
             let end = start.saturating_add(limit).min(state.entries.len());
             Ok(state.entries[start..end].to_vec())
         })
@@ -491,7 +501,9 @@ impl EntryStore for LegacyLedger {
     fn append(&self, input: &AppendInput) -> cll::log::Result<AppendResult> {
         self.with_log(|state| {
             if input.value.len() != ENTRY_BYTES || !input.appended_at.is_portable() {
-                return Err(invalid("append input is not a 32-byte value and a portable time"));
+                return Err(invalid(
+                    "append input is not a 32-byte value and a portable time",
+                ));
             }
             match state.first.get(&input.value) {
                 Some(&index) => Ok(AppendResult {

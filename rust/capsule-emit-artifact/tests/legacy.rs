@@ -13,7 +13,7 @@ use capsule_emit::cose::{build_signed_statement, SignedStatementInput};
 use capsule_emit::ledger::Ledger;
 use capsule_emit_artifact::conformance::{self, Harness, Limits, Status};
 use capsule_emit_artifact::legacy::{LegacyLedger, CAPABILITIES, STATEMENT};
-use capsule_emit_artifact::{ArtifactError, Artifact, Record, RetentionState, Store};
+use capsule_emit_artifact::{Artifact, ArtifactError, Record, RetentionState, Store};
 use cll::log::{AppendInput, AppendOutcome, EntrySource, EntryStore, ErrorCode, Timestamp};
 use ed25519_dalek::SigningKey;
 use serde_json::{json, Map, Value};
@@ -193,8 +193,14 @@ fn artifact_conformance_subset() {
             let mut line: Value = serde_json::from_slice(&record.capsule).unwrap_or(json!({}));
             let signer = vector_signer(&record);
             if let Some(object) = line.as_object_mut() {
-                object.insert("signature".into(), json!(hex::encode(&record.producer_envelope)));
-                object.insert("key_id".into(), json!(hex::encode(signer.verifying_key().to_bytes())));
+                object.insert(
+                    "signature".into(),
+                    json!(hex::encode(&record.producer_envelope)),
+                );
+                object.insert(
+                    "key_id".into(),
+                    json!(hex::encode(signer.verifying_key().to_bytes())),
+                );
                 object.insert("capsule_id".into(), json!(record.capsule_id));
             }
             let statement = statement(&line, &signer);
@@ -210,19 +216,31 @@ fn artifact_conformance_subset() {
         after_get: Some(Box::new(|mut record: Record| {
             let before = record.artifacts.len();
             record.artifacts.retain(|a| a.name != STATEMENT);
-            assert_eq!(before, record.artifacts.len() + 1, "get must report the statement");
+            assert_eq!(
+                before,
+                record.artifacts.len() + 1,
+                "get must report the statement"
+            );
             record
         })),
     };
     let outcomes = conformance::run_limited(&harness, &limits);
-    let failures: Vec<_> = outcomes.iter().filter(|o| o.status == Status::Fail).collect();
+    let failures: Vec<_> = outcomes
+        .iter()
+        .filter(|o| o.status == Status::Fail)
+        .collect();
     assert!(failures.is_empty(), "{failures:#?}");
     let passed: Vec<&str> = outcomes
         .iter()
         .filter(|o| o.status == Status::Pass)
         .map(|o| o.name.as_str())
         .collect();
-    for name in ["bare_record", "bare_rejections", "bare_untrusted_on_read", "malformed_ids"] {
+    for name in [
+        "bare_record",
+        "bare_rejections",
+        "bare_untrusted_on_read",
+        "malformed_ids",
+    ] {
         assert!(passed.contains(&name), "{name} did not run: {outcomes:#?}");
     }
     assert!(!passed.contains(&"purge_lifecycle"));
@@ -241,7 +259,10 @@ fn every_line_is_an_entry_at_its_existing_position() {
     let values: Vec<String> = entries.iter().map(|e| hex::encode(&e.value)).collect();
     let ids: Vec<&str> = raw.iter().map(id).collect();
     assert_eq!(values, ids);
-    assert_eq!(entries.iter().map(|e| e.seq).collect::<Vec<_>>(), (1..=9).collect::<Vec<u64>>());
+    assert_eq!(
+        entries.iter().map(|e| e.seq).collect::<Vec<_>>(),
+        (1..=9).collect::<Vec<u64>>()
+    );
     // A padding line has no timestamp and inherits the previous entry's.
     assert_eq!(entries[3].appended_at, entries[2].appended_at);
     assert_eq!(
@@ -257,7 +278,10 @@ fn every_line_is_an_entry_at_its_existing_position() {
             appended_at: Timestamp::now(),
         })
         .unwrap();
-    assert_eq!((again.outcome, again.entry.seq), (AppendOutcome::Idempotent, 1));
+    assert_eq!(
+        (again.outcome, again.entry.seq),
+        (AppendOutcome::Idempotent, 1)
+    );
     let err = store
         .append(&AppendInput {
             value: vec![9; 32],
@@ -286,15 +310,24 @@ fn get_returns_the_capsule_envelope_and_statement() {
         assert!(statement.binding.is_empty());
         assert_eq!(
             statement.content.as_deref(),
-            Some(&std::fs::read(dir.path().join(format!("signed-statements/{}.cose", id(l)))).unwrap()[..])
+            Some(
+                &std::fs::read(dir.path().join(format!("signed-statements/{}.cose", id(l))))
+                    .unwrap()[..]
+            )
         );
     }
     let unsigned = store.get(id(&lines[2])).unwrap();
     assert!(unsigned.producer_envelope.is_empty());
     let padding = file_lines(dir.path())[3].clone();
-    assert!(matches!(store.get(id(&padding)), Err(ArtifactError::NotFound)));
+    assert!(matches!(
+        store.get(id(&padding)),
+        Err(ArtifactError::NotFound)
+    ));
     let other = LegacyLedger::new(dir.path(), "ledger", [[1u8; 32]]).unwrap();
-    assert!(matches!(other.get(id(&lines[0])), Err(ArtifactError::UntrustedSigner)));
+    assert!(matches!(
+        other.get(id(&lines[0])),
+        Err(ArtifactError::UntrustedSigner)
+    ));
 }
 
 #[test]
@@ -310,7 +343,11 @@ fn put_of_historical_records_reproduces_the_ledger() {
         target.put(&record).unwrap(); // idempotent
     }
     let raw = |dir: &Path| std::fs::read_to_string(dir.join("capsules.jsonl")).unwrap();
-    let source_lines: Vec<String> = raw(source_dir.path()).lines().take(3).map(String::from).collect();
+    let source_lines: Vec<String> = raw(source_dir.path())
+        .lines()
+        .take(3)
+        .map(String::from)
+        .collect();
     let target_lines: Vec<String> = raw(target_dir.path()).lines().map(String::from).collect();
     assert_eq!(source_lines, target_lines);
     let (reopened, _) = Ledger::open(target_dir.path()).unwrap();
@@ -323,8 +360,14 @@ fn capability_limits_are_unsupported() {
     let lines = historical(dir.path());
     let store = store(dir.path());
     let mut record = store.get(id(&lines[0])).unwrap();
-    assert!(matches!(store.purge(id(&lines[0])), Err(ArtifactError::Unsupported(_))));
-    assert!(matches!(store.purge("NOT-AN-ID"), Err(ArtifactError::Invalid(_))));
+    assert!(matches!(
+        store.purge(id(&lines[0])),
+        Err(ArtifactError::Unsupported(_))
+    ));
+    assert!(matches!(
+        store.purge("NOT-AN-ID"),
+        Err(ArtifactError::Invalid(_))
+    ));
     record.artifacts.push(Artifact {
         name: "payload".into(),
         binding: String::new(),
@@ -332,7 +375,10 @@ fn capability_limits_are_unsupported() {
         state: RetentionState::NeverRetained,
         content_sha256: String::new(),
     });
-    assert!(matches!(store.put(&record), Err(ArtifactError::Unsupported(_))));
+    assert!(matches!(
+        store.put(&record),
+        Err(ArtifactError::Unsupported(_))
+    ));
     record.artifacts.clear();
     assert!(matches!(store.put(&record), Err(ArtifactError::Invalid(_))));
     assert!(CAPABILITIES.iter().all(|(_, offered)| !offered));
@@ -365,7 +411,10 @@ fn a_different_record_under_a_held_id_conflicts_and_chain_breaks_are_invalid() {
         content_sha256: String::new(),
     });
     let err = store.put(&fresh).unwrap_err();
-    assert!(matches!(err, ArtifactError::Invalid(ref m) if m.contains("head")), "{err}");
+    assert!(
+        matches!(err, ArtifactError::Invalid(ref m) if m.contains("head")),
+        "{err}"
+    );
 }
 
 #[test]
@@ -410,14 +459,23 @@ fn new_padding_is_covered_by_the_next_checkpoint() {
 fn closed_and_uninitialized_stores() {
     let dir = tempfile::tempdir().unwrap();
     let store = LegacyLedger::new(dir.path().join("none"), "ledger", trusted()).unwrap();
-    assert!(!dir.path().join("none").exists(), "the constructor writes nothing");
+    assert!(
+        !dir.path().join("none").exists(),
+        "the constructor writes nothing"
+    );
     assert_eq!(store.scan_entries(0, 10).unwrap(), vec![]);
-    assert!(matches!(store.get(&"a".repeat(64)), Err(ArtifactError::NotFound)));
+    assert!(matches!(
+        store.get(&"a".repeat(64)),
+        Err(ArtifactError::NotFound)
+    ));
     store.init().unwrap();
     store.init().unwrap();
     assert!(dir.path().join("none/capsules.jsonl").exists());
     store.close();
-    assert_eq!(store.scan_entries(0, 1).unwrap_err().code(), ErrorCode::Closed);
+    assert_eq!(
+        store.scan_entries(0, 1).unwrap_err().code(),
+        ErrorCode::Closed
+    );
     assert!(store.get(&"a".repeat(64)).is_err());
     assert!(LegacyLedger::new(dir.path(), "bad/ns", trusted()).is_err());
 }

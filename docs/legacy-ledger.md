@@ -4,24 +4,28 @@ The flat ledgers that capsule-emit has always written keep working, and they
 now sit behind the same two interfaces as every other backend:
 
 - the CLL entry log, specified in checkpointed-local-log's
-  `docs/backend-contract.md` (`cll.log.EntryStore` in Python);
+  `docs/backend-contract.md` (`cll.log.EntryStore` in Python,
+  `cll::log::EntryStore` in Rust);
 - the artifact store, specified in [artifact-store.md](artifact-store.md).
 
 | Language | Ledger | Backend |
 |---|---|---|
 | Python | `ledger.jsonl` | `capsule_emit.legacy_ledger.LegacyLedger` |
+| Rust | `capsules.jsonl` + `signed-statements/` | `capsule_emit_artifact::legacy::LegacyLedger` (crate `capsule-emit-artifact`, feature `legacy`) |
 
 Legacy ledgers keep their own formats and are exempt from cross-language
 storage interop. Existing ledgers open unchanged: the same lines, the same
 sequence positions and the same checkpoint roots. `seal()` needs no
-configuration and writes the same line it always has. The one behavior change
+configuration and writes the same line it always has (Python). The one behavior change
 is that sealing a `capsule_id` the ledger already holds no longer writes a
 second line.
 
 ## The CLL entry log
 
-Every line is a leaf: capsules, unsigned `log()` entries, checkpoint stamps,
-disclosure records, witness backfills and padding. For each line:
+Every line is a leaf. In Python: capsules, unsigned `log()` entries,
+checkpoint stamps, disclosure records, witness backfills and padding. In Rust:
+capsules and padding (Rust keeps its checkpoints in `checkpoints.jsonl`). For
+each line:
 
 | Entry field | Value |
 |---|---|
@@ -30,15 +34,18 @@ disclosure records, witness backfills and padding. For each line:
 | `appendedAt` | Derived, because the ledger stores no append time (below). |
 
 `appendedAt` is the line's top-level `timestamp` (capsules, `log()` entries,
-disclosure records), else its `checkpoint.timestamp` (checkpoint stamps), else
+disclosure records), else its `checkpoint.timestamp` (Python checkpoint
+stamps), else
 the previous entry's `appendedAt`, and the Unix epoch for a first line with
 none. Times are read as RFC 3339 instants, where a missing offset means UTC, and
 truncated to whole milliseconds.
 
 ### The contract exception: repeated digests
 
-The ledger writer never deduplicated, so a historical file can hold the same
-`capsule_id` on several lines, and each is a leaf. The CLL contract is
+Python's ledger writer never deduplicated, so a historical file can hold the
+same `capsule_id` on several lines, and each is a leaf. (Rust's chain linkage
+already rules out a repeated capsule line, and padding carries a fresh nonce;
+its backend applies the same rules.) The CLL contract is
 idempotent by digest. The legacy backend keeps history unchanged:
 
 - `scanEntries` returns every line, repeats included, so positions and roots do
@@ -48,7 +55,7 @@ idempotent by digest. The legacy backend keeps history unchanged:
 
 This is the only deviation from the CLL contract.
 
-The index is built incrementally: each operation reads only the bytes appended
+Python's index is built incrementally: each operation reads only the bytes appended
 since the last one. A file that shrinks or is replaced (another inode) is read
 again from the start. Rewriting earlier bytes of the same file in place is not
 detected, because the ledger is append-only.
@@ -61,10 +68,17 @@ lacks the CLL `digest-append` capability. A capsule is written by artifact
 the existing entry as `idempotent` for a digest the ledger holds and fails with
 `unsupported` otherwise.
 
-The other leaves keep their writers, under the same writer lock: checkpoint
-stamps, disclosure records and witness backfills go through
-`capsule_emit.ledger.append_to_ledger`. A new stamp line is a leaf like any
-other, so the next checkpoint covers it.
+The other leaves keep their writers, under the same writer lock:
+
+- Python: checkpoint stamps, disclosure records and witness backfills through
+  `capsule_emit.ledger.append_to_ledger`;
+- Rust: padding through `LegacyLedger::append_padding` and `pad_to_bucket`,
+  which call `Ledger::append_padding`.
+
+A new stamp or padding line is a leaf like any other, so the next checkpoint
+covers it. Rust keeps its indexed lookups (`Ledger` reads a record at its byte
+offset) and its incremental checkpointing (`CheckpointState` folds only lines
+past `consumed_bytes`).
 
 ## The artifact store
 
@@ -80,10 +94,18 @@ public key, hex). `get` returns:
 Checkpoint stamps, disclosure records, witness backfills and padding are log
 entries only. `get` reports them `not_found`.
 
+Rust adds one attachment. Each line has a `signed-statements/<capsule_id>.cose`,
+a COSE_Sign1 whose payload is the whole capsule line. `get` returns it as the
+artifact `signed-statement`, `present` with no binding, so nothing about it is
+authenticated by the Capsule. `put` must supply it (`invalid` otherwise),
+because the ledger checks it on every reload, and `put` checks it the same way
+before writing. A Rust capsule must also extend the ledger's chain: `put` of a
+capsule whose `chain.parent_capsule_id` is not the current head is `invalid`.
+
 ### Verification
 
-Legacy capsules are checked with capsule-emit's own rules, which keep both
-canonicalization profiles. `capsule_id` is recomputed per
+Legacy capsules are checked with capsule-emit's own rules. In Python, which
+keeps both canonicalization profiles, `capsule_id` is recomputed per
 `canonicalization_id`:
 
 - `jcs`: SHA-256 of the JCS form without `capsule_id`, `signature` and
@@ -95,20 +117,24 @@ canonicalization profiles. `capsule_id` is recomputed per
 A `jcs` capsule must also pass Class 1 verification, as in every other
 artifact store; historical `jcs-n` capsules predate it and are checked by their
 content address alone. The Go verifier accepts only `jcs`, so `jcs-n` capsules
-are verified with capsule-emit's own verifier.
+are verified with capsule-emit's own verifier. Rust ledgers hold only `jcs`
+capsules (`Ledger::open` recomputes every line under `jcs`), so Rust signed
+records go through the artifact crate's own verification and pre-envelope
+capsules through Class 1 and their content address.
 
 When a line carries `signature` or `key_id`, both must be present, non-empty
 strings, the envelope must verify over that `capsule_id`, and `key_id` must be
 its signer. With trusted keys configured, the signer must also be one of them
 (`untrusted_signer`). With none, any signer whose envelope verifies is
-accepted, as `seal()` accepts whichever key it is configured with. Lines are
+accepted, as `seal()` accepts whichever key it is configured with (Python
+only; Rust requires trusted keys, as every artifact store does). Lines are
 read as strict JSON, so a duplicated member is `invalid`.
 
 `put` accepts only capsule bytes in the ledger's own line form, because the
 file cannot hold other bytes for the same JSON value: compact `json.dumps`
-output with ASCII escapes.
+output with ASCII escapes in Python, `serde_json` compact output in Rust.
 
-`seal()` and `log()` write through the same append step as `put` but skip its
+In Python, `seal()` and `log()` write through the same append step as `put` but skip its
 envelope check, because a custom `Signer` may return a signature that is not a
 COSE envelope, which the ledger has always accepted. `get` then reports that
 line `invalid`.
@@ -120,17 +146,20 @@ Each limit is reported as a capability and refused with `unsupported`:
 | Capability | Legacy backend |
 |---|---|
 | CLL `digest-append` | No: write the capsule with `put` |
-| Originals | No: `put` with any declared artifact is refused |
-| Purge | No: `purge` validates the ID, then refuses; there are no originals to purge |
+| Originals | No: `put` with any declared artifact is refused (Rust: except the required `signed-statement`) |
+| Purge | No: `purge` validates the ID, then refuses. Python has no originals to purge; Rust's statement is required by the ledger's reload check |
 | Transactions | No `TxStore` extension |
-| Writers | One: a `flock` on `<ledger>.lock` excludes a second writer process (`LedgerLockedError`) |
+| Writers | One. Python: a `flock` on `<ledger>.lock` excludes a second writer process (`LedgerLockedError`). Rust: the handle that opened the ledger; open no second one |
 
-`capsule_emit.legacy_ledger.CAPABILITIES` lists them.
+`capsule_emit.legacy_ledger.CAPABILITIES` and
+`capsule_emit_artifact::legacy::CAPABILITIES` list them.
 
-The backend runs the subset of the shared conformance suites these limits
+Each backend runs the subset of the shared conformance suites these limits
 allow: the CLL vectors without `digest-append`, and the artifact vectors whose
 cases need neither originals nor purge (the `bare_*` cases and
-`malformed_ids`). Legacy-specific tests cover repeated capsule IDs, `jcs-n` and
-absent-`canonicalization_id` capsules, non-capsule lines, new stamp
-lines under the next checkpoint, every CLI command, and root invariance for a ledger with stamp,
-disclosure and backfill lines.
+`malformed_ids`). The Rust harness adds the required statement to each record
+before `put` and removes it after `get` (`conformance::Limits`). Legacy-specific
+tests cover repeated capsule IDs, `jcs-n` and absent-`canonicalization_id`
+capsules, non-capsule lines, new stamp and padding lines under the next
+checkpoint, every CLI command (Python's commands, Rust's offline verifier), and
+root invariance for a ledger with stamp, disclosure and backfill lines.

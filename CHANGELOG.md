@@ -24,6 +24,14 @@ line under that ID raises `capsule_emit.artifact.ConflictError`. New capsules
 produce the same bytes as before. Appends after a torn last line now start a
 new line instead of merging into it.
 
+### Added: Rust legacy ledger backend
+
+The Rust ledger (`capsules.jsonl` + `signed-statements/`) is a CLL entry log
+and artifact store too, as `capsule_emit_artifact::legacy::LegacyLedger`
+behind the crate's `legacy` feature (see `rust/capsule-emit-artifact/CHANGELOG.md`).
+The Rust crate now requires `checkpointed-local-log` 0.3.1 and `evidencebook`
+0.0.3, one CLL version in the lock.
+
 ### Changed: requires `checkpointed-local-log` 0.6
 
 The dependency is now `checkpointed-local-log>=0.6,<0.7`, for `cll.log`.

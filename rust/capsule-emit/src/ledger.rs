@@ -753,7 +753,11 @@ mod tests {
         ledger.append(&c1, &statement_for(&c1)).unwrap();
         let key = ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]);
         ledger.pad_to_bucket(3, &key, "ledger-test").unwrap();
-        let ids: Vec<String> = ledger.lines().iter().map(|l| l.capsule_id.clone()).collect();
+        let ids: Vec<String> = ledger
+            .lines()
+            .iter()
+            .map(|l| l.capsule_id.clone())
+            .collect();
         assert_eq!(ids.len(), 3);
         assert_eq!(ids[0], id1);
         assert_eq!(
