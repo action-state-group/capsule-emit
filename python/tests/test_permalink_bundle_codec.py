@@ -204,3 +204,27 @@ def test_cli_oversize_with_location_prints_a_pointer_matching_the_written_bundle
     assert pointer["bundle_ref"]["locations"] == [location]
     assert resolve_pointer(pointer, hosted) == hosted
     assert verify_bundle(hosted).disclosures[0].status == "disclosure_match"
+
+
+def test_converging_citations_are_walked_once():
+    """Each record cites its parent and its grandparent: without visiting each
+    record once, the closure walk's frontier doubles at every step and 60
+    records never finish."""
+    import time
+
+    from capsule_emit.permalink import _completeness
+
+    ids = [f"{i:064x}" for i in range(60)]
+    records = []
+    for i, cid in enumerate(ids):
+        record = {"capsule_id": cid}
+        if i:
+            record["chain"] = {"parent_capsule_id": ids[i - 1]}
+        if i > 1:
+            record["references"] = [{"type": "agent-action-capsule", "digest_alg": "SHA-256", "digest": ids[i - 2]}]
+        records.append(record)
+    records[0]["references"] = [{"type": "agent-action-capsule", "digest_alg": "SHA-256", "digest": "ab" * 32}]
+    start = time.monotonic()
+    completeness = _completeness(ids[-1], records)
+    assert time.monotonic() - start < 1
+    assert completeness == {"closure_depth": 60, "records_mode": "declared_incomplete", "missing": ["ab" * 32]}
