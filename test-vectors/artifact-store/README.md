@@ -63,3 +63,41 @@ capabilities the backend does not declare:
 
 Corruption detection on read (a tampered row or line) depends on the storage
 format, so each backend tests it in its own suite rather than here.
+
+## Cross-language interlock
+
+`interlock.json` drives the cross-language interlock
+(`.github/scripts/artifact-store-interlock.sh`, run by the `artifact-interlock`
+workflow on every pull request that touches artifact code, once per format:
+`jsonl`, `sqlite`, `mysql`). It lists the steps of each phase and the trusted
+key names per phase (`default` unless a phase has its own). Each language has a
+small adapter that runs one phase against one store and prints one line per
+step: the step number, op and subject (a record name, or a JSON-encoded literal
+ID), the outcome (`ok` or the error code), and for a successful `get` the
+StorageChecksum and the record's JSONL line with artifacts sorted by name. A
+record the language's codec cannot represent counts as `invalid`.
+
+- `write`: each language writes to its own store (a file, or for MySQL its own
+  database). Every report must equal `interlock-write.txt`. The JSONL files, or
+  the SQL schemas and rows as `.github/scripts/artifact_store_rows.py` dumps
+  them, must be byte-identical and hold five records. Timestamps compare by
+  being NULL or in the contract's UTC form.
+- `read`, `strict` and `check`: every language works on fresh copies of every
+  language's store, all pairs. `read` reports each record, then retries, a
+  conflict and purges of retained content. On a second copy, `strict` trusts
+  fewer keys, so a record from the other key is `untrusted_signer` but must
+  still be purged, and `check` confirms with the default keys that its retained
+  payload is gone and its never-retained output unchanged. Every report must
+  equal `interlock-<phase>.txt`, every copy must end in the same state, and
+  existing SQL rows must keep their exact `created_at` (a retry writes nothing).
+  The MySQL service runs in a non-UTC time zone, so a backend writing local
+  time instead of UTC fails the dump's timestamp check.
+
+The workflow also runs negative controls (`INTERLOCK_INJECT=report`, `storage`,
+`read`), which corrupt one language's output and must make the run fail.
+
+The goldens come from the Go adapter (`go run ./artifact/internal/interlock`),
+whose test keeps them in sync; every other adapter must reproduce them exactly.
+Adapters: Go `go/artifact/internal/interlock`, TypeScript
+`ts/scripts/artifact-interlock.mjs`. A pull request that adds a language's
+backend adds its adapter and the language to the workflow's `LANGUAGES`.

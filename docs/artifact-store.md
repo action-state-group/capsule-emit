@@ -272,6 +272,13 @@ factory for the backend under test:
 The Python and Rust runners and interfaces land with those languages' backends
 (capsule-emit#308); until then Go and TypeScript run the suite.
 
+The `artifact-interlock` workflow also runs a cross-language interlock on every
+pull request that touches artifact code: for each format, every language writes
+the same sequence, every language reads every other language's store, and the
+reports, JSONL bytes, SQL rows, StorageChecksums, purge outcomes and error
+codes must all agree. A language's backend joins it in the pull request that
+adds the backend.
+
 The vectors' README describes the file format and the optional capabilities a
 case may require (`durable`: the backend can be reopened over the same storage;
 `shared_backing`: several namespaces can share one storage).
