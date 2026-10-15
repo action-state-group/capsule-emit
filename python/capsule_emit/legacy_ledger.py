@@ -281,20 +281,27 @@ class LegacyLedger:
                 data = fh.read(size - self._consumed)
         complete = data.rfind(b"\n") + 1
         offset = self._consumed
+        seq = len(self._lines) + 1
+        previous = self._last_time()
+        parsed = []
+        # Parse the whole chunk before indexing any of it, so a corrupt line
+        # leaves the index exactly as it was.
         for raw in data[:complete].split(b"\n")[:-1]:
-            self._index(self._parse(raw, offset, len(self._lines) + 1, self._last_time()))
+            line = self._parse(raw, offset, seq, previous)
             offset += len(raw) + 1
-        self._consumed = offset
+            if line is not None:
+                parsed.append(line)
+                seq += 1
+                previous = line.entry.appended_at
         # A torn last line (no newline yet) still counts when it parses, as
         # it always has for read_ledger_entries, but is re-read next time.
         tail = data[complete:]
-        self._tail = self._parse(tail, offset, len(self._lines) + 1, self._last_time()) if tail else None
-
-    def _index(self, line: _Line | None) -> None:
-        if line is None:
-            return
-        self._lines.append(line)
-        self._first.setdefault(line.entry.value, len(self._lines) - 1)
+        tail_line = self._parse(tail, offset, seq, previous) if tail else None
+        for line in parsed:
+            self._lines.append(line)
+            self._first.setdefault(line.entry.value, len(self._lines) - 1)
+        self._consumed = offset
+        self._tail = tail_line
 
     def _last_time(self) -> datetime:
         return self._lines[-1].entry.appended_at if self._lines else _EPOCH

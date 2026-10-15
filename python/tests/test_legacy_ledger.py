@@ -285,6 +285,21 @@ def test_a_malformed_capsule_id_is_corrupt(tmp_path):
         LegacyLedger(path).scan_entries(0, 10)
 
 
+def test_a_corrupt_line_leaves_the_index_unchanged(tmp_path):
+    raw = FIXTURE.read_bytes().split(b"\n")
+    path = tmp_path / "ledger.jsonl"
+    path.write_bytes(raw[0] + b"\n")
+    store = LegacyLedger(path)
+    assert len(store.scan_entries(0, 10)) == 1
+    with open(path, "ab") as fh:
+        fh.write(raw[1] + b'\n{"capsule_id":"zz"}\n')
+    for _ in range(2):
+        with pytest.raises(CorruptError):
+            store.scan_entries(0, 10)
+    path.write_bytes(raw[0] + b"\n" + raw[1] + b"\n")
+    assert [e.seq for e in store.scan_entries(0, 10)] == [1, 2]
+
+
 def test_unparseable_and_blank_lines_are_skipped_as_before(tmp_path):
     raw = FIXTURE.read_bytes().split(b"\n")
     path = tmp_path / "ledger.jsonl"
