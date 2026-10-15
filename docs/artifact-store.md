@@ -261,6 +261,9 @@ factory for the backend under test:
 | Python | `capsule_emit.artifact.conformance.run(harness)` |
 | Rust | `capsule_emit_artifact::conformance::run(&harness)` |
 
+The TypeScript, Python and Rust runners land with those languages' backends
+(capsule-emit#308); until then only Go runs the suite.
+
 The vectors' README describes the file format and the optional capabilities a
 case may require (`durable`: the backend can be reopened over the same storage;
 `shared_backing`: several namespaces can share one storage).
