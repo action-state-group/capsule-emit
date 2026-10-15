@@ -86,20 +86,6 @@ class CorruptError(ArtifactError):
     code = "corrupt"
 
 
-ERRORS = {
-    cls.code: cls
-    for cls in (
-        InvalidError,
-        ConflictError,
-        NotFoundError,
-        PurgedError,
-        DigestMismatchError,
-        UntrustedSignerError,
-        CorruptError,
-    )
-}
-
-
 @dataclass
 class Artifact:
     """An exact original. An empty ``binding`` means NOT authenticated by the

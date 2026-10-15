@@ -63,29 +63,25 @@ class JsonlArtifactStore:
         self._index: dict = {}
         if os.path.exists(self._path):
             with open(self._path, "rb") as f:
-                self._index = self._scan(f.read())[0]
+                self._index = {line_id: span for line_id, span, _ in self._lines(f) if line_id is not None}
 
     @property
     def namespace(self) -> str:
         return self._namespace
 
     @staticmethod
-    def _scan(data: bytes) -> tuple[dict, list]:
-        """Indexes complete lines. Returns the index and each line's span."""
-        index: dict = {}
-        spans: list = []
+    def _lines(f):
+        """Streams lines as (capsule_id or None, (offset, length), bytes without
+        the newline). A torn last line (no "\n") comes last as (None, None,
+        its bytes), so it is never indexed."""
         offset = 0
-        while True:
-            end = data.find(b"\n", offset)
-            if end < 0:
-                break  # a trailing partial line is left unindexed
-            line = data[offset:end]
-            capsule_id = _peek_id(line) if line else None
-            if capsule_id is not None:
-                index[capsule_id] = (offset, end - offset)
-            spans.append((offset, end - offset, capsule_id))
-            offset = end + 1
-        return index, spans
+        for raw in f:
+            if not raw.endswith(b"\n"):
+                yield None, None, raw
+                return
+            line = raw[:-1]
+            yield (_peek_id(line) if line else None), (offset, len(line)), line
+            offset += len(raw)
 
     def init(self) -> None:
         """Creates an empty file if none exists; an existing file is untouched."""
@@ -172,10 +168,7 @@ class JsonlArtifactStore:
             self._rewrite(capsule_id, replacement)
 
     def _rewrite(self, capsule_id: str, replacement: bytes) -> None:
-        with open(self._path, "rb") as f:
-            data = f.read()
         mode = stat.S_IMODE(os.stat(self._path).st_mode)
-        _, spans = self._scan(data)
         directory = os.path.dirname(os.path.abspath(self._path))
         fd, tmp = tempfile.mkstemp(prefix=".jsonl-rewrite-", dir=directory)
         committed = False
@@ -183,19 +176,18 @@ class JsonlArtifactStore:
             index: dict = {}
             position = 0
             found = False
-            with os.fdopen(fd, "wb") as out:
+            with os.fdopen(fd, "wb") as out, open(self._path, "rb") as source:
                 os.chmod(tmp, mode)
-                for offset, length, line_id in spans:
-                    line = data[offset : offset + length]
+                for line_id, span, line in self._lines(source):
+                    if span is None:  # a torn last line: byte for byte, unindexed
+                        out.write(line)
+                        break
                     if line_id == capsule_id:
                         found, line = True, replacement
                     out.write(line + b"\n")
                     if line_id is not None:
                         index[line_id] = (position, len(line))
                     position += len(line) + 1
-                # Keep a torn trailing line (no "\n") byte for byte; it stays
-                # unindexed, as it was before the rewrite.
-                out.write(data[spans[-1][0] + spans[-1][1] + 1 :] if spans else data)
                 out.flush()
                 os.fsync(out.fileno())
             if not found:

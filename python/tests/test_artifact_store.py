@@ -324,6 +324,18 @@ def test_sqlite_rejects_tampered_rows(tmp_path):
         store.get(basic_id)
 
 
+def test_sqlite_init_does_not_commit_the_callers_transaction(tmp_path):
+    connection = sqlite3.connect(tmp_path / "a.db", isolation_level=None)
+    connection.execute("CREATE TABLE app (n INTEGER)")
+    connection.execute("BEGIN")
+    connection.execute("INSERT INTO app VALUES (1)")
+    SqliteArtifactStore(connection, "ns", [TRUSTED]).init()
+    connection.execute("ROLLBACK")
+    assert connection.execute("SELECT COUNT(*) FROM app").fetchone() == (0,)
+    tables = connection.execute("SELECT name FROM sqlite_master WHERE name LIKE 'capsule_store_%'").fetchall()
+    assert tables == []
+
+
 def test_sqlite_transactional_extension(tmp_path):
     connection = sqlite3.connect(tmp_path / "a.db", isolation_level=None)
     connection.execute("PRAGMA foreign_keys=ON")

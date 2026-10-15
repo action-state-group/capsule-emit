@@ -2,10 +2,14 @@
 """SQLite artifact store on the standard library's ``sqlite3``.
 
 Same tables and rows as the Go and TypeScript SQLite stores. The caller owns
-the connection: open it with ``PRAGMA foreign_keys=ON`` and a busy timeout, and
-leave ``autocommit`` at its legacy default (or ``isolation_level=None``): this
-store issues its own ``BEGIN``/``COMMIT`` for :meth:`put`, :meth:`get` and
-:meth:`purge`. The file may also hold a CLL SQLite log in its own tables.
+the connection: open it with ``isolation_level=None``, ``PRAGMA
+foreign_keys=ON`` and a busy timeout. This store issues its own
+``BEGIN``/``COMMIT`` for :meth:`put`, :meth:`get` and :meth:`purge`, so the
+connection must not be inside a transaction then; with the legacy default
+isolation level, sqlite3 opens one implicitly before the caller's own
+INSERT/UPDATE, which the caller must commit first. Python 3.12's
+``autocommit=False`` mode is not supported. The file may also hold a CLL SQLite
+log in its own tables.
 """
 
 from __future__ import annotations
@@ -68,8 +72,12 @@ class SqliteArtifactStore(SqlArtifactStore):
         return isinstance(error, sqlite3.IntegrityError)
 
     def init(self) -> None:
-        """Creates the v1 tables if absent; existing tables are untouched."""
-        self._conn.executescript(SCHEMA)
+        """Creates the v1 tables if absent; existing tables are untouched. Run
+        during provisioning: unlike ``executescript``, it does not commit a
+        transaction the caller has open, but the DDL becomes part of it."""
+        for statement in SCHEMA.split(";"):
+            if statement.strip():
+                self._conn.execute(statement)
 
     def _transaction(self, run: Callable[[], T]) -> T:
         self._conn.execute("BEGIN")
