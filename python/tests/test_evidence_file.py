@@ -259,3 +259,38 @@ def test_report_is_one_offline_page(tmp_path, capsys):
     page = render_report_html(unanchored, check_evidence_file(unanchored))
     assert "Incomplete: this file carries no signed checkpoint" in page
     assert "<dt>Log</dt>" not in page
+
+
+def test_a_file_without_disclosures_has_no_disclosure_check(tmp_path):
+    check = check_evidence_file(build_bundle(tmp_path))
+    assert "disclosures" not in _status(check) and check.verdict == "VALID"
+
+
+def test_a_disclosure_that_matches_its_record_passes(tmp_path):
+    bundle = build_bundle(tmp_path)
+    bundle["disclosures"] = {bundle["records"][0]["capsule_id"]: {"agent_input": {"step": 0}}}
+    check = check_evidence_file(bundle)
+    assert _status(check)["disclosures"] == "pass" and check.verdict == "VALID"
+
+
+@pytest.mark.parametrize(
+    "overlay, finding",
+    [
+        (lambda cid: {cid: {"agent_input": {"step": 99}}}, "disclosure_mismatch:{cid}:agent_input"),
+        (lambda cid: {cid: {"not_a_member": 1}}, "disclosure_ineligible_field:{cid}:not_a_member"),
+        (lambda cid: {"ab" * 32: {"agent_input": {"step": 0}}}, "disclosure_mismatch:" + "ab" * 32 + ":"),
+        (lambda cid: ["not", "an", "overlay"], "disclosure_mismatch::"),
+    ],
+)
+def test_a_disclosure_that_does_not_match_fails_the_file(tmp_path, capsys, overlay, finding):
+    bundle = build_bundle(tmp_path)
+    cid = bundle["records"][0]["capsule_id"]
+    bundle["disclosures"] = overlay(cid)
+    check = check_evidence_file(bundle)
+    disclosures = next(c for c in check.checks if c.name == "disclosures")
+    assert disclosures.status == "fail" and finding.format(cid=cid) in disclosures.findings
+    assert check.verdict == "INVALID"
+    path = tmp_path / "b.json"
+    path.write_text(json.dumps(bundle))
+    assert main(["verify", "--bundle", str(path)]) == 1
+    assert "does not match what its record commits to" in capsys.readouterr().out

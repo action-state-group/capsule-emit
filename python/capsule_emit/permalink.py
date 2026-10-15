@@ -146,13 +146,19 @@ def _completeness(root_id: str, capsules: list[dict]) -> dict:
     by_id = {_capsule_id_of(c): c for c in capsules}
     depth = len(capsules)
     missing: list[str] = []
+    # Each record is expanded once: records that cite a common ancestor (a
+    # record citing its parent and its grandparent) would otherwise grow the
+    # frontier exponentially with the ledger's length.
+    seen = {root_id}
     frontier = [root_id]
     for _ in range(depth):
         next_frontier: list[str] = []
         for source_id in frontier:
             for target in _citation_targets(by_id[source_id]):
                 if target in by_id:
-                    next_frontier.append(target)
+                    if target not in seen:
+                        seen.add(target)
+                        next_frontier.append(target)
                 elif target not in missing:
                     missing.append(target)
         frontier = next_frontier

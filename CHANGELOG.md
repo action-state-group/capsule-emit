@@ -6,6 +6,25 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed: `verify --bundle` checks a file's disclosures
+
+`check_evidence_file` dropped the disclosure results of
+agent-action-capsule's `verify_bundle`, so a file whose `disclosures` overlay
+did not match what its records commit to was INCOMPLETE at worst. A file that
+carries the overlay now gets a `disclosures` check: it passes when every
+disclosed member matches or is withheld, and otherwise fails the file
+(INVALID), naming each member by its status (`disclosure_mismatch`,
+`disclosure_ineligible_field`, a member with no committed digest). A file
+without the overlay is checked as before.
+
+### Fixed: whole-ledger bundles with converging citations finish
+
+`permalink.build_bundle` declared a bundle's citation closure by expanding
+every citation path, so records citing a common ancestor (a parent and a
+grandparent) grew the walk exponentially and a whole-ledger bundle of a few
+dozen of them never finished. Each record is now walked once; the declared
+`closure_depth` and `missing` list are unchanged.
+
 ### Added: `ledger.jsonl` as a CLL entry log and artifact store backend
 
 `capsule_emit.legacy_ledger.LegacyLedger` puts the flat `ledger.jsonl` behind
