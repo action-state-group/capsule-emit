@@ -22,6 +22,8 @@ var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 //go:embed schema.sql
 var schema string
 
+var _ artifact.TxStore = (*Store)(nil)
+
 // Store is an application-importable SDK, independent of CLI profiles and CLL
 // log IDs. The caller owns the DB pool (single writer), and trusted keys. The
 // same database file may also hold a cll-go SQLite log in separate tables.
@@ -154,9 +156,10 @@ func (s *Store) Get(ctx context.Context, id string) (_ artifact.Record, err erro
 	return record, nil
 }
 
-// GetTx reads within a caller transaction. SQLite serializes writers, so no
-// row lock is needed to keep this read consistent with PutTx/Purge.
-func (s *Store) GetTx(ctx context.Context, tx *sql.Tx, id string) (artifact.Record, error) {
+// GetTx reads within a caller transaction. lock is accepted for the shared
+// artifact.TxStore signature and changes nothing here: SQLite serializes
+// writers, so the read is already consistent with PutTx/Purge.
+func (s *Store) GetTx(ctx context.Context, tx *sql.Tx, id string, lock bool) (artifact.Record, error) {
 	if tx == nil {
 		return artifact.Record{}, artifact.ErrInvalid
 	}
@@ -184,8 +187,16 @@ func (s *Store) read(ctx context.Context, tx *sql.Tx, id string) (_ artifact.Rec
 	defer func() { err = errors.Join(err, rows.Close()) }()
 	for rows.Next() {
 		var a artifact.Artifact
-		if err := rows.Scan(&a.Name, &a.Binding, &a.Content, &a.ContentSHA256, &a.State); err != nil {
+		var content any
+		if err := rows.Scan(&a.Name, &a.Binding, &content, &a.ContentSHA256, &a.State); err != nil {
 			return artifact.Record{}, err
+		}
+		// The driver reports a zero-length BLOB as a nil []byte; only SQL NULL
+		// means absent content. A zero-length original is present.
+		if b, ok := content.([]byte); ok {
+			a.Content = append([]byte{}, b...)
+		} else if content != nil {
+			return artifact.Record{}, fmt.Errorf("%w: content_bytes is not a BLOB", artifact.ErrCorrupt)
 		}
 		record.Artifacts = append(record.Artifacts, a)
 	}

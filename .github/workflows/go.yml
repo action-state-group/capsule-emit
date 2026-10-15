@@ -35,6 +35,8 @@ jobs:
           git -C .. diff --exit-code -- go/go.mod go/go.sum
       - name: Vet
         run: go vet ./...
+      - name: Check artifact store conformance vectors
+        run: (cd ../test-vectors/artifact-store && sha256sum -c SHA256SUMS)
 
   test:
     runs-on: ubuntu-latest

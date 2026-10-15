@@ -101,7 +101,8 @@ Producer Envelope corpus tests locally; CI pins and supplies the upstream ref.
 ## Optional artifact persistence
 
 The root emission package retains the storage-free scope above. `artifact` owns
-originals, digest bindings, inventory checks and the backend-neutral Store
-interface. `artifact/mysql` owns explicit MySQL persistence and transaction
-integration. Only the backend imports its SQL driver. Trusted signer keys are
-caller policy. Keep application-specific, one-off migrations outside this repo.
+originals, digest bindings, inventory checks and the backend-neutral `Store` and
+`TxStore` interfaces, specified in `docs/artifact-store.md`. `artifact/mysql`,
+`artifact/sqlite`, `artifact/jsonl` and `artifact/memory` implement them, and each
+runs `artifact/artifacttest`, the shared conformance suite. Only the backend
+imports its SQL driver. Trusted signer keys are caller policy. Keep application-specific, one-off migrations outside this repo.

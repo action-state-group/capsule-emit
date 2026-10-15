@@ -22,6 +22,8 @@ var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 //go:embed schema.sql
 var schema string
 
+var _ artifact.TxStore = (*Store)(nil)
+
 // Store is an application-importable SDK, independent of CLI profiles and CLL
 // log IDs. The caller owns the DB pool, credentials, TLS, and trusted keys.
 type Store struct {

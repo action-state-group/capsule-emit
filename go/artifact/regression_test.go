@@ -38,7 +38,7 @@ func TestStorageChecksumGolden(t *testing.T) {
 	var _ struct {
 		Name          string                  `json:"name"`
 		Binding       artifact.DigestField    `json:"binding,omitempty"`
-		Content       []byte                  `json:"content,omitempty"`
+		Content       []byte                  `json:"content,omitzero"`
 		State         artifact.RetentionState `json:"state"`
 		ContentSHA256 string                  `json:"content_sha256,omitempty"`
 	} = record.Artifacts[0]
