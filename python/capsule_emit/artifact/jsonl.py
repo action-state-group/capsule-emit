@@ -130,13 +130,25 @@ class JsonlArtifactStore:
             line = encode_record(prepared).encode("utf-8")
             # O_APPEND without O_CREAT: an uninitialized store fails instead of
             # silently creating its file.
-            fd = os.open(self._path, os.O_WRONLY | os.O_APPEND)
+            fd = os.open(self._path, os.O_RDWR | os.O_APPEND)
             try:
-                offset = os.fstat(fd).st_size
-                os.write(fd, line + b"\n")
+                size = os.fstat(fd).st_size
+                # Terminate a torn last line first, so the new record starts
+                # its own line instead of merging into the damaged one.
+                prefix = b""
+                if size:
+                    os.lseek(fd, size - 1, os.SEEK_SET)
+                    if os.read(fd, 1) != b"\n":
+                        prefix = b"\n"
+                pending = memoryview(prefix + line + b"\n")
+                while pending:
+                    written = os.write(fd, pending)
+                    if written <= 0:
+                        raise OSError("short write appending to the JSONL store")
+                    pending = pending[written:]
             finally:
                 os.close(fd)
-            self._index[prepared.capsule_id] = (offset, len(line))
+            self._index[prepared.capsule_id] = (size + len(prefix), len(line))
 
     def get(self, capsule_id: str) -> Record:
         if not valid_id(capsule_id):

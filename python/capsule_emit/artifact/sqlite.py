@@ -75,10 +75,12 @@ class SqliteArtifactStore(SqlArtifactStore):
         self._conn.execute("BEGIN")
         try:
             result = run()
+            self._conn.commit()
         except BaseException:
+            # Also after a failed COMMIT (SQLITE_BUSY), which leaves the
+            # transaction open with this call's writes in it.
             self._conn.rollback()
             raise
-        self._conn.commit()
         return result
 
     def put(self, record: Record) -> None:

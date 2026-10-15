@@ -272,6 +272,29 @@ def test_jsonl_purge_keeps_unparseable_and_torn_lines_and_permissions(tmp_path):
     assert reopened.get(record("basic").capsule_id).artifacts[0].state == PURGED
 
 
+def test_jsonl_put_after_torn_tail_starts_a_new_line(tmp_path):
+    store, path = stored_jsonl(tmp_path)
+    with open(path, "ab") as f:
+        f.write(b'{"capsule_id":')
+    store.put(record("empty"))
+    reopened = JsonlArtifactStore(path, "ns", [TRUSTED])
+    assert conformance.diff(record("empty.stored"), reopened.get(record("empty").capsule_id)) == ""
+    assert b'{"capsule_id":\n' in path.read_bytes()
+
+
+def test_jsonl_put_retries_short_writes(tmp_path, monkeypatch):
+    store, path = stored_jsonl(tmp_path)
+    real_write = os.write
+    monkeypatch.setattr("capsule_emit.artifact.jsonl.os.write", lambda fd, data: real_write(fd, bytes(data[:7])))
+    store.put(record("empty"))
+    monkeypatch.setattr("capsule_emit.artifact.jsonl.os.write", lambda fd, data: 0)
+    with pytest.raises(OSError, match="short write"):
+        store.put(record("blank"))
+    with pytest.raises(NotFoundError):
+        store.get(record("blank").capsule_id)
+    assert conformance.diff(record("empty.stored"), store.get(record("empty").capsule_id)) == ""
+
+
 def test_jsonl_purge_of_vanished_line_is_corrupt(tmp_path):
     store, path = stored_jsonl(tmp_path)
     path.write_bytes(b"\n" * (len(path.read_bytes())))
@@ -318,6 +341,27 @@ def test_sqlite_transactional_extension(tmp_path):
         store.get_tx(None, record("basic").capsule_id)
     with pytest.raises(InvalidError):
         SqliteArtifactStore(None, "ns", [TRUSTED])
+
+
+class FailingCommit(sqlite3.Connection):
+    def commit(self):
+        if getattr(self, "fail_commit", False):
+            raise sqlite3.OperationalError("database is locked")
+        super().commit()
+
+
+def test_sqlite_failed_commit_rolls_back(tmp_path):
+    connection = sqlite3.connect(tmp_path / "a.db", factory=FailingCommit)
+    store = SqliteArtifactStore(connection, "ns", [TRUSTED])
+    store.init()
+    connection.fail_commit = True
+    with pytest.raises(sqlite3.OperationalError):
+        store.put(record("basic"))
+    assert not connection.in_transaction
+    connection.fail_commit = False
+    with pytest.raises(NotFoundError):
+        store.get(record("basic").capsule_id)
+    store.put(record("basic"))
 
 
 def test_sqlite_put_rolls_back_on_failure(tmp_path):

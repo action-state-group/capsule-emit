@@ -95,10 +95,10 @@ class MysqlArtifactStore(SqlArtifactStore):
             cursor.execute("START TRANSACTION READ ONLY" if read_only else "START TRANSACTION")
         try:
             result = run()
+            self._conn.commit()
         except BaseException:
             self._conn.rollback()
             raise
-        self._conn.commit()
         return result
 
     def put(self, record: Record) -> None:
