@@ -5,6 +5,14 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+- A test now states that `-0` in a record is refused as a float only when
+  serde_json parses it as one. In a build that also turns on serde_json's
+  `arbitrary_precision` feature (any crate can; `capsule-emit-artifact` does
+  through `agent-action-capsule`), serde_json reads `-0` as the integer 0, as
+  the Go and Python references do, and the structure check accepts it.
+
 ## 0.0.7
 
 No code changes from 0.0.6. The first crate release through the release-PR

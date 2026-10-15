@@ -9,9 +9,9 @@ name: Rust CI
 on:
   push:
     branches: [main]
-    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py", "python/**"]
+    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py", "python/**", "test-vectors/artifact-store/**", "go/artifact/*/schema.sql"]
   pull_request:
-    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py", "python/**"]
+    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py", "python/**", "test-vectors/artifact-store/**", "go/artifact/*/schema.sql"]
   workflow_dispatch:
 
 permissions:
@@ -65,6 +65,50 @@ jobs:
 
       - name: Tests (includes the pinned conformance vectors and the byte-parity fixture)
         run: cargo test --locked
+
+  # The artifact store with every backend, including MySQL against a real
+  # MySQL 8.4, through the shared conformance suite.
+  artifact-store:
+    name: artifact store (all backends, MySQL 8.4)
+    runs-on: ubuntu-24.04
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: capsule_storage_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      CAPSULE_STORAGE_TEST_MYSQL: "127.0.0.1:3306"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-artifact-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Clippy (all features)
+        run: cargo clippy --locked -p capsule-emit-artifact --all-targets --all-features -- -D warnings
+
+      - name: Tests (all features)
+        run: cargo test --locked -p capsule-emit-artifact --all-features
 
   # The Rust output verified by the Python reference implementations.
   conformance:
@@ -126,10 +170,12 @@ jobs:
       # repository at upload; `cargo publish --dry-run` does not. Copied
       # verbatim from checkpointed-local-log (d576880).
       - name: Crate metadata meets crates.io's publish rules
-        run: python3 ../.github/scripts/check_crate_metadata.py capsule-emit/Cargo.toml
+        run: python3 ../.github/scripts/check_crate_metadata.py capsule-emit/Cargo.toml capsule-emit-artifact/Cargo.toml
 
       - name: Package contents
-        run: cargo package --list -p capsule-emit
+        run: |
+          cargo package --list -p capsule-emit
+          cargo package --list -p capsule-emit-artifact
 
       # `cargo publish --dry-run` resolves dependencies from the crates.io
       # index only (a workspace [patch] would not count). The crate's own
