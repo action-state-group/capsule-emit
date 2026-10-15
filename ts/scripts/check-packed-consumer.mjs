@@ -36,10 +36,13 @@ import { build, verifyCapsule } from '@action-state-group/capsule-emit';
 import { jcs } from '@action-state-group/capsule-emit/aac';
 import * as artifact from '@action-state-group/capsule-emit/artifact';
 import * as jsonl from '@action-state-group/capsule-emit/artifact/jsonl';
+import * as memory from '@action-state-group/capsule-emit/artifact/memory';
+import * as conformance from '@action-state-group/capsule-emit/artifact/conformance';
 const built = await build({actionId:'packed', actionType:'fyi', operator:'operator', developer:'developer', timestamp:'2026-09-09T00:00:00Z'});
 assert.equal((await verifyCapsule(built.json)).capsuleId, built.capsuleId);
 assert.equal(typeof jcs, 'function');
 assert(Object.keys(artifact).length && Object.keys(jsonl).length);
+assert(Object.keys(memory).length && conformance.conformanceVectors.cases.length);
 `,
   );
   run(process.execPath, ["core.mjs"]);
@@ -54,7 +57,7 @@ assert(Object.keys(artifact).length && Object.keys(jsonl).length);
     join(consumer, "exports.mjs"),
     `import assert from 'node:assert/strict';
 const paths = ${JSON.stringify(Object.keys(metadata.exports))};
-assert.equal(paths.length, 6);
+assert.equal(paths.length, 8);
 for (const path of paths) {
  const module = await import('@action-state-group/capsule-emit' + (path === '.' ? '' : path.slice(1)));
  assert(Object.keys(module).length, path);
@@ -63,7 +66,7 @@ for (const path of paths) {
   );
   run(process.execPath, ["exports.mjs"]);
   console.log(
-    "Packed consumer: six exports load; core works without storage drivers.",
+    "Packed consumer: eight exports load; core works without storage drivers.",
   );
 } finally {
   rmSync(consumer, { recursive: true, force: true });

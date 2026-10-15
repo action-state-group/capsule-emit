@@ -6,6 +6,27 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added: one artifact store contract and conformance suite for every language
+
+`docs/artifact-store.md` specifies the optional artifact store (exact sealed
+Capsules, Producer Envelopes and originals, with retention and purge) once for
+Go, TypeScript, Python and Rust, and `test-vectors/artifact-store` is the
+conformance suite every backend runs. Go gains the `artifact.Store` and
+`artifact.TxStore` interfaces, an `artifact/memory` backend and
+`artifact/artifacttest`. Go SQLite `GetTx` now takes `lock` like MySQL (it
+changes nothing on SQLite).
+
+TypeScript's `Store` now includes `namespace` and `init()`, and the new
+`TxStore` type (detected with `isTxStore`) covers `putTx(tx, record)` and
+`getTx(tx, id, lock)`; SQLite `putTx`/`getTx` take the transaction's database
+handle first, and the old forms are deprecated. New subpaths:
+`./artifact/memory` and `./artifact/conformance`.
+
+### Fixed: zero-length originals in the Go JSONL and SQLite stores
+
+Both stores wrote a zero-length original and then could not read the record
+back. Go JSONL now writes `"content":""` as TypeScript does.
+
 ### Deprecated: `capsule_emit.evidence_request`
 
 The module implements a pre-00 profile of the Evidence Request protocol. The

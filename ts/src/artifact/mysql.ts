@@ -12,7 +12,7 @@ import {
   type Artifact,
   type Record,
   type RetentionState,
-  type Store,
+  type TxStore,
 } from "./record.js";
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
@@ -68,7 +68,7 @@ function toBytes(value: Buffer): Uint8Array {
  * An application-importable SDK, independent of CLI profiles and CLL log IDs.
  * A namespace isolates a collection; it must not implicitly be a log ID.
  */
-export class MysqlArtifactStore implements Store {
+export class MysqlArtifactStore implements TxStore<PoolConnection> {
   private readonly trusted: Uint8Array[];
 
   public constructor(
@@ -171,6 +171,7 @@ export class MysqlArtifactStore implements Store {
 
   /** Loads a coherent snapshot and verifies authenticity and original digests. */
   public async get(id: string): Promise<Record> {
+    if (!ID_PATTERN.test(id)) throw new ArtifactError("invalid", "capsule id");
     const connection = await this.pool.getConnection();
     try {
       await connection.beginTransaction();

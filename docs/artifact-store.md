@@ -267,10 +267,8 @@ factory for the backend under test:
 | Python | `capsule_emit.artifact.conformance.run(harness)` |
 | Rust | `capsule_emit_artifact::conformance::run(&harness)` |
 
-The TypeScript, Python and Rust runners and interfaces, including the
-TypeScript `TxStore` and the `lock` argument of TypeScript SQLite `getTx`, land
-with those languages' backends (capsule-emit#308); until then only Go runs the
-suite.
+The Python and Rust runners and interfaces land with those languages' backends
+(capsule-emit#308); until then Go and TypeScript run the suite.
 
 The vectors' README describes the file format and the optional capabilities a
 case may require (`durable`: the backend can be reopened over the same storage;

@@ -309,9 +309,44 @@ export function prepare(record: Record): Record {
   return { capsuleId: record.capsuleId, capsule, producerEnvelope, artifacts };
 }
 
-/** The backend-neutral artifact lifecycle. Backends expose transactions separately. */
+/**
+ * The backend-neutral artifact store contract, specified in
+ * docs/artifact-store.md and checked by the shared conformance suite
+ * (`./artifact/conformance`). Constructors stay per backend because each takes
+ * its own storage handle.
+ */
 export interface Store {
+  /** The storage scope the store was constructed with. */
+  readonly namespace: string;
+  /** Provisions storage. Idempotent; never alters existing data. */
+  init(): Promise<void>;
+  /** Admits an immutable record, accepting byte-identical retries. */
   put(record: Record): Promise<void>;
+  /** Returns a stored record after fail-closed verification. */
   get(id: string): Promise<Record>;
+  /** Erases a record's present originals, keeping their commitments. */
   purge(id: string): Promise<void>;
+}
+
+/**
+ * The optional transactional extension: `put` and `get` joined to a
+ * caller-owned transaction `Tx` (a mysql2 `PoolConnection`, a better-sqlite3
+ * `Database`). Only the SQL backends implement it; detect it with
+ * {@link isTxStore}. `putTx` never commits or retries; on any error the caller
+ * rolls back the whole transaction. With `lock`, `getTx` serializes the read
+ * with concurrent `putTx` and `purge` on the same record (MySQL `FOR UPDATE`;
+ * SQLite already serializes writers).
+ */
+export interface TxStore<Tx> extends Store {
+  putTx(tx: Tx, record: Record): Promise<void>;
+  getTx(tx: Tx, id: string, lock?: boolean): Promise<Record>;
+}
+
+/** Reports whether a store implements the transactional extension. */
+export function isTxStore<Tx = unknown>(store: Store): store is TxStore<Tx> {
+  const candidate = store as Partial<TxStore<Tx>>;
+  return (
+    typeof candidate.putTx === "function" &&
+    typeof candidate.getTx === "function"
+  );
 }

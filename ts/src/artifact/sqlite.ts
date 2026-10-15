@@ -12,7 +12,7 @@ import {
   type Artifact,
   type Record,
   type RetentionState,
-  type Store,
+  type TxStore,
 } from "./record.js";
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
@@ -66,6 +66,10 @@ function toBytes(value: Buffer): Uint8Array {
   return new Uint8Array(value);
 }
 
+function isDatabase(value: unknown): value is Database {
+  return typeof (value as { prepare?: unknown }).prepare === "function";
+}
+
 function isConstraint(error: unknown): boolean {
   return String((error as { code?: string }).code).startsWith(
     "SQLITE_CONSTRAINT",
@@ -78,7 +82,7 @@ function isConstraint(error: unknown): boolean {
  * foreign_keys=ON` and at most one in-flight transaction) and the trusted
  * keys. A namespace isolates a collection; it must not implicitly be a log ID.
  */
-export class SqliteArtifactStore implements Store {
+export class SqliteArtifactStore implements TxStore<Database> {
   private readonly trusted: Uint8Array[];
 
   public constructor(
@@ -105,7 +109,7 @@ export class SqliteArtifactStore implements Store {
   public async put(record: Record): Promise<void> {
     this.db.exec("BEGIN");
     try {
-      await this.putTx(record);
+      await this.putTx(this.db, record);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -114,32 +118,35 @@ export class SqliteArtifactStore implements Store {
   }
 
   /**
-   * Runs the immutable-insert logic on the current connection without managing
-   * the transaction. The caller MUST have an open transaction and MUST roll the
-   * whole transaction back on error; this method never commits. Await this
+   * Runs the immutable-insert logic on `tx`, a better-sqlite3 handle with an
+   * open transaction, without managing the transaction. The caller MUST roll
+   * the whole transaction back on error; this method never commits. Await this
    * operation before committing; better-sqlite3 transaction callbacks cannot
    * own an async operation.
    */
-  public async putTx(record: Record): Promise<void> {
+  public async putTx(tx: Database, record: Record): Promise<void>;
+  /** @deprecated Pass the transaction's handle: `putTx(db, record)`. */
+  public async putTx(record: Record): Promise<void>;
+  public async putTx(first: Database | Record, second?: Record): Promise<void> {
+    const [tx, record] = isDatabase(first) ? [first, second] : [this.db, first];
+    if (record === undefined) throw new ArtifactError("invalid", "record");
     const prepared = prepare(record);
     await verify(prepared, this.trusted);
     const hash = storageChecksum(prepared);
     try {
-      this.db
-        .prepare(
-          `INSERT INTO capsule_store_capsules
+      tx.prepare(
+        `INSERT INTO capsule_store_capsules
            (namespace,capsule_id,capsule_bytes,producer_envelope,record_sha256) VALUES(?,?,?,?,?)`,
-        )
-        .run(
-          this.namespace,
-          prepared.capsuleId,
-          Buffer.from(prepared.capsule),
-          Buffer.from(prepared.producerEnvelope),
-          hash,
-        );
+      ).run(
+        this.namespace,
+        prepared.capsuleId,
+        Buffer.from(prepared.capsule),
+        Buffer.from(prepared.producerEnvelope),
+        hash,
+      );
     } catch (error) {
       if (!isConstraint(error)) throw error;
-      const existing = await this.readOnConnection(prepared.capsuleId);
+      const existing = await this.read(tx, prepared.capsuleId);
       if (storageChecksum(existing) !== hash)
         throw new ArtifactError("conflict", "immutable record conflict");
       for (const a of existing.artifacts)
@@ -147,7 +154,7 @@ export class SqliteArtifactStore implements Store {
           throw new ArtifactError("purged", "originals were purged");
       return;
     }
-    const insert = this.db.prepare(
+    const insert = tx.prepare(
       `INSERT INTO capsule_store_artifacts
        (namespace,capsule_id,name,digest_field,content_bytes,content_sha256,retention_state) VALUES(?,?,?,?,?,?,?)`,
     );
@@ -165,9 +172,10 @@ export class SqliteArtifactStore implements Store {
 
   /** Loads a coherent snapshot and verifies authenticity and original digests. */
   public async get(id: string): Promise<Record> {
+    if (!ID_PATTERN.test(id)) throw new ArtifactError("invalid", "capsule id");
     this.db.exec("BEGIN");
     try {
-      const record = await this.readOnConnection(id);
+      const record = await this.read(this.db, id);
       this.db.exec("COMMIT");
       return record;
     } catch (error) {
@@ -176,21 +184,33 @@ export class SqliteArtifactStore implements Store {
     }
   }
 
-  /** Reads within a caller-managed transaction. SQLite serializes writers. */
-  public async getTx(id: string): Promise<Record> {
-    return this.readOnConnection(id);
+  /**
+   * Reads on `tx`, a better-sqlite3 handle with a caller-managed transaction.
+   * `lock` is accepted for the shared {@link TxStore} signature and changes
+   * nothing: SQLite already serializes writers.
+   */
+  public async getTx(tx: Database, id: string, lock?: boolean): Promise<Record>;
+  /** @deprecated Pass the transaction's handle: `getTx(db, id)`. */
+  public async getTx(id: string): Promise<Record>;
+  public async getTx(
+    first: Database | string,
+    second?: string,
+    _lock?: boolean,
+  ): Promise<Record> {
+    if (typeof first === "string") return this.read(this.db, first);
+    return this.read(first, second ?? "");
   }
 
-  private async readOnConnection(id: string): Promise<Record> {
+  private async read(tx: Database, id: string): Promise<Record> {
     if (!ID_PATTERN.test(id)) throw new ArtifactError("invalid", "capsule id");
-    const capsule = this.db
+    const capsule = tx
       .prepare(
         `SELECT capsule_bytes,producer_envelope,record_sha256 FROM capsule_store_capsules WHERE namespace=? AND capsule_id=?`,
       )
       .get(this.namespace, id) as CapsuleRow | undefined;
     if (capsule === undefined)
       throw new ArtifactError("not_found", "capsule not found");
-    const rows = this.db
+    const rows = tx
       .prepare(
         `SELECT name,digest_field,content_bytes,content_sha256,retention_state FROM capsule_store_artifacts WHERE namespace=? AND capsule_id=? ORDER BY name`,
       )
