@@ -838,7 +838,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "verify":
         return _cmd_verify(args)
 
-
     if args.command == "status":
         return _cmd_status(args)
 
