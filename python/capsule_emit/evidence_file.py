@@ -6,8 +6,11 @@ Offline. Composes two checks that neither does alone:
 
 * ``agent_action_capsule.bundle.verify_bundle``: every record's
   ``capsule_id`` recomputes, citation closure as declared, interval coverage
-  under the checkpoint's range root, each record's inclusion proof, and the
-  portable COSE checkpoint (``checkpoint.cose``) when the file carries one.
+  under the checkpoint's range root, each record's inclusion proof, the
+  portable COSE checkpoint (``checkpoint.cose``) when the file carries one,
+  and each member of the ``disclosures`` overlay when it carries one (a
+  member that does not match the digest its record commits to fails the
+  file, as ``disclosures``).
 * the producer signature on every record
   (:func:`capsule_emit.signing.verify_capsule_signature_tristate`), which the
   neutral verifier deliberately leaves to the substrate.
@@ -94,6 +97,10 @@ _PLAIN: dict[str, dict[str, str]] = {
         "pass": "A witness's receipt shows the checkpoint was registered with it, under a key this verifier knows.",
         "withheld": "No witness receipt is checked: the file carries none, or no key is known for its witness.",
         "fail": "A witness receipt in the file does not verify against the signed checkpoint.",
+    },
+    "disclosures": {
+        "pass": "Every disclosed request or response matches the digest its record commits to.",
+        "fail": "At least one disclosed request or response does not match what its record commits to.",
     },
     "per_record_membership": {
         "pass": "Each record is proven to be in the log at the position it claims.",
@@ -289,6 +296,8 @@ def check_evidence_file(
         interval,
         membership,
     ]
+    if "disclosures" in bundle:
+        checks.append(_disclosure_check(result.disclosures))
 
     authenticated = checkpoint_check.status == "pass"
     witness, witness_receipts = _witness_check(stated, signed if authenticated else None, witness_directory)
@@ -314,6 +323,17 @@ def check_evidence_file(
         witness=witness,
         witness_receipts=witness_receipts,
     )
+
+
+def _disclosure_check(results: Any) -> Check:
+    """The ``disclosures`` overlay as the bundle verifier resolved it: each
+    disclosed member a match or withheld, else the file fails, naming each
+    member by its status (a mismatch, an ineligible member, a member with no
+    committed digest, or a malformed overlay)."""
+    findings = tuple(
+        f"{d.status}:{d.capsule_id}:{d.member}" for d in results if d.status not in ("disclosure_match", "withheld")
+    )
+    return Check("disclosures", "fail" if findings else "pass", findings)
 
 
 def _witness_check(
