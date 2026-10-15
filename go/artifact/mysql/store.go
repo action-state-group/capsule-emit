@@ -22,6 +22,8 @@ var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 //go:embed schema.sql
 var schema string
 
+var _ artifact.TxStore = (*Store)(nil)
+
 // Store is an application-importable SDK, independent of CLI profiles and CLL
 // log IDs. The caller owns the DB pool, credentials, TLS, and trusted keys.
 type Store struct {
@@ -141,6 +143,9 @@ func (s *Store) PutTx(ctx context.Context, tx *sql.Tx, record artifact.Record) e
 // Get loads a coherent snapshot and verifies authenticity and original digests.
 // Missing rows return artifact.ErrNotFound, never an invented retention status.
 func (s *Store) Get(ctx context.Context, id string) (_ artifact.Record, err error) {
+	if !idPattern.MatchString(id) {
+		return artifact.Record{}, artifact.ErrInvalid
+	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return artifact.Record{}, err

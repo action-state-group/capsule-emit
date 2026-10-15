@@ -2,9 +2,12 @@ package mysql
 
 import (
 	"context"
+	"crypto/ed25519"
+	"database/sql"
 	"errors"
 	"testing"
 
+	"github.com/action-state-group/capsule-emit/go/artifact"
 	driver "github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,4 +44,16 @@ func TestDeadlockCancellation(t *testing.T) {
 	err = retryDeadlock(ctx, func() error { called = true; return nil })
 	require.ErrorIs(t, err, context.Canceled)
 	assert.False(t, called)
+}
+
+// TestMalformedIDBeforeIO: a malformed ID is invalid without reaching a server.
+func TestMalformedIDBeforeIO(t *testing.T) {
+	db, err := sql.Open("mysql", "root@tcp(127.0.0.1:1)/capsule_storage_test")
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	store, err := New(db, "test-closed", []ed25519.PublicKey{make([]byte, ed25519.PublicKeySize)})
+	require.NoError(t, err)
+	_, err = store.Get(t.Context(), "not-an-id")
+	require.ErrorIs(t, err, artifact.ErrInvalid)
+	require.ErrorIs(t, store.Purge(t.Context(), "not-an-id"), artifact.ErrInvalid)
 }

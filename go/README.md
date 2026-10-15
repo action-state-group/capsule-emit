@@ -142,11 +142,15 @@ pass the current AAC Class 1 verifier.
 
 ## Optional artifact storage
 
-`artifact` defines originals, digest bindings, and verification. Three peer backends
-provide the same core `New`/`Init`/`Put`/`Get`/`Purge` contract (each is a concrete
-`*Store` type, not a shared Go interface): `artifact/mysql` (MySQL 8.4/InnoDB) and
-`artifact/sqlite` (modernc, pure-Go, single file) add transactional `PutTx`/`GetTx`;
-`artifact/jsonl` (a flat JSONL file, single writer, no database driver) does not.
+`artifact` defines originals, digest bindings, verification, and the
+`artifact.Store` interface (`Namespace`/`Init`/`Put`/`Get`/`Purge`), specified in
+the shared [artifact store contract](../docs/artifact-store.md). Four backends
+implement it, each with its own `New`: `artifact/mysql` (MySQL 8.4/InnoDB),
+`artifact/sqlite` (modernc, pure-Go, single file), `artifact/jsonl` (a flat JSONL
+file, single writer, no database driver) and `artifact/memory` (process memory).
+The SQL backends also implement `artifact.TxStore` (`PutTx`/`GetTx`), which callers
+detect with a type assertion. `artifact/artifacttest` runs the shared conformance
+suite against any `artifact.Store`, including your own.
 The root emit package remains storage-free and imports no
 storage driver; an application links only the backend it selects. See
 [artifact storage](artifact/README.md) for initialization, limits, trusted-key
@@ -163,64 +167,44 @@ decoded 32-byte Capsule ID.
 package integration
 
 import (
-	"bytes"
 	"context"
-	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
 	"time"
 
 	emit "github.com/action-state-group/capsule-emit/go"
+	"github.com/action-state-group/capsule-emit/go/artifact"
 	"github.com/action-state-group/checkpointed-local-log/go/cll"
 )
 
-// CapsuleStore is application-owned persistence. Its schema and transaction
-// model can be adapted to the optional artifact/mysql backend.
-type CapsuleStore interface {
-	PutCapsule(
-		ctx context.Context,
-		capsuleID string,
-		capsule []byte,
-		envelope []byte,
-	) error
+// EntryAppender is the one CLL operation this function needs. Every
+// cll.Backend satisfies it.
+type EntryAppender interface {
+	Append(context.Context, cll.AppendInput) (cll.AppendResult, error)
 }
 
 func PersistAndAppend(
 	ctx context.Context,
-	records CapsuleStore,
-	log cll.EntryStore,
+	records artifact.Store,
+	log EntryAppender,
 	result emit.Result,
-	producerPublicKey ed25519.PublicKey,
+	originals []artifact.Artifact,
 	observedAt time.Time,
 ) (cll.AppendResult, error) {
-	verified, err := emit.VerifyCapsule(result.Payload)
-	if err != nil {
-		return cll.AppendResult{}, fmt.Errorf("verify Capsule: %w", err)
-	}
-	if verified.CapsuleID == nil || *verified.CapsuleID != result.CapsuleID {
-		return cll.AppendResult{}, fmt.Errorf("Capsule ID mismatch")
-	}
-	authenticated, err := emit.VerifyEnvelope(result.CapsuleID, result.Envelope)
-	if err != nil {
-		return cll.AppendResult{}, err
-	}
-	if !bytes.Equal(authenticated.PublicKey, producerPublicKey) {
-		return cll.AppendResult{}, fmt.Errorf("Producer Envelope signer is not authorized")
-	}
-
 	identity, err := hex.DecodeString(result.CapsuleID)
-	if err != nil || len(identity) != cll.EntryBytes ||
-		hex.EncodeToString(identity) != result.CapsuleID {
+	if err != nil || len(identity) != cll.EntryBytes {
 		return cll.AppendResult{}, fmt.Errorf("invalid Capsule ID")
 	}
 
 	// Persist exact business evidence before publishing its identity to CLL.
-	if err := records.PutCapsule(
-		ctx,
-		result.CapsuleID,
-		result.Payload,
-		result.Envelope,
-	); err != nil {
+	// Put verifies the Capsule, its Producer Envelope against the store's
+	// trusted keys, and every bound original before writing anything.
+	if err := records.Put(ctx, artifact.Record{
+		CapsuleID:        result.CapsuleID,
+		Capsule:          result.Payload,
+		ProducerEnvelope: result.Envelope,
+		Artifacts:        originals,
+	}); err != nil {
 		return cll.AppendResult{}, err
 	}
 
@@ -235,7 +219,8 @@ If application persistence succeeds but the CLL append fails, retry the append
 with the same identity. CLL append is idempotent and returns the original entry
 and timestamp. The application owns durable retries.
 
-Pass any `cll.EntryStore` implementation to this function. Backend selection,
+Pass any `cll.Backend` as `log`, and any `artifact.Store` as `records`; the
+store's trusted keys decide which producers it admits. Backend selection,
 checkpointing, and witness delivery remain entirely in the CLL Go package; see
 its [backend documentation](https://github.com/action-state-group/checkpointed-local-log/tree/main/go#backends).
 

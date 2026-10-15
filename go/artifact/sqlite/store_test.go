@@ -160,7 +160,7 @@ func TestSQLitePutTxGetTxJoinCallerTransaction(t *testing.T) {
 	tx, err := db.BeginTx(t.Context(), nil)
 	require.NoError(t, err)
 	require.NoError(t, store.PutTx(t.Context(), tx, record))
-	got, err := store.GetTx(t.Context(), tx, record.CapsuleID)
+	got, err := store.GetTx(t.Context(), tx, record.CapsuleID, false)
 	require.NoError(t, err)
 	assert.Equal(t, record.Capsule, got.Capsule)
 	require.NoError(t, tx.Commit())
@@ -177,7 +177,7 @@ func TestSQLiteTxMethodsRejectNilTx(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, store.Init(t.Context()))
 	assert.ErrorIs(t, store.PutTx(t.Context(), nil, record), artifact.ErrInvalid)
-	_, err = store.GetTx(t.Context(), nil, record.CapsuleID)
+	_, err = store.GetTx(t.Context(), nil, record.CapsuleID, true)
 	assert.ErrorIs(t, err, artifact.ErrInvalid)
 }
 
@@ -189,4 +189,32 @@ func TestSQLitePurgeRejectsMissingAndMalformed(t *testing.T) {
 	require.NoError(t, store.Init(t.Context()))
 	assert.ErrorIs(t, store.Purge(t.Context(), fmt.Sprintf("%064x", 0)), artifact.ErrNotFound)
 	assert.ErrorIs(t, store.Purge(t.Context(), "not-a-hex-id"), artifact.ErrInvalid)
+}
+
+// TestSQLiteReadRejectsNonBlobContent: SQLite's dynamic typing lets a direct
+// writer store TEXT in content_bytes; a read fails closed instead of treating it
+// as absent or reinterpreting it.
+func TestSQLiteReadRejectsNonBlobContent(t *testing.T) {
+	db := openTestDB(t)
+	record, pub := testutil.Record(t, "sqlite-text-content")
+	store, err := sqlitestore.New(db, "test-text", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	require.NoError(t, store.Init(t.Context()))
+	require.NoError(t, store.Put(t.Context(), record))
+	_, err = db.ExecContext(t.Context(), `UPDATE capsule_store_artifacts SET content_bytes='text' WHERE namespace='test-text' AND name='private_note'`)
+	require.NoError(t, err)
+	_, err = store.Get(t.Context(), record.CapsuleID)
+	require.ErrorIs(t, err, artifact.ErrCorrupt)
+}
+
+// TestSQLiteRejectsMalformedIDBeforeIO: a malformed ID is invalid even when the
+// database is unusable, because the check runs before any transaction opens.
+func TestSQLiteRejectsMalformedIDBeforeIO(t *testing.T) {
+	db := openTestDB(t)
+	store, err := sqlitestore.New(db, "test-closed", []ed25519.PublicKey{make([]byte, ed25519.PublicKeySize)})
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	_, err = store.Get(t.Context(), "not-an-id")
+	require.ErrorIs(t, err, artifact.ErrInvalid)
+	require.ErrorIs(t, store.Purge(t.Context(), "not-an-id"), artifact.ErrInvalid)
 }

@@ -29,6 +29,8 @@ import (
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+var _ artifact.Store = (*Store)(nil)
+
 type indexEntry struct {
 	offset int64
 	length int

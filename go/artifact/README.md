@@ -5,15 +5,18 @@ existing storage-free behavior.
 
 ## Storage boundary
 
-- Three peer backends provide the same core
-  `New`/`Init`/`Namespace`/`Put`/`Get`/`Purge` contract, each as a concrete
-  `*Store` type rather than a shared Go interface: `artifact/mysql`
-  (MySQL 8.4/InnoDB), `artifact/sqlite` (modernc, pure-Go, single file), and
-  `artifact/jsonl` (a flat JSONL file, single writer, no database driver). None is
-  the default; the caller selects one. Each stores exact sealed Capsule bytes, a
-  Producer Envelope, and associated originals. None seals, appends to CLL, or
-  publishes checkpoints. Only the SQL backends add `PutTx`/`GetTx` for joining a
-  caller-owned transaction; the JSONL backend does not.
+- The contract is written once for every language in
+  [docs/artifact-store.md](../../docs/artifact-store.md). In Go it is the
+  `artifact.Store` interface (`Namespace`/`Init`/`Put`/`Get`/`Purge`); each
+  backend keeps its own `New`, because each takes its own storage handle. Four
+  backends implement it: `artifact/mysql` (MySQL 8.4/InnoDB), `artifact/sqlite`
+  (modernc, pure-Go, single file), `artifact/jsonl` (a flat JSONL file, single
+  writer, no database driver) and `artifact/memory` (process memory, for tests
+  and short-lived tools). None is the default; the caller selects one. Each
+  stores exact sealed Capsule bytes, a Producer Envelope, and associated
+  originals. None seals, appends to CLL, or publishes checkpoints. Only the SQL
+  backends implement the optional `artifact.TxStore` (`PutTx`/`GetTx`) for
+  joining a caller-owned transaction; detect it with a type assertion.
 - The SQL backends hold immutable Capsule/envelope bytes and an inventory checksum
   in `capsule_store_capsules`, and named originals plus purge tombstones in
   `capsule_store_artifacts`. The JSONL backend instead stores one record per line
@@ -74,7 +77,17 @@ no artifact. Use `NeverRetained` only when non-retention is known, not as a fall
 for a failed lookup. `Purged` is created exclusively by `Purge`.
 
 `PutTx` and `GetTx` join a caller-owned transaction on the same database, allowing
-atomic artifact writes and other application-owned SQL writes. Roll back the
+atomic artifact writes and other application-owned SQL writes. Both SQL backends
+share the `artifact.TxStore` signature `GetTx(ctx, tx, id, lock)`: on MySQL, `lock`
+reads with `FOR UPDATE`; on SQLite it changes nothing, because SQLite already
+serializes writers.
+
+```go
+if txs, ok := store.(artifact.TxStore); ok {
+    err = txs.PutTx(ctx, tx, record)
+}
+```
+ Roll back the
 whole transaction on any error. No CLL append belongs inside this SQL transaction
 unless its backend explicitly supports that same transaction contract.
 
@@ -102,7 +115,11 @@ the file through a temp file and atomic rename, blanking Present originals to
 Purged while preserving the inventory and each original's SHA-256. It assumes a
 single writer and provides no multi-process file locking, no crash-atomicity
 beyond the rename, and no `PutTx`/`GetTx`. The on-disk format is byte-compatible
-with the capsule-emit-ts `artifact/jsonl` store in either direction.
+with the capsule-emit-ts `artifact/jsonl` store in either direction, and the shared
+conformance vectors pin its exact lines.
+
+The memory backend (`artifact/memory`) keeps prepared records in a map behind a
+mutex. It follows the same contract, persists nothing, and has no `PutTx`/`GetTx`.
 
 ## Lifecycle and operations
 
@@ -142,7 +159,7 @@ No application-specific schema migrations, field-level selective disclosure,
 profile management, or CLI commands are included. The root emit package and the
 `artifact` package import no storage driver. Importing `artifact/mysql` links the
 MySQL driver; importing `artifact/sqlite` links the pure-Go SQLite driver;
-`artifact/jsonl` links no driver at all (standard library only). An application
+`artifact/jsonl` and `artifact/memory` link no driver at all (standard library only). An application
 links only the backend it chooses.
 
 ## Tests
@@ -150,6 +167,26 @@ links only the backend it chooses.
 ```sh
 go test ./...
 ```
+
+Every backend runs the shared, language-neutral conformance suite
+([test-vectors/artifact-store](../../test-vectors/artifact-store/)) through
+`artifacttest.Run`. A backend you write conforms when it passes the same call:
+
+```go
+func TestConformance(t *testing.T) {
+    artifacttest.Run(t, artifacttest.Harness[*sql.DB]{
+        NewBacking: openEmptyDatabase, // fresh storage for each case
+        Open: func(t *testing.T, db *sql.DB, ns string, keys []ed25519.PublicKey) (artifact.Store, error) {
+            return mystore.New(db, ns, keys)
+        },
+        Capabilities: artifacttest.Capabilities{Durable: true, SharedBacking: true},
+    })
+}
+```
+
+`artifacttest` embeds a copy of the vectors; its tests fail if the copy drifts
+from the shared file. Regenerate both with `UPDATE_ARTIFACT_VECTORS=1 go test
+./artifact/artifacttest/` after an intentional contract change.
 
 Generic MySQL integration tests opt in through `CAPSULE_STORAGE_TEST_DSN` and
 accept only TCP `127.0.0.1` and database `capsule_storage_test`. Use a disposable

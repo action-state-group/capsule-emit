@@ -61,7 +61,7 @@ var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 type Artifact struct {
 	Name          string         `json:"name"`
 	Binding       DigestField    `json:"binding,omitempty"`
-	Content       []byte         `json:"content,omitempty"`
+	Content       []byte         `json:"content,omitzero"`
 	State         RetentionState `json:"state"`
 	ContentSHA256 string         `json:"content_sha256,omitempty"`
 }
