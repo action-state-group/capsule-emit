@@ -51,6 +51,22 @@ fn text(value: Value) -> Result<String> {
     }
 }
 
+/// Runs `attempt` once, then again after an InnoDB deadlock at most four more
+/// times with bounded backoff. Safe only for a transaction `attempt` owns and
+/// fully rolls back; `put_tx` never retries the caller's transaction.
+fn retry_deadlock(mut attempt: impl FnMut() -> Result<()>) -> Result<()> {
+    let mut retries = 0;
+    loop {
+        match attempt() {
+            Err(e) if server_code(&e) == Some(DEADLOCK) && retries < MAX_DEADLOCK_RETRIES => {
+                std::thread::sleep(Duration::from_millis(10 << retries));
+                retries += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
 /// A MySQL store over a connection pool.
 #[derive(Debug, Clone)]
 pub struct MysqlStore {
@@ -147,16 +163,7 @@ impl Store for MysqlStore {
     /// Admits a record in its own transaction, retrying an InnoDB deadlock at
     /// most four times with bounded backoff. [`TxStore::put_tx`] never retries.
     fn put(&self, record: &Record) -> Result<()> {
-        let mut attempt = 0;
-        loop {
-            match self.with_tx(TxOpts::default(), |tx| self.put_tx(tx, record)) {
-                Err(e) if server_code(&e) == Some(DEADLOCK) && attempt < MAX_DEADLOCK_RETRIES => {
-                    std::thread::sleep(Duration::from_millis(10 << attempt));
-                    attempt += 1;
-                }
-                result => return result,
-            }
-        }
+        retry_deadlock(|| self.with_tx(TxOpts::default(), |tx| self.put_tx(tx, record)))
     }
 
     fn get(&self, id: &str) -> Result<Record> {
@@ -239,5 +246,52 @@ impl TxStore for MysqlStore {
 
     fn get_tx(&self, tx: &mut Transaction<'_>, id: &str, lock: bool) -> Result<Record> {
         self.read(tx, id, lock)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn server_error(code: u16) -> ArtifactError {
+        ArtifactError::storage(mysql::Error::MySqlError(mysql::MySqlError {
+            state: "40001".into(),
+            message: "test".into(),
+            code,
+        }))
+    }
+
+    #[test]
+    fn deadlock_retries_are_bounded() {
+        let mut calls = 0;
+        let result = retry_deadlock(|| {
+            calls += 1;
+            Err(server_error(DEADLOCK))
+        });
+        assert_eq!(server_code(&result.unwrap_err()), Some(DEADLOCK));
+        assert_eq!(calls, 1 + MAX_DEADLOCK_RETRIES);
+    }
+
+    #[test]
+    fn other_errors_and_success_are_not_retried() {
+        let mut calls = 0;
+        let result = retry_deadlock(|| {
+            calls += 1;
+            Err(server_error(DUPLICATE_KEY))
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
+        let mut calls = 0;
+        assert!(retry_deadlock(|| {
+            calls += 1;
+            if calls < 3 {
+                Err(server_error(DEADLOCK))
+            } else {
+                Ok(())
+            }
+        })
+        .is_ok());
+        assert_eq!(calls, 3);
+        assert_eq!(server_code(&ArtifactError::Conflict), None);
     }
 }

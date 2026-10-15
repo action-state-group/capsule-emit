@@ -157,9 +157,9 @@ impl JsonlStore {
             .unwrap_or_else(|| Path::new("."));
         let mut tmp = tempfile_in(dir)?;
         let result = (|| {
+            fs::set_permissions(&tmp.0, permissions)?;
             tmp.1.write_all(&out)?;
             tmp.1.sync_all()?;
-            fs::set_permissions(&tmp.0, permissions)?;
             fs::rename(&tmp.0, &self.path)
         })();
         if let Err(e) = result {
@@ -182,7 +182,13 @@ fn tempfile_in(dir: &Path) -> Result<(PathBuf, File)> {
             ".jsonl-rewrite-{}-{nanos}-{attempt}",
             std::process::id()
         ));
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        // Owner-only until the rewrite is complete; the source file's own
+        // permissions are applied before any record is written.
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        match options.open(&path) {
             Ok(file) => return Ok((path, file)),
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(ArtifactError::storage(e)),

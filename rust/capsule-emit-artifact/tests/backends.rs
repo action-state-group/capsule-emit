@@ -297,3 +297,75 @@ fn mysql_transactions_and_tampering() {
         Some("corrupt")
     );
 }
+
+#[cfg(feature = "mysql")]
+#[test]
+fn mysql_locked_read_blocks_purge_and_duplicate_puts_reconcile() {
+    use capsule_emit_artifact::mysql::MysqlStore;
+    use capsule_emit_artifact::TxStore;
+    use mysql::prelude::Queryable;
+    use std::sync::{mpsc, Arc};
+    use std::time::Duration;
+    let Ok(addr) = std::env::var("CAPSULE_STORAGE_TEST_MYSQL") else {
+        return;
+    };
+    let v = vectors();
+    let pool =
+        mysql::Pool::new(format!("mysql://root@{addr}/capsule_storage_test").as_str()).unwrap();
+    let store = Arc::new(MysqlStore::new(pool.clone(), "rust-lock", trusted(&v)).unwrap());
+    store.init().unwrap();
+    let mut conn = pool.get_conn().unwrap();
+    for table in ["capsule_store_artifacts", "capsule_store_capsules"] {
+        conn.query_drop(format!("DELETE FROM {table} WHERE namespace='rust-lock'"))
+            .unwrap();
+    }
+
+    // Concurrent byte-identical puts all succeed and store one record.
+    let effect = v.record("effect").unwrap();
+    let handles: Vec<_> = (0..6)
+        .map(|_| {
+            let (store, record) = (Arc::clone(&store), effect.clone());
+            std::thread::spawn(move || store.put(&record))
+        })
+        .collect();
+    for h in handles {
+        h.join().unwrap().unwrap();
+    }
+    assert_eq!(
+        diff(
+            &v.record("effect.stored").unwrap(),
+            &store.get(&effect.capsule_id).unwrap()
+        ),
+        None
+    );
+
+    // A locked read holds off a concurrent purge until its transaction ends.
+    let basic = v.record("basic").unwrap();
+    store.put(&basic).unwrap();
+    let mut tx = conn.start_transaction(mysql::TxOpts::default()).unwrap();
+    store.get_tx(&mut tx, &basic.capsule_id, true).unwrap();
+    let (done, finished) = mpsc::channel();
+    let purger = {
+        let (store, id) = (Arc::clone(&store), basic.capsule_id.clone());
+        std::thread::spawn(move || done.send(store.purge(&id)).unwrap())
+    };
+    assert!(
+        finished.recv_timeout(Duration::from_millis(500)).is_err(),
+        "purge finished while the record was locked"
+    );
+    let unchanged = store.get_tx(&mut tx, &basic.capsule_id, false).unwrap();
+    assert_eq!(diff(&v.record("basic.stored").unwrap(), &unchanged), None);
+    tx.commit().unwrap();
+    finished
+        .recv_timeout(Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
+    purger.join().unwrap();
+    assert_eq!(
+        diff(
+            &v.record("basic.purged").unwrap(),
+            &store.get(&basic.capsule_id).unwrap()
+        ),
+        None
+    );
+}
