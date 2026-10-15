@@ -249,4 +249,29 @@ describe("JsonlArtifactStore", () => {
       fs.readFileSync(filePath, "utf8").startsWith('{"capsule_id":\n'),
     ).toBe(true);
   });
+
+  it("never indexes a torn last line, and purge keeps it byte for byte", async () => {
+    const { record, trusted } = await makeRecord("unterminated");
+    const { record: other } = await makeRecord("unterminated-other");
+    const s = await store(trusted);
+    await s.put(record);
+    const tail = Buffer.from(
+      JSON.stringify({
+        capsule_id: other.capsuleId,
+        junk: "\u00e9",
+      }),
+    );
+    fs.appendFileSync(filePath, Buffer.concat([tail, Buffer.from([0xff])]));
+    const reopened = new JsonlArtifactStore(filePath, "test", [trusted]);
+    await expect(reopened.get(other.capsuleId)).rejects.toMatchObject({
+      code: "not_found",
+    });
+    await reopened.purge(record.capsuleId);
+    const after = fs.readFileSync(filePath);
+    expect(
+      after
+        .subarray(after.length - tail.length - 2)
+        .equals(Buffer.concat([Buffer.from("\n"), tail, Buffer.from([0xff])])),
+    ).toBe(true);
+  });
 });
