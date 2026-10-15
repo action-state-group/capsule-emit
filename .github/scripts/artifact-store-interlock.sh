@@ -49,6 +49,11 @@ setup_go() { (cd "$repo/go" && go build -o "$work/go-interlock" ./artifact/inter
 il_go() { "$work/go-interlock" "$@"; }
 il_ts() { node "$repo/ts/scripts/artifact-interlock.mjs" "$@"; }
 il_python() { "$python_bin" "$repo/python/scripts/artifact_interlock.py" "$@"; }
+setup_rust() {
+  cargo build --quiet --locked --manifest-path "$repo/rust/Cargo.toml" \
+    -p capsule-emit-artifact --features sqlite,mysql --example interlock
+}
+il_rust() { "$repo/rust/target/debug/examples/interlock" "$@"; }
 
 for lang in "${languages[@]}"; do
   if declare -F "setup_$lang" > /dev/null; then "setup_$lang"; fi

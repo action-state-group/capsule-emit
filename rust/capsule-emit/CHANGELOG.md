@@ -5,6 +5,15 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+- Behavior depends on the build's serde_json features: on its own, the
+  structure check refuses `-0` in a record as a float. In a build that also
+  turns on serde_json's `arbitrary_precision` feature (any crate can;
+  `capsule-emit-artifact` does through `agent-action-capsule`), serde_json
+  reads `-0` as the integer 0, as the Go and Python references do, and the
+  check accepts it. CI tests this crate both alone and in the workspace build.
+
 ## 0.0.7
 
 No code changes from 0.0.6. The first crate release through the release-PR

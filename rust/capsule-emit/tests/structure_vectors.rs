@@ -373,14 +373,22 @@ fn parsed(text: &str) -> Value {
     serde_json::from_str(text).expect("JSON")
 }
 
-/// `-0` parses as a float in Rust (an integer zero in Python), so it is
-/// refused as a float in a digest field.
+/// `-0` parses as a float in Rust, so it is refused as a float in a digest
+/// field. With serde_json's `arbitrary_precision` feature, which another crate
+/// in the same build can turn on (the workspace's `capsule-emit-artifact` does,
+/// through `agent-action-capsule`), serde_json reads `-0` as the integer 0
+/// instead, as the Go and Python references do, and the record passes.
 #[test]
 fn negative_zero_is_refused_as_a_float() {
     let mut text = record().to_string();
     text.insert_str(text.len() - 1, r#","n":-0"#);
-    let report = check_structure(&parsed(&text));
-    assert!(report.errors().any(|f| f.code == "float_in_digest_field"));
+    let value = parsed(&text);
+    let report = check_structure(&value);
+    let refused = report.errors().any(|f| f.code == "float_in_digest_field");
+    let read_as_float = value["n"]
+        .as_number()
+        .is_some_and(serde_json::Number::is_f64);
+    assert_eq!(refused, read_as_float);
 }
 
 /// An integer above u64::MAX parses as a float in Rust: refused as
