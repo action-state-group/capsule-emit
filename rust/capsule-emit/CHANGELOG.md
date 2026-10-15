@@ -7,8 +7,11 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
-- Requires `checkpointed-local-log` 0.3.1 and `evidencebook` 0.0.3, so the
-  dependency graph holds one CLL version.
+- Requires `checkpointed-local-log` 0.3.1 and `evidencebook` 0.0.4, so the
+  dependency graph holds one CLL version. evidencebook 0.0.4 is the first
+  release from the evidencebook repository and builds its request handling on
+  `evidence-request` 0.1; the APIs this crate uses and re-exports
+  (`canonical`, `padding`, `substrate`) are unchanged.
 - `Ledger::lines` lists every line (padding included) in file order as
   `LedgerLine`s, with `read_line` and `read_statement` to read one back, and
   the reload check `check_statement_matches` is public. The

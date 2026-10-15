@@ -30,7 +30,7 @@ The Rust ledger (`capsules.jsonl` + `signed-statements/`) is a CLL entry log
 and artifact store too, as `capsule_emit_artifact::legacy::LegacyLedger`
 behind the crate's `legacy` feature (see `rust/capsule-emit-artifact/CHANGELOG.md`).
 The Rust crate now requires `checkpointed-local-log` 0.3.1 and `evidencebook`
-0.0.3, one CLL version in the lock.
+0.0.4, one CLL version in the lock.
 
 ### Changed: requires `checkpointed-local-log` 0.6
 
