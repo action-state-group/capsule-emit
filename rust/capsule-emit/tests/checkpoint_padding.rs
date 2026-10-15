@@ -124,7 +124,7 @@ fn lines(dir: &Path) -> Vec<Value> {
     std::fs::read_to_string(dir.join("capsules.jsonl"))
         .unwrap()
         .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
+        .map(|l| capsule_emit::jcs::decode_record(l.as_bytes()).unwrap())
         .collect()
 }
 

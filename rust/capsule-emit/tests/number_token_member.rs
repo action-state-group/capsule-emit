@@ -8,9 +8,10 @@
 //! recovery and lookup, offline verification, the checkpoint fold) to the
 //! references' answer.
 //!
-//! The `"1"` case is the agent-action-capsule reference-parity case
-//! `number-token-object` (`rust/agent-action-capsule/tests/reference_parity.rs`);
-//! both ids were also recomputed with Python's `json` and RFC 8785 key order.
+//! The `"1"` case is the reference-parity case `number-token-object` in the
+//! action-state-group/agent-action-capsule repository
+//! (`rust/agent-action-capsule/tests/reference_parity.rs` there); both ids were
+//! also recomputed with Python's `json` and RFC 8785 key order.
 
 use capsule_emit::anchor::AnchorClient;
 use capsule_emit::capsule::payload_bytes;

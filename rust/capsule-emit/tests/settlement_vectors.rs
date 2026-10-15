@@ -57,7 +57,8 @@ const CASE_IDS: [&str; 19] = [
 fn vectors() -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../test-vectors/settlement-records/cases.json");
-    serde_json::from_slice(&std::fs::read(&path).expect("vendored vectors present")).unwrap()
+    capsule_emit::jcs::decode_record(&std::fs::read(&path).expect("vendored vectors present"))
+        .unwrap()
 }
 
 fn canonical(v: &Value) -> Vec<u8> {
