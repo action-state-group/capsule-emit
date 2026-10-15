@@ -87,17 +87,9 @@ dependencies = [
 
 [[package]]
 name = "capsule-emit-evidence-request"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
- "base64",
- "checkpointed-local-log",
- "ciborium",
- "coset",
- "ed25519-dalek",
- "hex",
- "serde_json",
- "sha2",
- "thiserror",
+ "evidence-request",
 ]
 
 [[package]]
@@ -324,6 +316,23 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "evidence-request"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb3587833cd210019ceb1f2b4a8380686d1d0d448ea3bd34f626484b8bb714cc"
+dependencies = [
+ "base64",
+ "checkpointed-local-log",
+ "ciborium",
+ "coset",
+ "ed25519-dalek",
+ "hex",
+ "serde_json",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]
