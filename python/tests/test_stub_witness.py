@@ -225,7 +225,13 @@ def test_stub_mode_ignores_a_configured_witness_url_for_labeling(tmp_path, monke
     )
 
     key = witness._resolve_key(str(ledger))
-    assert _wait_for(lambda: witness._states.get(key) is not None and witness._states[key].prev is not None)
+    # Wait for the stamp itself (see the test above), or all() below would
+    # pass over an empty list.
+    assert _wait_for(
+        lambda: witness._states.get(key) is not None
+        and witness._states[key].prev is not None
+        and witness._states[key].prev.witnesses
+    ), "the stub should still have produced a stamp"
     cp = witness._states[key].prev
     assert all(w.ts_url != "https://looks-real.example" for w in cp.witnesses)
 
