@@ -1,0 +1,321 @@
+{
+  "draft": "draft-mih-agent-evidence-layer-00",
+  "section": "Privacy Considerations, What a Checkpoint Reveals",
+  "provenance": "spec-derived",
+  "rules": {
+    "record_type": "padding",
+    "epistemic_type": "producer_claim",
+    "store_nonce": "string of 64 lowercase hexadecimal characters (32 bytes)",
+    "serialization": "JSON object as an Agent Action Capsule ledger stores it; record_id is carried as capsule_id and computed over this object; seq is not stored in the record",
+    "members": [
+      "capsule_id",
+      "record_type",
+      "epistemic_type",
+      "store_nonce"
+    ],
+    "capsule_id": "lowercase hex SHA-256 of UTF8(JCS(record without capsule_id)) (RFC 8785)"
+  },
+  "reasons": {
+    "missing_store_nonce": "the record has no store_nonce member",
+    "store_nonce_encoding": "store_nonce is not a string of 64 lowercase hexadecimal characters",
+    "extra_member": "the record carries a member other than the four above",
+    "epistemic_type": "epistemic_type is absent or is not producer_claim",
+    "capsule_id_mismatch": "capsule_id does not recompute from the record"
+  },
+  "count": 17,
+  "cases": [
+    {
+      "id": "pos-padding-a",
+      "kind": "positive",
+      "description": "A padding record.",
+      "record": {
+        "capsule_id": "02ce107c14feba2ef1d065ba893be5f04124b062db7e6e5baa324a8f87e2f48e",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "01efa625a6610e315d1800b56af44de06a62f7bcacb11bdf0f145fb62d58c8a3"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\",\"store_nonce\":\"01efa625a6610e315d1800b56af44de06a62f7bcacb11bdf0f145fb62d58c8a3\"}",
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "id": "pos-padding-b",
+      "kind": "positive",
+      "description": "A second padding record: a different nonce gives a different capsule_id.",
+      "record": {
+        "capsule_id": "b5d5feb7792f6947be161eeec368cc991ca62bad613f7b80e9dfd4591e0ad070",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "86a42fcb761643d7ca530762e4cd88f59fe9a2dc97cc80eb9fff3cf64b1c4df1"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\",\"store_nonce\":\"86a42fcb761643d7ca530762e4cd88f59fe9a2dc97cc80eb9fff3cf64b1c4df1\"}",
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "id": "pos-padding-digits-only",
+      "kind": "positive",
+      "description": "A nonce whose hex digits are all 0-9 is still 64 lowercase hex.",
+      "record": {
+        "capsule_id": "ededdc3d4b1e0b693a5a493034f31a4339f7e9f8977cf790721f52ae5a4db1c1",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "0123456789012345678901234567890123456789012345678901234567890123"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\",\"store_nonce\":\"0123456789012345678901234567890123456789012345678901234567890123\"}",
+      "expected": {
+        "valid": true
+      }
+    },
+    {
+      "id": "neg-missing-store-nonce",
+      "kind": "negative",
+      "description": "No store_nonce member.",
+      "record": {
+        "capsule_id": "b99e8209f51bd1b43796e41d1f21345acb593cd6c5cded1878862e64f51d9b22",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\"}",
+      "expected": {
+        "valid": false,
+        "reason": "missing_store_nonce",
+        "member": "store_nonce"
+      }
+    },
+    {
+      "id": "neg-store-nonce-uppercase",
+      "kind": "negative",
+      "description": "store_nonce in uppercase hex.",
+      "record": {
+        "capsule_id": "af96663b3a5db7d4ed97c2954e4dbaa56978b67505d60524d1490b6281020035",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "A921E0F25CFCF83827E9A589E1645D44B1BAE9E561457D64B8219688DD32E800"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\",\"store_nonce\":\"A921E0F25CFCF83827E9A589E1645D44B1BAE9E561457D64B8219688DD32E800\"}",
+      "expected": {
+        "valid": false,
+        "reason": "store_nonce_encoding",
+        "member": "store_nonce"
+      }
+    },
+    {
+      "id": "neg-store-nonce-short",
+      "kind": "negative",
+      "description": "store_nonce of 16 bytes (32 hex characters), not 32 bytes.",
+      "record": {
+        "capsule_id": "5aee7dd160c432e4c2cf56f8b648cba8ad6b8da8f5bab3f62da6d4ba6bdb1423",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "71a4080b0b014f6e16cc8483dd2faa6c"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\",\"store_nonce\":\"71a4080b0b014f6e16cc8483dd2faa6c\"}",
+      "expected": {
+        "valid": false,
+        "reason": "store_nonce_encoding",
+        "member": "store_nonce"
+      }
+    },
+    {
+      "id": "neg-store-nonce-long",
+      "kind": "negative",
+      "description": "store_nonce of 33 bytes (66 hex characters).",
+      "record": {
+        "capsule_id": "d1e5420e0fefd38f3e811e1da0201128e07277b73c94868702eab88718e0ae64",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "6096cc95728fd97d9ff992db5c0e996c8a310d31e260b45d073ee2c7ee06173600"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\",\"store_nonce\":\"6096cc95728fd97d9ff992db5c0e996c8a310d31e260b45d073ee2c7ee06173600\"}",
+      "expected": {
+        "valid": false,
+        "reason": "store_nonce_encoding",
+        "member": "store_nonce"
+      }
+    },
+    {
+      "id": "neg-store-nonce-not-hex",
+      "kind": "negative",
+      "description": "store_nonce of 64 characters that are not all hex digits.",
+      "record": {
+        "capsule_id": "ee8e0f69fb379248fcd5dce921f24bdaa072f27c8bc23a992b21923351f1e3c2",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "ga5f10d76599dc793ef6b7571f893146c6b4af33bd37cc9103c90ee78e8ab11c"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\",\"store_nonce\":\"ga5f10d76599dc793ef6b7571f893146c6b4af33bd37cc9103c90ee78e8ab11c\"}",
+      "expected": {
+        "valid": false,
+        "reason": "store_nonce_encoding",
+        "member": "store_nonce"
+      }
+    },
+    {
+      "id": "neg-store-nonce-not-string",
+      "kind": "negative",
+      "description": "store_nonce is a JSON number.",
+      "record": {
+        "capsule_id": "0da7f6c8acb064c62f681d236c8a7b3012cbebb0794e5b1ef6394d45099eb507",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": 1234
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\",\"store_nonce\":1234}",
+      "expected": {
+        "valid": false,
+        "reason": "store_nonce_encoding",
+        "member": "store_nonce"
+      }
+    },
+    {
+      "id": "neg-extra-member",
+      "kind": "negative",
+      "description": "A member beyond the padding record's own.",
+      "record": {
+        "capsule_id": "28170105171522b8fce7f473cff0205da4e2eae547e8d0ad17be322920c7cc72",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "7afc9c36ed384553e2646173220cf60fee2442e9484e3659d86d77db70095e00",
+        "note": "padding"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"note\":\"padding\",\"record_type\":\"padding\",\"store_nonce\":\"7afc9c36ed384553e2646173220cf60fee2442e9484e3659d86d77db70095e00\"}",
+      "expected": {
+        "valid": false,
+        "reason": "extra_member",
+        "member": "note"
+      }
+    },
+    {
+      "id": "neg-links",
+      "kind": "negative",
+      "description": "A padding record carrying a link.",
+      "record": {
+        "capsule_id": "997501e632ef0fbba99eb436e78b3a276e4a27077bcff64c48143602f7a7dc7e",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "a71c10e36a6cae35797a61e71abde62d30d08838923b81e6c7a7e61fa3786301",
+        "links": [
+          {
+            "type": "cites",
+            "target": "36022aee35da458296dc6356efdfadd28d47c3414f744021b5b2850949bdb68e"
+          }
+        ]
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"links\":[{\"target\":\"36022aee35da458296dc6356efdfadd28d47c3414f744021b5b2850949bdb68e\",\"type\":\"cites\"}],\"record_type\":\"padding\",\"store_nonce\":\"a71c10e36a6cae35797a61e71abde62d30d08838923b81e6c7a7e61fa3786301\"}",
+      "expected": {
+        "valid": false,
+        "reason": "extra_member",
+        "member": "links"
+      }
+    },
+    {
+      "id": "neg-payload-commitments",
+      "kind": "negative",
+      "description": "A padding record carrying payload commitments.",
+      "record": {
+        "capsule_id": "4f34e237735166757a45126bc200635d761f64550cdb42931f120a745ef37505",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "087771aa0304879510e48a5c5042631e1ba97c048df39c9b5f817a45dc2e012b",
+        "payload_commitments": [
+          "7811c7b642ad8590b337ebd8e24438cfe36199cc86293449667a4382d2b6d103"
+        ]
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"payload_commitments\":[\"7811c7b642ad8590b337ebd8e24438cfe36199cc86293449667a4382d2b6d103\"],\"record_type\":\"padding\",\"store_nonce\":\"087771aa0304879510e48a5c5042631e1ba97c048df39c9b5f817a45dc2e012b\"}",
+      "expected": {
+        "valid": false,
+        "reason": "extra_member",
+        "member": "payload_commitments"
+      }
+    },
+    {
+      "id": "neg-subject-ref",
+      "kind": "negative",
+      "description": "A padding record carrying a subject_ref.",
+      "record": {
+        "capsule_id": "15ce20befe3dbce2bd7188d270e0d26647b21f12da605e7a6b672ebd194671fa",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "e8cd4cc672e130b8394541035466c2012703b2137738e9b8500369826d7d6978",
+        "subject_ref": "subject-0001"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\",\"store_nonce\":\"e8cd4cc672e130b8394541035466c2012703b2137738e9b8500369826d7d6978\",\"subject_ref\":\"subject-0001\"}",
+      "expected": {
+        "valid": false,
+        "reason": "extra_member",
+        "member": "subject_ref"
+      }
+    },
+    {
+      "id": "neg-principal-ref",
+      "kind": "negative",
+      "description": "A padding record carrying a principal_ref.",
+      "record": {
+        "capsule_id": "6ea93dd9bfc66a7c995ed23905b47c280fed50b9f2f1331426d38c4c45dc6b2d",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "0ddc9296e17a583ffa8158cf546b450cc21f1ec8d0289e5fcf3d72422fd57272",
+        "principal_ref": "principal-0001"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"principal_ref\":\"principal-0001\",\"record_type\":\"padding\",\"store_nonce\":\"0ddc9296e17a583ffa8158cf546b450cc21f1ec8d0289e5fcf3d72422fd57272\"}",
+      "expected": {
+        "valid": false,
+        "reason": "extra_member",
+        "member": "principal_ref"
+      }
+    },
+    {
+      "id": "neg-epistemic-type-observed-event",
+      "kind": "negative",
+      "description": "epistemic_type is observed_event, not producer_claim.",
+      "record": {
+        "capsule_id": "b64a70498d1089fe792080af477070e294ba47e55c9f920b11143d615c1d005d",
+        "record_type": "padding",
+        "epistemic_type": "observed_event",
+        "store_nonce": "750ad80c05803901b6751679422ab0febc5de63c95ddb4aeaf2fc3730dd01706"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"observed_event\",\"record_type\":\"padding\",\"store_nonce\":\"750ad80c05803901b6751679422ab0febc5de63c95ddb4aeaf2fc3730dd01706\"}",
+      "expected": {
+        "valid": false,
+        "reason": "epistemic_type",
+        "member": "epistemic_type"
+      }
+    },
+    {
+      "id": "neg-epistemic-type-missing",
+      "kind": "negative",
+      "description": "No epistemic_type member.",
+      "record": {
+        "capsule_id": "88df419c6df2adfc9c6bcf1ed28c17233268125f7efedf6f4a6042486a4ee84e",
+        "record_type": "padding",
+        "store_nonce": "77be8ed8781ef00d22acb4d93f79c99de2976eaee9426642ddb9e9217e6aba7e"
+      },
+      "capsule_id_preimage": "{\"record_type\":\"padding\",\"store_nonce\":\"77be8ed8781ef00d22acb4d93f79c99de2976eaee9426642ddb9e9217e6aba7e\"}",
+      "expected": {
+        "valid": false,
+        "reason": "epistemic_type",
+        "member": "epistemic_type"
+      }
+    },
+    {
+      "id": "neg-capsule-id-mismatch",
+      "kind": "negative",
+      "description": "A well-formed padding record whose capsule_id does not recompute.",
+      "record": {
+        "capsule_id": "ee46b32515fc15dba619f12a53eef2a5fe4505a2c9c0e783ce11859b34a1e490",
+        "record_type": "padding",
+        "epistemic_type": "producer_claim",
+        "store_nonce": "0e33b5d28fbf9d9172f87d1cc1564a41886c59002e54342ea1bb379bbb1e44da"
+      },
+      "capsule_id_preimage": "{\"epistemic_type\":\"producer_claim\",\"record_type\":\"padding\",\"store_nonce\":\"0e33b5d28fbf9d9172f87d1cc1564a41886c59002e54342ea1bb379bbb1e44da\"}",
+      "expected": {
+        "valid": false,
+        "reason": "capsule_id_mismatch",
+        "member": "capsule_id"
+      }
+    }
+  ]
+}

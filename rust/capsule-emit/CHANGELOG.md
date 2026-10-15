@@ -15,6 +15,9 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   parity fixture's padded ids are reproduced through the builder), and
   `build_padding_record` now returns this crate's `jcs::JcsError`. New:
   `padding_record_with_nonce`, for checking against conformance vectors.
+  `tests/padding_vectors.rs` checks the builder and the shape check against
+  the agent-action-capsule Evidence Layer padding vectors (vendored in
+  `tests/vectors/aac-evidence-layer-padding/`).
   `check_padding_shape` now also requires `record_type` `padding` and
   `epistemic_type` `producer_claim`, as the Evidence Layer draft does and as
   every known writer (this crate, evidencebook, capsule-cli) writes them.
