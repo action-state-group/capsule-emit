@@ -19,8 +19,11 @@ name = "verify_capsule"
 path = "src/bin/verify_capsule.rs"
 
 [dependencies]
-# Canonicalization and padding records come from `evidencebook` (#321 moves
-# them off it); `cll` is the checkpoint substrate.
+# Canonicalization and record decoding come from `agent-action-capsule`; it
+# turns on serde_json's `arbitrary_precision` (see `src/jcs.rs`). Padding
+# records come from `evidencebook` until #321 moves them; `cll` is the
+# checkpoint substrate.
+agent-action-capsule = "0.1"
 evidencebook = "0.0.4"
 cll = { package = "checkpointed-local-log", version = "0.3.1" }
 serde = { version = "1", features = ["derive"] }

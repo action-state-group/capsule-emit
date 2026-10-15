@@ -41,10 +41,16 @@
 //!
 //! **Depth.** The walk itself is not recursive, but the identity check's
 //! canonicalization (and dropping a `serde_json::Value`) is. Pass values
-//! parsed by `serde_json::from_slice`/`from_str` with their default nesting
-//! limit (128), as every caller in this crate does.
+//! parsed by [`crate::jcs::decode_record`], which limits nesting to 128, as
+//! every caller in this crate does.
+//!
+//! **Numbers** are judged by their text, as the canonicalizer judges them
+//! (see [`crate::jcs`]): a float is written with `.`, `e` or `E`, and an
+//! unsafe integer is beyond +/-[`MAX_SAFE_INTEGER`] at any size.
 
 use serde_json::{Map, Value};
+
+use agent_action_capsule::canonical::{is_float, is_unsafe_int};
 
 use crate::jcs::{compute_capsule_id, JcsError, MAX_SAFE_INTEGER};
 
@@ -371,7 +377,7 @@ pub fn check_structure(record: &Value) -> StructureReport {
                 "capsule_id_mismatch",
                 format!("recomputed {recomputed} != carried {carried}"),
             ),
-            Ok(_) | Err(JcsError::FloatInDigest | JcsError::UnsafeInteger(_)) => {}
+            Ok(_) | Err(JcsError::FloatInDigest | JcsError::UnsafeInteger) => {}
             Err(e) => out.error(2, "capsule_id_uncomputable", e.to_string()),
         }
     }
@@ -513,14 +519,6 @@ fn object<'a>(capsule: &'a Map<String, Value>, key: &str) -> Option<&'a Map<Stri
     capsule.get(key).and_then(Value::as_object)
 }
 
-fn unsafe_integer(n: &serde_json::Number) -> bool {
-    match (n.as_i64(), n.as_u64()) {
-        (Some(i), _) => !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&i),
-        (None, Some(u)) => u > MAX_SAFE_INTEGER as u64,
-        (None, None) => false,
-    }
-}
-
 /// Where the walk stands in one open array or object: its remaining
 /// children, and the key or index of the child being visited.
 enum Level<'a> {
@@ -577,11 +575,11 @@ fn number_paths(root: &Value) -> (Vec<String>, Vec<String>) {
         floats: &mut Vec<String>,
         unsafe_ints: &mut Vec<String>,
     ) {
-        if !n.is_i64() && !n.is_u64() {
+        if is_float(n) {
             if floats.len() < MAX_PATH_FINDINGS {
                 floats.push(current_path(levels));
             }
-        } else if unsafe_integer(n) && unsafe_ints.len() < MAX_PATH_FINDINGS {
+        } else if is_unsafe_int(n) && unsafe_ints.len() < MAX_PATH_FINDINGS {
             unsafe_ints.push(current_path(levels));
         }
     }

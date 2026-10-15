@@ -79,7 +79,7 @@ pub fn verify_offline(
     match verify_signed_statement(signed_statement, verifying_key) {
         Ok(verified) => {
             cose_ok = true;
-            match serde_json::from_slice::<Value>(&verified.payload) {
+            match crate::jcs::decode_record(&verified.payload) {
                 Ok(payload_json) if payload_json == *capsule => payload_matches_capsule = true,
                 Ok(_) => findings
                     .push("COSE payload does not match the supplied capsule JSON".to_string()),
