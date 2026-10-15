@@ -146,15 +146,19 @@ byte-compatible TypeScript port of the Go module's `artifact` package.
 model, retention states (`present`, `purged`, `never_retained`), digest bindings
 to the four supported format-4 locations, `prepare`, `verify` (which reuses
 `verifyCapsule`, `verifyEnvelope`, `decodePayload`, and `digestJSON`), and
-`storageChecksum`. Three backends build on it: `./artifact/sqlite` on
+`storageChecksum`. Four backends build on it: `./artifact/sqlite` on
 `better-sqlite3` and `./artifact/mysql` on `mysql2` (declared as optional peer
-dependencies so importing the root pulls no database driver), and
+dependencies so importing the root pulls no database driver),
 `./artifact/jsonl` on a single flat file using Node's built-in `fs` (no peer
-dependency). All share one `Store` contract with immutable records,
+dependency), and `./artifact/memory` in process memory. All implement one
+`Store` interface, specified for every language in
+[docs/artifact-store.md](../docs/artifact-store.md) and checked by
+`./artifact/conformance`, with immutable records,
 byte-identical idempotent retry, `conflict` on divergence, fail-closed reads,
 purge tombstones, namespace scoping, and the v1 limits (64 artifacts,
-65,535-byte envelope, 8 MiB total); the SQL backends additionally support
-caller-transaction joins, which the JSONL backend does not.
+65,535-byte envelope, 8 MiB total); the SQL backends additionally implement
+`TxStore` (`putTx(tx, record)`, `getTx(tx, id, lock)`) for caller-transaction
+joins, which the JSONL and memory backends do not.
 
 `storageChecksum` is byte-identical to the Go `StorageChecksum` — `sha256` over
 the normalized record marshaled with Go `encoding/json/v2`, reproduced here with

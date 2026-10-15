@@ -37,6 +37,14 @@
     "./artifact/jsonl": {
       "types": "./dist/artifact/jsonl.d.ts",
       "import": "./dist/artifact/jsonl.js"
+    },
+    "./artifact/memory": {
+      "types": "./dist/artifact/memory.d.ts",
+      "import": "./dist/artifact/memory.js"
+    },
+    "./artifact/conformance": {
+      "types": "./dist/artifact/conformance.d.ts",
+      "import": "./dist/artifact/conformance.js"
     }
   },
   "files": [

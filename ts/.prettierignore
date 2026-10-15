@@ -1,3 +1,5 @@
 dist
 coverage
 package-lock.json
+# A byte-identical copy of test-vectors/artifact-store/vectors.json.
+src/artifact/conformance-vectors.json

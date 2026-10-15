@@ -338,6 +338,32 @@ assumes a single writer and provides no file locking, no crash-atomicity beyond
 that rename, and no transaction-join API. `init` creates the file, and `put`
 requires it to already exist.
 
+`./artifact/memory` (`MemoryArtifactStore`) keeps records in process memory, for
+tests and short-lived tools.
+
+Every backend implements the `Store` interface (`namespace`, `init`, `put`,
+`get`, `purge`) from the shared
+[artifact store contract](../docs/artifact-store.md). The SQL backends also
+implement `TxStore`, detected with `isTxStore(store)`: `putTx(tx, record)` and
+`getTx(tx, id, lock)` join a transaction the caller opened, on a mysql2
+`PoolConnection` or on the better-sqlite3 `Database` itself. The older SQLite
+forms `putTx(record)` and `getTx(id)` still work and are deprecated.
+
+`./artifact/conformance` runs the shared, language-neutral conformance suite
+against any `Store`, including one you write:
+
+```ts
+import { runArtifactConformance } from "@action-state-group/capsule-emit/artifact/conformance";
+
+const outcomes = await runArtifactConformance({
+  newBacking: () => freshStorage(), // empty storage for each case
+  open: (storage, namespace, trusted) =>
+    new MyStore(storage, namespace, trusted),
+  durable: true, // reopening over the same storage sees earlier writes
+});
+const failures = outcomes.filter((o) => o.status === "fail");
+```
+
 ## Development
 
 The embedded provisional registry snapshot mirrors
@@ -365,7 +391,7 @@ Override those paths with `AAC_ROOT` and `CAPSULE_EMIT_GO_ROOT`.
 The producer root uses `node:crypto` and requires Node.js. Consolidation does
 not introduce browser support. Storage drivers remain optional peers.
 `node scripts/check-packed-consumer.mjs` checks an isolated tarball consumer
-without drivers before exercising all six exports with their optional peers.
+without drivers before exercising all eight exports with their optional peers.
 
 ## Release
 
