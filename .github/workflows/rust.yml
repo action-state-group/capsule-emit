@@ -56,7 +56,6 @@ jobs:
       - name: Vendored vectors match their checksums (before any test reads them)
         run: |
           (cd capsule-emit/tests/vectors && shasum -a 256 -c SHA256SUMS)
-          (cd capsule-emit-evidence-request/tests/vectors/evidence-request && shasum -a 256 -c SHA256SUMS)
 
       - name: Format
         run: cargo fmt --all --check

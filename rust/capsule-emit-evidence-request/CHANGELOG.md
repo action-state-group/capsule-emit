@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.5
+
+- **Deprecated: renamed to `evidence-request`.** The crate moved to
+  agent-action-capsule and is published as `evidence-request` (lib
+  `evidence_request`), whose 0.1.0 has the same API as 0.0.4. This release
+  only re-exports it (`pub use evidence_request::*`), so 0.0.4 code keeps
+  compiling. No further versions will be published.
+
 ## 0.0.4
 
 - **`request::parse_cbor` accepts only core deterministic CBOR** (RFC 8949
