@@ -207,6 +207,21 @@ func generate(t *testing.T) []byte {
 			r.Artifacts = append(r.Artifacts, artifact.Artifact{Name: fmt.Sprintf("pad-%02d", i), Content: content("x"), State: artifact.Present})
 		}
 	})
+	g.variant("basic.most_artifacts", "basic", func(r *artifact.Record) {
+		for i := len(r.Artifacts); i < 64; i++ {
+			r.Artifacts = append(r.Artifacts, artifact.Artifact{Name: fmt.Sprintf("pad-%02d", i), Content: content("x"), State: artifact.Present})
+		}
+	})
+	g.stored("basic.most_artifacts")
+	// Prepare checks artifacts in record order; the first failure decides.
+	g.variant("basic.corrupt_then_purged", "basic", func(r *artifact.Record) {
+		r.Artifacts[0].ContentSHA256 = digestOf("something else")
+		r.Artifacts[2] = artifact.Artifact{Name: "private_note", State: artifact.Purged, ContentSHA256: digestOf(note)}
+	})
+	g.variant("basic.purged_then_corrupt", "basic", func(r *artifact.Record) {
+		r.Artifacts[0] = artifact.Artifact{Name: "payload", Binding: artifact.PayloadDigest, State: artifact.Purged, ContentSHA256: digestOf(payload)}
+		r.Artifacts[2].ContentSHA256 = digestOf("something else")
+	})
 	g.variant("basic.duplicate_name", "basic", func(r *artifact.Record) {
 		r.Artifacts = append(r.Artifacts, artifact.Artifact{Name: "private_note", Content: content("again"), State: artifact.Present})
 	})
@@ -286,9 +301,9 @@ func openVectors(trusted string) []OpenVector {
 
 func put(record, expect string) Step { return Step{Op: "put", Record: record, Expect: expect} }
 func get(id, expect, result string) Step {
-	return Step{Op: "get", ID: id, Expect: expect, Result: result}
+	return Step{Op: "get", ID: &id, Expect: expect, Result: result}
 }
-func purge(id, expect string) Step { return Step{Op: "purge", ID: id, Expect: expect} }
+func purge(id, expect string) Step { return Step{Op: "purge", ID: &id, Expect: expect} }
 
 func cases(r map[string]artifact.Record) []Case {
 	main := map[string]StoreSpec{"main": {Namespace: "conformance", Trusted: []string{"trusted"}}}
@@ -307,6 +322,8 @@ func cases(r map[string]artifact.Record) []Case {
 		{"effect.response_mismatch", "digest_mismatch"},
 		{"basic.sha_mismatch", "corrupt"},
 		{"basic.input_purged", "purged"},
+		{"basic.corrupt_then_purged", "corrupt"},
+		{"basic.purged_then_corrupt", "purged"},
 		{"basic.too_many", "invalid"},
 		{"basic.duplicate_name", "invalid"},
 		{"basic.bad_name", "invalid"},
@@ -323,6 +340,8 @@ func cases(r map[string]artifact.Record) []Case {
 	return []Case{
 		{Name: "put_get_roundtrip", Description: "A stored record reads back with content_sha256 filled in.", Stores: main,
 			Steps: []Step{put("basic", "ok"), get(basic, "ok", "basic.stored")}},
+		{Name: "artifact_limit", Description: "Exactly 64 artifacts are admitted; 65 are invalid.", Stores: main,
+			Steps: []Step{put("basic.too_many", "invalid"), put("basic.most_artifacts", "ok"), get(basic, "ok", "basic.most_artifacts.stored")}},
 		{Name: "idempotent_retry", Description: "Byte-identical retries, in any artifact order, succeed without change.", Stores: main,
 			Steps: []Step{put("basic", "ok"), put("basic", "ok"), put("basic.reordered", "ok"), get(basic, "ok", "basic.stored")}},
 		{Name: "conflicting_rewrite", Description: "A different record under the same Capsule ID is a conflict and changes nothing.", Stores: main,
@@ -371,9 +390,9 @@ func cases(r map[string]artifact.Record) []Case {
 			Requires: []string{"shared_backing"},
 			Stores: map[string]StoreSpec{"main": {Namespace: "alpha", Trusted: []string{"trusted"}},
 				"beta": {Namespace: "beta", Trusted: []string{"trusted"}}},
-			Steps: []Step{put("basic", "ok"), {Op: "get", Store: "beta", ID: basic, Expect: "not_found"},
-				{Op: "purge", Store: "beta", ID: basic, Expect: "not_found"},
+			Steps: []Step{put("basic", "ok"), {Op: "get", Store: "beta", ID: &basic, Expect: "not_found"},
+				{Op: "purge", Store: "beta", ID: &basic, Expect: "not_found"},
 				{Op: "put", Store: "beta", Record: "basic.conflict_note", Expect: "ok"},
-				{Op: "purge", Store: "beta", ID: basic, Expect: "ok"}, get(basic, "ok", "basic.stored")}},
+				{Op: "purge", Store: "beta", ID: &basic, Expect: "ok"}, get(basic, "ok", "basic.stored")}},
 	}
 }

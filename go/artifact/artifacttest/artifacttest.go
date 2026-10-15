@@ -105,7 +105,7 @@ type Step struct {
 	Op      string   `json:"op"`
 	Store   string   `json:"store,omitempty"`
 	Record  string   `json:"record,omitempty"`
-	ID      string   `json:"id,omitempty"`
+	ID      *string  `json:"id,omitzero"`
 	Trusted []string `json:"trusted,omitempty"`
 	Expect  string   `json:"expect"`
 	Result  string   `json:"result,omitempty"`
@@ -199,7 +199,11 @@ func runCase[B any](t *testing.T, h Harness[B], v Vectors, c Case) {
 		if name == "" {
 			name = "main"
 		}
-		label := fmt.Sprintf("step %d (%s %s%s)", i, s.Op, s.Record, s.ID)
+		id := ""
+		if s.ID != nil {
+			id = *s.ID
+		}
+		label := fmt.Sprintf("step %d (%s %s%s)", i, s.Op, s.Record, id)
 		store := stores[name]
 		switch s.Op {
 		case "put":
@@ -209,7 +213,7 @@ func runCase[B any](t *testing.T, h Harness[B], v Vectors, c Case) {
 			}
 			checkOutcome(t, label, s.Expect, store.Put(t.Context(), record))
 		case "get":
-			got, err := store.Get(t.Context(), s.ID)
+			got, err := store.Get(t.Context(), id)
 			checkOutcome(t, label, s.Expect, err)
 			if err == nil {
 				want, ok := v.Records[s.Result]
@@ -221,7 +225,7 @@ func runCase[B any](t *testing.T, h Harness[B], v Vectors, c Case) {
 				}
 			}
 		case "purge":
-			checkOutcome(t, label, s.Expect, store.Purge(t.Context(), s.ID))
+			checkOutcome(t, label, s.Expect, store.Purge(t.Context(), id))
 		case "reopen":
 			trusted := s.Trusted
 			if trusted == nil {

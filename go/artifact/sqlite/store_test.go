@@ -206,3 +206,15 @@ func TestSQLiteReadRejectsNonBlobContent(t *testing.T) {
 	_, err = store.Get(t.Context(), record.CapsuleID)
 	require.ErrorIs(t, err, artifact.ErrCorrupt)
 }
+
+// TestSQLiteRejectsMalformedIDBeforeIO: a malformed ID is invalid even when the
+// database is unusable, because the check runs before any transaction opens.
+func TestSQLiteRejectsMalformedIDBeforeIO(t *testing.T) {
+	db := openTestDB(t)
+	store, err := sqlitestore.New(db, "test-closed", []ed25519.PublicKey{make([]byte, ed25519.PublicKeySize)})
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	_, err = store.Get(t.Context(), "not-an-id")
+	require.ErrorIs(t, err, artifact.ErrInvalid)
+	require.ErrorIs(t, store.Purge(t.Context(), "not-an-id"), artifact.ErrInvalid)
+}

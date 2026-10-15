@@ -51,7 +51,7 @@ semantics are the same everywhere.
 
 | Operation | Contract |
 |---|---|
-| construct `(storage, namespace, trusted_keys)` | Validates configuration only: no I/O, no schema changes. `namespace` must match the artifact-name pattern above; `trusted_keys` must be non-empty and each key a raw 32-byte Ed25519 public key. Otherwise `invalid` |
+| construct `(storage, namespace, trusted_keys)` | Validates configuration and writes nothing: no schema changes, no files created. `namespace` must match the artifact-name pattern above; `trusted_keys` must be non-empty and each key a raw 32-byte Ed25519 public key, else `invalid`. A file backend (`jsonl`) may read existing storage to build its index, and reports a read failure as a backend error |
 | `namespace` | Returns the namespace the store was constructed with |
 | `init()` | Provisions storage (tables, file). Idempotent; never alters existing schema or data. Run during provisioning, not inside an application transaction |
 | `put(record)` | Admits an immutable record (see Admission) |
@@ -65,11 +65,12 @@ Constructors stay per backend, because each takes its own storage handle.
 `put` runs these steps in order and stops at the first failure:
 
 1. **Prepare.** Copy the caller's buffers. Reject more than 64 artifacts or a
-   Producer Envelope over 65,535 bytes (`invalid`). Reject any artifact whose
-   `state` is `purged` (`purged`). For each `present` artifact, compute
-   `content_sha256`; if the caller supplied a different value, reject
-   (`corrupt`). Reject a record whose Capsule, envelope and contents together
-   exceed 8 MiB (`invalid`).
+   Producer Envelope over 65,535 bytes (`invalid`). Then check each artifact
+   in record order: a `purged` state is rejected (`purged`); for a `present`
+   artifact, compute `content_sha256` over its content (none counts as
+   zero-length) and reject a different caller-supplied value (`corrupt`). The
+   first failing artifact decides the code. Finally reject a record whose
+   Capsule, envelope and contents together exceed 8 MiB (`invalid`).
 2. **Verify** the prepared record with the store's trusted keys (see
    Verification).
 3. **Insert or reconcile.** If no record with this `capsule_id` exists in the
@@ -135,8 +136,10 @@ bindings stay, so the storage checksum is unchanged.
 
 - `purge` is idempotent.
 - `purge` needs only the record's existence in the namespace. It does not verify
-  integrity or the signer, so corrupt records and records whose signer is no
-  longer trusted can still have their originals erased. Authorize erasure
+  integrity or the signer, so records that fail verification or the storage
+  checksum, and records whose signer is no longer trusted, can still have their
+  originals erased. A `jsonl` line that no longer decodes as a record cannot be
+  rewritten, so purging it returns `corrupt`. Authorize erasure
   separately from the signer allowlist. `get` keeps failing closed afterwards.
 - A purged original cannot come back: a byte-identical `put` after `purge`
   returns `purged`, and a different record returns `conflict`.
@@ -261,8 +264,10 @@ factory for the backend under test:
 | Python | `capsule_emit.artifact.conformance.run(harness)` |
 | Rust | `capsule_emit_artifact::conformance::run(&harness)` |
 
-The TypeScript, Python and Rust runners land with those languages' backends
-(capsule-emit#308); until then only Go runs the suite.
+The TypeScript, Python and Rust runners and interfaces, including the
+TypeScript `TxStore` and the `lock` argument of TypeScript SQLite `getTx`, land
+with those languages' backends (capsule-emit#308); until then only Go runs the
+suite.
 
 The vectors' README describes the file format and the optional capabilities a
 case may require (`durable`: the backend can be reopened over the same storage;
