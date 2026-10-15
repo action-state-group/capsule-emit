@@ -7,6 +7,20 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+- **No longer depends on `evidencebook`** (#321): `cargo tree -p capsule-emit`
+  holds neither `evidencebook` nor `evidence-request`, and one
+  `checkpointed-local-log` (0.3.1). The padding module is this crate's own:
+  `build_padding_record`, `check_padding_shape`, `is_padding`,
+  `fresh_store_nonce` and the constants keep their names and output (the
+  parity fixture's padded ids are reproduced through the builder), and
+  `build_padding_record` now returns this crate's `jcs::JcsError`. New:
+  `padding_record_with_nonce`, for checking against conformance vectors.
+  `tests/padding_vectors.rs` checks the builder and the shape check against
+  the agent-action-capsule Evidence Layer padding vectors (vendored in
+  `tests/vectors/aac-evidence-layer-padding/`).
+  `check_padding_shape` now also requires `record_type` `padding` and
+  `epistemic_type` `producer_claim`, as the Evidence Layer draft does and as
+  every known writer (this crate, evidencebook, capsule-cli) writes them.
 - The checkpoint path sits on `checkpointed-local-log` directly, as the
   Python producer does, instead of on `evidencebook`'s `CllSubstrate` (#321).
   `checkpoints.jsonl`, `mmr_nodes.dat`, checkpoint roots, signatures, COSE
@@ -23,11 +37,7 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   that one type name. Signing with an `ed25519_dalek::SigningKey` is
   unchanged. `SubstrateError` (what `CheckpointRecord::leaf_count` returns)
   is exported too.
-- Requires `checkpointed-local-log` 0.3.1 and `evidencebook` 0.0.4, so the
-  dependency graph holds one CLL version. evidencebook 0.0.4 is the first
-  release from the evidencebook repository and builds its request handling on
-  `evidence-request` 0.1; the APIs this crate uses and re-exports
-  (`canonical`, `padding`, `substrate`) are unchanged.
+- Requires `checkpointed-local-log` 0.3.1.
 - `Ledger::lines` lists every line (padding included) in file order as
   `LedgerLine`s, with `read_line` and `read_statement` to read one back, and
   the reload check `check_statement_matches` is public. The

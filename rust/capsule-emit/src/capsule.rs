@@ -24,7 +24,7 @@ pub const CANONICALIZATION_ID: &str = crate::jcs::CANONICALIZATION_JCS;
 
 /// Draws a fresh [`STORE_NONCE_FIELD`] value: 64 lowercase hex from the OS
 /// CSPRNG.
-pub use evidencebook::padding::fresh_store_nonce;
+pub use crate::padding::fresh_store_nonce;
 /// `model_attestation.compute_attestation.store_nonce`: a fresh 256-bit value
 /// the store draws from the OS CSPRNG for one sealed record and never reuses
 /// (Evidence Layer -00 §12.1: every record carries, inside the bytes its
@@ -32,7 +32,7 @@ pub use evidencebook::padding::fresh_store_nonce;
 /// generated for it alone). It is committed into `capsule_id`, so the
 /// siblings of an inclusion proof cannot be confirmed by guessing a record's
 /// content and recomputing its digest.
-pub use evidencebook::padding::STORE_NONCE_FIELD;
+pub use crate::padding::STORE_NONCE_FIELD;
 
 /// The `compute_attestation` members this crate writes itself. An extension
 /// may not use one of these keys.
