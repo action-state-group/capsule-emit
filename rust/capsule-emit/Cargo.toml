@@ -19,8 +19,8 @@ name = "verify_capsule"
 path = "src/bin/verify_capsule.rs"
 
 [dependencies]
-# The checkpoint substrate, canonicalization and padding records come from
-# `evidencebook`; `cll` is the log it embeds.
+# Canonicalization and padding records come from `evidencebook` (#321 moves
+# them off it); `cll` is the checkpoint substrate.
 evidencebook = "0.0.4"
 cll = { package = "checkpointed-local-log", version = "0.3.1" }
 serde = { version = "1", features = ["derive"] }
