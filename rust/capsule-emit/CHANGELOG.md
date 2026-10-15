@@ -5,7 +5,7 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
-## Unreleased
+## 0.0.8
 
 - **No longer depends on `evidencebook`** (#321): `cargo tree -p capsule-emit`
   holds neither `evidencebook` nor `evidence-request`, and one
