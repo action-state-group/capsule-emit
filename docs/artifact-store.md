@@ -229,6 +229,7 @@ supports that transaction too.
 | `memory` | Process memory, for tests and short-lived tools | No |
 | `mysql` | MySQL 8.4 / InnoDB | Yes |
 | `sqlite` | One SQLite file, which may also hold a CLL SQLite log in its own tables | Yes |
+| legacy ledger | The flat ledger `seal()` writes, with [capability limits](#capability-limits); exempt from interop ([legacy-ledger.md](legacy-ledger.md)) | No |
 
 Data written by any language opens in the others:
 

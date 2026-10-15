@@ -48,6 +48,11 @@ idempotent by digest. The legacy backend keeps history unchanged:
 
 This is the only deviation from the CLL contract.
 
+The index is built incrementally: each operation reads only the bytes appended
+since the last one. A file that shrinks or is replaced (another inode) is read
+again from the start. Rewriting earlier bytes of the same file in place is not
+detected, because the ledger is append-only.
+
 ### Writes
 
 A ledger line is a whole record, never a bare digest, so the legacy backend
@@ -87,13 +92,17 @@ canonicalization profiles. `capsule_id` is recomputed per
   excluded too, and null members, empty arrays and empty objects are removed
   first.
 
-A present envelope must verify over that `capsule_id`, and `key_id` must be
+A `jcs` capsule must also pass Class 1 verification, as in every other
+artifact store; historical `jcs-n` capsules predate it and are checked by their
+content address alone. The Go verifier accepts only `jcs`, so `jcs-n` capsules
+are verified with capsule-emit's own verifier.
+
+When a line carries `signature` or `key_id`, both must be present, non-empty
+strings, the envelope must verify over that `capsule_id`, and `key_id` must be
 its signer. With trusted keys configured, the signer must also be one of them
-(`untrusted_signer`). With none, any signer whose envelope
-verifies is accepted, as `seal()` accepts whichever key it is configured
-with. Class 1 structure checks stay with `capsule-emit verify`. The Go
-verifier accepts only `jcs`, so historical `jcs-n` capsules are verified with
-capsule-emit's own verifier.
+(`untrusted_signer`). With none, any signer whose envelope verifies is
+accepted, as `seal()` accepts whichever key it is configured with. Lines are
+read as strict JSON, so a duplicated member is `invalid`.
 
 `put` accepts only capsule bytes in the ledger's own line form, because the
 file cannot hold other bytes for the same JSON value: compact `json.dumps`

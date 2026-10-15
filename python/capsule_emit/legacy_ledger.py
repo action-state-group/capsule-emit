@@ -53,12 +53,12 @@ only: ``get`` reports them ``not_found``.
 
 The capsule is checked with capsule-emit's own rules, which keep both
 canonicalization profiles: ``capsule_id`` is recomputed per
-``canonicalization_id`` (``jcs``, or ``jcs-n`` when it is absent), and a
-present envelope must verify over that ``capsule_id`` with ``key_id`` as its
-signer. With ``trusted`` keys the signer must also be one of them
-(``untrusted_signer``); without them, any valid signer is accepted, as
-``seal()`` itself accepts any configured key. Class 1 structure checks stay with
-``capsule-emit verify``.
+``canonicalization_id`` (``jcs``, or ``jcs-n`` when it is absent); a ``jcs``
+capsule must also pass Class 1 verification; and a claimed envelope (either
+member present) must be complete and verify over that ``capsule_id`` with
+``key_id`` as its signer. With ``trusted`` keys the signer must also be one of
+them (``untrusted_signer``); without them, any valid signer is accepted, as
+``seal()`` itself accepts any configured key. Lines are read as strict JSON.
 
 Capability limits (``CAPABILITIES``), each refused with ``unsupported``:
 
@@ -73,6 +73,7 @@ cannot hold other bytes for the same JSON value.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -93,6 +94,7 @@ from cll.log.ledger import capsule_timestamp
 from . import ledger as _ledger
 from .artifact.record import (
     ConflictError,
+    CorruptError,
     InvalidError,
     NotFoundError,
     Record,
@@ -105,7 +107,13 @@ from .artifact.record import (
     valid_id,
     valid_name,
 )
-from .canonicalization import UnsupportedCanonicalizationError, compute_capsule_id
+from .canonicalization import (
+    CANONICALIZATION_JCS,
+    UnsupportedCanonicalizationError,
+    compute_capsule_id,
+    resolve_canonicalization_id,
+)
+from .verification import verify_capsule
 
 __all__ = ["CAPABILITIES", "DEFAULT_NAMESPACE", "LegacyLedger", "shared"]
 
@@ -155,6 +163,16 @@ def _line_time(seq: int, obj: dict) -> datetime | None:
         return None
 
 
+@contextlib.contextmanager
+def _as_artifact_errors():
+    """Reports a corrupt ledger line as the artifact contract's ``corrupt``
+    on artifact operations (the CLL operations keep ``cll.log`` codes)."""
+    try:
+        yield
+    except LogCorruptError as exc:
+        raise CorruptError(str(exc)) from exc
+
+
 def _is_capsule(obj: dict) -> bool:
     return obj.get("kind") not in _ledger.NON_CAPSULE_KINDS and obj.get("record_type") != _ledger.PADDING_RECORD_TYPE
 
@@ -164,9 +182,11 @@ def _line_form(value: dict) -> str:
     return json.dumps(value, separators=(",", ":"))
 
 
-def _verify_capsule(capsule_id: str, capsule: dict, envelope: bytes, trusted: list | None) -> str | None:
-    """capsule-emit's legacy check. Returns the signer ``key_id`` (hex), or
-    ``None`` for an unsigned capsule."""
+def _verify_capsule(capsule_id: str, capsule: dict, envelope: bytes | None, trusted: list | None) -> str | None:
+    """capsule-emit's legacy check: the content address per profile, Class 1
+    for the ``jcs`` profile, and the envelope when one is claimed (``None``
+    means none is). Returns the signer ``key_id`` (hex), or ``None`` for an
+    unsigned capsule."""
     if capsule.get("capsule_id") != capsule_id:
         raise InvalidError("capsule verification: carried capsule_id differs")
     try:
@@ -175,7 +195,11 @@ def _verify_capsule(capsule_id: str, capsule: dict, envelope: bytes, trusted: li
         raise InvalidError(f"capsule verification: {exc}") from exc
     if computed != capsule_id:
         raise InvalidError("capsule verification: capsule id mismatch")
-    if not envelope:
+    if resolve_canonicalization_id(capsule) == CANONICALIZATION_JCS:
+        result = verify_capsule(capsule)
+        if not result.ok:
+            raise InvalidError("capsule verification: " + ",".join(f.code for f in result.errors))
+    if envelope is None:
         return None
     from agent_action_capsule.producer_envelope import verify_producer_envelope
 
@@ -199,7 +223,9 @@ class LegacyLedger:
 
     The index is built incrementally: each operation reads only the bytes
     appended since the last one, so other writers' lines appear on the next
-    call. A file that shrank is re-read from the start.
+    call. A file that shrank or was replaced (another inode) is re-read from
+    the start. On artifact operations a corrupt line is the artifact
+    ``CorruptError``; on CLL operations it is ``cll.log.CorruptError``.
     """
 
     def __init__(
@@ -236,6 +262,7 @@ class LegacyLedger:
         self._first: dict[bytes, int] = {}
         self._consumed = 0
         self._tail: _Line | None = None
+        self._identity: tuple | None = None
 
     def _require_open(self) -> None:
         if self._closed:
@@ -267,11 +294,16 @@ class LegacyLedger:
     def _refresh(self) -> None:
         """Index lines appended since the last call. Caller holds ``_lock``."""
         try:
-            size = self._path.stat().st_size
+            stat = self._path.stat()
+            size, identity = stat.st_size, (stat.st_dev, stat.st_ino)
         except FileNotFoundError:
-            size = 0
-        if size < self._consumed:
+            size, identity = 0, None
+        # A shrunk or replaced file (another inode) is read again from the
+        # start. Rewriting earlier bytes of the same file in place is not
+        # detected: the ledger is append-only.
+        if size < self._consumed or (self._identity is not None and identity != self._identity):
             self._reset()
+        self._identity = identity
         if size == self._consumed and self._tail is None:
             return
         data = b""
@@ -317,17 +349,10 @@ class LegacyLedger:
             return self._tail
         return None
 
-    def _read_line(self, line: _Line) -> dict:
+    def _read_raw(self, line: _Line) -> bytes:
         with open(self._path, "rb") as fh:
             fh.seek(line.offset)
-            raw = fh.read(line.length)
-        try:
-            obj = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise LogCorruptError(f"{self._path}: line seq={line.entry.seq} changed on disk") from exc
-        if not isinstance(obj, dict):
-            raise LogCorruptError(f"{self._path}: line seq={line.entry.seq} changed on disk")
-        return obj
+            return fh.read(line.length).strip()
 
     def entries(self) -> Iterator[Entry]:
         """Every entry in sequence order (the checkpoint index's source)."""
@@ -394,8 +419,6 @@ class LegacyLedger:
         wrote it (``inserted``) or found it already stored (``idempotent``)."""
         self._require_open()
         prepared = prepare(record)
-        if prepared.artifacts:
-            raise UnsupportedError("the legacy ledger keeps no originals")
         if not valid_id(prepared.capsule_id):
             raise InvalidError("capsule id")
         try:
@@ -408,7 +431,10 @@ class LegacyLedger:
             raise InvalidError("capsule verification: signature and key_id are not capsule members")
         if _line_form(capsule).encode("ascii") != prepared.capsule:
             raise InvalidError("capsule bytes are not in the ledger's line form")
-        key_id = _verify_capsule(prepared.capsule_id, capsule, prepared.producer_envelope, self._trusted)
+        envelope = bytes(prepared.producer_envelope) or None
+        key_id = _verify_capsule(prepared.capsule_id, capsule, envelope, self._trusted)
+        if prepared.artifacts:
+            raise UnsupportedError("the legacy ledger keeps no originals")
         line = dict(capsule)
         if key_id is not None:
             line["signature"] = bytes(prepared.producer_envelope).hex()
@@ -429,26 +455,26 @@ class LegacyLedger:
             raise InvalidError("capsule id")
         text = _line_form(line)
         value = bytes.fromhex(capsule_id)
-        with _ledger._append_lock, _ledger._writer_lock(self._path, wait=self._wait, timeout=self._timeout):
-            with self._lock:
-                self._require_open()
-                self._refresh()
-                existing = self._find(value)
-                if existing is not None:
-                    if not existing.capsule or _line_form(self._read_line(existing)) != text:
-                        raise ConflictError("immutable record conflict")
-                    return AppendResult(existing.entry, IDEMPOTENT)
-                _ledger._write_line(self._path, text)
-                self._refresh()
-                written = self._find(value)
-                if written is None:  # pragma: no cover - the line was just written
-                    raise LogCorruptError(f"{self._path}: written line is missing")
-                return AppendResult(written.entry, INSERTED)
+        lock = _ledger._writer_lock(self._path, wait=self._wait, timeout=self._timeout)
+        with _ledger._append_lock, lock, self._lock, _as_artifact_errors():
+            self._require_open()
+            self._refresh()
+            existing = self._find(value)
+            if existing is not None:
+                if not existing.capsule or self._read_raw(existing) != text.encode("ascii"):
+                    raise ConflictError("immutable record conflict")
+                return AppendResult(existing.entry, IDEMPOTENT)
+            _ledger._write_line(self._path, text)
+            self._refresh()
+            written = self._find(value)
+            if written is None:  # pragma: no cover - the line was just written
+                raise LogCorruptError(f"{self._path}: written line is missing")
+            return AppendResult(written.entry, INSERTED)
 
     def get(self, capsule_id: str) -> Record:
         if not valid_id(capsule_id):
             raise InvalidError("capsule id")
-        with self._lock:
+        with self._lock, _as_artifact_errors():
             self._require_open()
             self._refresh()
             line = self._find(bytes.fromhex(capsule_id))
@@ -458,22 +484,30 @@ class LegacyLedger:
 
     def _record(self, line: _Line) -> Record:
         """The verified record a line holds. Caller holds ``_lock``."""
-        obj = self._read_line(line)
+        try:
+            obj = decode_strict_json(self._read_raw(line))
+        except _StrictJSONError as exc:
+            raise InvalidError(f"capsule verification: {exc}") from exc
+        if not isinstance(obj, dict):
+            raise InvalidError("capsule verification: capsule is not an object")
+        capsule_id = line.entry.value.hex()
+        claimed = [name in obj for name in _ENVELOPE_MEMBERS]
         signature = obj.pop("signature", None)
         key_id = obj.pop("key_id", None)
-        capsule_id = line.entry.value.hex()
-        if (signature is None) != (key_id is None):
-            raise InvalidError("envelope: only one of signature and key_id is present")
-        envelope = b""
-        if signature is not None:
+        envelope = None
+        if any(claimed):
+            if not all(claimed) or not isinstance(signature, str) or not isinstance(key_id, str):
+                raise InvalidError("envelope: signature and key_id must both be present strings")
             try:
                 envelope = bytes.fromhex(signature)
-            except (TypeError, ValueError) as exc:
+            except ValueError as exc:
                 raise InvalidError("envelope: signature is not hex") from exc
+            if not envelope:
+                raise InvalidError("envelope: signature is empty")
         signer = _verify_capsule(capsule_id, obj, envelope, self._trusted)
-        if signer is not None and signer != str(key_id).lower():
+        if signer is not None and signer != key_id.lower():
             raise InvalidError("envelope: key_id is not the envelope's signer")
-        return Record(capsule_id, _line_form(obj).encode("ascii"), envelope, [])
+        return Record(capsule_id, _line_form(obj).encode("ascii"), envelope or b"", [])
 
     def purge(self, capsule_id: str) -> None:
         if not valid_id(capsule_id):
@@ -492,6 +526,6 @@ def shared(path: str | os.PathLike) -> LegacyLedger:
     key = os.path.abspath(os.fspath(path))
     with _shared_lock:
         store = _shared.get(key)
-        if store is None:
-            store = _shared[key] = LegacyLedger(path)
+        if store is None or store._closed:
+            store = _shared[key] = LegacyLedger(key)
         return store

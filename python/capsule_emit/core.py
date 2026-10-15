@@ -475,7 +475,7 @@ class EmitResult:
     ones.
 
     ``seq`` is this capsule's 1-indexed position in its ledger file (see
-    ``capsule_emit.ledger.append_to_ledger``) — the log is where every
+    ``capsule_emit.legacy_ledger``) — the log is where every
     capsule already lives ambiently, per the public API's "already a
     leaf in your log" (§2.1): once a checkpoint covers this position, ``seq``
     is the MMR leaf index too. Rendered as ``#logged @ leaf <seq>`` by

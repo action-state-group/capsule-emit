@@ -447,3 +447,105 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
         assert store.get(capsule["capsule_id"]).producer_envelope == bytes.fromhex(capsule["signature"])
     assert any(e.get("kind") == ledger.DISCLOSURE_RECORD_KIND for e in ledger.read_ledger_entries(path))
     assert os.path.exists(tmp_path / "report.html")
+
+
+# -- review regressions --------------------------------------------------------------
+
+
+def _with_line(tmp_path, text):
+    path = tmp_path / "edited.jsonl"
+    path.write_text(text + "\n")
+    return LegacyLedger(path)
+
+
+def test_a_present_but_empty_or_one_sided_signature_is_invalid(tmp_path):
+    line = dict(_lines()[0])
+    for signature, key_id in (("", line["key_id"]), (None, None), ("", "")):
+        edited = dict(line, signature=signature, key_id=key_id)
+        store = _with_line(tmp_path, json.dumps(edited, separators=(",", ":")))
+        with pytest.raises(InvalidError):
+            store.get(line["capsule_id"])
+    one_sided = {k: v for k, v in line.items() if k != "key_id"}
+    with pytest.raises(InvalidError):
+        _with_line(tmp_path, json.dumps(one_sided, separators=(",", ":"))).get(line["capsule_id"])
+
+
+def test_artifact_reads_reject_duplicate_json_keys(tmp_path):
+    raw = FIXTURE.read_text().splitlines()[0]
+    duplicated = raw.replace('{"spec_version":', '{"action_id":"forged","spec_version":', 1)
+    assert duplicated != raw
+    store = _with_line(tmp_path, duplicated)
+    assert store.get_entry(bytes.fromhex(_lines()[0]["capsule_id"])).seq == 1  # still a leaf
+    with pytest.raises(InvalidError):
+        store.get(_lines()[0]["capsule_id"])
+
+
+def test_jcs_capsules_get_class_1_verification(tmp_path):
+    line = {k: v for k, v in _lines()[2].items()}  # the unsigned log() entry
+    del line["operator"]
+    line["capsule_id"] = core.compute_capsule_id(line)
+    store = LegacyLedger(tmp_path / "x.jsonl")
+    capsule = json.dumps(line, separators=(",", ":")).encode()
+    with pytest.raises(InvalidError, match="capsule verification"):
+        store.put(Record(line["capsule_id"], capsule, b""))
+    store.append_line(line)  # seal()'s writer does not verify
+    with pytest.raises(InvalidError, match="capsule verification"):
+        store.get(line["capsule_id"])
+
+
+def test_arguments_are_validated_before_the_originals_refusal(fixture_path):
+    record = LegacyLedger(fixture_path).get(_lines()[0]["capsule_id"])
+    record.artifacts = [Artifact(name="payload", state="never_retained")]
+    bad_id = Record("NOT-AN-ID", record.capsule, record.producer_envelope, record.artifacts)
+    with pytest.raises(InvalidError):
+        LegacyLedger(fixture_path).put(bad_id)
+    tampered = Record(record.capsule_id, record.capsule.replace(b"acme", b"emca"), record.producer_envelope, record.artifacts)
+    with pytest.raises(InvalidError):
+        LegacyLedger(fixture_path).put(tampered)
+
+
+def test_shared_handles_resolve_relative_paths_once(tmp_path, monkeypatch):
+    from capsule_emit import legacy_ledger
+
+    first, second = tmp_path / "a", tmp_path / "b"
+    first.mkdir()
+    second.mkdir()
+    shutil.copy(FIXTURE, first / "ledger.jsonl")
+    monkeypatch.chdir(first)
+    store = legacy_ledger.shared("ledger.jsonl")
+    monkeypatch.chdir(second)
+    assert legacy_ledger.shared(first / "ledger.jsonl") is store
+    assert len(store.scan_entries(0, 100)) == 11
+
+
+def test_a_replaced_file_of_the_same_size_is_reread(tmp_path):
+    raw = FIXTURE.read_bytes().split(b"\n")
+    path = tmp_path / "ledger.jsonl"
+    path.write_bytes(raw[0] + b"\n")
+    store = LegacyLedger(path)
+    assert store.scan_entries(0, 10)[0].value.hex() == _lines()[0]["capsule_id"]
+    replacement = tmp_path / "replacement.jsonl"
+    replacement.write_bytes(raw[0] + b"\n" + raw[1] + b"\n")
+    os.replace(replacement, path)
+    assert [e.value.hex() for e in store.scan_entries(0, 10)] == [_lines()[0]["capsule_id"], _lines()[1]["capsule_id"]]
+
+
+def test_corrupt_lines_carry_the_artifact_code_on_artifact_operations(tmp_path):
+    from capsule_emit.artifact import CorruptError as ArtifactCorruptError
+
+    store = _with_line(tmp_path, '{"capsule_id":"zz"}')
+    with pytest.raises(ArtifactCorruptError):
+        store.get(_lines()[0]["capsule_id"])
+    with pytest.raises(ArtifactCorruptError):
+        store.append_line(_lines()[0])
+    with pytest.raises(CorruptError):
+        store.scan_entries(0, 1)
+
+
+def test_shared_replaces_a_closed_handle(fixture_path):
+    from capsule_emit import legacy_ledger
+
+    store = legacy_ledger.shared(fixture_path)
+    store.close()
+    assert legacy_ledger.shared(fixture_path) is not store
+    assert len(legacy_ledger.shared(fixture_path).scan_entries(0, 100)) == 11
