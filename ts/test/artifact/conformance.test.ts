@@ -15,7 +15,11 @@ import {
   vectorRecord,
   type ConformanceHarness,
 } from "../../src/artifact/conformance.js";
-import { isTxStore, storageChecksum } from "../../src/artifact/index.js";
+import {
+  isTxStore,
+  storageChecksum,
+  type Record,
+} from "../../src/artifact/index.js";
 import {
   decodeRecord,
   encodeRecord,
@@ -27,37 +31,29 @@ import { SqliteArtifactStore } from "../../src/artifact/sqlite.js";
 
 const repo = join(import.meta.dirname, "..", "..", "..");
 
-function register<B>(name: string, harness: () => ConformanceHarness<B>): void {
+function register<B>(name: string, harness: ConformanceHarness<B>): void {
   describe(`${name} conformance`, () => {
-    // Test names are fixed by the vectors; the harness is built lazily so an
-    // opt-in backend's setup runs only when its tests do.
-    for (const test of artifactConformanceTests(harness())) {
+    for (const test of artifactConformanceTests(harness)) {
       if (test.skip !== undefined)
         it.skip(`${test.name} (${test.skip})`, () => {});
-      else
-        it(test.name, async () => {
-          const real = artifactConformanceTests(harness()).find(
-            (t) => t.name === test.name,
-          );
-          await real?.run();
-        });
+      else it(test.name, () => test.run());
     }
   });
 }
 
-register("memory", () => ({
+register("memory", {
   newBacking: () => undefined,
   open: (_b: undefined, ns, keys) => new MemoryArtifactStore(ns, keys),
-}));
+});
 
-register("jsonl", () => ({
+register("jsonl", {
   newBacking: () =>
     join(mkdtempSync(join(tmpdir(), "artifact-jsonl-")), "a.jsonl"),
   open: (path: string, ns, keys) => new JsonlArtifactStore(path, ns, keys),
   durable: true,
-}));
+});
 
-register("sqlite", () => ({
+register("sqlite", {
   newBacking: () => {
     const db = new Database(
       join(mkdtempSync(join(tmpdir(), "artifact-sqlite-")), "a.db"),
@@ -72,7 +68,7 @@ register("sqlite", () => ({
   },
   durable: true,
   sharedBacking: true,
-}));
+});
 
 // Opt-in: needs Docker, like mysql.test.ts. Enable with ARTIFACT_MYSQL_TEST=1.
 const mysqlEnabled = process.env.ARTIFACT_MYSQL_TEST === "1";
@@ -221,6 +217,22 @@ describe("transactional extension", () => {
     );
     db.exec("COMMIT");
     expect((await store.get(basic.capsuleId)).capsuleId).toBe(basic.capsuleId);
+  });
+
+  it("rejects a missing record or a malformed ID in a transaction", async () => {
+    const db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const store = new SqliteArtifactStore(db, "ns", [new Uint8Array(32)]);
+    await store.init();
+    await expect(
+      store.putTx(db, undefined as unknown as Record),
+    ).rejects.toMatchObject({ code: "invalid" });
+    await expect(store.getTx(db, "")).rejects.toMatchObject({
+      code: "invalid",
+    });
+    await expect(store.getTx(db, "bad", true)).rejects.toMatchObject({
+      code: "invalid",
+    });
   });
 
   it("rejects a malformed ID before touching a closed database", async () => {

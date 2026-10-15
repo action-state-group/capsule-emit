@@ -391,7 +391,7 @@ Override those paths with `AAC_ROOT` and `CAPSULE_EMIT_GO_ROOT`.
 The producer root uses `node:crypto` and requires Node.js. Consolidation does
 not introduce browser support. Storage drivers remain optional peers.
 `node scripts/check-packed-consumer.mjs` checks an isolated tarball consumer
-without drivers before exercising all six exports with their optional peers.
+without drivers before exercising all eight exports with their optional peers.
 
 ## Release
 

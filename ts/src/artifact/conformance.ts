@@ -42,6 +42,7 @@ interface Step {
 
 interface Case {
   name: string;
+  description?: string;
   requires?: string[];
   stores: { [name: string]: StoreSpec };
   steps: Step[];
@@ -57,6 +58,7 @@ interface OpenVector {
 /** The decoded vector file. See test-vectors/artifact-store/README.md. */
 export interface ConformanceVectors {
   format: string;
+  contract: string;
   keys: { [name: string]: string };
   records: { [name: string]: unknown };
   checksums: { record: string; storage_checksum: string }[];
