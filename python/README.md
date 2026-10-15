@@ -214,12 +214,15 @@ Each of these is a module you can import; none is needed for `seal()`.
 
 ## Rust
 
-The [`rust/`](../rust/) workspace holds the `capsule-emit` crate, with its own README and CHANGELOG, built and tested by the Rust CI workflow. The Evidence Request protocol crate moved to agent-action-capsule as [`evidence-request`](https://crates.io/crates/evidence-request):
+The [`rust/`](../rust/) workspace holds one crate, with its own README and CHANGELOG, built and tested by the Rust CI workflow:
 
 - **[`rust/capsule-emit`](../rust/capsule-emit/)**: seal, sign, chain and
   checkpoint Agent Action Capsule records in Rust. JCS capsule ids, COSE_Sign1
   statements, a durable local ledger and signed checkpoints, checked against the
   Python reference and the conformance vectors.
+
+The Evidence Request protocol crate moved to agent-action-capsule as
+[`evidence-request`](https://crates.io/crates/evidence-request).
 
 ## Declare now, enforce later — same file
 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# The Rust crates under rust/: format, lint, tests, the Python-reference
+# The capsule-emit crate under rust/: format, lint, tests, the Python-reference
 # conformance checks, and the crates.io package check (never a real publish).
 #
 # Actions are pinned to full commit SHAs (tag in the trailing comment); the

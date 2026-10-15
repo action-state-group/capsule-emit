@@ -6,6 +6,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Removed: the `capsule-emit-evidence-request` crate
+
+The Evidence Request protocol crate moved to agent-action-capsule with its
+history and continues there as
+[`evidence-request`](https://crates.io/crates/evidence-request)
+(action-state-group/agent-action-capsule#262). `capsule-emit-evidence-request`
+0.0.5, a deprecated re-export of `evidence-request`, is its last release from
+this repository; `rust/` now holds only the `capsule-emit` crate.
+
 ## 0.9.1 — 2026-10-14
 
 ### Changed: Go module path is `github.com/action-state-group/capsule-emit/go`
