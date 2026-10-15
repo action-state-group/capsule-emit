@@ -48,6 +48,7 @@ expected_records=5
 setup_go() { (cd "$repo/go" && go build -o "$work/go-interlock" ./artifact/internal/interlock); }
 il_go() { "$work/go-interlock" "$@"; }
 il_ts() { node "$repo/ts/scripts/artifact-interlock.mjs" "$@"; }
+il_python() { "$python_bin" "$repo/python/scripts/artifact_interlock.py" "$@"; }
 
 for lang in "${languages[@]}"; do
   if declare -F "setup_$lang" > /dev/null; then "setup_$lang"; fi

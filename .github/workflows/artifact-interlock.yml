@@ -65,7 +65,7 @@ jobs:
           --health-timeout=5s
           --health-retries=20
     env:
-      LANGUAGES: go ts
+      LANGUAGES: go ts python
       CAPSULE_STORAGE_TEST_MYSQL: "127.0.0.1:3306"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,7 +83,7 @@ jobs:
           python-version: "3.12"
       - name: Install
         run: |
-          pip install "PyMySQL==1.2.3"
+          pip install "PyMySQL==1.2.3" -e "./python"
           (cd ts && npm ci && npm run build)
       - name: Interlock
         run: .github/scripts/artifact-store-interlock.sh ${{ matrix.format }}

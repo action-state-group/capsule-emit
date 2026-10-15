@@ -36,14 +36,16 @@ def run(*args, cwd, env=None):
 
 
 def inventory(wheel):
-    expected = {str(p.relative_to(PROJECT)): p.read_bytes()
-                for p in (PROJECT / "capsule_emit").rglob("*.py")}
+    # Every module, plus the package data pyproject.toml declares.
+    files = [*(PROJECT / "capsule_emit").rglob("*.py"),
+             PROJECT / "capsule_emit" / "artifact" / "conformance_vectors.json"]
+    expected = {str(p.relative_to(PROJECT)): p.read_bytes() for p in files}
     with zipfile.ZipFile(wheel) as archive:
         actual = {n: archive.read(n) for n in archive.namelist() if n.startswith("capsule_emit/")}
         assert actual == expected, "wheel module contents differ from source"
         assert any(n.endswith("/LICENSE") for n in archive.namelist())
         assert any(n.endswith("/NOTICE") for n in archive.namelist())
-    print(f"Wheel inventory matches all {len(expected)} source modules")
+    print(f"Wheel inventory matches all {len(expected)} source modules and data files")
 
 
 def main():

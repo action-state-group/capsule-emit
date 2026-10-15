@@ -16,6 +16,23 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9", "3.12"]
+    # The artifact store's MySQL backend runs the shared conformance suite
+    # against a real, disposable MySQL 8.4 (tests/test_artifact_store.py).
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: capsule_storage_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      CAPSULE_STORAGE_TEST_MYSQL: "127.0.0.1:3306"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
