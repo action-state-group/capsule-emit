@@ -194,7 +194,9 @@ function caseTest<B>(h: ConformanceHarness<B>, c: Case): () => Promise<void> {
               got = await store.get(id);
             });
             expectCode(label, s.expect, code);
-            if (got !== undefined) {
+            if (code === "ok") {
+              if (got === undefined)
+                throw new Error(`${label}: get resolved without a record`);
               const difference = diffRecords(vectorRecord(s.result ?? ""), got);
               if (difference !== "")
                 throw new Error(

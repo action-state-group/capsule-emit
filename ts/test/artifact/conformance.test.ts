@@ -146,6 +146,24 @@ describe("conformance runner", () => {
     expect(outcomes.some((o) => o.status === "skip")).toBe(true);
   });
 
+  it("fails a store whose get resolves without a record", async () => {
+    const outcomes = await runArtifactConformance({
+      newBacking: () => undefined,
+      open: (_b: undefined, ns, keys) => {
+        const store = new MemoryArtifactStore(ns, keys);
+        const get = store.get.bind(store);
+        store.get = async (id) => {
+          await get(id); // keep every expected error
+          return undefined as never;
+        };
+        return store;
+      },
+    });
+    const roundtrip = outcomes.find((o) => o.name === "put_get_roundtrip");
+    expect(roundtrip?.status).toBe("fail");
+    expect(roundtrip?.detail).toContain("without a record");
+  });
+
   it("diffRecords notices every difference", () => {
     const stored = vectorRecord("basic.stored");
     expect(diffRecords(stored, stored)).toBe("");
