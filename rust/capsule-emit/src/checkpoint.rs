@@ -2,13 +2,12 @@
 //! an append-only MMR over `capsule_id` leaves, a periodic signed checkpoint,
 //! and opt-in witness registration.
 //!
-//! The substrate is the `evidencebook` crate's
-//! [`evidencebook::substrate::CllSubstrate`], which embeds the
-//! checkpointed-local-log (`cll`): the MMR node store, the monotonicity and
-//! rewrite guards, the root, the signature, the COSE wire form,
-//! `checkpoints.jsonl` and inclusion proofs. The on-disk shape is the one the
-//! Python checkpointed-local-log reference reads and writes, so the two can
-//! share a `checkpoints.jsonl`. This module keeps the policy around it: which
+//! The substrate is the checkpointed-local-log (`cll`) crate, directly (see
+//! `crate::substrate`): the MMR, its durable node store, the root, the
+//! signature, the COSE wire form, `checkpoints.jsonl` and inclusion proofs,
+//! with the monotonicity and rewrite guards around them. The on-disk shape is
+//! the one the Python checkpointed-local-log reference reads and writes, so
+//! the two can share a `checkpoints.jsonl`. This module keeps the policy around it: which
 //! `capsules.jsonl` lines to fold, when to cut (cadence, push-time coverage,
 //! padding), what time a checkpoint commits to, and witness registration.
 //!
@@ -25,19 +24,18 @@
 //! blocks local checkpointing. See `tick`, `reconnect`,
 //! `checkpoint_on_shutdown` and `retry_pending_witnesses`.
 //!
-//! **Signing goes only through the substrate's [`CheckpointSigner`]**: this
+//! **Signing goes only through [`CheckpointSigner`]**: this
 //! module never calls `ed25519_dalek::Signer` directly, so the caller's
 //! already-loaded key (`capsule_emit::keys::KeyPair::signing_key`, which
 //! implements it) is reused as-is, never a second key.
-//! `tests/evidencebook_parity.rs` pins the output byte for byte.
+//! `tests/evidencebook_parity.rs` pins the output byte for byte, with and
+//! without padding.
 
 use crate::anchor::{AnchorClient, AnchorError};
-use evidencebook::substrate::{record_id_from_hex, CllSubstrate, SubstrateError, RECORD_ID_LEN};
-// Re-exported under this module's names so a caller of this crate names
-// them without depending on `evidencebook` directly.
-pub use evidencebook::substrate::{
-    verify_inclusion, Checkpoint as CheckpointRecord, InclusionEvidence as InclusionProof,
-    OpenReport, Signer as CheckpointSigner, WitnessEntry as CheckpointWitness,
+use crate::substrate::{record_id_from_hex, CllSubstrate, RECORD_ID_LEN};
+pub use crate::substrate::{
+    verify_inclusion, CheckpointRecord, CheckpointSignError, CheckpointSigner, CheckpointWitness,
+    InclusionProof, OpenReport, SubstrateError,
 };
 use std::collections::HashMap;
 use std::fs::File;
