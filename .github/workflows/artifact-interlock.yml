@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: Apache-2.0
+# Cross-language artifact store interlock (docs/artifact-store.md): for each
+# storage format, every language writes the same sequence and every language
+# reads and verifies every other language's store. Reports, JSONL bytes, SQL
+# rows, StorageChecksums, purge outcomes and error codes must all agree.
+# A language's backend joins by adding itself to LANGUAGES below in the same
+# pull request that adds the backend.
+name: Artifact store interlock
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "go/**"
+      - "ts/**"
+      - "python/**"
+      - "rust/**"
+      - "test-vectors/artifact-store/**"
+      - "docs/artifact-store.md"
+      - ".github/scripts/artifact-store-interlock.sh"
+      - ".github/scripts/artifact_store_rows.py"
+      - ".github/workflows/artifact-interlock.yml"
+  pull_request:
+    paths:
+      - "go/**"
+      - "ts/**"
+      - "python/**"
+      - "rust/**"
+      - "test-vectors/artifact-store/**"
+      - "docs/artifact-store.md"
+      - ".github/scripts/artifact-store-interlock.sh"
+      - ".github/scripts/artifact_store_rows.py"
+      - ".github/workflows/artifact-interlock.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: artifact-interlock-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  interlock:
+    name: interlock (${{ matrix.format }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [jsonl, sqlite, mysql]
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: capsule_storage_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      LANGUAGES: go ts
+      CAPSULE_STORAGE_TEST_MYSQL: "127.0.0.1:3306"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install "PyMySQL>=1.1"
+          (cd ts && npm ci && npm run build)
+      - name: Interlock
+        run: .github/scripts/artifact-store-interlock.sh ${{ matrix.format }}

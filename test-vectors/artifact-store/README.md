@@ -63,3 +63,27 @@ capabilities the backend does not declare:
 
 Corruption detection on read (a tampered row or line) depends on the storage
 format, so each backend tests it in its own suite rather than here.
+
+## Cross-language interlock
+
+`interlock.json` drives the cross-language interlock
+(`.github/scripts/artifact-store-interlock.sh`, run by the
+`artifact-interlock` workflow on every pull request that touches artifact
+code, once per format: `jsonl`, `sqlite`, `mysql`). Each language has a small
+adapter that runs one phase of it against one store and prints one line per
+step: the step number, op and subject, the outcome (`ok` or the error code),
+and for a successful `get` the StorageChecksum and the record's JSONL line with
+artifacts sorted by name.
+
+- `write`: each language writes the sequence to its own store. Every report
+  must equal `interlock-write.txt`, and the JSONL files, or the SQL rows as
+  dumped by `.github/scripts/artifact_store_rows.py`, must be byte-identical.
+- `read`: every language reads every language's store, all pairs. Every report
+  must equal `interlock-read.txt`, and the storage must be unchanged afterwards.
+
+`interlock-write.txt` and `interlock-read.txt` come from the Go adapter
+(`go run ./artifact/internal/interlock`); every other adapter must reproduce
+them exactly. The Go adapter is `go/artifact/internal/interlock`, the
+TypeScript one `ts/scripts/artifact-interlock.mjs`. A pull request that adds a
+language's backend adds its adapter and adds the language to the workflow's
+`LANGUAGES`.
