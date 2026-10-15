@@ -239,10 +239,12 @@ describe("JsonlArtifactStore", () => {
     const s = await store(trusted);
     fs.appendFileSync(filePath, '{"capsule_id":');
     await s.put(record);
+    // The live index points past the inserted newline.
+    expect((await s.get(record.capsuleId)).capsuleId).toBe(record.capsuleId);
+    await s.purge(record.capsuleId);
     const reopened = new JsonlArtifactStore(filePath, "test", [trusted]);
-    expect((await reopened.get(record.capsuleId)).capsuleId).toBe(
-      record.capsuleId,
-    );
+    const got = await reopened.get(record.capsuleId);
+    expect(got.artifacts.every((a) => a.state !== "present")).toBe(true);
     expect(
       fs.readFileSync(filePath, "utf8").startsWith('{"capsule_id":\n'),
     ).toBe(true);
