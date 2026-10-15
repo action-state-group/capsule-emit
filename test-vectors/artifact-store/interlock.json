@@ -1,188 +1,216 @@
 {
   "format": "artifact-store-interlock/v1",
-  "vectors": "vectors.json",
-  "trusted": [
-    "trusted",
-    "rotated"
-  ],
-  "write": [
-    {
-      "op": "put",
-      "record": "basic"
-    },
-    {
-      "op": "put",
-      "record": "basic"
-    },
-    {
-      "op": "put",
-      "record": "basic.reordered"
-    },
-    {
-      "op": "put",
-      "record": "basic.conflict_note"
-    },
-    {
-      "op": "put",
-      "record": "basic.conflict_missing"
-    },
-    {
-      "op": "put",
-      "record": "blank"
-    },
-    {
-      "op": "put",
-      "record": "effect"
-    },
-    {
-      "op": "put",
-      "record": "empty"
-    },
-    {
-      "op": "put",
-      "record": "rotated"
-    },
-    {
-      "op": "put",
-      "record": "untrusted"
-    },
-    {
-      "op": "put",
-      "record": "basic.payload_mismatch"
-    },
-    {
-      "op": "put",
-      "record": "basic.sha_mismatch"
-    },
-    {
-      "op": "put",
-      "record": "basic.input_purged"
-    },
-    {
-      "op": "put",
-      "record": "basic.too_many"
-    },
-    {
-      "op": "put",
-      "record": "basic.unknown_state"
-    },
-    {
-      "op": "put",
-      "record": "effect.response_mismatch"
-    },
-    {
-      "op": "get",
-      "id": "BAD"
-    },
-    {
-      "op": "purge",
-      "id": ""
-    },
-    {
-      "op": "purge",
-      "record": "untrusted"
-    },
-    {
-      "op": "get",
-      "record": "untrusted"
-    },
-    {
-      "op": "purge",
-      "record": "basic"
-    },
-    {
-      "op": "purge",
-      "record": "basic"
-    },
-    {
-      "op": "put",
-      "record": "basic"
-    },
-    {
-      "op": "put",
-      "record": "basic.reordered"
-    },
-    {
-      "op": "purge",
-      "record": "blank"
-    }
-  ],
-  "read": [
-    {
-      "op": "get",
-      "record": "basic"
-    },
-    {
-      "op": "get",
-      "record": "blank"
-    },
-    {
-      "op": "get",
-      "record": "effect"
-    },
-    {
-      "op": "get",
-      "record": "empty"
-    },
-    {
-      "op": "get",
-      "record": "rotated"
-    },
-    {
-      "op": "get",
-      "record": "untrusted"
-    },
-    {
-      "op": "get",
-      "id": "db4bfcaaab4da442f0780e8b9df70f5f63fe7692a33a8c6df23d6899511c4bd0\n"
-    },
-    {
-      "op": "put",
-      "record": "basic"
-    },
-    {
-      "op": "put",
-      "record": "basic.conflict_note"
-    },
-    {
-      "op": "put",
-      "record": "blank"
-    },
-    {
-      "op": "put",
-      "record": "effect"
-    },
-    {
-      "op": "put",
-      "record": "empty"
-    },
-    {
-      "op": "put",
-      "record": "rotated"
-    },
-    {
-      "op": "purge",
-      "record": "empty"
-    },
-    {
-      "op": "get",
-      "record": "empty"
-    },
-    {
-      "op": "purge",
-      "record": "rotated"
-    },
-    {
-      "op": "purge",
-      "record": "rotated"
-    },
-    {
-      "op": "get",
-      "record": "rotated"
-    },
-    {
-      "op": "put",
-      "record": "rotated"
-    }
-  ]
+  "trusted": {
+    "default": [
+      "trusted",
+      "rotated"
+    ],
+    "strict": [
+      "trusted"
+    ]
+  },
+  "phases": {
+    "write": [
+      {
+        "op": "put",
+        "record": "basic"
+      },
+      {
+        "op": "put",
+        "record": "basic"
+      },
+      {
+        "op": "put",
+        "record": "basic.reordered"
+      },
+      {
+        "op": "put",
+        "record": "basic.conflict_note"
+      },
+      {
+        "op": "put",
+        "record": "basic.conflict_missing"
+      },
+      {
+        "op": "put",
+        "record": "blank"
+      },
+      {
+        "op": "put",
+        "record": "effect"
+      },
+      {
+        "op": "put",
+        "record": "empty"
+      },
+      {
+        "op": "put",
+        "record": "rotated"
+      },
+      {
+        "op": "put",
+        "record": "untrusted"
+      },
+      {
+        "op": "put",
+        "record": "basic.payload_mismatch"
+      },
+      {
+        "op": "put",
+        "record": "basic.sha_mismatch"
+      },
+      {
+        "op": "put",
+        "record": "basic.input_purged"
+      },
+      {
+        "op": "put",
+        "record": "basic.too_many"
+      },
+      {
+        "op": "put",
+        "record": "basic.unknown_state"
+      },
+      {
+        "op": "put",
+        "record": "effect.response_mismatch"
+      },
+      {
+        "op": "get",
+        "id": "BAD"
+      },
+      {
+        "op": "purge",
+        "id": ""
+      },
+      {
+        "op": "purge",
+        "record": "untrusted"
+      },
+      {
+        "op": "get",
+        "record": "untrusted"
+      },
+      {
+        "op": "purge",
+        "record": "basic"
+      },
+      {
+        "op": "purge",
+        "record": "basic"
+      },
+      {
+        "op": "put",
+        "record": "basic"
+      },
+      {
+        "op": "put",
+        "record": "basic.reordered"
+      },
+      {
+        "op": "purge",
+        "record": "blank"
+      }
+    ],
+    "read": [
+      {
+        "op": "get",
+        "record": "basic"
+      },
+      {
+        "op": "get",
+        "record": "blank"
+      },
+      {
+        "op": "get",
+        "record": "effect"
+      },
+      {
+        "op": "get",
+        "record": "empty"
+      },
+      {
+        "op": "get",
+        "record": "rotated"
+      },
+      {
+        "op": "get",
+        "record": "untrusted"
+      },
+      {
+        "op": "get",
+        "id": "db4bfcaaab4da442f0780e8b9df70f5f63fe7692a33a8c6df23d6899511c4bd0\n"
+      },
+      {
+        "op": "put",
+        "record": "basic"
+      },
+      {
+        "op": "put",
+        "record": "basic.conflict_note"
+      },
+      {
+        "op": "put",
+        "record": "blank"
+      },
+      {
+        "op": "put",
+        "record": "effect"
+      },
+      {
+        "op": "put",
+        "record": "empty"
+      },
+      {
+        "op": "put",
+        "record": "rotated"
+      },
+      {
+        "op": "purge",
+        "record": "empty"
+      },
+      {
+        "op": "get",
+        "record": "empty"
+      },
+      {
+        "op": "purge",
+        "record": "rotated"
+      },
+      {
+        "op": "purge",
+        "record": "rotated"
+      },
+      {
+        "op": "get",
+        "record": "rotated"
+      },
+      {
+        "op": "put",
+        "record": "rotated"
+      }
+    ],
+    "strict": [
+      {
+        "op": "get",
+        "record": "basic"
+      },
+      {
+        "op": "get",
+        "record": "rotated"
+      },
+      {
+        "op": "purge",
+        "record": "rotated"
+      },
+      {
+        "op": "put",
+        "record": "rotated"
+      },
+      {
+        "op": "put",
+        "record": "effect"
+      }
+    ]
+  }
 }

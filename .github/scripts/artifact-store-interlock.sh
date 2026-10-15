@@ -1,27 +1,35 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # Cross-language artifact store interlock (docs/artifact-store.md), for one
-# storage format: jsonl, sqlite or mysql.
+# storage format: jsonl, sqlite or mysql. LANGUAGES (set by
+# .github/workflows/artifact-interlock.yml) lists the languages that take part.
 #
-# Every language's adapter runs test-vectors/artifact-store/interlock.json:
+# Every language's adapter runs the phases of
+# test-vectors/artifact-store/interlock.json:
 #
 # 1. write: each language writes the sequence (admissions, retries, conflicts,
-#    rejections with their error codes, purges) to its own store. The reports
-#    must be byte-identical to each other and to interlock-write.txt.
-# 2. storage: the JSONL files, or the SQL rows (artifact_store_rows.py), must
-#    be byte-identical across languages.
-# 3. read: every language reads its own copy of every language's store (all
-#    pairs): each record's outcome, StorageChecksum and wire line, then
-#    retries, a conflict and purges of retained content against that data.
-#    All reports must equal interlock-read.txt, every copy must end in the
-#    same state, and existing SQL rows must keep their exact created_at.
+#    rejections with their error codes, purges) to its own store. Every report
+#    must equal interlock-write.txt.
+# 2. storage: the JSONL files, or the SQL schema and rows
+#    (artifact_store_rows.py), must be byte-identical across languages, and
+#    hold the expected number of records.
+# 3. read and strict: every language works on its own copy of every
+#    language's store (all pairs). read reports each record's outcome,
+#    StorageChecksum and JSONL line, then retries, a conflict and purges of
+#    retained content; strict reads with fewer trusted keys. Every report must
+#    equal interlock-read.txt and interlock-strict.txt, every copy must end in
+#    the same state, and existing SQL rows must keep their exact created_at.
 #
 # A language joins by adding its adapter (il_<lang>, and setup_<lang> if it
-# needs a build) below, and its name and toolchain to
-# .github/workflows/artifact-interlock.yml, in the pull request that adds its
-# backend.
-# MySQL needs CAPSULE_STORAGE_TEST_MYSQL=host:port with a disposable
-# capsule_storage_test database.
+# needs a build) below, and its name and toolchain to the workflow, in the pull
+# request that adds its backend.
+#
+# MySQL needs CAPSULE_STORAGE_TEST_MYSQL=host:port of a disposable server where
+# root may create databases; each language gets its own database.
+#
+# INTERLOCK_INJECT=report|storage|read runs a negative control: it corrupts the
+# last language's write report, stored data, or read report, and the run must
+# then fail.
 set -euo pipefail
 
 format=${1:?usage: artifact-store-interlock.sh <jsonl|sqlite|mysql>}
@@ -30,7 +38,9 @@ vectors="$repo/test-vectors/artifact-store"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 python_bin=${PYTHON:-python3}
-read -r -a languages <<< "${LANGUAGES:-go ts}"
+inject=${INTERLOCK_INJECT:-}
+read -r -a languages <<< "${LANGUAGES:?set LANGUAGES, for example LANGUAGES=\"go ts\"}"
+expected_records=5
 
 # Each language: an optional setup_<lang> (build once) and its adapter il_<lang>.
 setup_go() { (cd "$repo/go" && go build -o "$work/go-interlock" ./artifact/internal/interlock); }
@@ -43,18 +53,17 @@ done
 
 rows() { "$python_bin" "$repo/.github/scripts/artifact_store_rows.py" "$@"; }
 
-# store <name> prints "<target> <namespace>" for a store: a file per store for
-# jsonl and sqlite, a namespace per store in the one MySQL database.
-store() {
+# A store is a file per store for jsonl and sqlite, and a database per writing
+# language for mysql. Pair copies live next to their writer's store.
+target() {
   case "$format" in
-    jsonl) echo "$work/$1.jsonl interlock" ;;
-    sqlite) echo "$work/$1.db interlock" ;;
-    mysql) echo "${CAPSULE_STORAGE_TEST_MYSQL:?set CAPSULE_STORAGE_TEST_MYSQL} interlock-$1" ;;
+    jsonl) echo "$work/$1.jsonl" ;;
+    sqlite) echo "$work/$1.db" ;;
+    mysql) echo "${CAPSULE_STORAGE_TEST_MYSQL:?set CAPSULE_STORAGE_TEST_MYSQL}/capsule_interlock_$2" ;;
     *) echo "unknown format $format" >&2; exit 2 ;;
   esac
 }
 
-# dump <target> <namespace>: the store's bytes (jsonl) or normalized rows.
 dump() {
   if test "$format" = jsonl; then cat "$1"; else rows dump "$format" "$1" "$2"; fi
 }
@@ -67,43 +76,68 @@ same() {
   fi
 }
 
-# 1. write: every language writes the sequence to its own store.
+last=${languages[${#languages[@]}-1]}
+first=${languages[0]}
+
+# 1. write
 for lang in "${languages[@]}"; do
-  read -r target ns <<< "$(store "$lang")"
-  if test "$format" = mysql; then rows reset mysql "$target" "$ns"; fi
-  "il_$lang" write "$format" "$target" "$ns" "$vectors" > "$work/write-$lang.txt"
+  store=$(target "$lang" "$lang")
+  if test "$format" = mysql; then rows createdb mysql "$store"; fi
+  "il_$lang" write "$format" "$store" interlock "$vectors" > "$work/write-$lang.txt"
+  if test "$inject" = report && test "$lang" = "$last"; then echo tampered >> "$work/write-$lang.txt"; fi
   same "$vectors/interlock-write.txt" "$work/write-$lang.txt" "$lang write report ($format)"
 done
 echo "write: ${languages[*]} produce the expected report ($format)"
 
-# 2. storage: every language wrote the same bytes or rows.
-first=${languages[0]}
+# 2. storage
+if test "$inject" = storage; then
+  store=$(target "$last" "$last")
+  if test "$format" = jsonl; then printf '\n' >> "$store"; else rows tamper "$format" "$store" interlock; fi
+fi
 for lang in "${languages[@]}"; do
-  dump $(store "$lang") > "$work/storage-$lang.txt"
+  store=$(target "$lang" "$lang")
+  dump "$store" interlock > "$work/storage-$lang.txt"
+  if test "$format" != jsonl; then rows schema "$format" "$store" >> "$work/storage-$lang.txt"; fi
   same "$work/storage-$first.txt" "$work/storage-$lang.txt" "$lang storage differs from $first ($format)"
 done
-echo "storage: ${languages[*]} wrote identical $format data"
+if test "$format" = jsonl; then
+  count=$(grep -c . "$work/storage-$first.txt" || true)
+else
+  count=$(grep -c '^capsule' "$work/storage-$first.txt" || true)
+fi
+if test "$count" != "$expected_records"; then
+  echo "FAIL: $first stored $count records, expected $expected_records ($format)" >&2
+  exit 1
+fi
+echo "storage: ${languages[*]} wrote identical $format data ($count records)"
 
-# 3. read: every reader against a fresh copy of every writer's store (all
-# pairs). The read phase also retries, conflicts and purges retained content,
-# so each pair gets its own copy; every copy must end in the same state, and
-# the SQL rows that existed before must keep their exact created_at.
+# 3. read and strict, on a fresh copy of the writer's store for every pair
 for reader in "${languages[@]}"; do
   for writer in "${languages[@]}"; do
     pair="$reader-$writer"
-    read -r source source_ns <<< "$(store "$writer")"
-    read -r target ns <<< "$(store "pair-$pair")"
+    source=$(target "$writer" "$writer")
     case "$format" in
-      jsonl | sqlite) cp "$source" "$target" ;;
-      mysql) rows reset mysql "$target" "$ns" && rows copy mysql "$target" "$source_ns" "$ns" ;;
+      jsonl | sqlite)
+        copy=$(target "pair-$pair" "$writer")
+        ns=interlock
+        cp "$source" "$copy"
+        ;;
+      mysql)
+        copy=$source
+        ns="pair-$pair"
+        rows copy mysql "$source" interlock "$ns"
+        ;;
     esac
-    if test "$format" != jsonl; then rows created "$format" "$target" "$ns" > "$work/created-before-$pair.txt"; fi
-    "il_$reader" read "$format" "$target" "$ns" "$vectors" > "$work/read-$pair.txt"
-    same "$vectors/interlock-read.txt" "$work/read-$pair.txt" "$reader reading $writer's $format store"
-    dump "$target" "$ns" > "$work/after-$pair.txt"
+    if test "$format" != jsonl; then rows created "$format" "$copy" "$ns" > "$work/created-before-$pair.txt"; fi
+    for phase in read strict; do
+      "il_$reader" "$phase" "$format" "$copy" "$ns" "$vectors" > "$work/$phase-$pair.txt"
+      if test "$inject" = read && test "$pair" = "$last-$first"; then echo tampered >> "$work/$phase-$pair.txt"; fi
+      same "$vectors/interlock-$phase.txt" "$work/$phase-$pair.txt" "$reader $phase on $writer's $format store"
+    done
+    dump "$copy" "$ns" > "$work/after-$pair.txt"
     same "$work/after-$first-$first.txt" "$work/after-$pair.txt" "$reader left $writer's $format store differently from $first"
     if test "$format" != jsonl; then
-      rows created "$format" "$target" "$ns" > "$work/created-after-$pair.txt"
+      rows created "$format" "$copy" "$ns" > "$work/created-after-$pair.txt"
       same "$work/created-before-$pair.txt" "$work/created-after-$pair.txt" "$reader rewrote existing rows in $writer's $format store"
     fi
   done

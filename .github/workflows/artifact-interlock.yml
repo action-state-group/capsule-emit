@@ -3,8 +3,9 @@
 # storage format, every language writes the same sequence and every language
 # reads and verifies every other language's store. Reports, JSONL bytes, SQL
 # rows, StorageChecksums, purge outcomes and error codes must all agree.
-# A language's backend joins by adding itself to LANGUAGES below in the same
-# pull request that adds the backend.
+# LANGUAGES below is the one list of languages that take part: a language's
+# backend joins it, with its adapter and toolchain, in the pull request that
+# adds the backend (see .github/scripts/artifact-store-interlock.sh).
 name: Artifact store interlock
 
 on:
@@ -80,7 +81,16 @@ jobs:
           python-version: "3.12"
       - name: Install
         run: |
-          pip install "PyMySQL>=1.1"
+          pip install "PyMySQL==1.2.3"
           (cd ts && npm ci && npm run build)
       - name: Interlock
         run: .github/scripts/artifact-store-interlock.sh ${{ matrix.format }}
+      # The interlock must fail when a report or the stored data is corrupted.
+      - name: Negative controls
+        run: |
+          for inject in report storage read; do
+            if INTERLOCK_INJECT=$inject .github/scripts/artifact-store-interlock.sh ${{ matrix.format }} > /dev/null 2>&1; then
+              echo "::error::interlock passed with INTERLOCK_INJECT=$inject"
+              exit 1
+            fi
+          done

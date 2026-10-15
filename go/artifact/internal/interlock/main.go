@@ -3,9 +3,9 @@
 // test-vectors/artifact-store/interlock.json against one store and prints one
 // report line per step; every language's adapter must print the same bytes.
 //
-//	go run ./artifact/internal/interlock <write|read> <jsonl|sqlite|mysql> <target> <namespace> <vectors-dir>
+//	go run ./artifact/internal/interlock <phase> <jsonl|sqlite|mysql> <target> <namespace> <vectors-dir>
 //
-// target is a file path for jsonl and sqlite, and host:port for mysql.
+// target is a file path for jsonl and sqlite, and host:port/database for mysql.
 package main
 
 import (
@@ -38,10 +38,11 @@ type step struct {
 	ID     *string `json:"id"`
 }
 
+// plan is interlock.json: steps per phase, and the trusted key names per
+// phase (a phase without its own entry uses "default").
 type plan struct {
-	Trusted []string `json:"trusted"`
-	Write   []step   `json:"write"`
-	Read    []step   `json:"read"`
+	Trusted map[string][]string `json:"trusted"`
+	Phases  map[string][]step   `json:"phases"`
 }
 
 type vectors struct {
@@ -89,7 +90,7 @@ func readJSON(path string, v any) error {
 
 func run(args []string, out io.Writer) error {
 	if len(args) != 5 {
-		return fmt.Errorf("usage: interlock <write|read> <jsonl|sqlite|mysql> <target> <namespace> <vectors-dir>")
+		return fmt.Errorf("usage: interlock <phase> <jsonl|sqlite|mysql> <target> <namespace> <vectors-dir>")
 	}
 	phase, format, target, namespace, dir := args[0], args[1], args[2], args[3], args[4]
 	var p plan
@@ -100,8 +101,16 @@ func run(args []string, out io.Writer) error {
 	if err := readJSON(filepath.Join(dir, "vectors.json"), &v); err != nil {
 		return err
 	}
+	steps, ok := p.Phases[phase]
+	if !ok {
+		return fmt.Errorf("unknown phase %q", phase)
+	}
+	trusted, ok := p.Trusted[phase]
+	if !ok {
+		trusted = p.Trusted["default"]
+	}
 	var keys []ed25519.PublicKey
-	for _, name := range p.Trusted {
+	for _, name := range trusted {
 		key, err := hex.DecodeString(v.Keys[name])
 		if err != nil {
 			return err
@@ -127,7 +136,8 @@ func run(args []string, out io.Writer) error {
 		}
 		store, err = sqlitestore.New(db, namespace, keys)
 	case "mysql":
-		db, openErr := sql.Open("mysql", fmt.Sprintf("root@tcp(%s)/capsule_storage_test", target))
+		addr, database, _ := strings.Cut(target, "/")
+		db, openErr := sql.Open("mysql", fmt.Sprintf("root@tcp(%s)/%s", addr, database))
 		if openErr != nil {
 			return openErr
 		}
@@ -139,14 +149,10 @@ func run(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	steps := p.Read
 	if phase == "write" {
 		if err := store.Init(ctx); err != nil {
 			return err
 		}
-		steps = p.Write
-	} else if phase != "read" {
-		return fmt.Errorf("unknown phase %q", phase)
 	}
 	for i, s := range steps {
 		id := ""
@@ -163,17 +169,23 @@ func run(args []string, out io.Writer) error {
 		}
 		subject := s.Record
 		if s.ID != nil {
-			quoted, _ := json.Marshal(*s.ID)
+			quoted, _ := jsonv2.Marshal(*s.ID)
 			subject = string(quoted)
 		}
 		line := fmt.Sprintf("%d\t%s %s\t", i, s.Op, subject)
 		switch s.Op {
 		case "put":
-			var record artifact.Record
-			if err := jsonv2.Unmarshal(v.Records[s.Record], &record); err != nil {
-				return fmt.Errorf("record %s: %w", s.Record, err)
+			raw, known := v.Records[s.Record]
+			if !known {
+				return fmt.Errorf("unknown record %q", s.Record)
 			}
-			line += outcome(store.Put(ctx, record))
+			// A record the codec cannot represent is invalid input.
+			var record artifact.Record
+			if err := jsonv2.Unmarshal(raw, &record); err != nil {
+				line += "invalid"
+			} else {
+				line += outcome(store.Put(ctx, record))
+			}
 		case "purge":
 			line += outcome(store.Purge(ctx, id))
 		case "get":
