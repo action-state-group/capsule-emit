@@ -36,7 +36,7 @@ use std::sync::Mutex;
 use capsule_emit::ledger::{check_statement_matches, Ledger, LedgerError};
 use cll::log::{
     AppendInput, AppendOutcome, AppendResult, Entry, EntrySource, EntryStore, Error as LogError,
-    ErrorCode, Timestamp,
+    ErrorCode, Timestamp, ENTRY_BYTES, MAX_PORTABLE_INTEGER, MAX_SCAN_LIMIT,
 };
 use serde_json::{Map, Value};
 
@@ -60,9 +60,6 @@ pub const CAPABILITIES: &[(&str, bool)] = &[
     ("multiple-writers", false),
 ];
 
-const ENTRY_BYTES: usize = 32;
-const MAX_SCAN_LIMIT: usize = 1000;
-const MAX_PORTABLE_INTEGER: u64 = 9_007_199_254_740_991;
 const ENVELOPE_MEMBERS: [&str; 2] = ["signature", "key_id"];
 
 struct State {
@@ -435,7 +432,12 @@ impl Store for LegacyLedger {
                 && a.binding.is_empty()
                 && a.state == RetentionState::Present
                 && a.content.is_some();
-            if !is_statement || statement.is_some() {
+            if statement.is_some() && a.name == STATEMENT {
+                return Err(ArtifactError::Invalid(format!(
+                    "duplicate artifact {STATEMENT}"
+                )));
+            }
+            if !is_statement {
                 return Err(ArtifactError::Unsupported(
                     "the legacy ledger keeps no originals besides its signed statement".into(),
                 ));

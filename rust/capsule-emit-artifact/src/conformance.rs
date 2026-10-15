@@ -341,15 +341,17 @@ fn run_case<B>(
 /// `purge` when it purges with any expected outcome but `invalid`.
 pub fn needs(v: &Vectors, case: &Case) -> Vec<String> {
     let mut required = case.requires.clone();
-    let declares_artifacts = |name: &str| {
-        v.records[name]["artifacts"]
-            .as_array()
+    // An unknown record is left to the case itself, which reports it.
+    let declares_artifacts = |name: Option<&str>| {
+        name.and_then(|n| v.records.get(n))
+            .and_then(|r| r.get("artifacts"))
+            .and_then(serde_json::Value::as_array)
             .is_some_and(|a| !a.is_empty())
     };
     if case
         .steps
         .iter()
-        .any(|s| s.op == "put" && declares_artifacts(s.record.as_deref().unwrap_or_default()))
+        .any(|s| s.op == "put" && declares_artifacts(s.record.as_deref()))
     {
         required.push("originals".into());
     }

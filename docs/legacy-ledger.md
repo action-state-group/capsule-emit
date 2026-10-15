@@ -35,10 +35,12 @@ each line:
 
 `appendedAt` is the line's top-level `timestamp` (capsules, `log()` entries,
 disclosure records), else its `checkpoint.timestamp` (Python checkpoint
-stamps), else
-the previous entry's `appendedAt`, and the Unix epoch for a first line with
-none. Times are read as RFC 3339 instants, where a missing offset means UTC, and
-truncated to whole milliseconds.
+stamps), else the previous entry's `appendedAt`, and the Unix epoch for a first
+line with none. Times are read as RFC 3339 instants, where a missing offset
+means UTC, and truncated to whole milliseconds. A time field that is
+unparseable or outside the portable range counts as absent rather than
+`corrupt`, so a historical ledger never becomes unreadable over a time it was
+never required to carry.
 
 ### The contract exception: repeated digests
 
@@ -141,7 +143,9 @@ line `invalid`.
 
 ## Capability limits
 
-Each limit is reported as a capability and refused with `unsupported`:
+Each limit is reported as a capability and refused with `unsupported`, after
+the call's arguments are validated: `put` checks the record as it would for
+storage (identity, capsule, envelope, signer) before it refuses an original.
 
 | Capability | Legacy backend |
 |---|---|

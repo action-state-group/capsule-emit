@@ -132,15 +132,16 @@ fn without_envelope(line: &Value) -> Vec<u8> {
 
 // -- declared conformance subsets ---------------------------------------------
 
-fn leaked_dir() -> PathBuf {
-    tempfile::tempdir().unwrap().keep()
-}
-
 #[test]
 fn cll_conformance_subset() {
+    // One directory per case, all removed with `root` when the test ends.
+    let root = tempfile::tempdir().unwrap();
+    let mut next = 0;
     let report = cll::log::conformance::run(
         cll::log::conformance::Config::new(|| {
-            LegacyLedger::new(leaked_dir(), "ledger", trusted()).unwrap()
+            next += 1;
+            let dir: PathBuf = root.path().join(next.to_string());
+            LegacyLedger::new(dir, "ledger", trusted()).unwrap()
         })
         .with_reopen(|current: LegacyLedger| {
             current.close();
@@ -379,6 +380,11 @@ fn capability_limits_are_unsupported() {
         store.put(&record),
         Err(ArtifactError::Unsupported(_))
     ));
+    record.artifacts.truncate(1);
+    record.artifacts.push(record.artifacts[0].clone());
+    assert!(
+        matches!(store.put(&record), Err(ArtifactError::Invalid(ref m)) if m.contains("duplicate"))
+    );
     record.artifacts.clear();
     assert!(matches!(store.put(&record), Err(ArtifactError::Invalid(_))));
     assert!(CAPABILITIES.iter().all(|(_, offered)| !offered));
@@ -583,4 +589,15 @@ fn a_concurrent_close_reports_closed() {
     for reader in readers {
         reader.join().unwrap();
     }
+    // Closed comes before argument validation on every CLL operation.
+    let input = AppendInput {
+        value: vec![1; 31],
+        appended_at: Timestamp::now(),
+    };
+    assert_eq!(store.append(&input).unwrap_err().code(), ErrorCode::Closed);
+    assert_eq!(store.get_entry(&[]).unwrap_err().code(), ErrorCode::Closed);
+    assert_eq!(
+        store.scan_entries(0, 0).unwrap_err().code(),
+        ErrorCode::Closed
+    );
 }
