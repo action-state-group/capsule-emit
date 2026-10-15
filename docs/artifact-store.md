@@ -138,8 +138,11 @@ bindings stay, so the storage checksum is unchanged.
 - `purge` needs only the record's existence in the namespace. It does not verify
   integrity or the signer, so records that fail verification or the storage
   checksum, and records whose signer is no longer trusted, can still have their
-  originals erased. A `jsonl` line that no longer decodes as a record cannot be
-  rewritten, so purging it returns `corrupt`. Authorize erasure
+  originals erased. Two `jsonl` exceptions: a line whose `capsule_id` can still
+  be read but which no longer decodes as a record cannot be rewritten, so purge
+  returns `corrupt`; a line too damaged to yield its `capsule_id` is not indexed
+  when the file is opened, so `get` and `purge` report `not_found` and its bytes
+  stay in the file until removed by hand. Authorize erasure
   separately from the signer allowlist. `get` keeps failing closed afterwards.
 - A purged original cannot come back: a byte-identical `put` after `purge`
   returns `purged`, and a different record returns `conflict`.
