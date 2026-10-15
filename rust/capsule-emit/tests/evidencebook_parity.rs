@@ -1,9 +1,10 @@
-//! Byte parity across the move of the checkpoint substrate into the
-//! `evidencebook` crate.
+//! Byte parity of the checkpoint path across its substrate moves: into the
+//! `evidencebook` crate, and back onto `checkpointed-local-log` directly.
 //!
 //! `tests/fixtures/evidencebook_parity.json` was written by this test run
-//! against the producer BEFORE the move (its own MMR and checkpoint code
-//! over raw `cll`). Its inputs, including the `compute_attestation`
+//! against the producer BEFORE the first move (its own MMR and checkpoint code
+//! over raw `cll`); its `padded` member was written over the `evidencebook`
+//! substrate, before the move back onto `cll`. Its inputs, including the `compute_attestation`
 //! extension members that producer committed, are
 //! `tests/fixtures/evidencebook_parity_inputs.json`, so the same ids also
 //! prove the generic seal reproduces that producer's bytes. The test seals the same capsules with a
@@ -24,28 +25,42 @@
 //! just that some signature verifies), and each checkpoint's persisted
 //! `checkpoints.jsonl` line carries that same record plus a COSE wire form
 //! that verifies offline and decodes to the record's fields. Not covered:
-//! witness registration (no witness URLs are configured) and padding (off);
-//! `tests/checkpoint_padding.rs` covers padding.
+//! witness registration (no witness URLs are configured).
+//!
+//! The `padded` scenario cuts the same records with padding on, through a
+//! [`PaddingSink`] that writes padding records with fixed store nonces (the
+//! production sink's nonces are fresh, so its ids cannot be pinned), and pins
+//! the same values: every line's `capsule_id`, padding included, both
+//! checkpoints and every inclusion proof. `tests/checkpoint_padding.rs` covers
+//! the padding policy itself.
 //!
 //! Regenerate only on purpose, and only from a tree whose checkpoint path is
 //! known to be the reference:
 //! `EVIDENCEBOOK_PARITY_REGENERATE=1 cargo test --test evidencebook_parity`.
 
 use capsule_emit::anchor::AnchorClient;
-use capsule_emit::capsule::{payload_bytes, seal, CapsuleInput, ChainLink};
+use capsule_emit::capsule::{
+    attach_producer_envelope, payload_bytes, seal, CapsuleInput, ChainLink, STORE_NONCE_FIELD,
+};
 use capsule_emit::checkpoint::{
-    inclusion_proof_json, CheckpointCadenceConfig, CheckpointRecord, CheckpointState,
+    inclusion_proof_json, CheckpointCadenceConfig, CheckpointRecord, CheckpointState, PaddingSink,
 };
 use capsule_emit::cose::{build_signed_statement, SignedStatementInput};
+use capsule_emit::jcs::compute_capsule_id;
 use capsule_emit::ledger::Ledger;
+use capsule_emit::padding::{PADDING_CONTENT_TYPE, PADDING_EPISTEMIC_TYPE, RECORD_TYPE_PADDING};
 use ed25519_dalek::{Signer, SigningKey};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 const FIXED_TIMESTAMP: &str = "2026-09-27T00:00:00Z";
 const LOG_ID: &str = "evidencebook-parity-log";
 const FIRST_CUT: usize = 4;
 const TOTAL: usize = 7;
+/// The padded scenario's bucket: its first cut (4 records) pads one record,
+/// its second (8 lines) pads two.
+const PAD_BUCKET: u64 = 5;
 
 fn fixture_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/evidencebook_parity.json")
@@ -172,26 +187,82 @@ fn pinned(cp: &CheckpointRecord, key: &SigningKey) -> Value {
     })
 }
 
-fn observe() -> Value {
+/// Pads `capsules.jsonl` with padding records whose store nonces count up
+/// from a fixed base, so their ids are reproducible.
+struct FixedNoncePadder {
+    dir: PathBuf,
+    key: SigningKey,
+    next_nonce: Mutex<u64>,
+}
+
+impl PaddingSink for FixedNoncePadder {
+    fn pad_to_bucket(&self, bucket: u64) -> Result<u64, String> {
+        let (mut ledger, _) = Ledger::open(&self.dir).map_err(|e| e.to_string())?;
+        let mut next = self.next_nonce.lock().unwrap();
+        while !(ledger.lines().len() as u64).is_multiple_of(bucket) {
+            let mut body = Map::new();
+            body.insert("record_type".into(), json!(RECORD_TYPE_PADDING));
+            body.insert("epistemic_type".into(), json!(PADDING_EPISTEMIC_TYPE));
+            body.insert(STORE_NONCE_FIELD.into(), json!(format!("{:064x}", *next)));
+            *next += 1;
+            let capsule_id = compute_capsule_id(&Value::Object(body.clone())).unwrap();
+            let mut record = Map::new();
+            record.insert("capsule_id".into(), json!(capsule_id));
+            record.extend(body);
+            let mut record = Value::Object(record);
+            attach_producer_envelope(&mut record, &self.key).unwrap();
+            let statement = build_signed_statement(
+                &SignedStatementInput {
+                    payload: &payload_bytes(&record),
+                    issuer: "evidencebook-parity-node",
+                    subject: &capsule_id,
+                    content_type: PADDING_CONTENT_TYPE,
+                },
+                &self.key,
+            );
+            ledger
+                .append_padding(&record, &statement)
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(ledger.lines().len() as u64)
+    }
+}
+
+/// Load the state over `dir`, with the fixed-nonce padder when `pad_bucket`
+/// is set.
+fn load(dir: &Path, key: &SigningKey, pad_bucket: u64, nonce_base: u64) -> CheckpointState {
+    let cfg = CheckpointCadenceConfig {
+        pad_bucket,
+        ..CheckpointCadenceConfig::default()
+    };
+    let (mut state, _) = CheckpointState::load(dir, LOG_ID, cfg).unwrap();
+    if pad_bucket > 0 {
+        state.set_padding_sink(Box::new(FixedNoncePadder {
+            dir: dir.to_path_buf(),
+            key: key.clone(),
+            next_nonce: Mutex::new(nonce_base),
+        }));
+    }
+    state
+}
+
+fn observe(pad_bucket: u64) -> Value {
     let dir = tempfile::tempdir().unwrap();
     let key = SigningKey::from_bytes(&[7u8; 32]);
     let anchor = AnchorClient::new("http://127.0.0.1:1"); // no witness urls: never dialled
-    let cfg = CheckpointCadenceConfig {
-        pad_bucket: 0,
-        ..CheckpointCadenceConfig::default()
-    };
 
     let mut parent = None;
     append(dir.path(), &key, 0, FIRST_CUT, &mut parent);
-    let (mut state, _) = CheckpointState::load(dir.path(), LOG_ID, cfg.clone()).unwrap();
+    let mut state = load(dir.path(), &key, pad_bucket, 0x9ad_0000);
     let first = state.reconnect(&key, &anchor).unwrap().expect("first cut");
+    let first_lines = state.leaf_count();
     drop(state);
 
     append(dir.path(), &key, FIRST_CUT, TOTAL, &mut parent);
     // Reload so the second cut also exercises resuming the durable node
     // store and the previous checkpoint from disk.
-    let (mut state, report) = CheckpointState::load(dir.path(), LOG_ID, cfg).unwrap();
-    assert_eq!(report.leaves_indexed_this_load, (TOTAL - FIRST_CUT) as u64);
+    let mut state = load(dir.path(), &key, pad_bucket, 0x9ad_1000);
+    assert_eq!(state.leaf_count(), first_lines + (TOTAL - FIRST_CUT) as u64);
     let second = state.reconnect(&key, &anchor).unwrap().expect("second cut");
 
     // The persisted lines: the same records, each with a COSE wire form that
@@ -254,7 +325,19 @@ fn observe() -> Value {
 
 #[test]
 fn checkpoint_substrate_output_is_byte_identical_to_the_pre_move_fixture() {
-    let observed = observe();
+    let mut observed = observe(0);
+    let padded = observe(PAD_BUCKET);
+    let padding = padded["capsule_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|id| !observed["capsule_ids"].as_array().unwrap().contains(id))
+        .count();
+    assert_eq!(
+        padding, 3,
+        "the padded scenario writes three padding records"
+    );
+    observed["padded"] = padded;
     if std::env::var_os("EVIDENCEBOOK_PARITY_REGENERATE").is_some() {
         let mut text = serde_json::to_string_pretty(&observed).unwrap();
         text.push('\n');
@@ -271,4 +354,5 @@ fn checkpoint_substrate_output_is_byte_identical_to_the_pre_move_fixture() {
         observed["inclusion_under_second"],
         expected["inclusion_under_second"]
     );
+    assert_eq!(observed["padded"], expected["padded"]);
 }
