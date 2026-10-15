@@ -269,8 +269,7 @@ factory for the backend under test:
 | Python | `capsule_emit.artifact.conformance.run(harness)` |
 | Rust | `capsule_emit_artifact::conformance::run(&harness)` |
 
-The Rust runner and interfaces land with its backend (capsule-emit#308); until
-then Go, TypeScript and Python run the suite.
+All four languages run the suite.
 
 The `artifact-interlock` workflow also runs a cross-language interlock on every
 pull request that touches artifact code: for each format, every language writes

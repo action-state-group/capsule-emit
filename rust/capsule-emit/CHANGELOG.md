@@ -7,11 +7,12 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
-- A test now states that `-0` in a record is refused as a float only when
-  serde_json parses it as one. In a build that also turns on serde_json's
-  `arbitrary_precision` feature (any crate can; `capsule-emit-artifact` does
-  through `agent-action-capsule`), serde_json reads `-0` as the integer 0, as
-  the Go and Python references do, and the structure check accepts it.
+- Behavior depends on the build's serde_json features: on its own, the
+  structure check refuses `-0` in a record as a float. In a build that also
+  turns on serde_json's `arbitrary_precision` feature (any crate can;
+  `capsule-emit-artifact` does through `agent-action-capsule`), serde_json
+  reads `-0` as the integer 0, as the Go and Python references do, and the
+  check accepts it. CI tests this crate both alone and in the workspace build.
 
 ## 0.0.7
 

@@ -23,10 +23,15 @@ npm ci && npm run format:check && npm run lint && npm run typecheck && npm test 
 # Go (go/): see go/CLAUDE.md
 go vet ./... && go test ./...
 
-# Rust (rust/, a workspace holding the capsule-emit crate)
+# Rust (rust/, a workspace of capsule-emit and capsule-emit-artifact). The
+# artifact store's sqlite and mysql backends build only with their features;
+# its MySQL tests need CAPSULE_STORAGE_TEST_MYSQL=127.0.0.1:3306.
 cargo fmt --all --check
 cargo clippy --locked --all-targets -- -D warnings
+cargo clippy --locked -p capsule-emit-artifact --all-targets --all-features -- -D warnings
 cargo test --locked
+cargo test --locked -p capsule-emit   # alone, without the workspace's serde_json features
+cargo test --locked -p capsule-emit-artifact --all-features
 ```
 
 CI also runs hostname, leak and neutrality lints over public material, and
@@ -39,7 +44,7 @@ checks pinned vector sets against their `SHA256SUMS`.
 | `python/` | PyPI `capsule-emit` |
 | `ts/` | npm `@action-state-group/capsule-emit` |
 | `go/` | `github.com/action-state-group/capsule-emit/go` |
-| `rust/` | crate `capsule-emit` |
+| `rust/` | crates `capsule-emit` and `capsule-emit-artifact` |
 | `docs/`, `examples/`, `skills/`, `flows/` | guides, runnable examples and the agent skill |
 | `test-vectors/`, `commitment-conformance-vectors/` | pinned vector sets the tests read |
 

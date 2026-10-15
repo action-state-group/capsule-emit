@@ -35,7 +35,7 @@ fn decode_rejects_malformed_lines_as_corrupt() {
         "null",
         r#"{"capsule_id":"a","capsule":"!!","producer_envelope":"AA==","artifacts":[]}"#,
         r#"{"capsule_id":"a","capsule":"e30=","producer_envelope":"AA==","artifacts":[{"name":"x"}]}"#,
-        r#"{"capsule_id":"a","capsule":"e30=","producer_envelope":"AA==","artifacts":[{"name":"x","state":"gone"}]}"#,
+        r#"{"capsule_id":"a","capsule":"!!","producer_envelope":"AA==","artifacts":[{"name":"x","state":"gone"}]}"#,
     ] {
         assert_eq!(
             decode_record(line.as_bytes()).unwrap_err().code(),
@@ -43,6 +43,42 @@ fn decode_rejects_malformed_lines_as_corrupt() {
             "{line}"
         );
     }
+    // A well-formed record whose state the codec cannot represent is invalid,
+    // as in Go, TypeScript and Python, which carry the state as a string.
+    let unknown = r#"{"capsule_id":"a","capsule":"e30=","producer_envelope":"AA==","artifacts":[{"name":"x","state":"gone"}]}"#;
+    assert_eq!(
+        decode_record(unknown.as_bytes()).unwrap_err().code(),
+        Some("invalid")
+    );
+}
+
+#[test]
+fn prepare_enforces_the_size_limits() {
+    let v = vectors();
+    let mut big = v.record("basic").unwrap();
+    big.producer_envelope = vec![0; 65_536];
+    assert_eq!(prepare(&big).unwrap_err().code(), Some("invalid"));
+    let mut big = v.record("basic").unwrap();
+    big.artifacts[2].content = Some(vec![b'x'; 8 * 1024 * 1024]);
+    assert_eq!(prepare(&big).unwrap_err().code(), Some("invalid"));
+    let mut fits = v.record("basic").unwrap();
+    fits.producer_envelope = vec![0; 65_535];
+    assert!(prepare(&fits).is_ok());
+}
+
+#[test]
+fn jsonl_get_of_an_unknown_state_is_invalid() {
+    let v = vectors();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.jsonl");
+    let line = v.lines.iter().find(|l| l.record == "basic.stored").unwrap();
+    let damaged = line
+        .line
+        .replacen(r#""state":"present""#, r#""state":"archived""#, 1);
+    std::fs::write(&path, format!("{damaged}\n")).unwrap();
+    let store = JsonlStore::new(&path, "ns", trusted(&v)).unwrap();
+    let id = v.record("basic").unwrap().capsule_id;
+    assert_eq!(store.get(&id).unwrap_err().code(), Some("invalid"));
 }
 
 #[test]
@@ -265,7 +301,7 @@ fn mysql_transactions_and_tampering() {
     use capsule_emit_artifact::mysql::MysqlStore;
     use capsule_emit_artifact::TxStore;
     use mysql::prelude::Queryable;
-    let Ok(addr) = std::env::var("CAPSULE_STORAGE_TEST_MYSQL") else {
+    let Some(addr) = mysql_addr() else {
         return;
     };
     let v = vectors();
@@ -306,7 +342,7 @@ fn mysql_locked_read_blocks_purge_and_duplicate_puts_reconcile() {
     use mysql::prelude::Queryable;
     use std::sync::{mpsc, Arc};
     use std::time::Duration;
-    let Ok(addr) = std::env::var("CAPSULE_STORAGE_TEST_MYSQL") else {
+    let Some(addr) = mysql_addr() else {
         return;
     };
     let v = vectors();
@@ -368,4 +404,17 @@ fn mysql_locked_read_blocks_purge_and_duplicate_puts_reconcile() {
         ),
         None
     );
+}
+
+/// The disposable MySQL server, or None to skip; under CI a missing variable
+/// fails instead, so a renamed variable cannot silently drop MySQL coverage.
+#[cfg(feature = "mysql")]
+fn mysql_addr() -> Option<String> {
+    match std::env::var("CAPSULE_STORAGE_TEST_MYSQL") {
+        Ok(addr) => Some(addr),
+        Err(_) if std::env::var_os("CI").is_some() => {
+            panic!("CI runs the MySQL tests: set CAPSULE_STORAGE_TEST_MYSQL")
+        }
+        Err(_) => None,
+    }
 }

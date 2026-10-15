@@ -455,7 +455,40 @@ pub fn encode_record(record: &Record) -> String {
     serde_json::to_string(record).expect("record serializes")
 }
 
-/// Parses a JSONL wire line; any failure is [`ArtifactError::Corrupt`].
+/// Parses a JSONL wire line. A line that is not a record is
+/// [`ArtifactError::Corrupt`]; a record whose retention state this codec
+/// cannot represent is [`ArtifactError::Invalid`], as the contract and the
+/// other languages (which carry the state as a string) report it.
 pub fn decode_record(line: &[u8]) -> Result<Record> {
-    serde_json::from_slice(line).map_err(|e| ArtifactError::Corrupt(format!("parse failed: {e}")))
+    serde_json::from_slice(line).map_err(|e| {
+        // The same record with the state as any string: if that parses, the
+        // state was the only problem.
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct AnyState {
+            name: String,
+            #[serde(default)]
+            binding: String,
+            #[serde(default, deserialize_with = "de_opt_b64")]
+            content: Option<Vec<u8>>,
+            state: String,
+            #[serde(default)]
+            content_sha256: String,
+        }
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct Lenient {
+            capsule_id: String,
+            #[serde(deserialize_with = "de_b64")]
+            capsule: Vec<u8>,
+            #[serde(deserialize_with = "de_b64")]
+            producer_envelope: Vec<u8>,
+            artifacts: Vec<AnyState>,
+        }
+        if serde_json::from_slice::<Lenient>(line).is_ok() {
+            ArtifactError::Invalid("retention state".into())
+        } else {
+            ArtifactError::Corrupt(format!("parse failed: {e}"))
+        }
+    })
 }

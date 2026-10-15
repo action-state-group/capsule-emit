@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -31,12 +31,6 @@ pub struct JsonlStore {
     index: Mutex<HashMap<String, Span>>,
 }
 
-struct Line {
-    offset: usize,
-    len: usize,
-    id: Option<String>,
-}
-
 fn peek_id(line: &[u8]) -> Option<String> {
     #[derive(serde::Deserialize)]
     struct Peek {
@@ -48,28 +42,43 @@ fn peek_id(line: &[u8]) -> Option<String> {
         .filter(|id| !id.is_empty())
 }
 
-/// Splits complete lines; a trailing partial line is not returned.
-fn scan(data: &[u8]) -> Vec<Line> {
-    let mut lines = Vec::new();
-    let mut offset = 0;
-    while let Some(end) = data[offset..].iter().position(|&b| b == b'\n') {
-        let line = &data[offset..offset + end];
-        let id = if line.is_empty() { None } else { peek_id(line) };
-        lines.push(Line {
-            offset,
-            len: end,
-            id,
-        });
-        offset += end + 1;
-    }
-    lines
+/// One line from a streaming scan: a complete line (without its `\n`) with
+/// its offset, or a torn last line (no `\n`), which is never indexed.
+enum Scanned {
+    Line {
+        offset: u64,
+        bytes: Vec<u8>,
+        id: Option<String>,
+    },
+    Torn(Vec<u8>),
 }
 
-fn index_of(lines: &[Line]) -> HashMap<String, Span> {
-    lines
-        .iter()
-        .filter_map(|l| l.id.clone().map(|id| (id, (l.offset as u64, l.len))))
-        .collect()
+/// Streams `reader` line by line, holding one line in memory at a time.
+fn scan_lines(
+    reader: impl Read,
+    mut each: impl FnMut(Scanned) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let mut reader = BufReader::new(reader);
+    let mut offset = 0u64;
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        let n = reader.read_until(b'\n', &mut buf)?;
+        if n == 0 {
+            return Ok(());
+        }
+        if buf.last() != Some(&b'\n') {
+            return each(Scanned::Torn(std::mem::take(&mut buf)));
+        }
+        buf.pop();
+        let id = if buf.is_empty() { None } else { peek_id(&buf) };
+        each(Scanned::Line {
+            offset,
+            bytes: std::mem::take(&mut buf),
+            id,
+        })?;
+        offset += n as u64;
+    }
 }
 
 impl JsonlStore {
@@ -81,11 +90,23 @@ impl JsonlStore {
     ) -> Result<Self> {
         let trusted = check_config(namespace, trusted)?;
         let path = path.as_ref().to_path_buf();
-        let index = match fs::read(&path) {
-            Ok(data) => index_of(&scan(&data)),
-            Err(e) if e.kind() == ErrorKind::NotFound => HashMap::new(),
+        let mut index = HashMap::new();
+        match File::open(&path) {
+            Ok(file) => scan_lines(file, |line| {
+                if let Scanned::Line {
+                    offset,
+                    bytes,
+                    id: Some(id),
+                } = line
+                {
+                    index.insert(id, (offset, bytes.len()));
+                }
+                Ok(())
+            })
+            .map_err(ArtifactError::storage)?,
+            Err(e) if e.kind() == ErrorKind::NotFound => {}
             Err(e) => return Err(ArtifactError::storage(e)),
-        };
+        }
         Ok(JsonlStore {
             path,
             namespace: namespace.to_string(),
@@ -122,49 +143,57 @@ impl JsonlStore {
         id: &str,
         replacement: &[u8],
     ) -> Result<()> {
-        let data = fs::read(&self.path).map_err(ArtifactError::storage)?;
-        let permissions = fs::metadata(&self.path)
+        let source = File::open(&self.path).map_err(ArtifactError::storage)?;
+        let permissions = source
+            .metadata()
             .map_err(ArtifactError::storage)?
             .permissions();
-        let lines = scan(&data);
-        if !lines.iter().any(|l| l.id.as_deref() == Some(id)) {
-            return Err(ArtifactError::Corrupt(
-                "target line vanished during rewrite".into(),
-            ));
-        }
-        let mut out = Vec::with_capacity(data.len());
-        let mut new_index = HashMap::new();
-        for line in &lines {
-            let bytes = if line.id.as_deref() == Some(id) {
-                replacement
-            } else {
-                &data[line.offset..line.offset + line.len]
-            };
-            if let Some(line_id) = &line.id {
-                new_index.insert(line_id.clone(), (out.len() as u64, bytes.len()));
-            }
-            out.extend_from_slice(bytes);
-            out.push(b'\n');
-        }
-        // Keep a torn trailing line (no "\n") byte for byte, still unindexed.
-        let tail = lines.last().map_or(0, |l| l.offset + l.len + 1);
-        out.extend_from_slice(&data[tail..]);
-
         let dir = self
             .path
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        let mut tmp = tempfile_in(dir)?;
+        let (tmp_path, tmp) = tempfile_in(dir)?;
+        let mut new_index = HashMap::new();
+        let mut found = false;
         let result = (|| {
-            fs::set_permissions(&tmp.0, permissions)?;
-            tmp.1.write_all(&out)?;
-            tmp.1.sync_all()?;
-            fs::rename(&tmp.0, &self.path)
+            fs::set_permissions(&tmp_path, permissions)?;
+            let mut out = BufWriter::new(tmp);
+            let mut position = 0u64;
+            scan_lines(source, |line| match line {
+                // Keep a torn last line byte for byte, still unindexed.
+                Scanned::Torn(bytes) => out.write_all(&bytes),
+                Scanned::Line {
+                    bytes, id: line_id, ..
+                } => {
+                    let bytes = if line_id.as_deref() == Some(id) {
+                        found = true;
+                        replacement.to_vec()
+                    } else {
+                        bytes
+                    };
+                    if let Some(line_id) = line_id {
+                        new_index.insert(line_id, (position, bytes.len()));
+                    }
+                    out.write_all(&bytes)?;
+                    out.write_all(b"\n")?;
+                    position += bytes.len() as u64 + 1;
+                    Ok(())
+                }
+            })?;
+            let file = out.into_inner().map_err(|e| e.into_error())?;
+            file.sync_all()
         })();
-        if let Err(e) = result {
-            let _ = fs::remove_file(&tmp.0);
-            return Err(ArtifactError::storage(e));
+        let outcome = match result {
+            Err(e) => Err(ArtifactError::storage(e)),
+            Ok(()) if !found => Err(ArtifactError::Corrupt(
+                "target line vanished during rewrite".into(),
+            )),
+            Ok(()) => fs::rename(&tmp_path, &self.path).map_err(ArtifactError::storage),
+        };
+        if outcome.is_err() {
+            let _ = fs::remove_file(&tmp_path);
+            return outcome;
         }
         *index = new_index;
         Ok(())

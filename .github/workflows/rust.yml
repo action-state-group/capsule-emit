@@ -66,6 +66,12 @@ jobs:
       - name: Tests (includes the pinned conformance vectors and the byte-parity fixture)
         run: cargo test --locked
 
+      # In the workspace build, capsule-emit-artifact's agent-action-capsule
+      # turns on serde_json's arbitrary_precision for every crate. Test
+      # capsule-emit as published, without it.
+      - name: Tests, capsule-emit alone
+        run: cargo test --locked -p capsule-emit
+
   # The artifact store with every backend, including MySQL against a real
   # MySQL 8.4, through the shared conformance suite.
   artifact-store:

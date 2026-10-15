@@ -128,7 +128,7 @@ impl MysqlStore {
                 content: bytes(content)?,
                 content_sha256: text(sha)?,
                 state: RetentionState::parse(&state)
-                    .ok_or_else(|| ArtifactError::Corrupt("retention_state".into()))?,
+                    .ok_or_else(|| ArtifactError::Invalid("retention state".into()))?,
             });
         }
         let record = Record {

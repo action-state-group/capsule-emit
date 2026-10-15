@@ -92,9 +92,16 @@ fn sqlite_conforms() {
 fn mysql_conforms() {
     use capsule_emit_artifact::mysql::MysqlStore;
     use mysql::prelude::Queryable;
-    let Ok(addr) = std::env::var("CAPSULE_STORAGE_TEST_MYSQL") else {
-        eprintln!("skipped: set CAPSULE_STORAGE_TEST_MYSQL for MySQL integration tests");
-        return;
+    let addr = match std::env::var("CAPSULE_STORAGE_TEST_MYSQL") {
+        Ok(addr) => addr,
+        // Under CI a missing variable fails, so MySQL coverage cannot vanish.
+        Err(_) if std::env::var_os("CI").is_some() => {
+            panic!("CI runs the MySQL tests: set CAPSULE_STORAGE_TEST_MYSQL")
+        }
+        Err(_) => {
+            eprintln!("skipped: set CAPSULE_STORAGE_TEST_MYSQL for MySQL integration tests");
+            return;
+        }
     };
     assert!(
         addr.starts_with("127.0.0.1:"),
