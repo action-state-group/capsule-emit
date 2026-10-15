@@ -34,7 +34,6 @@ from cryptography.hazmat.primitives.serialization import (  # noqa: E402
 )
 
 from capsule_emit.evidence_file import check_evidence_file  # noqa: E402
-from capsule_emit.evidence_report import render_report_html  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 VECTOR = ROOT / "test-vectors" / "evidence-file" / "two-node-provider.json"
@@ -149,7 +148,7 @@ def test_receipts_are_not_checked_against_an_unsigned_checkpoint():
     assert check.witness.findings == ("checkpoint_unverified",)
 
 
-def test_the_cli_and_the_report_show_the_receipt(tmp_path):
+def test_the_cli_shows_the_receipt(tmp_path):
     path = tmp_path / "file.json"
     path.write_text(json.dumps(_witnessed()))
     directory = tmp_path / "witnesses.json"
@@ -159,6 +158,3 @@ def test_the_cli_and_the_report_show_the_receipt(tmp_path):
     assert f"{WITNESS}: ok" in out.stdout
     out = subprocess.run([*verify, "--json"], capture_output=True, text=True)
     assert json.loads(out.stdout)["witnesses"]["status"] == "withheld"
-    check = check_evidence_file(_witnessed(), witness_directory=_directory())
-    page = render_report_html(_witnessed(), check, source=path.name)
-    assert "witness.example: verified" in page

@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``capsule-emit verify --bundle`` and ``capsule-emit report``: an evidence
+"""``capsule-emit verify --bundle``: an evidence
 file (``evidence-bundle/v2``) checked offline, end to end, from capsules this
 package seals and a checkpoint signed by the same key."""
 from __future__ import annotations
 
 import base64
 import json
-import re
 
 import pytest
 
@@ -30,7 +29,6 @@ from capsule_emit import (  # noqa: E402
 )
 from capsule_emit.cli import main  # noqa: E402
 from capsule_emit.evidence_file import check_evidence_file  # noqa: E402
-from capsule_emit.evidence_report import render_report_html  # noqa: E402
 
 
 def _proof(p) -> dict:
@@ -145,8 +143,6 @@ def test_a_checkpoint_field_that_differs_from_the_signed_one_fails(tmp_path, fie
     assert f"checkpoint_field_mismatch:{field}" in checkpoint.findings
     # Nothing is read from a copy that failed: no signer claim, no log facts.
     assert check.signer_matches_checkpoint is None and check.checkpoint == {}
-    page = render_report_html(bundle, check)
-    assert "does not match its signature" in page and "signed the checkpoint" not in page
 
 
 def test_a_checkpoint_signature_that_does_not_check_fails(tmp_path):
@@ -235,30 +231,6 @@ def test_cli_verify_bundle_exit_codes_and_json(tmp_path, capsys):
     not_json = tmp_path / "x.json"
     not_json.write_text("{")
     assert main(["verify", "--bundle", str(not_json)]) == 1
-
-
-def test_report_is_one_offline_page(tmp_path, capsys):
-    bundle = build_bundle(tmp_path)
-    bundle["records"][0]["operator"] = "<script>alert(1)</script>"  # never rendered raw
-    path = tmp_path / "b.json"
-    path.write_text(json.dumps(bundle))
-    out = tmp_path / "r.html"
-    assert main(["report", str(path), "-o", str(out)]) == 1  # the edit breaks the record
-    page = out.read_text()
-    assert "<script" not in page
-    assert not re.search(r"(src|href)=|https?://|@import|url\(", page)
-    assert "Fails." in page and "What this file does not show" in page
-
-    clean = build_bundle(tmp_path)
-    page = render_report_html(clean, check_evidence_file(clean), source="b.json")
-    assert "Everything this file claims checks" in page
-    assert "The request and response text" in page
-    assert "capsule-emit verify --bundle b.json" in page
-
-    unanchored = build_bundle(tmp_path, cose=False)
-    page = render_report_html(unanchored, check_evidence_file(unanchored))
-    assert "Incomplete: this file carries no signed checkpoint" in page
-    assert "<dt>Log</dt>" not in page
 
 
 def test_a_file_without_disclosures_has_no_disclosure_check(tmp_path):

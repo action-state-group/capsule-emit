@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """``export`` -- a SCOPED evidence file for a third party.
 
-An evidence file (``evidence-bundle/v2``) is what ``capsule-emit report``
-renders. Built from a whole ledger (``permalink --ledger --bundle-out``) it
-hands the reader every record the node ever wrote, across every
-counterparty, and with no signed checkpoint the page itself says the
-selection cannot be proven. This module builds the file the other way
+An evidence file (``evidence-bundle/v2``) is what ``capsule-emit verify
+--bundle`` checks (capsule-viewer's evidence report draws it as one page).
+Built from a whole ledger (``permalink --ledger --bundle-out``) it hands the
+reader every record the node ever wrote, across every counterparty, and with
+no signed checkpoint the verifier says the selection cannot be proven. This module builds the file the other way
 round: only the records in scope, each proven to sit in the node's
 committed log.
 

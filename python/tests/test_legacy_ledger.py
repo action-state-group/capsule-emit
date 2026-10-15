@@ -415,15 +415,13 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
     base = "https://verify.example"
     runs = {
         "ledger view": [["ledger", "view", str(path)], ["ledger", "view", str(path), "--chains"],
-                        ["ledger", "view", str(path), "--json"],
-                        ["ledger", "view", str(path), "--html", str(tmp_path / "v.html")]],
+                        ["ledger", "view", str(path), "--json"]],
         "ledger show": [["ledger", "show", str(path), cid]],
         "verify": [["verify", "--store", str(path)]],
         "status": [["status", str(path), "--offline"]],
         "permalink": [["permalink", "--base-url", base, "--ledger", str(path)],
                       ["permalink", "--base-url", base, "--ledger", str(path), "--bundle-out", str(bundle), "--all"]],
         "evidence": [["evidence", "--base-url", base, "--ledger", str(path), "--out", str(tmp_path / "evidence.md")]],
-        "report": [["report", str(bundle), "-o", str(tmp_path / "report.html")]],
         "disclose": [["disclose", str(path), cid, "--audience", "auditor", "--reveal", f"{cid}:agent_input={inputs}",
                       "--reveal", f"{cid}:agent_output={outputs}"]],
     }
@@ -431,11 +429,11 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
     assert _subcommands() - NOT_LEDGER_JSONL == set(runs), "a CLI command is missing from this test"
     # An evidence file checked without a witness directory is INCOMPLETE
     # (exit 2): its receipts are not checked. Never INVALID (exit 1).
-    incomplete = {("report",), ("verify", "--bundle")}
-    order = ["ledger view", "ledger show", "permalink", "verify", "status", "evidence", "report", "disclose"]
+    incomplete = {("verify", "--bundle")}
+    order = ["ledger view", "ledger show", "permalink", "verify", "status", "evidence", "disclose"]
     for name in order:
         for argv in runs[name]:
-            expected = 2 if tuple(argv[:2]) in incomplete or tuple(argv[:1]) in incomplete else 0
+            expected = 2 if tuple(argv[:2]) in incomplete else 0
             assert cli.main(argv) == expected, (argv, capsys.readouterr())
 
     # The disclosure record went through the shared writer; both interfaces
@@ -446,7 +444,6 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
     for capsule in caps:
         assert store.get(capsule["capsule_id"]).producer_envelope == bytes.fromhex(capsule["signature"])
     assert any(e.get("kind") == ledger.DISCLOSURE_RECORD_KIND for e in ledger.read_ledger_entries(path))
-    assert os.path.exists(tmp_path / "report.html")
 
 
 # -- review regressions --------------------------------------------------------------

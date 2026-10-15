@@ -60,7 +60,7 @@ from pathlib import Path
 def _cmd_ledger_view(args: argparse.Namespace) -> int:
     from .ledger import read_ledger
     from .ledger import view_chains as _view_chains
-    from .viewer import render_html, render_table
+    from .viewer import render_table
 
     records = read_ledger(args.path)
 
@@ -81,14 +81,6 @@ def _cmd_ledger_view(args: argparse.Namespace) -> int:
             verify_results = verify_store_signed(records)
         except Exception:
             pass  # viewer degrades gracefully if verify unavailable
-
-    if args.html:
-        html_str = render_html(records, verify_results=verify_results, ledger_path=args.path)
-        out_path = args.html
-        with open(out_path, "w", encoding="utf-8") as fh:
-            fh.write(html_str)
-        print(f"wrote {len(records)} record(s) → {out_path}")
-        return 0
 
     render_table(records, verify_results=verify_results, path=args.path)
     return 0
@@ -120,12 +112,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="L2: chain-tree view — groups capsules by parent (approved→executed→confirmed)",
     )
     view.add_argument("--json", dest="as_json", action="store_true", help="L4: raw JSON output")
-    view.add_argument(
-        "--html",
-        metavar="OUTPUT.html",
-        default=None,
-        help="write single-file static HTML ledger browse to OUTPUT.html",
-    )
 
     # ledger show
     show = ledger_sub.add_parser("show", help="L3: full detail for one capsule")
@@ -159,28 +145,6 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="treat a record with no producer signature (producer_signature_unclaimed)  — for ledgers whose producer always signs."
         "as INVALID instead of a non-gating warning",
-    )
-
-    # report
-    report_p = sub.add_parser(
-        "report",
-        help="render one readable HTML page from an evidence file (evidence-bundle/v2), offline",
-    )
-    report_p.add_argument("bundle_path", metavar="FILE.json", help="the evidence file")
-    report_p.add_argument(
-        "--witness-directory",
-        metavar="WITNESSES.json",
-        default=None,
-        help="the witnesses (and keys) whose receipts to check "
-        "(default: none, so no receipt is checked)",
-    )
-    report_p.add_argument(
-        "-o", "--out", metavar="OUTPUT.html", default=None, help="write the page here (default: stdout)"
-    )
-    report_p.add_argument(
-        "--require-signature",
-        action="store_true",
-        help="treat a record with no producer signature as a failed check",
     )
 
     # status
@@ -516,26 +480,6 @@ def _cmd_verify_bundle(args: argparse.Namespace) -> int:
 
 # VALID: everything proven. INCOMPLETE: nothing failed, something not shown.
 _VERDICT_EXIT = {"VALID": 0, "INVALID": 1, "INCOMPLETE": 2}
-
-
-def _cmd_report(args: argparse.Namespace) -> int:
-    from .evidence_file import check_evidence_file, load_evidence_file
-    from .evidence_report import render_report_html
-
-    try:
-        bundle = load_evidence_file(args.bundle_path)
-        directory = _witness_directory_arg(args)
-    except (ValueError, OSError) as err:
-        print(f"report: {err}")
-        return 1
-    check = check_evidence_file(bundle, require_signature=args.require_signature, witness_directory=directory)
-    page = render_report_html(bundle, check, source=Path(args.bundle_path).name)
-    if args.out:
-        Path(args.out).write_text(page, encoding="utf-8")
-        print(f"report: {check.verdict} — wrote {args.out}")
-    else:
-        print(page)
-    return _VERDICT_EXIT[check.verdict]
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
@@ -893,9 +837,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "verify":
         return _cmd_verify(args)
-
-    if args.command == "report":
-        return _cmd_report(args)
 
     if args.command == "status":
         return _cmd_status(args)

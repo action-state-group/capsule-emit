@@ -5,20 +5,20 @@ Covers:
 - _category(): rule_change for root memory_write, acknowledge_info_only for memory_delta, apply_candidate default
 - _actor(): authority-grant root, REFUSED label, acted_under_authority, confirms, memory_delta, fallback
 - render_table(): empty ledger, refusal marked with ⊛, verify column
-- render_html(): contains capsule_id, REFUSED actor, refusal CSS class, gate_checks
-- CLI --html: writes file, correct record count
-- CLI default view: calls render_table (no html arg), verify column populated
+- CLI default view: calls render_table, verify column populated
+- ledger view --html and render_html are gone (moved to capsule-viewer)
 - Works on wicket-style ledger (gate_checks in compute_attestation)
 """
 from __future__ import annotations
 
+import importlib.util
 import io
 import json
-import os
 
 import pytest
 
-from capsule_emit.viewer import _actor, _category, render_html, render_table
+from capsule_emit import viewer
+from capsule_emit.viewer import _actor, _category, render_table
 
 # ---------------------------------------------------------------------------
 # _category
@@ -215,92 +215,6 @@ def test_render_table_chain_label_shown():
 
 
 # ---------------------------------------------------------------------------
-# render_html
-# ---------------------------------------------------------------------------
-
-
-def test_render_html_contains_capsule_id():
-    caps = [_make_capsule("iiii1234567890ab")]
-    html = render_html(caps)
-    assert "iiii1234" in html
-
-
-def test_render_html_refusal_class():
-    caps = [_make_capsule("jjjj", verdict="blocked", decision="denied", effect_status="planned")]
-    html = render_html(caps)
-    assert 'class="refusal"' in html
-
-
-def test_render_html_no_refusal_class_for_normal():
-    caps = [_make_capsule("kkkk")]
-    html = render_html(caps)
-    assert 'class="refusal"' not in html
-
-
-def test_render_html_refused_actor_label():
-    caps = [
-        _make_capsule(
-            "llll",
-            verdict="blocked",
-            decision="denied",
-            effect_status="planned",
-            chain_relation="acted_under_authority",
-            chain_parent="aabbccdd1234",
-        )
-    ]
-    html = render_html(caps)
-    assert "REFUSED" in html
-
-
-def test_render_html_gate_checks():
-    checks = [
-        {"name": "AmountUnderCap", "passed": True, "reason": None},
-        {"name": "VendorKnown", "passed": False, "reason": "unknown vendor"},
-    ]
-    caps = [_make_capsule("mmmm", gate_checks=checks)]
-    html = render_html(caps)
-    assert "AmountUnderCap" in html
-    assert "VendorKnown" in html
-    assert "unknown vendor" in html
-
-
-def test_render_html_verify_ok():
-    caps = [_make_capsule("nnnn")]
-
-    class _FakeResult:
-        ok = True
-        capsule_id = "nnnn"
-
-    html = render_html(caps, verify_results=[_FakeResult()])
-    assert "✓ valid" in html
-
-
-def test_render_html_verify_fail():
-    caps = [_make_capsule("oooo")]
-
-    class _FakeResult:
-        ok = False
-        capsule_id = "oooo"
-
-    html = render_html(caps, verify_results=[_FakeResult()])
-    assert "✗ invalid" in html
-
-
-def test_render_html_no_external_deps():
-    caps = [_make_capsule("pppp")]
-    html = render_html(caps)
-    # No external stylesheet or script src
-    assert "href=" not in html
-    assert "src=" not in html
-
-
-def test_render_html_meta_count():
-    caps = [_make_capsule("qqqq"), _make_capsule("rrrr")]
-    html = render_html(caps, ledger_path="demo.jsonl")
-    assert "2 record(s)" in html
-
-
-# ---------------------------------------------------------------------------
 # CLI integration
 # ---------------------------------------------------------------------------
 
@@ -328,20 +242,6 @@ def wicket_ledger(tmp_path):
     return path
 
 
-def test_cli_html_writes_file(wicket_ledger, tmp_path):
-    from capsule_emit.cli import main
-
-    out_path = str(tmp_path / "out.html")
-    rc = main(["ledger", "view", str(wicket_ledger), "--html", out_path])
-    assert rc == 0
-    assert os.path.exists(out_path)
-    content = open(out_path).read()
-    assert "ssss1234" in content
-    assert "tttt1234" in content
-    assert 'class="refusal"' in content
-    assert "AmountUnderCap" in content
-
-
 def test_cli_default_view_enhanced(wicket_ledger, capsys):
     from capsule_emit.cli import main
 
@@ -352,14 +252,19 @@ def test_cli_default_view_enhanced(wicket_ledger, capsys):
     assert "verify" in captured.out
 
 
-def test_cli_html_empty_ledger(tmp_path):
+def test_the_html_pages_moved_to_capsule_viewer(wicket_ledger, capsys):
+    """``ledger view --html`` and ``render_html`` are capsule-viewer's
+    (``python -m capsule_viewer.ledger``), and so is ``report``; the terminal
+    table stays."""
     from capsule_emit.cli import main
 
-    empty = tmp_path / "empty.jsonl"
-    empty.write_text("")
-    out_path = str(tmp_path / "out.html")
-    rc = main(["ledger", "view", str(empty), "--html", out_path])
-    assert rc == 0
-    # File written even for empty ledger
-    content = open(out_path).read()
-    assert "0 record(s)" in content
+    with pytest.raises(SystemExit) as exc:
+        main(["ledger", "view", str(wicket_ledger), "--html", "out.html"])
+    assert exc.value.code == 2
+    assert "--html" in capsys.readouterr().err
+    assert not hasattr(viewer, "render_html") and viewer.__all__ == ["render_table"]
+    # So did the evidence report page (python -m capsule_viewer.evidence_report).
+    with pytest.raises(SystemExit) as exc:
+        main(["report", str(wicket_ledger)])
+    assert exc.value.code == 2
+    assert importlib.util.find_spec("capsule_emit.evidence_report") is None

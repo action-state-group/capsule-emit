@@ -67,7 +67,8 @@ BUNDLE_KIND = "evidence-bundle/v2"
 # match every one.
 _SIGNED_CHECKPOINT_FIELDS = ("log_id", "mmr_size", "root", "key_id", "timestamp", "prev_size", "prev_root")
 
-# One plain sentence per claim status; the CLI and the report both read these.
+# One plain sentence per claim status; `verify --bundle` and capsule-viewer's
+# evidence report both read these.
 _PLAIN: dict[str, dict[str, str]] = {
     "checkpoint": {
         "pass": "The log's checkpoint is signed, and the file's copy of it matches what was signed.",
@@ -166,7 +167,7 @@ class EvidenceFileCheck:
     @property
     def ok(self) -> bool:
         """No check failed. ``withheld`` is not a failure: the file says what
-        it does not prove, and the report says it too."""
+        it does not prove, and the verifier's output says it too."""
         return (
             self.kind_ok
             and all(c.status != "fail" for c in self.checks)
