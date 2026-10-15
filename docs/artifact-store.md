@@ -183,12 +183,24 @@ record with no artifacts), pinned in the conformance vectors.
 | `digest_mismatch` | A bound original does not match the Capsule's digest |
 | `untrusted_signer` | The Producer Envelope's signer is not trusted |
 | `corrupt` | A stored or supplied checksum does not match the bytes |
+| `unsupported` | The store declares it does not offer this operation (see Capability limits) |
 
 Each language exposes these codes: Go as sentinel errors (`artifact.ErrInvalid`,
 ...), TypeScript as `ArtifactError.code`, Python as `ArtifactError.code` on one
 subclass per code, Rust as `ArtifactError::code()`. Storage and driver failures
 (I/O, lost connections, an uninitialized store) are backend errors outside this
 list; a backend must not report them as `not_found`.
+
+## Capability limits
+
+A store may declare that it keeps no originals or does not purge. The only
+such stores are the legacy ledger backends ([legacy-ledger.md](legacy-ledger.md)),
+which put the ledgers capsule-emit has always written behind this interface.
+A limited store validates its arguments first, then refuses with
+`unsupported`: `put` of a record that declares an original it cannot keep, and
+`purge` of a well-formed ID. It runs the conformance cases that need neither
+(see the vectors' README). No built-in backend other than the legacy ledgers
+has a limit.
 
 ## Optional transactional extension
 
@@ -217,6 +229,7 @@ supports that transaction too.
 | `memory` | Process memory, for tests and short-lived tools | No |
 | `mysql` | MySQL 8.4 / InnoDB | Yes |
 | `sqlite` | One SQLite file, which may also hold a CLL SQLite log in its own tables | Yes |
+| legacy ledger | The flat ledger `seal()` writes, with [capability limits](#capability-limits); exempt from interop ([legacy-ledger.md](legacy-ledger.md)) | No |
 
 Data written by any language opens in the others:
 

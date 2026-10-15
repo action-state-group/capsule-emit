@@ -61,6 +61,14 @@ capabilities the backend does not declare:
 - `shared_backing`: stores with different namespaces can share one storage
   (the SQL backends; a `jsonl` file holds one namespace).
 
+Two further capabilities are derived from a case's steps rather than listed,
+so that a store with [capability limits](../../docs/artifact-store.md#capability-limits)
+can declare a subset: `originals` when the case puts a record that declares any
+artifact, and `purge` when it purges with any expected outcome other than
+`invalid`. Every built-in backend except the legacy ledgers has both. The
+`bare_*` cases use only `empty` and its variants, so such a store still runs
+admission, conflict, rejection and fail-closed read checks.
+
 Corruption detection on read (a tampered row or line) depends on the storage
 format, so each backend tests it in its own suite rather than here.
 

@@ -529,14 +529,21 @@ class _JsonlLogSource:
         self._path = path
 
     def scan(self, query: Any = None):
-        from .ledger import read_ledger_entries
+        from .ledger import is_ledger_store, read_ledger_entries
 
-        # The raw, unfiltered file -- checkpoint-stamp records included -- so
-        # a stamp this module persists (see ``_build_and_register``) is
-        # itself indexed as an MMR leaf and ends up covered by the *next*
-        # checkpoint, same as any capsule.
-        for i, record in enumerate(read_ledger_entries(self._path), start=1):
-            yield _Rec(seq=i, capsule_id=record["capsule_id"])
+        # Every line -- checkpoint-stamp records included -- so a stamp this
+        # module persists (see ``_build_and_register``) is itself indexed as
+        # an MMR leaf and ends up covered by the *next* checkpoint, same as
+        # any capsule. A flat file is read through the legacy backend's CLL
+        # entry log, which indexes it incrementally.
+        if is_ledger_store(self._path):
+            for i, record in enumerate(read_ledger_entries(self._path), start=1):
+                yield _Rec(seq=i, capsule_id=record["capsule_id"])
+            return
+        from .legacy_ledger import shared
+
+        for entry in shared(self._path).entries():
+            yield _Rec(seq=entry.seq, capsule_id=entry.value.hex())
 
     def append(self, capsule: dict, *, consequential: bool = True) -> Any:
         raise NotImplementedError(

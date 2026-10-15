@@ -86,6 +86,13 @@ class CorruptError(ArtifactError):
     code = "corrupt"
 
 
+class UnsupportedError(ArtifactError):
+    """The store does not offer this operation: a declared capability limit
+    (the legacy ledger backend refuses originals and purge)."""
+
+    code = "unsupported"
+
+
 @dataclass
 class Artifact:
     """An exact original. An empty ``binding`` means NOT authenticated by the

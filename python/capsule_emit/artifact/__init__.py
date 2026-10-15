@@ -13,6 +13,10 @@ database driver:
 - ``capsule_emit.artifact.mysql.MysqlArtifactStore``: MySQL 8.4 via PyMySQL
   (``pip install capsule-emit[mysql]``)
 
+- ``capsule_emit.legacy_ledger.LegacyLedger``: the flat ``ledger.jsonl``
+  that ``seal()`` writes, with declared capability limits (no originals, no
+  purge); it is also the ledger's CLL entry log
+
 ``capsule_emit.artifact.conformance.run`` runs the shared conformance suite
 against any :class:`Store`, built in or your own.
 """
@@ -39,6 +43,7 @@ from .record import (
     NotFoundError,
     PurgedError,
     Record,
+    UnsupportedError,
     UntrustedSignerError,
     prepare,
     storage_checksum,
@@ -100,6 +105,7 @@ __all__ = [
     "Record",
     "Store",
     "TxStore",
+    "UnsupportedError",
     "UntrustedSignerError",
     "prepare",
     "storage_checksum",

@@ -28,7 +28,7 @@ from typing import Any, Callable
 
 from .record import ArtifactError, Record, decode_record
 
-__all__ = ["ConformanceTest", "Harness", "Outcome", "diff", "load_vectors", "run", "tests"]
+__all__ = ["ConformanceTest", "Harness", "Outcome", "diff", "load_vectors", "needs", "run", "tests"]
 
 
 @dataclass
@@ -41,6 +41,9 @@ class Harness:
     ``durable``: a store reopened over the same backing sees earlier writes.
     ``shared_backing``: stores with different namespaces can share a backing.
     ``close(backing)``, if given, releases a backing after its case.
+    ``originals`` and ``purge`` are ``False`` for a store that declares it
+    keeps no originals or refuses purge (the legacy ledger); the cases that
+    need them are skipped (see :func:`needs`).
     """
 
     new_backing: Callable[[], Any]
@@ -48,6 +51,8 @@ class Harness:
     durable: bool = False
     shared_backing: bool = False
     close: Callable[[Any], None] | None = None
+    originals: bool = True
+    purge: bool = True
 
 
 @dataclass
@@ -186,15 +191,33 @@ def _case_test(harness: Harness, vectors: dict, case: dict) -> Callable[[], None
     return run
 
 
+def needs(vectors: dict, case: dict) -> list:
+    """The capabilities ``case`` needs: its ``requires`` plus two derived from
+    its steps, ``originals`` when it puts a record that declares artifacts and
+    ``purge`` when it purges with any expected outcome but ``invalid``."""
+    required = list(case.get("requires", []))
+    steps = case["steps"]
+    if any(s["op"] == "put" and vectors["records"][s["record"]]["artifacts"] for s in steps):
+        required.append("originals")
+    if any(s["op"] == "purge" and s["expect"] != "invalid" for s in steps):
+        required.append("purge")
+    return required
+
+
 def tests(harness: Harness, vectors: dict | None = None) -> list:
     """One :class:`ConformanceTest` per constructor vector (``open/<name>``) and
     per case. A test whose required capability the harness lacks has ``skip``
     set; ``run()`` raises ``AssertionError`` on failure."""
     vectors = vectors if vectors is not None else load_vectors()
     result = [ConformanceTest("open/" + v["name"], None, _open_test(harness, v)) for v in vectors["open"]]
-    capabilities = {"durable": harness.durable, "shared_backing": harness.shared_backing}
+    capabilities = {
+        "durable": harness.durable,
+        "shared_backing": harness.shared_backing,
+        "originals": harness.originals,
+        "purge": harness.purge,
+    }
     for case in vectors["cases"]:
-        missing = [r for r in case.get("requires", []) if not capabilities.get(r, False)]
+        missing = [r for r in needs(vectors, case) if not capabilities.get(r, False)]
         skip = f"backend lacks capability {missing[0]}" if missing else None
         result.append(ConformanceTest(case["name"], skip, _case_test(harness, vectors, case)))
     return result
