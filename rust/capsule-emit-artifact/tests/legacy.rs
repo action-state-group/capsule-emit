@@ -507,3 +507,80 @@ fn records_written_through_the_backend_pass_the_offline_verifier() {
         assert!(report.ok(), "{:?}", report.findings);
     }
 }
+
+#[test]
+fn rejected_padding_leaves_the_ledger_reopenable() {
+    let dir = tempfile::tempdir().unwrap();
+    historical(dir.path());
+    let store = store(dir.path());
+    let mut padding = capsule_emit::padding::build_padding_record().unwrap();
+    attach_producer_envelope(&mut padding, &key()).unwrap();
+    let good = statement(&padding, &key());
+    assert!(matches!(
+        store.append_padding(&padding, b""),
+        Err(ArtifactError::Invalid(_))
+    ));
+    let mut wrong_id = padding.clone();
+    wrong_id["capsule_id"] = json!("ab".repeat(32));
+    assert!(matches!(
+        store.append_padding(&wrong_id, &good),
+        Err(ArtifactError::Invalid(_))
+    ));
+    store.append_padding(&padding, &good).unwrap();
+    assert!(matches!(
+        store.append_padding(&padding, &good),
+        Err(ArtifactError::Conflict)
+    ));
+    store.close();
+    let (reopened, _) = Ledger::open(dir.path()).unwrap();
+    assert_eq!(reopened.entries(), 10);
+}
+
+#[test]
+fn arguments_are_checked_before_durable_state() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("capsules.jsonl"), "not json\n").unwrap();
+    let store = LegacyLedger::new(dir.path(), "ledger", trusted()).unwrap();
+    assert_eq!(store.get_entry(&[]).unwrap_err().code(), ErrorCode::Invalid);
+    assert_eq!(
+        store.scan_entries(0, 0).unwrap_err().code(),
+        ErrorCode::Invalid
+    );
+    let input = AppendInput {
+        value: vec![1; 31],
+        appended_at: Timestamp::now(),
+    };
+    assert_eq!(store.append(&input).unwrap_err().code(), ErrorCode::Invalid);
+    assert_eq!(
+        store.scan_entries(0, 10).unwrap_err().code(),
+        ErrorCode::Corrupt
+    );
+    // Nothing was truncated or recovered by the invalid calls.
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("capsules.jsonl")).unwrap(),
+        "not json\n"
+    );
+}
+
+#[test]
+fn a_concurrent_close_reports_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    historical(dir.path());
+    let store = std::sync::Arc::new(store(dir.path()));
+    let readers: Vec<_> = (0..4)
+        .map(|_| {
+            let store = store.clone();
+            std::thread::spawn(move || {
+                for _ in 0..200 {
+                    if let Err(e) = store.scan_entries(0, 10) {
+                        assert_eq!(e.code(), ErrorCode::Closed, "{e}");
+                    }
+                }
+            })
+        })
+        .collect();
+    store.close();
+    for reader in readers {
+        reader.join().unwrap();
+    }
+}

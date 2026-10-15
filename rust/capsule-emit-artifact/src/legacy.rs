@@ -136,14 +136,9 @@ impl LegacyLedger {
         })
     }
 
-    /// Runs `f` on the open ledger with its entries current.
-    fn with<T>(&self, f: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        if state.closed {
-            return Err(ArtifactError::storage(std::io::Error::other(
-                "the store is closed",
-            )));
-        }
+    /// Opens the ledger on first use and indexes lines not yet indexed.
+    /// The caller holds the state lock.
+    fn open_locked(&self, state: &mut State) -> Result<()> {
         if state.ledger.is_none() {
             if !self.dir.join("capsules.jsonl").exists() {
                 return Err(ArtifactError::storage(std::io::Error::other(
@@ -153,28 +148,38 @@ impl LegacyLedger {
             let (ledger, _) = Ledger::open(&self.dir).map_err(corrupt)?;
             state.ledger = Some(ledger);
         }
-        sync(&mut state)?;
+        sync(state)
+    }
+
+    /// Runs `f` on the open ledger with its entries current.
+    fn with<T>(&self, f: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.closed {
+            return Err(ArtifactError::storage(std::io::Error::other(
+                "the store is closed",
+            )));
+        }
+        self.open_locked(&mut state)?;
         f(&mut state)
     }
 
-    fn with_log<T>(&self, f: impl FnOnce(&State) -> cll::log::Result<T>) -> cll::log::Result<T> {
-        {
-            let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-            if state.closed {
-                return Err(LogError::new(ErrorCode::Closed, "backend is closed"));
-            }
+    /// A CLL operation, in the contract's order under one lock: `closed`,
+    /// then the arguments (`validate`), then durable state. An uninitialized
+    /// ledger has no entries.
+    fn with_log<T>(
+        &self,
+        validate: impl FnOnce() -> cll::log::Result<()>,
+        f: impl FnOnce(&State) -> cll::log::Result<T>,
+    ) -> cll::log::Result<T> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.closed {
+            return Err(LogError::new(ErrorCode::Closed, "backend is closed"));
         }
-        // An uninitialized ledger has no entries.
-        if !self.dir.join("capsules.jsonl").exists() {
-            let state = State {
-                ledger: None,
-                closed: false,
-                entries: Vec::new(),
-                first: HashMap::new(),
-            };
-            return f(&state);
+        validate()?;
+        if state.ledger.is_some() || self.dir.join("capsules.jsonl").exists() {
+            self.open_locked(&mut state).map_err(log_error)?;
         }
-        self.with(|state| Ok(f(state))).map_err(log_error)?
+        f(&state)
     }
 
     /// The ledger directory.
@@ -185,10 +190,34 @@ impl LegacyLedger {
     /// Appends one padding record and its signed statement
     /// ([`Ledger::append_padding`]).
     pub fn append_padding(&self, record: &Value, statement: &[u8]) -> Result<()> {
+        // Check what the ledger's reload check will, before writing, so a
+        // rejected record leaves the ledger reopenable.
+        let capsule_id = record
+            .get("capsule_id")
+            .and_then(Value::as_str)
+            .filter(|id| valid_id(id))
+            .ok_or_else(|| ArtifactError::Invalid("capsule id".into()))?;
+        let computed = capsule_emit::jcs::compute_capsule_id(record)
+            .map_err(|e| ArtifactError::Invalid(format!("capsule id: {e}")))?;
+        if computed != capsule_id {
+            return Err(ArtifactError::Invalid("capsule id mismatch".into()));
+        }
+        check_statement_matches(record, capsule_id, statement)
+            .map_err(|e| ArtifactError::Invalid(format!("signed statement: {e}")))?;
         self.with(|state| {
+            if state
+                .first
+                .contains_key(&hex::decode(capsule_id).expect("valid_id checked"))
+            {
+                return Err(ArtifactError::Conflict);
+            }
             ledger(state)
                 .append_padding(record, statement)
-                .map_err(|e| ArtifactError::Invalid(e.to_string()))
+                .map_err(|e| match e {
+                    LedgerError::Io(e) => ArtifactError::storage(e),
+                    other => ArtifactError::Invalid(other.to_string()),
+                })?;
+            sync(state)
         })
     }
 
@@ -484,28 +513,36 @@ impl Store for LegacyLedger {
 
 impl EntrySource for LegacyLedger {
     fn scan_entries(&self, after_seq: u64, limit: usize) -> cll::log::Result<Vec<Entry>> {
-        self.with_log(|state| {
-            if after_seq > MAX_PORTABLE_INTEGER || limit == 0 || limit > MAX_SCAN_LIMIT {
-                return Err(invalid("scan arguments are outside the contract's limits"));
-            }
-            let start = usize::try_from(after_seq)
-                .unwrap_or(usize::MAX)
-                .min(state.entries.len());
-            let end = start.saturating_add(limit).min(state.entries.len());
-            Ok(state.entries[start..end].to_vec())
-        })
+        self.with_log(
+            || {
+                if after_seq > MAX_PORTABLE_INTEGER || limit == 0 || limit > MAX_SCAN_LIMIT {
+                    return Err(invalid("scan arguments are outside the contract's limits"));
+                }
+                Ok(())
+            },
+            |state| {
+                let start = usize::try_from(after_seq)
+                    .unwrap_or(usize::MAX)
+                    .min(state.entries.len());
+                let end = start.saturating_add(limit).min(state.entries.len());
+                Ok(state.entries[start..end].to_vec())
+            },
+        )
     }
 }
 
 impl EntryStore for LegacyLedger {
     fn append(&self, input: &AppendInput) -> cll::log::Result<AppendResult> {
-        self.with_log(|state| {
-            if input.value.len() != ENTRY_BYTES || !input.appended_at.is_portable() {
-                return Err(invalid(
-                    "append input is not a 32-byte value and a portable time",
-                ));
-            }
-            match state.first.get(&input.value) {
+        self.with_log(
+            || {
+                if input.value.len() != ENTRY_BYTES || !input.appended_at.is_portable() {
+                    return Err(invalid(
+                        "append input is not a 32-byte value and a portable time",
+                    ));
+                }
+                Ok(())
+            },
+            |state| match state.first.get(&input.value) {
                 Some(&index) => Ok(AppendResult {
                     entry: state.entries[index].clone(),
                     outcome: AppendOutcome::Idempotent,
@@ -514,21 +551,26 @@ impl EntryStore for LegacyLedger {
                     ErrorCode::Unsupported,
                     "the legacy ledger cannot append a bare digest; write the capsule with put",
                 )),
-            }
-        })
+            },
+        )
     }
 
     fn get_entry(&self, value: &[u8]) -> cll::log::Result<Entry> {
-        self.with_log(|state| {
-            if value.len() != ENTRY_BYTES {
-                return Err(invalid("entry value is not 32 bytes"));
-            }
-            state
-                .first
-                .get(value)
-                .map(|&index| state.entries[index].clone())
-                .ok_or_else(|| LogError::new(ErrorCode::NotFound, "entry not found"))
-        })
+        self.with_log(
+            || {
+                if value.len() != ENTRY_BYTES {
+                    return Err(invalid("entry value is not 32 bytes"));
+                }
+                Ok(())
+            },
+            |state| {
+                state
+                    .first
+                    .get(value)
+                    .map(|&index| state.entries[index].clone())
+                    .ok_or_else(|| LogError::new(ErrorCode::NotFound, "entry not found"))
+            },
+        )
     }
 }
 
