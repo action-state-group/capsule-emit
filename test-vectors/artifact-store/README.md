@@ -99,5 +99,8 @@ The workflow also runs negative controls (`INTERLOCK_INJECT=report`, `storage`,
 The goldens come from the Go adapter (`go run ./artifact/internal/interlock`),
 whose test keeps them in sync; every other adapter must reproduce them exactly.
 Adapters: Go `go/artifact/internal/interlock`, TypeScript
-`ts/scripts/artifact-interlock.mjs`, Python `python/scripts/artifact_interlock.py`. A pull request that adds a language's
-backend adds its adapter and the language to the workflow's `LANGUAGES`.
+`ts/scripts/artifact-interlock.mjs`, Python
+`python/scripts/artifact_interlock.py`, Rust
+`rust/capsule-emit-artifact/examples/interlock.rs`. A pull request that adds a
+language's backend adds its adapter and the language to the workflow's
+`LANGUAGES`.
