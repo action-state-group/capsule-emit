@@ -99,6 +99,32 @@ pub struct LedgerEntry {
     pub signed_statement: Vec<u8>,
 }
 
+/// One line of `capsules.jsonl`, in file order: every line is a leaf of the
+/// checkpoint MMR, padding included. `seq` is its 1-based position.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LedgerLine {
+    pub capsule_id: String,
+    /// Byte offset of the line's start.
+    pub offset: u64,
+    pub padding: bool,
+    /// The line's top-level `timestamp`, when it has a string one.
+    pub timestamp: Option<String>,
+}
+
+impl LedgerLine {
+    fn new(capsule_id: &str, offset: u64, record: &Value) -> Self {
+        Self {
+            capsule_id: capsule_id.to_string(),
+            offset,
+            padding: is_padding(record),
+            timestamp: record
+                .get("timestamp")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        }
+    }
+}
+
 /// What `open()` found while replaying the ledger — surfaced so a caller can
 /// log/report a recovered torn write rather than have it happen invisibly.
 #[derive(Debug, Default)]
@@ -125,6 +151,8 @@ pub struct Ledger {
     /// ("does this ledger already hold a record of X?").
     index_keys: HashSet<String>,
     indexer: RecordIndexer,
+    /// Every line, padding included, in file order.
+    lines: Vec<LedgerLine>,
 }
 
 fn statement_path(statements_dir: &Path, capsule_id: &str) -> PathBuf {
@@ -205,7 +233,7 @@ pub fn counterparty_citation_keys(capsule: &Value) -> Vec<String> {
 /// writes), the COSE signature must actually verify against that key, through
 /// the same `cose::verify_signed_statement` path `verify::verify_offline`
 /// gates on. Returns the human-readable failure detail on mismatch.
-fn check_statement_matches(
+pub fn check_statement_matches(
     capsule: &Value,
     capsule_id: &str,
     statement: &[u8],
@@ -293,6 +321,7 @@ impl Ledger {
         let mut offset: u64 = 0;
         let mut report = RecoveryReport::default();
         let mut index_keys = HashSet::new();
+        let mut lines = Vec::new();
 
         // Split on '\n', keeping track of whether the buffer ends with one.
         // A missing trailing newline on the final chunk means a torn write:
@@ -379,6 +408,7 @@ impl Ledger {
             })?;
 
             report.valid_entries += 1;
+            lines.push(LedgerLine::new(&stored_id, offset, &parsed));
             offset += line_bytes_len;
             if padding {
                 // Outside the chain: never the head, never indexed.
@@ -401,6 +431,7 @@ impl Ledger {
                 entries: report.valid_entries as u64,
                 index_keys,
                 indexer,
+                lines,
             },
             report,
         ))
@@ -523,6 +554,7 @@ impl Ledger {
         self.append_handle.write_all(line.as_bytes())?;
         self.append_handle.sync_all()?;
         self.entries += 1;
+        self.lines.push(LedgerLine::new(capsule_id, offset, record));
         Ok(offset)
     }
 
@@ -591,6 +623,25 @@ impl Ledger {
             self.append_padding(&record, &statement)?;
         }
         Ok(self.entries)
+    }
+
+    /// Every line in file order, padding included: line `i` is leaf `i + 1`.
+    pub fn lines(&self) -> &[LedgerLine] {
+        &self.lines
+    }
+
+    /// The JSON of the line starting at `offset` (from [`Self::lines`]).
+    pub fn read_line(&self, offset: u64) -> Result<Value, LedgerError> {
+        let mut f = File::open(&self.capsules_path)?;
+        f.seek(SeekFrom::Start(offset))?;
+        let mut line = String::new();
+        BufReader::new(f).read_line(&mut line)?;
+        Ok(serde_json::from_str(line.trim_end())?)
+    }
+
+    /// The signed statement stored for `capsule_id`, padding included.
+    pub fn read_statement(&self, capsule_id: &str) -> Result<Vec<u8>, LedgerError> {
+        Ok(fs::read(statement_path(&self.statements_dir, capsule_id))?)
     }
 
     /// Receipt lookup: read back the sealed capsule + its COSE_Sign1
@@ -691,6 +742,34 @@ mod tests {
         assert_eq!(ledger2.chain_head(), Some(id2.as_str()));
         assert!(ledger2.contains(&id1));
         assert!(ledger2.contains(&id2));
+    }
+
+    #[test]
+    fn lines_index_every_line_in_file_order_across_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut ledger, _) = Ledger::open(dir.path()).unwrap();
+        let c1 = sample_capsule("one", None);
+        let id1 = c1["capsule_id"].as_str().unwrap().to_string();
+        ledger.append(&c1, &statement_for(&c1)).unwrap();
+        let key = ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]);
+        ledger.pad_to_bucket(3, &key, "ledger-test").unwrap();
+        let ids: Vec<String> = ledger.lines().iter().map(|l| l.capsule_id.clone()).collect();
+        assert_eq!(ids.len(), 3);
+        assert_eq!(ids[0], id1);
+        assert_eq!(
+            ledger.lines().iter().map(|l| l.padding).collect::<Vec<_>>(),
+            vec![false, true, true]
+        );
+        for line in ledger.lines() {
+            let read = ledger.read_line(line.offset).unwrap();
+            assert_eq!(read["capsule_id"].as_str(), Some(line.capsule_id.as_str()));
+            let statement = ledger.read_statement(&line.capsule_id).unwrap();
+            check_statement_matches(&read, &line.capsule_id, &statement).unwrap();
+        }
+        let before = ledger.lines().to_vec();
+        drop(ledger);
+        let (reopened, _) = Ledger::open(dir.path()).unwrap();
+        assert_eq!(reopened.lines(), &before[..]);
     }
 
     #[test]

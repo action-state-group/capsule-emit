@@ -47,6 +47,36 @@ pub struct Harness<B> {
     pub shared_backing: bool,
 }
 
+/// A record transformation a [`Limits`] applies around `put` and `get`.
+pub type Adapt = Box<dyn Fn(Record) -> Record>;
+
+/// Declares a store's capability limits for [`run_limited`]. The default is
+/// a store without limits, which is what [`run`] uses.
+pub struct Limits {
+    /// The store keeps originals. Without it, cases that put a record
+    /// declaring artifacts are skipped.
+    pub originals: bool,
+    /// The store purges. Without it, cases that purge with any expected
+    /// outcome but `invalid` are skipped.
+    pub purge: bool,
+    /// Applied to each record before `put`, for a store that needs an
+    /// attachment of its own (the legacy ledger's signed statement).
+    pub before_put: Option<Adapt>,
+    /// Applied to each record `get` returns before it is compared.
+    pub after_get: Option<Adapt>,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            originals: true,
+            purge: true,
+            before_put: None,
+            after_get: None,
+        }
+    }
+}
+
 /// The decoded vector file. See `test-vectors/artifact-store/README.md`.
 #[derive(Debug, Deserialize)]
 pub struct Vectors {
@@ -223,7 +253,12 @@ fn run_open<B>(h: &Harness<B>, v: &OpenVector) -> std::result::Result<(), String
     }
 }
 
-fn run_case<B>(h: &Harness<B>, v: &Vectors, c: &Case) -> std::result::Result<(), String> {
+fn run_case<B>(
+    h: &Harness<B>,
+    limits: &Limits,
+    v: &Vectors,
+    c: &Case,
+) -> std::result::Result<(), String> {
     let backing = (h.new_backing)();
     let mut stores: BTreeMap<String, Box<dyn Store>> = BTreeMap::new();
     let open = |name: &str, trusted: &[String]| -> std::result::Result<Box<dyn Store>, String> {
@@ -260,7 +295,13 @@ fn run_case<B>(h: &Harness<B>, v: &Vectors, c: &Case) -> std::result::Result<(),
             "put" => {
                 let record_name = s.record.as_deref().unwrap_or_default();
                 match v.record(record_name) {
-                    Ok(record) => expect(&label, &s.expect, &stores[&name].put(&record))?,
+                    Ok(record) => {
+                        let record = match &limits.before_put {
+                            Some(adapt) => adapt(record),
+                            None => record,
+                        };
+                        expect(&label, &s.expect, &stores[&name].put(&record))?
+                    }
                     Err(codec) if s.expect == "invalid" && codec.starts_with("codec:") => {}
                     Err(e) => return Err(format!("{label}: {e}")),
                 }
@@ -269,6 +310,10 @@ fn run_case<B>(h: &Harness<B>, v: &Vectors, c: &Case) -> std::result::Result<(),
                 let got = stores[&name].get(&id);
                 expect(&label, &s.expect, &got)?;
                 if let Ok(record) = got {
+                    let record = match &limits.after_get {
+                        Some(adapt) => adapt(record),
+                        None => record,
+                    };
                     let result = s.result.as_deref().unwrap_or_default();
                     let want = v.record(result).map_err(|e| format!("{label}: {e}"))?;
                     if let Some(d) = diff(&want, &record) {
@@ -291,17 +336,53 @@ fn run_case<B>(h: &Harness<B>, v: &Vectors, c: &Case) -> std::result::Result<(),
     Ok(())
 }
 
+/// The capabilities `case` needs: its `requires` plus two derived from its
+/// steps, `originals` when it puts a record that declares artifacts and
+/// `purge` when it purges with any expected outcome but `invalid`.
+pub fn needs(v: &Vectors, case: &Case) -> Vec<String> {
+    let mut required = case.requires.clone();
+    let declares_artifacts = |name: &str| {
+        v.records[name]["artifacts"]
+            .as_array()
+            .is_some_and(|a| !a.is_empty())
+    };
+    if case
+        .steps
+        .iter()
+        .any(|s| s.op == "put" && declares_artifacts(s.record.as_deref().unwrap_or_default()))
+    {
+        required.push("originals".into());
+    }
+    if case
+        .steps
+        .iter()
+        .any(|s| s.op == "purge" && s.expect != "invalid")
+    {
+        required.push("purge".into());
+    }
+    required
+}
+
 /// Runs every constructor vector and case and returns one outcome each.
 pub fn run<B>(h: &Harness<B>) -> Vec<Outcome> {
+    run_limited(h, &Limits::default())
+}
+
+/// [`run`] for a store with capability limits: cases needing a capability the
+/// store lacks are skipped.
+pub fn run_limited<B>(h: &Harness<B>, limits: &Limits) -> Vec<Outcome> {
     let v = vectors();
     let mut outcomes = Vec::new();
     for o in &v.open {
         outcomes.push(outcome(format!("open/{}", o.name), run_open(h, o)));
     }
     for c in &v.cases {
-        let missing = c.requires.iter().find(|r| match r.as_str() {
+        let required = needs(&v, c);
+        let missing = required.iter().find(|r| match r.as_str() {
             "durable" => !h.durable,
             "shared_backing" => !h.shared_backing,
+            "originals" => !limits.originals,
+            "purge" => !limits.purge,
             _ => true,
         });
         if let Some(r) = missing {
@@ -312,7 +393,7 @@ pub fn run<B>(h: &Harness<B>) -> Vec<Outcome> {
             });
             continue;
         }
-        outcomes.push(outcome(c.name.clone(), run_case(h, &v, c)));
+        outcomes.push(outcome(c.name.clone(), run_case(h, limits, &v, c)));
     }
     outcomes
 }

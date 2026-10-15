@@ -12,6 +12,7 @@
 //! | Process memory | [`memory`] | default | no |
 //! | SQLite (bundled) | `sqlite` | `sqlite` | yes |
 //! | MySQL 8.4 | `mysql` | `mysql` | yes |
+//! | capsule-emit's legacy ledger | `legacy` | `legacy` | no |
 //!
 //! Without features the crate links no database driver. Every backend
 //! implements [`Store`]; the SQL backends also implement [`TxStore`].
@@ -20,6 +21,8 @@
 pub mod conformance;
 mod error;
 pub mod jsonl;
+#[cfg(feature = "legacy")]
+pub mod legacy;
 pub mod memory;
 #[cfg(feature = "mysql")]
 pub mod mysql;
