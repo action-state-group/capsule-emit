@@ -84,7 +84,6 @@ from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantE
 from . import signing as _signing
 from . import witness as _witness
 from .canonicalization import compute_capsule_id
-from .ledger import append_to_ledger
 from .numbers import CANONICALIZATION_ID
 from .relations import REGISTERED_RELATIONS
 from .signing import Signer
@@ -900,7 +899,7 @@ def _emit_capsule(
         signer_obj, capsule["capsule_id"]
     )
 
-    seq = append_to_ledger(capsule, ledger)
+    seq = _append_capsule(capsule, ledger)
 
     # the witness kill switch (``witness=False`` / ``CAPSULE_WITNESS=off``)
     # is the ONE switch that zeroes all egress -- including the legacy anchor
@@ -995,6 +994,17 @@ def _emit_capsule(
     )
 
 
+def _append_capsule(capsule: dict[str, Any], ledger: str | os.PathLike) -> int:
+    """Write ``capsule`` through the legacy ledger backend (the append path
+    its artifact ``put`` uses) and return its sequence position. A
+    ``capsule_id`` the ledger already holds is not written again: an
+    identical line returns the existing position, and a different one raises
+    ``capsule_emit.artifact.ConflictError``."""
+    from .legacy_ledger import shared
+
+    return shared(ledger).append_line(capsule).entry.seq
+
+
 def _emit_log_entry(
     action: str,
     operator: str = "",
@@ -1068,7 +1078,7 @@ def _emit_log_entry(
     # Deliberately NO signature / key_id keys -- see LogEntry's docstring
     # and verify_capsule_signature_tristate's UNCLAIMED state.
 
-    seq = append_to_ledger(entry, ledger)
+    seq = _append_capsule(entry, ledger)
 
     # The checkpoint/witness layer needs a real Signer regardless -- it
     # signs the COVERING CHECKPOINT, never this entry's own content (see

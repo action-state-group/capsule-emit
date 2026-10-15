@@ -198,6 +198,21 @@ func generate(t *testing.T) []byte {
 		r.Artifacts[0].Content = content(`{"question":"where next?","n":3}`)
 	})
 	g.variant("basic.payload_not_json", "basic", func(r *artifact.Record) { r.Artifacts[0].Content = content("not json") })
+
+	// Variants of empty, a record without originals, so that a store that
+	// keeps none (the legacy ledgers) runs admission and conflict checks too.
+	otherSigner, err := emit.NewEd25519SigningIdentity(g.keys["other"])
+	require.NoError(t, err)
+	rotatedSigner, err := emit.NewEd25519SigningIdentity(g.keys["rotated"])
+	require.NoError(t, err)
+	g.variant("empty.rotated_envelope", "empty", func(r *artifact.Record) { r.ProducerEnvelope = signEnvelope(t, empty, rotatedSigner) })
+	g.variant("empty.untrusted_envelope", "empty", func(r *artifact.Record) { r.ProducerEnvelope = signEnvelope(t, empty, otherSigner) })
+	g.variant("empty.envelope_other_capsule", "empty", func(r *artifact.Record) { r.ProducerEnvelope = basic.Envelope })
+	g.variant("empty.wrong_id", "empty", func(r *artifact.Record) { r.CapsuleID = basic.CapsuleID })
+	g.variant("empty.capsule_tampered", "empty", func(r *artifact.Record) {
+		r.Capsule = bytes.Replace(empty.Payload, []byte("conformance-empty"), []byte("conformance-other"), 1)
+	})
+
 	g.variant("basic.sha_mismatch", "basic", func(r *artifact.Record) { r.Artifacts[2].ContentSHA256 = digestOf("something else") })
 	g.variant("basic.input_purged", "basic", func(r *artifact.Record) {
 		r.Artifacts[2] = artifact.Artifact{Name: "private_note", State: artifact.Purged, ContentSHA256: digestOf(note)}
@@ -378,6 +393,14 @@ func cases(r map[string]artifact.Record) []Case {
 		{Name: "key_rotation", Description: "A store trusting several keys admits records from each.",
 			Stores: map[string]StoreSpec{"main": {Namespace: "conformance", Trusted: []string{"trusted", "rotated"}}},
 			Steps:  []Step{put("rotated", "ok"), put("basic", "ok"), get(rotated, "ok", "rotated.stored"), get(basic, "ok", "basic.stored")}},
+		{Name: "bare_record", Description: "A record without originals stores, retries idempotently and conflicts with another envelope.",
+			Stores: map[string]StoreSpec{"main": {Namespace: "conformance", Trusted: []string{"trusted", "rotated"}}},
+			Steps: []Step{put("empty", "ok"), get(empty, "ok", "empty.stored"), put("empty", "ok"),
+				put("empty.rotated_envelope", "conflict"), get(empty, "ok", "empty.stored")}},
+		{Name: "bare_rejections", Description: "Records without originals that fail admission are rejected and nothing is stored.", Stores: main,
+			Steps: []Step{put("empty.untrusted_envelope", "untrusted_signer"), put("empty.envelope_other_capsule", "invalid"),
+				put("empty.wrong_id", "invalid"), put("empty.capsule_tampered", "invalid"),
+				get(empty, "not_found", ""), get(basic, "not_found", "")}},
 		{Name: "durable_reopen", Description: "Records, purges and conflicts persist across reopening.", Requires: []string{"durable"}, Stores: main,
 			Steps: []Step{put("basic", "ok"), put("empty", "ok"), {Op: "reopen", Expect: "ok"}, get(basic, "ok", "basic.stored"),
 				put("basic.conflict_note", "conflict"), purge(basic, "ok"), {Op: "reopen", Expect: "ok"}, get(basic, "ok", "basic.purged"),
@@ -386,6 +409,10 @@ func cases(r map[string]artifact.Record) []Case {
 			Requires: []string{"durable"}, Stores: main,
 			Steps: []Step{put("basic", "ok"), {Op: "reopen", Trusted: []string{"rotated"}, Expect: "ok"}, get(basic, "untrusted_signer", ""),
 				purge(basic, "ok"), {Op: "reopen", Expect: "ok"}, get(basic, "ok", "basic.purged")}},
+		{Name: "bare_untrusted_on_read", Description: "Reads of a record without originals fail closed when its signer is no longer trusted.",
+			Requires: []string{"durable"}, Stores: main,
+			Steps: []Step{put("empty", "ok"), {Op: "reopen", Trusted: []string{"rotated"}, Expect: "ok"}, get(empty, "untrusted_signer", ""),
+				{Op: "reopen", Expect: "ok"}, get(empty, "ok", "empty.stored")}},
 		{Name: "namespace_isolation", Description: "Namespaces sharing storage do not see each other's records.",
 			Requires: []string{"shared_backing"},
 			Stores: map[string]StoreSpec{"main": {Namespace: "alpha", Trusted: []string{"trusted"}},

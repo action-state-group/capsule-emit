@@ -6,6 +6,34 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added: `ledger.jsonl` as a CLL entry log and artifact store backend
+
+`capsule_emit.legacy_ledger.LegacyLedger` puts the flat `ledger.jsonl` behind
+`cll.log.EntryStore` and the artifact `Store` (`docs/legacy-ledger.md`).
+Existing ledgers open unchanged, with the same sequence positions and
+checkpoint roots. It keeps no originals, refuses purge and digest-only appends
+with the new `unsupported` code, and declares those limits in `CAPABILITIES`.
+`seal()` and `log()` write through it, and the checkpoint index reads the file
+through it incrementally instead of re-reading it whole.
+
+### Changed: sealing a `capsule_id` the ledger holds writes nothing
+
+`seal()` and `log()` no longer append a second line for a `capsule_id` already
+in the ledger: an identical line returns its existing `seq`, and a different
+line under that ID raises `capsule_emit.artifact.ConflictError`. New capsules
+produce the same bytes as before. Appends after a torn last line now start a
+new line instead of merging into it.
+
+### Changed: requires `checkpointed-local-log` 0.6
+
+The dependency is now `checkpointed-local-log>=0.6,<0.7`, for `cll.log`.
+
+### Added: artifact conformance cases for stores without originals
+
+`test-vectors/artifact-store` gains `bare_record`, `bare_rejections` and
+`bare_untrusted_on_read`, built on records without originals, and the runners
+derive the `originals` and `purge` capabilities from a case's steps.
+
 ### Added: one artifact store contract and conformance suite for every language
 
 `docs/artifact-store.md` specifies the optional artifact store (exact sealed

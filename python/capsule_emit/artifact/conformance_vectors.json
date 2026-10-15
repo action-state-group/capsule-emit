@@ -2220,14 +2220,44 @@
       "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCB3dBfUfHmFJqlGwLJXt65r6llymQYPasexf4vJJr8Jt1hADH4UFpXSjLtDkyuv+G1mIpQjdALx9ah2GpcNH3kQIJ5tr1FAqZz10Gg3SZPGRsXpiCPvnJCH3ZTlvT/NuHF5CA==",
       "artifacts": []
     },
+    "empty.capsule_tampered": {
+      "capsule_id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
+      "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1vdGhlciIsImFjdGlvbl90eXBlIjoiZnlpIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJub3RfYXBwbGljYWJsZSIsImxlZGdlcl9tb2RlIjoic3RhbmRhbG9uZSJ9LCJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6Ijc3NzQxN2Q0N2M3OTg1MjZhOTQ2YzBiMjU3YjdhZTZiZWE1OTcyOTkwNjBmNmFjN2IxN2Y4YmM5MjZiZjA5YjciLCJkZXZlbG9wZXIiOiJjb25mb3JtYW5jZS1kZXZlbG9wZXIiLCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6ImRlZDNlYjI2MDhhNzBhMmUyODA0MGM1ZTFlN2M0ZmFhNDliZTBkMjdiNGZmYzRkM2UyYTNmZmI5MWJmNzJmYmIifX0sIm9wZXJhdG9yIjoiY29uZm9ybWFuY2Utb3BlcmF0b3IiLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTEwLTE1VDAwOjAwOjAwWiJ9",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCB3dBfUfHmFJqlGwLJXt65r6llymQYPasexf4vJJr8Jt1hADH4UFpXSjLtDkyuv+G1mIpQjdALx9ah2GpcNH3kQIJ5tr1FAqZz10Gg3SZPGRsXpiCPvnJCH3ZTlvT/NuHF5CA==",
+      "artifacts": []
+    },
+    "empty.envelope_other_capsule": {
+      "capsule_id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
+      "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1lbXB0eSIsImFjdGlvbl90eXBlIjoiZnlpIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJub3RfYXBwbGljYWJsZSIsImxlZGdlcl9tb2RlIjoic3RhbmRhbG9uZSJ9LCJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6Ijc3NzQxN2Q0N2M3OTg1MjZhOTQ2YzBiMjU3YjdhZTZiZWE1OTcyOTkwNjBmNmFjN2IxN2Y4YmM5MjZiZjA5YjciLCJkZXZlbG9wZXIiOiJjb25mb3JtYW5jZS1kZXZlbG9wZXIiLCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6ImRlZDNlYjI2MDhhNzBhMmUyODA0MGM1ZTFlN2M0ZmFhNDliZTBkMjdiNGZmYzRkM2UyYTNmZmI5MWJmNzJmYmIifX0sIm9wZXJhdG9yIjoiY29uZm9ybWFuY2Utb3BlcmF0b3IiLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTEwLTE1VDAwOjAwOjAwWiJ9",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCDbS/yqq02kQvB4Doud9w9fY/52kqM6jG3yPWiZURxL0FhAs7idgBKI4bIPW7QTWmN7z74rCbSYF86fP765yeu8Ug883S/GkPxMzlDKLs+Nt/W6ATDsNFC/Ep34ZkMV15DpAw==",
+      "artifacts": []
+    },
     "empty.purged": {
       "capsule_id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
       "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1lbXB0eSIsImFjdGlvbl90eXBlIjoiZnlpIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJub3RfYXBwbGljYWJsZSIsImxlZGdlcl9tb2RlIjoic3RhbmRhbG9uZSJ9LCJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6Ijc3NzQxN2Q0N2M3OTg1MjZhOTQ2YzBiMjU3YjdhZTZiZWE1OTcyOTkwNjBmNmFjN2IxN2Y4YmM5MjZiZjA5YjciLCJkZXZlbG9wZXIiOiJjb25mb3JtYW5jZS1kZXZlbG9wZXIiLCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6ImRlZDNlYjI2MDhhNzBhMmUyODA0MGM1ZTFlN2M0ZmFhNDliZTBkMjdiNGZmYzRkM2UyYTNmZmI5MWJmNzJmYmIifX0sIm9wZXJhdG9yIjoiY29uZm9ybWFuY2Utb3BlcmF0b3IiLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTEwLTE1VDAwOjAwOjAwWiJ9",
       "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCB3dBfUfHmFJqlGwLJXt65r6llymQYPasexf4vJJr8Jt1hADH4UFpXSjLtDkyuv+G1mIpQjdALx9ah2GpcNH3kQIJ5tr1FAqZz10Gg3SZPGRsXpiCPvnJCH3ZTlvT/NuHF5CA==",
       "artifacts": []
     },
+    "empty.rotated_envelope": {
+      "capsule_id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
+      "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1lbXB0eSIsImFjdGlvbl90eXBlIjoiZnlpIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJub3RfYXBwbGljYWJsZSIsImxlZGdlcl9tb2RlIjoic3RhbmRhbG9uZSJ9LCJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6Ijc3NzQxN2Q0N2M3OTg1MjZhOTQ2YzBiMjU3YjdhZTZiZWE1OTcyOTkwNjBmNmFjN2IxN2Y4YmM5MjZiZjA5YjciLCJkZXZlbG9wZXIiOiJjb25mb3JtYW5jZS1kZXZlbG9wZXIiLCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6ImRlZDNlYjI2MDhhNzBhMmUyODA0MGM1ZTFlN2M0ZmFhNDliZTBkMjdiNGZmYzRkM2UyYTNmZmI5MWJmNzJmYmIifX0sIm9wZXJhdG9yIjoiY29uZm9ybWFuY2Utb3BlcmF0b3IiLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTEwLTE1VDAwOjAwOjAwWiJ9",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIE5dw6ofRdfVqNUZsNMfszLjYqRtO43ol32D1uPybOUASegWCB3dBfUfHmFJqlGwLJXt65r6llymQYPasexf4vJJr8Jt1hAod6DPy8+GJSgXdS0GmwCm/aJdjyLHwKBUlt4wWq7QGRvIwMG1ezMQ3F05LLDBGoxsFwKyv5NAsvD/bHSGLOGAA==",
+      "artifacts": []
+    },
     "empty.stored": {
       "capsule_id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
+      "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1lbXB0eSIsImFjdGlvbl90eXBlIjoiZnlpIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJub3RfYXBwbGljYWJsZSIsImxlZGdlcl9tb2RlIjoic3RhbmRhbG9uZSJ9LCJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6Ijc3NzQxN2Q0N2M3OTg1MjZhOTQ2YzBiMjU3YjdhZTZiZWE1OTcyOTkwNjBmNmFjN2IxN2Y4YmM5MjZiZjA5YjciLCJkZXZlbG9wZXIiOiJjb25mb3JtYW5jZS1kZXZlbG9wZXIiLCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6ImRlZDNlYjI2MDhhNzBhMmUyODA0MGM1ZTFlN2M0ZmFhNDliZTBkMjdiNGZmYzRkM2UyYTNmZmI5MWJmNzJmYmIifX0sIm9wZXJhdG9yIjoiY29uZm9ybWFuY2Utb3BlcmF0b3IiLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTEwLTE1VDAwOjAwOjAwWiJ9",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCB3dBfUfHmFJqlGwLJXt65r6llymQYPasexf4vJJr8Jt1hADH4UFpXSjLtDkyuv+G1mIpQjdALx9ah2GpcNH3kQIJ5tr1FAqZz10Gg3SZPGRsXpiCPvnJCH3ZTlvT/NuHF5CA==",
+      "artifacts": []
+    },
+    "empty.untrusted_envelope": {
+      "capsule_id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
+      "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1lbXB0eSIsImFjdGlvbl90eXBlIjoiZnlpIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJub3RfYXBwbGljYWJsZSIsImxlZGdlcl9tb2RlIjoic3RhbmRhbG9uZSJ9LCJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6Ijc3NzQxN2Q0N2M3OTg1MjZhOTQ2YzBiMjU3YjdhZTZiZWE1OTcyOTkwNjBmNmFjN2IxN2Y4YmM5MjZiZjA5YjciLCJkZXZlbG9wZXIiOiJjb25mb3JtYW5jZS1kZXZlbG9wZXIiLCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6ImRlZDNlYjI2MDhhNzBhMmUyODA0MGM1ZTFlN2M0ZmFhNDliZTBkMjdiNGZmYzRkM2UyYTNmZmI5MWJmNzJmYmIifX0sIm9wZXJhdG9yIjoiY29uZm9ybWFuY2Utb3BlcmF0b3IiLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTEwLTE1VDAwOjAwOjAwWiJ9",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIO1JKMYo0cLG6ukDOJBZlWEpWSc6XGP5NjbBRhSshzfRASegWCB3dBfUfHmFJqlGwLJXt65r6llymQYPasexf4vJJr8Jt1hAoAP8TtbwFyA1zd1tl5bWGiMDMQvUkk7iwpdYOZdJ72jxDNSpcBCiKkmxpxbyMLkP0Pi/ltJtwKjuqrc8n8oyBA==",
+      "artifacts": []
+    },
+    "empty.wrong_id": {
+      "capsule_id": "db4bfcaaab4da442f0780e8b9df70f5f63fe7692a33a8c6df23d6899511c4bd0",
       "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1lbXB0eSIsImFjdGlvbl90eXBlIjoiZnlpIiwiYXNzdXJhbmNlIjp7ImF0dGVzdGF0aW9uX21vZGUiOiJzZWxmX2F0dGVzdGVkIiwiZWZmZWN0X21vZGUiOiJub3RfYXBwbGljYWJsZSIsImxlZGdlcl9tb2RlIjoic3RhbmRhbG9uZSJ9LCJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6Ijc3NzQxN2Q0N2M3OTg1MjZhOTQ2YzBiMjU3YjdhZTZiZWE1OTcyOTkwNjBmNmFjN2IxN2Y4YmM5MjZiZjA5YjciLCJkZXZlbG9wZXIiOiJjb25mb3JtYW5jZS1kZXZlbG9wZXIiLCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6ImRlZDNlYjI2MDhhNzBhMmUyODA0MGM1ZTFlN2M0ZmFhNDliZTBkMjdiNGZmYzRkM2UyYTNmZmI5MWJmNzJmYmIifX0sIm9wZXJhdG9yIjoiY29uZm9ybWFuY2Utb3BlcmF0b3IiLCJzcGVjX3ZlcnNpb24iOiJkcmFmdC1taWgtc2NpdHQtYWdlbnQtYWN0aW9uLWNhcHN1bGUtMDUiLCJ0aW1lc3RhbXAiOiIyMDI2LTEwLTE1VDAwOjAwOjAwWiJ9",
       "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCB3dBfUfHmFJqlGwLJXt65r6llymQYPasexf4vJJr8Jt1hADH4UFpXSjLtDkyuv+G1mIpQjdALx9ah2GpcNH3kQIJ5tr1FAqZz10Gg3SZPGRsXpiCPvnJCH3ZTlvT/NuHF5CA==",
       "artifacts": []
@@ -3206,6 +3236,92 @@
       ]
     },
     {
+      "name": "bare_record",
+      "description": "A record without originals stores, retries idempotently and conflicts with another envelope.",
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted",
+            "rotated"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "put",
+          "record": "empty",
+          "expect": "ok"
+        },
+        {
+          "op": "get",
+          "id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
+          "expect": "ok",
+          "result": "empty.stored"
+        },
+        {
+          "op": "put",
+          "record": "empty",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "empty.rotated_envelope",
+          "expect": "conflict"
+        },
+        {
+          "op": "get",
+          "id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
+          "expect": "ok",
+          "result": "empty.stored"
+        }
+      ]
+    },
+    {
+      "name": "bare_rejections",
+      "description": "Records without originals that fail admission are rejected and nothing is stored.",
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "put",
+          "record": "empty.untrusted_envelope",
+          "expect": "untrusted_signer"
+        },
+        {
+          "op": "put",
+          "record": "empty.envelope_other_capsule",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "empty.wrong_id",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "empty.capsule_tampered",
+          "expect": "invalid"
+        },
+        {
+          "op": "get",
+          "id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
+          "expect": "not_found"
+        },
+        {
+          "op": "get",
+          "id": "db4bfcaaab4da442f0780e8b9df70f5f63fe7692a33a8c6df23d6899511c4bd0",
+          "expect": "not_found"
+        }
+      ]
+    },
+    {
       "name": "durable_reopen",
       "description": "Records, purges and conflicts persist across reopening.",
       "requires": [
@@ -3319,6 +3435,50 @@
           "id": "db4bfcaaab4da442f0780e8b9df70f5f63fe7692a33a8c6df23d6899511c4bd0",
           "expect": "ok",
           "result": "basic.purged"
+        }
+      ]
+    },
+    {
+      "name": "bare_untrusted_on_read",
+      "description": "Reads of a record without originals fail closed when its signer is no longer trusted.",
+      "requires": [
+        "durable"
+      ],
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "put",
+          "record": "empty",
+          "expect": "ok"
+        },
+        {
+          "op": "reopen",
+          "trusted": [
+            "rotated"
+          ],
+          "expect": "ok"
+        },
+        {
+          "op": "get",
+          "id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
+          "expect": "untrusted_signer"
+        },
+        {
+          "op": "reopen",
+          "expect": "ok"
+        },
+        {
+          "op": "get",
+          "id": "777417d47c798526a946c0b257b7ae6bea597299060f6ac7b17f8bc926bf09b7",
+          "expect": "ok",
+          "result": "empty.stored"
         }
       ]
     },

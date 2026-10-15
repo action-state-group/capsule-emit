@@ -268,9 +268,21 @@ def append_to_ledger(
     """
     p = Path(path)
     with _append_lock, _writer_lock(p, wait=wait, timeout=timeout):
-        with open(p, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(capsule, separators=(",", ":")) + "\n")
+        _write_line(p, json.dumps(capsule, separators=(",", ":")))
         return len(read_ledger_entries(path))
+
+
+def _write_line(path: Path, line: str) -> None:
+    """Append one ledger line. The caller holds ``_append_lock`` and
+    ``_writer_lock``. A file whose last line lost its newline (a torn write)
+    gets one first, so the new line is never merged into it."""
+    with open(path, "ab") as fh:
+        if fh.tell() > 0:
+            with open(path, "rb") as tail:
+                tail.seek(-1, os.SEEK_END)
+                if tail.read(1) != b"\n":
+                    fh.write(b"\n")
+        fh.write(line.encode("utf-8") + b"\n")
 
 
 def read_ledger_entries(path: str | os.PathLike) -> list[dict]:
