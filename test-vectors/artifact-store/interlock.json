@@ -211,6 +211,20 @@
         "op": "put",
         "record": "effect"
       }
+    ],
+    "check": [
+      {
+        "op": "get",
+        "record": "rotated"
+      },
+      {
+        "op": "get",
+        "record": "basic"
+      },
+      {
+        "op": "get",
+        "record": "effect"
+      }
     ]
   }
 }

@@ -13,12 +13,14 @@
 # 2. storage: the JSONL files, or the SQL schema and rows
 #    (artifact_store_rows.py), must be byte-identical across languages, and
 #    hold the expected number of records.
-# 3. read and strict: every language works on its own copy of every
+# 3. read, strict, check: every language works on fresh copies of every
 #    language's store (all pairs). read reports each record's outcome,
 #    StorageChecksum and JSONL line, then retries, a conflict and purges of
-#    retained content; strict reads with fewer trusted keys. Every report must
-#    equal interlock-read.txt and interlock-strict.txt, every copy must end in
-#    the same state, and existing SQL rows must keep their exact created_at.
+#    retained content. On a second copy, strict trusts fewer keys, so another
+#    signer's record is untrusted_signer and must still be purged, which check
+#    then confirms with the default keys. Every report must equal its golden
+#    (interlock-<phase>.txt), every copy must end in the same state, and
+#    existing SQL rows must keep their exact created_at.
 #
 # A language joins by adding its adapter (il_<lang>, and setup_<lang> if it
 # needs a build) below, and its name and toolchain to the workflow, in the pull
@@ -111,35 +113,43 @@ if test "$count" != "$expected_records"; then
 fi
 echo "storage: ${languages[*]} wrote identical $format data ($count records)"
 
-# 3. read and strict, on a fresh copy of the writer's store for every pair
+# 3. read, then strict and check, each on a fresh copy of the writer's store,
+# for every pair
+copy_store() { # <writer> <copy-name>: prints the copy's target and namespace
+  local source
+  source=$(target "$1" "$1")
+  case "$format" in
+    jsonl | sqlite)
+      cp "$source" "$(target "$2" "$1")"
+      printf '%s\n%s\n' "$(target "$2" "$1")" interlock
+      ;;
+    mysql)
+      rows copy mysql "$source" interlock "$2"
+      printf '%s\n%s\n' "$source" "$2"
+      ;;
+  esac
+}
+
 for reader in "${languages[@]}"; do
   for writer in "${languages[@]}"; do
     pair="$reader-$writer"
-    source=$(target "$writer" "$writer")
-    case "$format" in
-      jsonl | sqlite)
-        copy=$(target "pair-$pair" "$writer")
-        ns=interlock
-        cp "$source" "$copy"
-        ;;
-      mysql)
-        copy=$source
-        ns="pair-$pair"
-        rows copy mysql "$source" interlock "$ns"
-        ;;
-    esac
-    if test "$format" != jsonl; then rows created "$format" "$copy" "$ns" > "$work/created-before-$pair.txt"; fi
-    for phase in read strict; do
-      "il_$reader" "$phase" "$format" "$copy" "$ns" "$vectors" > "$work/$phase-$pair.txt"
-      if test "$inject" = read && test "$pair" = "$last-$first"; then echo tampered >> "$work/$phase-$pair.txt"; fi
-      same "$vectors/interlock-$phase.txt" "$work/$phase-$pair.txt" "$reader $phase on $writer's $format store"
+    for run in read strict; do
+      { read -r copy; read -r ns; } < <(copy_store "$writer" "$run-$pair")
+      if test "$format" != jsonl; then rows created "$format" "$copy" "$ns" > "$work/created-before-$run-$pair.txt"; fi
+      phases=$run
+      if test "$run" = strict; then phases="strict check"; fi
+      for phase in $phases; do
+        "il_$reader" "$phase" "$format" "$copy" "$ns" "$vectors" > "$work/$phase-$pair.txt"
+        if test "$inject" = read && test "$pair" = "$last-$first"; then echo tampered >> "$work/$phase-$pair.txt"; fi
+        same "$vectors/interlock-$phase.txt" "$work/$phase-$pair.txt" "$reader $phase on $writer's $format store"
+      done
+      dump "$copy" "$ns" > "$work/after-$run-$pair.txt"
+      same "$work/after-$run-$first-$first.txt" "$work/after-$run-$pair.txt" "$reader left $writer's $format store differently from $first ($run)"
+      if test "$format" != jsonl; then
+        rows created "$format" "$copy" "$ns" > "$work/created-after-$run-$pair.txt"
+        same "$work/created-before-$run-$pair.txt" "$work/created-after-$run-$pair.txt" "$reader rewrote existing rows in $writer's $format store ($run)"
+      fi
     done
-    dump "$copy" "$ns" > "$work/after-$pair.txt"
-    same "$work/after-$first-$first.txt" "$work/after-$pair.txt" "$reader left $writer's $format store differently from $first"
-    if test "$format" != jsonl; then
-      rows created "$format" "$copy" "$ns" > "$work/created-after-$pair.txt"
-      same "$work/created-before-$pair.txt" "$work/created-after-$pair.txt" "$reader rewrote existing rows in $writer's $format store"
-    fi
   done
 done
 echo "read: every pair of ${languages[*]} reads, retries and purges the other's $format store alike"
