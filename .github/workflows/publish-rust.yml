@@ -70,7 +70,7 @@ jobs:
           fi
           crate="${BASH_REMATCH[1]}"; version="${BASH_REMATCH[2]}"
           case "$crate" in
-            capsule-emit|capsule-emit-evidence-request) ;;
+            capsule-emit) ;;
             *) echo "::error::$crate is not a crate this workflow publishes"; exit 1 ;;
           esac
           git fetch --no-tags origin main

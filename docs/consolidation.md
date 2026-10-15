@@ -51,7 +51,7 @@ checks, frozen AAC corpus and live producer interoperability. TS requires
 packed consumers, explicit real-MySQL coverage and relevant browser coverage;
 its existing MySQL suite is opt-in and skipped tests do not establish parity.
 
-Rust flattening waits for accepted Evidence Request relocation (#290).
+The Rust workspace keeps the shared `rust/<crate>/` layout (no flattening, #286); the Evidence Request crate moved to agent-action-capsule as `evidence-request` (#290).
 Registry publication, publisher bindings, consumer module migration after the
 first `go/v*` release, compatibility removal and old-repository retirement are
 separate gates.

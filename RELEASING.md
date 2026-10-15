@@ -12,7 +12,6 @@ merging it tags and publishes. The packages are listed in
 | `python` | `python/pyproject.toml` | `python/v<version>` | `publish-python.yml` | `pypi` (tag rule `python/v*`) |
 | `ts` | `ts/package.json` and `ts/package-lock.json` | `ts/v<version>` | `publish-ts.yml` | `npm` (tag rule `ts/v*`) |
 | `crates/capsule-emit` | `rust/capsule-emit/Cargo.toml` and `rust/Cargo.lock` | `crates/capsule-emit-v<version>` | `publish-rust.yml` | `crates-io` (tag rule `crates/*-v*`) |
-| `crates/capsule-emit-evidence-request` | `rust/capsule-emit-evidence-request/Cargo.toml` and `rust/Cargo.lock` | `crates/capsule-emit-evidence-request-v<version>` | `publish-rust.yml` | `crates-io` (tag rule `crates/*-v*`) |
 
 The prefix is only on the Git tag. The registry version stays plain (`0.9.1`).
 
@@ -84,7 +83,7 @@ workflow file and its environment:
 |---|---|---|---|
 | PyPI | `capsule-emit` | `publish-python.yml` | `pypi` |
 | npm | `@action-state-group/capsule-emit` | `publish-ts.yml` | `npm` or blank |
-| crates.io | `capsule-emit`, `capsule-emit-evidence-request` | `publish-rust.yml` | `crates-io` |
+| crates.io | `capsule-emit` | `publish-rust.yml` | `crates-io` |
 
 Renaming a publisher workflow breaks publishing until the registry is updated
 first. No registry token is stored in this repository. Historical tags and

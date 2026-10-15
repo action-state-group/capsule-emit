@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# The Rust crates under rust/: format, lint, tests, the Python-reference
+# The capsule-emit crate under rust/: format, lint, tests, the Python-reference
 # conformance checks, and the crates.io package check (never a real publish).
 #
 # Actions are pinned to full commit SHAs (tag in the trailing comment); the
@@ -126,21 +126,15 @@ jobs:
       # repository at upload; `cargo publish --dry-run` does not. Copied
       # verbatim from checkpointed-local-log (d576880).
       - name: Crate metadata meets crates.io's publish rules
-        run: python3 ../.github/scripts/check_crate_metadata.py capsule-emit/Cargo.toml capsule-emit-evidence-request/Cargo.toml
+        run: python3 ../.github/scripts/check_crate_metadata.py capsule-emit/Cargo.toml
 
       - name: Package contents
-        run: |
-          cargo package --list -p capsule-emit
-          cargo package --list -p capsule-emit-evidence-request
-
-      - name: Publish dry run, capsule-emit-evidence-request (no upload)
-        if: env.DEPS_ON_CRATES_IO == 'true'
-        run: cargo publish --dry-run -p capsule-emit-evidence-request
+        run: cargo package --list -p capsule-emit
 
       # `cargo publish --dry-run` resolves dependencies from the crates.io
-      # index only (a workspace [patch] would not count). Both crates' own
+      # index only (a workspace [patch] would not count). The crate's own
       # dependencies (checkpointed-local-log 0.2.1, evidencebook 0.0.1) are
-      # published, so both dry runs run; DEPS_ON_CRATES_IO stays as the switch
+      # published, so the dry run runs; DEPS_ON_CRATES_IO stays as the switch
       # should a dependency ever again be ahead of crates.io.
       - name: Publish dry run, capsule-emit (no upload)
         if: env.DEPS_ON_CRATES_IO == 'true'

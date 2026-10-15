@@ -23,7 +23,7 @@ npm ci && npm run format:check && npm run lint && npm run typecheck && npm test 
 # Go (go/): see go/CLAUDE.md
 go vet ./... && go test ./...
 
-# Rust (rust/, a workspace of capsule-emit and capsule-emit-evidence-request)
+# Rust (rust/, a workspace holding the capsule-emit crate)
 cargo fmt --all --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
@@ -39,7 +39,7 @@ checks pinned vector sets against their `SHA256SUMS`.
 | `python/` | PyPI `capsule-emit` |
 | `ts/` | npm `@action-state-group/capsule-emit` |
 | `go/` | `github.com/action-state-group/capsule-emit/go` |
-| `rust/` | crates `capsule-emit` and `capsule-emit-evidence-request` |
+| `rust/` | crate `capsule-emit` |
 | `docs/`, `examples/`, `skills/`, `flows/` | guides, runnable examples and the agent skill |
 | `test-vectors/`, `commitment-conformance-vectors/` | pinned vector sets the tests read |
 
