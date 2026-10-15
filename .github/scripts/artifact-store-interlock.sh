@@ -15,8 +15,10 @@
 #    purge outcomes against that data. All reports must equal
 #    interlock-read.txt, and the reads must leave the storage unchanged.
 #
-# A language joins by adding an adapter function below and its name to
-# LANGUAGES (and its toolchain to .github/workflows/artifact-interlock.yml).
+# A language joins by adding its adapter (il_<lang>, and setup_<lang> if it
+# needs a build) below, and its name and toolchain to
+# .github/workflows/artifact-interlock.yml, in the pull request that adds its
+# backend.
 # MySQL needs CAPSULE_STORAGE_TEST_MYSQL=host:port with a disposable
 # capsule_storage_test database.
 set -euo pipefail
@@ -29,9 +31,14 @@ trap 'rm -rf "$work"' EXIT
 python_bin=${PYTHON:-python3}
 read -r -a languages <<< "${LANGUAGES:-go ts}"
 
-(cd "$repo/go" && go build -o "$work/go-interlock" ./artifact/internal/interlock)
+# Each language: an optional setup_<lang> (build once) and its adapter il_<lang>.
+setup_go() { (cd "$repo/go" && go build -o "$work/go-interlock" ./artifact/internal/interlock); }
 il_go() { "$work/go-interlock" "$@"; }
 il_ts() { node "$repo/ts/scripts/artifact-interlock.mjs" "$@"; }
+
+for lang in "${languages[@]}"; do
+  if declare -F "setup_$lang" > /dev/null; then "setup_$lang"; fi
+done
 
 target() {
   case "$format" in
