@@ -1,9 +1,12 @@
 package jsonl_test
 
 import (
+	"bytes"
 	"crypto/ed25519"
+	jsonv2 "encoding/json/v2"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/action-state-group/capsule-emit/go/artifact"
@@ -132,4 +135,53 @@ func TestJSONLInitRejectsUncreatablePath(t *testing.T) {
 	s, err := jsonlstore.New(path, "test-initbad", []ed25519.PublicKey{pub})
 	require.NoError(t, err)
 	require.Error(t, s.Init(t.Context()))
+}
+
+// TestJSONLPutAfterTornTailStartsNewLine: a Put after a torn last line (a
+// crash mid-append) starts its own line, so the record survives reopening.
+func TestJSONLPutAfterTornTailStartsNewLine(t *testing.T) {
+	record, pub := testutil.Record(t, "jsonl-torn-tail")
+	store, path := newStore(t, "test-torn", []ed25519.PublicKey{pub})
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	require.NoError(t, err)
+	_, err = f.WriteString(`{"capsule_id":`)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	require.NoError(t, store.Put(t.Context(), record))
+	// The live index points past the inserted newline.
+	got, err := store.Get(t.Context(), record.CapsuleID)
+	require.NoError(t, err)
+	assert.Equal(t, record.Capsule, got.Capsule)
+	require.NoError(t, store.Purge(t.Context(), record.CapsuleID))
+	reopened, err := jsonlstore.New(path, "test-torn", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	got, err = reopened.Get(t.Context(), record.CapsuleID)
+	require.NoError(t, err)
+	assert.Equal(t, artifact.Purged, got.Artifacts[0].State)
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(string(data), "{\"capsule_id\":\n"))
+}
+
+// TestJSONLTornLastLineIsNotIndexed: a complete record missing only its final
+// '\n' counts as torn, as in the TypeScript, Python and Rust stores: it is not
+// indexed, and a purge keeps its bytes verbatim.
+func TestJSONLTornLastLineIsNotIndexed(t *testing.T) {
+	record, pub := testutil.Record(t, "jsonl-unterminated")
+	other, _ := testutil.Record(t, "jsonl-unterminated-other")
+	store, path := newStore(t, "test-unterminated", []ed25519.PublicKey{pub})
+	require.NoError(t, store.Put(t.Context(), record))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	tail, err := jsonv2.Marshal(other)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, append(data, tail...), 0o644))
+	reopened, err := jsonlstore.New(path, "test-unterminated", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	_, err = reopened.Get(t.Context(), other.CapsuleID)
+	require.ErrorIs(t, err, artifact.ErrNotFound)
+	require.NoError(t, reopened.Purge(t.Context(), record.CapsuleID))
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.True(t, bytes.HasSuffix(after, append([]byte{'\n'}, tail...)), "torn tail kept verbatim")
 }

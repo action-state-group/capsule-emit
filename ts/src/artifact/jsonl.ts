@@ -267,8 +267,25 @@ export class JsonlArtifactStore implements Store {
     // a silent provision, matching the Go and sqlite backends.
     const line = encodeRecord(prepared) + "\n";
     const lineBuf = Buffer.from(line, "utf8");
-    const offset = fs.statSync(this.filePath).size;
-    fs.appendFileSync(this.filePath, lineBuf);
+    let offset = fs.statSync(this.filePath).size;
+    // Terminate a torn last line first, so the new record starts its own line
+    // instead of merging into the damaged one and vanishing on the next open.
+    let prefix = Buffer.alloc(0);
+    if (offset > 0) {
+      const last = Buffer.alloc(1);
+      const fd = fs.openSync(this.filePath, "r");
+      try {
+        if (fs.readSync(fd, last, 0, 1, offset - 1) !== 1)
+          throw new ArtifactError("corrupt", "store shrank during put");
+      } finally {
+        fs.closeSync(fd);
+      }
+      if (last[0] !== 0x0a) {
+        prefix = Buffer.from("\n");
+        offset += 1;
+      }
+    }
+    fs.appendFileSync(this.filePath, Buffer.concat([prefix, lineBuf]));
     this.index.set(prepared.capsuleId, { offset, length: lineBuf.length });
   }
 
@@ -318,11 +335,16 @@ export class JsonlArtifactStore implements Store {
         let readOffset = 0;
         while (readOffset < buf.length) {
           const nlPos = buf.indexOf(0x0a, readOffset);
-          const lineEnd = nlPos === -1 ? buf.length : nlPos;
-          const lineStr = buf.subarray(readOffset, lineEnd).toString("utf8");
+          if (nlPos === -1) {
+            // Keep a torn last line byte for byte, still unindexed.
+            fs.writeSync(outFd, buf.subarray(readOffset));
+            break;
+          }
+          const raw = buf.subarray(readOffset, nlPos + 1);
+          const lineStr = raw.subarray(0, raw.length - 1).toString("utf8");
 
-          // Default: copy the line unchanged.
-          let outLine = lineStr.length > 0 ? lineStr + "\n" : "\n";
+          // Default: copy the line's bytes unchanged.
+          let outBuf: Buffer = raw;
           let lineCapsuleId: string | undefined;
 
           if (lineStr.length > 0) {
@@ -350,12 +372,11 @@ export class JsonlArtifactStore implements Store {
                     };
                   }),
                 };
-                outLine = encodeRecord(purgedRecord) + "\n";
+                outBuf = Buffer.from(encodeRecord(purgedRecord) + "\n", "utf8");
               }
             }
           }
 
-          const outBuf = Buffer.from(outLine, "utf8");
           if (lineCapsuleId !== undefined) {
             newIndex.set(lineCapsuleId, {
               offset: writeOffset,
@@ -364,7 +385,7 @@ export class JsonlArtifactStore implements Store {
           }
           fs.writeSync(outFd, outBuf);
           writeOffset += outBuf.length;
-          readOffset = nlPos === -1 ? buf.length : nlPos + 1;
+          readOffset = nlPos + 1;
         }
       } finally {
         fs.closeSync(outFd);

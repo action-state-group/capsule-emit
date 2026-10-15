@@ -226,8 +226,10 @@ Data written by any language opens in the others:
   are standard base64 with padding; `binding` and `content_sha256` are omitted
   when empty; `content` is omitted when absent and written as `""` when
   zero-length; an empty inventory is `[]`. The namespace is not stored per line:
-  a file holds one namespace. Readers index by `capsule_id`, last line wins. Put
-  appends one line; purge rewrites the file through a temporary file and an
+  a file holds one namespace. Readers index complete lines by `capsule_id`,
+  last line wins; a torn last line (one without `\n`) is never indexed. Put
+  appends one line, first ending a torn last line so the new record is not
+  merged into it; purge rewrites the file through a temporary file and an
   atomic rename. Single writer, no locking. The conformance vectors pin exact
   lines.
 - **`mysql` and `sqlite`**: the same two tables, `capsule_store_capsules`

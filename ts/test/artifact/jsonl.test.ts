@@ -233,4 +233,45 @@ describe("JsonlArtifactStore", () => {
     const note = got.artifacts.find((a) => a.name === "private_note");
     expect(note?.content?.length).toBe(80 * 1024);
   });
+
+  it("starts a new line after a torn last line, so the record survives reopening", async () => {
+    const { record, trusted } = await makeRecord("torn-tail");
+    const s = await store(trusted);
+    fs.appendFileSync(filePath, '{"capsule_id":');
+    await s.put(record);
+    // The live index points past the inserted newline.
+    expect((await s.get(record.capsuleId)).capsuleId).toBe(record.capsuleId);
+    await s.purge(record.capsuleId);
+    const reopened = new JsonlArtifactStore(filePath, "test", [trusted]);
+    const got = await reopened.get(record.capsuleId);
+    expect(got.artifacts.every((a) => a.state !== "present")).toBe(true);
+    expect(
+      fs.readFileSync(filePath, "utf8").startsWith('{"capsule_id":\n'),
+    ).toBe(true);
+  });
+
+  it("never indexes a torn last line, and purge keeps it byte for byte", async () => {
+    const { record, trusted } = await makeRecord("unterminated");
+    const { record: other } = await makeRecord("unterminated-other");
+    const s = await store(trusted);
+    await s.put(record);
+    const tail = Buffer.from(
+      JSON.stringify({
+        capsule_id: other.capsuleId,
+        junk: "\u00e9",
+      }),
+    );
+    fs.appendFileSync(filePath, Buffer.concat([tail, Buffer.from([0xff])]));
+    const reopened = new JsonlArtifactStore(filePath, "test", [trusted]);
+    await expect(reopened.get(other.capsuleId)).rejects.toMatchObject({
+      code: "not_found",
+    });
+    await reopened.purge(record.capsuleId);
+    const after = fs.readFileSync(filePath);
+    expect(
+      after
+        .subarray(after.length - tail.length - 2)
+        .equals(Buffer.concat([Buffer.from("\n"), tail, Buffer.from([0xff])])),
+    ).toBe(true);
+  });
 });

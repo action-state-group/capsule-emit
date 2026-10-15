@@ -12,6 +12,7 @@ package jsonl
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	jsonv2 "encoding/json/v2"
@@ -90,20 +91,37 @@ func (s *Store) scanIndex(r io.Reader) error {
 	const maxLine = 16 * 1024 * 1024
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, maxLine), maxLine)
+	sc.Split(scanRawLines)
 	var offset int64
 	for sc.Scan() {
-		line := sc.Bytes()
-		length := len(line)
+		token := sc.Bytes()
+		line, terminated := bytes.CutSuffix(token, []byte{'\n'})
+		if !terminated {
+			break // a torn last line is never indexed, as in the other languages
+		}
 		var peek struct {
 			CapsuleID string `json:"capsule_id"`
 		}
 		if err := jsonv2.Unmarshal(line, &peek); err == nil && peek.CapsuleID != "" {
 			// Last-occurrence-wins as a defensive tie-break only.
-			s.index[peek.CapsuleID] = indexEntry{offset: offset, length: length}
+			s.index[peek.CapsuleID] = indexEntry{offset: offset, length: len(line)}
 		}
-		offset += int64(length) + 1 // +1 for the \n terminator
+		offset += int64(len(token))
 	}
 	return sc.Err()
+}
+
+// scanRawLines is a bufio.SplitFunc that keeps each line's '\n' and returns an
+// unterminated final fragment as its own token, so callers can tell a torn
+// last line (a crash mid-append) from a complete one.
+func scanRawLines(data []byte, atEOF bool) (int, []byte, error) {
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		return i + 1, data[:i+1], nil
+	}
+	if atEOF && len(data) > 0 {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 // Namespace returns the explicit storage scope.
@@ -179,7 +197,7 @@ func (s *Store) Put(ctx context.Context, record artifact.Record) error {
 		return err
 	}
 
-	f, err := os.OpenFile(s.path, os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(s.path, os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}
@@ -190,10 +208,21 @@ func (s *Store) Put(ctx context.Context, record artifact.Record) error {
 		return err
 	}
 
+	// Terminate a torn last line first, so the new record starts its own line
+	// instead of merging into the damaged one and vanishing on the next open.
+	var line []byte
+	if offset > 0 {
+		last := make([]byte, 1)
+		if _, err := f.ReadAt(last, offset-1); err != nil {
+			return err
+		}
+		if last[0] != '\n' {
+			line = append(line, '\n')
+			offset++
+		}
+	}
 	// Write data + newline as a single call to avoid a partial line on error.
-	line := make([]byte, len(data)+1)
-	copy(line, data)
-	line[len(data)] = '\n'
+	line = append(append(line, data...), '\n')
 	if _, err := f.Write(line); err != nil {
 		return err
 	}
@@ -333,8 +362,16 @@ func (s *Store) rewrite(targetID string, replacement artifact.Record) (err error
 	var offset int64
 	found := false
 
+	sc.Split(scanRawLines)
 	for sc.Scan() {
-		line := sc.Bytes()
+		line, terminated := bytes.CutSuffix(sc.Bytes(), []byte{'\n'})
+		if !terminated {
+			// Keep a torn last line byte for byte, still unindexed.
+			if _, err = w.Write(line); err != nil {
+				return err
+			}
+			break
+		}
 		var peek struct {
 			CapsuleID string `json:"capsule_id"`
 		}
