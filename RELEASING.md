@@ -70,8 +70,9 @@ If a publish fails after the tag exists:
 
 ## Go
 
-The module is `github.com/action-state-group/capsule-emit/go`. An admin pushes
-`go/v<version>`; the version is fetchable as soon as the tag exists, so a bad
+The module is `github.com/action-state-group/capsule-emit/go`. Merge a pull
+request that adds the version's entry to `go/CHANGELOG.md`, then an admin
+pushes `go/v<version>` on a `main` commit that contains it. The version is fetchable as soon as the tag exists, so a bad
 release can only be withdrawn with a `retract` directive in a later version.
 CI on `main` covers the module's tests.
 
