@@ -43,15 +43,12 @@ in the order given, never interpreted by this crate.
 ## Differences from the reference verifier
 
 `structure` gives the reference verifier's (`agent_action_capsule.verify`)
-verdict and findings on every conformance vector. On inputs outside them,
-two differences are known, each pinned by a test in
-`tests/structure_vectors.rs`:
-
-- **`-0`** parses as a float here (an integer zero in Python), so a record
-  carrying it is refused `float_in_digest_field`.
-- **An integer above `u64::MAX`** also parses as a float here: refused
-  `float_in_digest_field`, where the reference says
-  `unsafe_integer_in_digest_field`. Both refuse the record.
+verdict and findings on every conformance vector. Numbers are judged by
+their text, as the reference judges them: `-0` is the integer 0, and an
+integer above `u64::MAX` is refused `unsafe_integer_in_digest_field`
+(`tests/structure_vectors.rs` pins both). Read record JSON with
+`jcs::decode_record`, not `serde_json`, so it decodes as it does in the
+reference (see the `jcs` module).
 
 A list or object in a string-typed field is no longer a difference. The
 reference now refuses it in check 1 with `field_not_string`
