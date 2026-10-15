@@ -282,7 +282,6 @@ impl From<SubstrateError> for CheckpointStateError {
             SubstrateError::NodeStore(m) => Self::NodeStore(m),
             SubstrateError::Store(m) => Self::Store(m),
             SubstrateError::Mmr(m) => Self::Mmr(m),
-            SubstrateError::Checkpoint(m) => Self::Checkpoint(m),
             SubstrateError::Signer(m) => Self::Signer(m),
             SubstrateError::EmptyMmr => Self::EmptyMmr,
             SubstrateError::RollbackSize {

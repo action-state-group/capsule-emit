@@ -294,8 +294,6 @@ pub enum SubstrateError {
     Store(String),
     #[error("mmr error: {0}")]
     Mmr(String),
-    #[error("checkpoint error: {0}")]
-    Checkpoint(String),
     #[error("signer error: {0}")]
     Signer(String),
     #[error("cannot checkpoint an empty MMR (no leaves appended yet)")]
