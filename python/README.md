@@ -191,9 +191,13 @@ The package installs three commands:
 
 | Command | What it does |
 |---|---|
-| `capsule-emit` | `ledger view` / `ledger show` (read the local ledger), `verify`, `status` (what is logged, which checkpoint covers what, the witnessing lag), `export` (a scoped evidence file for a third party: one exchange, peer or window), `evidence` (a verification comment built from a ledger, re-verifying every capsule first), `report` (one readable HTML page from an evidence file, offline), `disclose` (a bundle plus selected content, with its own sealed disclosure record), `permalink` (a demo verify-page link) |
+| `capsule-emit` | `ledger view` / `ledger show` (read the local ledger), `verify`, `status` (what is logged, which checkpoint covers what, the witnessing lag), `export` (a scoped evidence file for a third party: one exchange, peer or window), `evidence` (a verification comment built from a ledger, re-verifying every capsule first), `disclose` (a bundle plus selected content, with its own sealed disclosure record), `permalink` (a demo verify-page link) |
 | `capsule-emit-server` | a companion MCP server (`capsule_emit/server.py`), run as a Goose extension or by any MCP client, to record, verify and inspect capsules from a session |
 | `capsule-emit-agentgateway` | the agentgateway adapter's process entry point |
+
+The HTML pages for a ledger (`ledger view --html`) and an evidence file
+(`report`) are in [capsule-viewer](https://github.com/action-state-group/capsule-viewer):
+`python -m capsule_viewer.ledger` and `python -m capsule_viewer.evidence_report`.
 
 `capsule-emit <command> --help` gives every flag.
 
@@ -205,8 +209,8 @@ Each of these is a module you can import; none is needed for `seal()`.
 |---|---|---|
 | Two-party records | `bilateral.py`, `settlement.py`, `reconciliation.py`, `period.py` | the bilateral attestation protocol's reference implementation (`draft-mih-agent-bilateral-attestation-00`; see [docs/bilateral-reconciliation.md](../docs/bilateral-reconciliation.md)); settlement records, where two parties each record the same payment; reconciling two independently sealed halves of one exchange; and `--period week|month` as sugar over a time window |
 | Record patterns | `approval.py`, `adjudication.py` | a human approval sealed and chained to the capsule it unblocks; a verdict capsule for a twin comparison (which of two answers an independent recompute matched) |
-| Evidence files | `evidence_file.py`, `evidence_report.py`, `evidence_request.py`, `evidence.py`, `scoped_export.py` | check an Evidence Bundle (`evidence-bundle/v2`) from any producer; render it as one page; answer an evidence request (artifact, signed refusal, or recorded absence; deprecated pre-00 profile, use `agent_action_capsule.evidence_request`); the verification comment built from a ledger; and the scoped export |
-| Handing records over | `bundle.py`, `disclose.py`, `disclosure.py`, `chain_segment.py`, `permalink.py`, `viewer.py` | the bundle anyone can verify; the recorded act of disclosing content to an audience, and its Disclosure Envelope; a run of the chain as history; the demo permalink; and the capsule-native ledger viewer |
+| Evidence files | `evidence_file.py`, `evidence_request.py`, `evidence.py`, `scoped_export.py` | check an Evidence Bundle (`evidence-bundle/v2`) from any producer; answer an evidence request (artifact, signed refusal, or recorded absence; deprecated pre-00 profile, use `agent_action_capsule.evidence_request`); the verification comment built from a ledger; and the scoped export |
+| Handing records over | `bundle.py`, `disclose.py`, `disclosure.py`, `chain_segment.py`, `permalink.py`, `viewer.py` | the bundle anyone can verify; the recorded act of disclosing content to an audience, and its Disclosure Envelope; a run of the chain as history; the demo permalink; and the terminal table `ledger view` draws |
 | Witnessing | `witness.py`, `witness_bindings.py`, `witness_directory.py`, `checkpoint/` | the default-on checkpoint and witness wiring behind `seal()`; how one checkpoint reaches more than one kind of transparency service, and the plurality policy applied to the receipts; [`witnesses.json`](../witnesses.json), the public witness directory, with its validator; and `checkpoint/`, a compatibility re-export of the checkpointed-local-log library |
 | Artifact store | `artifact/` | optional storage for exact sealed Capsules, their Producer Envelopes and originals, with retention and purge, on `jsonl`, `memory`, `sqlite` (standard library) or `mysql` (the `mysql` extra, PyMySQL). The files and rows open in the Go, TypeScript and Rust stores, under the shared [artifact store contract](../docs/artifact-store.md); `artifact.conformance.run` checks any store, including your own. `legacy_ledger.py` puts the flat `ledger.jsonl` behind the same interface and the CLL entry log, with no originals and no purge ([docs/legacy-ledger.md](../docs/legacy-ledger.md)) |
 | OpenTelemetry | `otel/` | a digest-only span exporter for the `org.agentactioncapsule.otel` correlation block (`draft-palanisamy-scitt-aac-otel-00`), plus span classification. Only the exporter needs the `otel` extra |

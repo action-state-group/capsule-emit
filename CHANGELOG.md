@@ -6,6 +6,29 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Removed (breaking): the HTML pages moved to capsule-viewer
+
+`capsule-emit report`, `capsule-emit ledger view --html`,
+`capsule_emit.evidence_report` (`render_report_html`) and
+`capsule_emit.viewer.render_html` are removed. The pages are now in
+[capsule-viewer](https://github.com/action-state-group/capsule-viewer)
+(action-state-group/capsule-viewer#31):
+
+- `capsule-emit report FILE.json -o page.html` is
+  `python -m capsule_viewer.evidence_report FILE.json -o page.html`, the same
+  page, held to the one this package drew by frozen goldens;
+- `capsule-emit ledger view LEDGER --html page.html` is
+  `python -m capsule_viewer.ledger LEDGER -o page.html`, now checked by
+  `check_evidence_file` as one evidence file: a tampered ledger is refused
+  rather than drawn with a failed row, and an empty one is an error.
+
+capsule-viewer is not on PyPI; install it from its repository with
+`pip install "capsule-viewer[evidence] @ git+https://github.com/action-state-group/capsule-viewer"`.
+It depends on this package, so there are no forwarding wrappers here: they
+would make the dependency circular. `capsule-emit ledger view` (the terminal
+table, `viewer.render_table`), `verify --bundle` and `check_evidence_file` stay
+here.
+
 ### Fixed: `verify --bundle` checks a file's disclosures
 
 `check_evidence_file` dropped the disclosure results of
