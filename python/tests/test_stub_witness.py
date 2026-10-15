@@ -194,10 +194,15 @@ def test_stub_mode_makes_no_network_call_and_grade_stays_self_attested(tmp_path,
     seal("payload", action="mint", operator="acme", anchor=False, ledger=ledger)
 
     key = witness._resolve_key(str(ledger))
-    assert _wait_for(lambda: witness._states.get(key) is not None and witness._states[key].prev is not None)
+    # The worker publishes `prev` before it attaches the stub's stamp, so wait
+    # for the stamp itself rather than racing it.
+    assert _wait_for(
+        lambda: witness._states.get(key) is not None
+        and witness._states[key].prev is not None
+        and witness._states[key].prev.witnesses
+    ), "the stub should still have produced a stamp"
     cp = witness._states[key].prev
 
-    assert cp.witnesses, "the stub should still have produced a stamp"
     assert all(w.is_stub for w in cp.witnesses)
     assert cp.grade() == Grade.SELF_ATTESTED, (
         "the stub's grade never leaves self-attested"
