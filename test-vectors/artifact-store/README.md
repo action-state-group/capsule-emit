@@ -66,6 +66,8 @@ so that a store with [capability limits](../../docs/artifact-store.md#capability
 can declare a subset: `originals` when the case puts a record that declares any
 artifact, and `purge` when it purges with any expected outcome other than
 `invalid`. Every built-in backend except the legacy ledgers has both. The
+Python (`Harness.originals`, `Harness.purge`) and Rust (`conformance::Limits`,
+`run_limited`) runners take them; Go and TypeScript run every case. The
 `bare_*` cases use only `empty` and its variants, so such a store still runs
 admission, conflict, rejection and fail-closed read checks.
 

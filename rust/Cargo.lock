@@ -154,6 +154,10 @@ version = "0.0.1"
 dependencies = [
  "agent-action-capsule",
  "base64 0.22.1",
+ "capsule-emit",
+ "checkpointed-local-log",
+ "chrono",
+ "ed25519-dalek",
  "hex",
  "mysql",
  "rusqlite",
@@ -182,13 +186,15 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "checkpointed-local-log"
-version = "0.2.1"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e287b976d8caf55d31762c705e865f74ed313a06890694df3a5019ab2f32068b"
+checksum = "7e0849196938de287c059d1f53874c76cc6583051e4ab7327bedb0f658ffd9d2"
 dependencies = [
+ "base64 0.22.1",
  "coset",
  "ed25519-dalek",
  "hex",
+ "libc",
  "serde",
  "serde_json",
  "sha2",
@@ -418,9 +424,9 @@ dependencies = [
 
 [[package]]
 name = "evidencebook"
-version = "0.0.1"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f89bd56a30ad415a62b6bfe3e12303a9e9fefa31fcb7d22ee5cf1ce5b0d104a8"
+checksum = "cd1ae07d3d0118f762b434a9516830b7b4451f1b20e9fa3d9d74be8e88ad29f2"
 dependencies = [
  "checkpointed-local-log",
  "ed25519-dalek",

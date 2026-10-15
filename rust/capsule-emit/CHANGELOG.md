@@ -7,6 +7,13 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+- Requires `checkpointed-local-log` 0.3.1 and `evidencebook` 0.0.3, so the
+  dependency graph holds one CLL version.
+- `Ledger::lines` lists every line (padding included) in file order as
+  `LedgerLine`s, with `read_line` and `read_statement` to read one back, and
+  the reload check `check_statement_matches` is public. The
+  `capsule-emit-artifact` crate's legacy backend builds on them.
+
 - Behavior depends on the build's serde_json features: on its own, the
   structure check refuses `-0` in a record as a float. In a build that also
   turns on serde_json's `arbitrary_precision` feature (any crate can;

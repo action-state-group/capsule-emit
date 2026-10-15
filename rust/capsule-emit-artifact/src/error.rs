@@ -25,6 +25,10 @@ pub enum ArtifactError {
     /// A stored or supplied checksum does not match the bytes.
     #[error("stored record integrity failure: {0}")]
     Corrupt(String),
+    /// The store declares it does not offer this operation (a capability
+    /// limit of the legacy ledger backend).
+    #[error("unsupported: {0}")]
+    Unsupported(String),
     /// A storage or driver failure, outside the contract's codes.
     #[error("storage: {0}")]
     Storage(#[source] Box<dyn std::error::Error + Send + Sync>),
@@ -41,6 +45,7 @@ impl ArtifactError {
             ArtifactError::DigestMismatch(_) => "digest_mismatch",
             ArtifactError::UntrustedSigner => "untrusted_signer",
             ArtifactError::Corrupt(_) => "corrupt",
+            ArtifactError::Unsupported(_) => "unsupported",
             ArtifactError::Storage(_) => return None,
         })
     }
