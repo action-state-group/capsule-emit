@@ -17,12 +17,5 @@
     "lockfile": "rust/Cargo.lock",
     "tag_prefix": "crates/capsule-emit-v",
     "workflow": "publish-rust.yml"
-  },
-  "crates/capsule-emit-evidence-request": {
-    "kind": "cargo",
-    "manifest": "rust/capsule-emit-evidence-request/Cargo.toml",
-    "lockfile": "rust/Cargo.lock",
-    "tag_prefix": "crates/capsule-emit-evidence-request-v",
-    "workflow": "publish-rust.yml"
   }
 }
