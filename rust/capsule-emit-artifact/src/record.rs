@@ -399,6 +399,7 @@ fn checksum_of<'a>(
 }
 
 /// An artifact row as a SQL backend reads it, with the state as stored text.
+#[cfg(any(feature = "sqlite", feature = "mysql"))]
 pub(crate) struct StoredArtifact {
     pub name: String,
     pub binding: String,
@@ -407,6 +408,7 @@ pub(crate) struct StoredArtifact {
     pub state: String,
 }
 
+#[cfg(any(feature = "sqlite", feature = "mysql"))]
 /// Builds a record from SQL rows, checking the stored checksum over the rows
 /// as stored (`corrupt` on a mismatch) before a state this codec cannot
 /// represent is reported (`invalid`), in the contract's order.
