@@ -237,7 +237,7 @@ pub enum CheckpointStateError {
     #[error("capsules.jsonl line {line}: not valid JSON: {source}")]
     MalformedLine {
         line: usize,
-        source: serde_json::Error,
+        source: crate::jcs::DecodeError,
     },
     #[error("capsules.jsonl line {line}: missing or non-string capsule_id field")]
     MissingCapsuleId { line: usize },
@@ -1221,11 +1221,12 @@ fn read_complete_lines_limit(
         if text.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
-        let value: serde_json::Value =
-            serde_json::from_slice(text).map_err(|source| CheckpointStateError::MalformedLine {
+        let value = crate::jcs::decode_record(text).map_err(|source| {
+            CheckpointStateError::MalformedLine {
                 line: line_no,
                 source,
-            })?;
+            }
+        })?;
         let capsule_id = value
             .get("capsule_id")
             .and_then(serde_json::Value::as_str)
@@ -1268,7 +1269,7 @@ fn read_capsule_ids(path: &Path) -> Result<Vec<String>, CheckpointStateError> {
         if line.trim().is_empty() {
             continue;
         }
-        let parsed: Result<serde_json::Value, _> = serde_json::from_str(line);
+        let parsed = crate::jcs::decode_record(line.as_bytes());
         let value = match parsed {
             Ok(v) => v,
             Err(_) if i == last_index => break,

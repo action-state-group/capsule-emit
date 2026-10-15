@@ -158,7 +158,7 @@ fn read_capsule_ids(dir: &Path) -> Vec<String> {
         .lines()
         .filter(|l| !l.trim().is_empty())
         .map(|l| {
-            let v: Value = serde_json::from_str(l).unwrap();
+            let v = capsule_emit::jcs::decode_record(l.as_bytes()).unwrap();
             v["capsule_id"].as_str().unwrap().to_string()
         })
         .collect()

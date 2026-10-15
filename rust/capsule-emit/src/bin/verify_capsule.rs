@@ -61,7 +61,7 @@ fn run(
         Err(e) => return json!({"ok": false, "error": format!("read pubkey: {e}")}),
     };
 
-    let capsule: Value = match serde_json::from_slice(&capsule_bytes) {
+    let capsule = match capsule_emit::jcs::decode_record(&capsule_bytes) {
         Ok(v) => v,
         Err(e) => return json!({"ok": false, "error": format!("parse capsule JSON: {e}")}),
     };

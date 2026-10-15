@@ -33,12 +33,36 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   the reload check `check_statement_matches` is public. The
   `capsule-emit-artifact` crate's legacy backend builds on them.
 
-- Behavior depends on the build's serde_json features: on its own, the
-  structure check refuses `-0` in a record as a float. In a build that also
-  turns on serde_json's `arbitrary_precision` feature (any crate can;
-  `capsule-emit-artifact` does through `agent-action-capsule`), serde_json
-  reads `-0` as the integer 0, as the Go and Python references do, and the
-  check accepts it. CI tests this crate both alone and in the workspace build.
+- Canonicalization is the `agent-action-capsule` crate's (0.1), the Rust
+  sibling of the Go, Python and TypeScript references, instead of
+  `evidencebook::canonical` (#321). Every existing vector, fixture and ledger
+  `capsule_id` is unchanged. Differences, all on inputs no vector uses:
+  - `-0` is the integer 0, written `0`, as the references do. It was refused
+    as a float when this crate was built alone (and accepted in builds with
+    `arbitrary_precision`, see below), so behavior no longer depends on the
+    build.
+  - An integer too large for 64 bits is reported as an unsafe integer, not
+    a float, by `jcs` and by the structure check.
+  - **Breaking:** `JcsError::UnsafeInteger` no longer carries the integer
+    (it was `UnsafeInteger(i128)`, which cannot hold every unsafe integer).
+    `JcsError::FloatInDigest` and `NotSerializable` are unchanged.
+  - `jcs::normalize` (the withdrawn format-2 normalization, unused here) is
+    removed.
+  - `compute_capsule_id` stays the ungated digest primitive: it still names
+    records without `format_version`, such as padding records.
+- **serde_json `arbitrary_precision` is now on** wherever this crate is
+  linked: `agent-action-capsule` requires it, and Cargo turns a feature on
+  for the whole build. A number then keeps its source text. Under that
+  feature, `serde_json`'s own decoder reads an object holding its private
+  number token (`{"$serde_json::private::Number": ...}`) as a number or
+  refuses it, so every record this crate reads (ledger recovery, `lookup`,
+  `read_line`, statement payloads, offline verification, the checkpoint
+  fold, `verify_capsule`) now goes through the new `jcs::decode_record`
+  (AAC's strict decoder), which reads it as the object the references see.
+  Callers that parse records themselves should use it too.
+  `LedgerError::Decode` is new, and
+  `CheckpointStateError::MalformedLine::source` is now a
+  `jcs::DecodeError` (was `serde_json::Error`).
 
 ## 0.0.7
 

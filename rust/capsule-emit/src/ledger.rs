@@ -30,7 +30,7 @@
 //! dedup gate) without rescanning. The default indexer covers the two
 //! registered cross-party citation purposes.
 
-use crate::jcs::compute_capsule_id;
+use crate::jcs::{compute_capsule_id, decode_record};
 use crate::padding::{check_padding_shape, is_padding};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -44,6 +44,10 @@ pub enum LedgerError {
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    /// A ledger line or statement payload is not JSON a record can be
+    /// (see [`crate::jcs::decode_record`]).
+    #[error("record JSON error: {0}")]
+    Decode(#[from] crate::jcs::DecodeError),
     #[error("canonicalization error recomputing capsule_id: {0}")]
     Jcs(#[from] crate::jcs::JcsError),
     #[error(
@@ -254,8 +258,8 @@ pub fn check_statement_matches(
         None => crate::cose::statement_payload(statement)
             .map_err(|e| format!("not a parseable COSE_Sign1: {e}"))?,
     };
-    let payload_json: Value = serde_json::from_slice(&payload)
-        .map_err(|e| format!("COSE payload is not valid JSON: {e}"))?;
+    let payload_json =
+        decode_record(&payload).map_err(|e| format!("COSE payload is not valid JSON: {e}"))?;
     match payload_json.get("capsule_id").and_then(Value::as_str) {
         Some(id) if id == capsule_id => Ok(()),
         other => Err(format!(
@@ -352,7 +356,7 @@ impl Ledger {
                 break;
             }
 
-            let parsed: Value = serde_json::from_str(line).map_err(LedgerError::Json)?;
+            let parsed = decode_record(line.as_bytes())?;
             let stored_id = parsed
                 .get("capsule_id")
                 .and_then(Value::as_str)
@@ -604,7 +608,14 @@ impl Ledger {
         }
         let missing = (bucket - self.entries % bucket) % bucket;
         for _ in 0..missing {
-            let mut record = crate::padding::build_padding_record()?;
+            // The builder hashes only strings, so it cannot fail; its error
+            // is the padding module's canonicalizer's, not this crate's.
+            let mut record = crate::padding::build_padding_record().map_err(|e| {
+                LedgerError::MalformedPadding {
+                    line: self.entries as usize + 1,
+                    detail: e.to_string(),
+                }
+            })?;
             crate::capsule::attach_producer_envelope(&mut record, signing_key)
                 .expect("build_padding_record always sets a hex capsule_id");
             let capsule_id = record["capsule_id"]
@@ -636,7 +647,7 @@ impl Ledger {
         f.seek(SeekFrom::Start(offset))?;
         let mut line = String::new();
         BufReader::new(f).read_line(&mut line)?;
-        Ok(serde_json::from_str(line.trim_end())?)
+        Ok(decode_record(line.trim_end().as_bytes())?)
     }
 
     /// The signed statement stored for `capsule_id`, padding included.
@@ -656,7 +667,7 @@ impl Ledger {
         let mut reader = BufReader::new(f);
         let mut line = String::new();
         reader.read_line(&mut line)?;
-        let capsule: Value = serde_json::from_str(line.trim_end())?;
+        let capsule = decode_record(line.trim_end().as_bytes())?;
 
         let stmt_path = statement_path(&self.statements_dir, capsule_id);
         let mut signed_statement = Vec::new();

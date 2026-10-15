@@ -42,7 +42,7 @@ fn canonical_vectors_match_the_reference_byte_for_byte() {
     let mut checked = 0;
     for name in &canonical_cases {
         let case_dir = dir.join(name);
-        let input: Value = serde_json::from_slice(
+        let input = capsule_emit::jcs::decode_record(
             &std::fs::read(case_dir.join("input.json"))
                 .unwrap_or_else(|e| panic!("read {}/input.json: {e}", case_dir.display())),
         )

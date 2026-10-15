@@ -26,7 +26,8 @@ fn vectors_dir() -> PathBuf {
 
 fn read(path: &Path) -> Value {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+    capsule_emit::jcs::decode_record(text.as_bytes())
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
 /// The (check, code) of each finding of one severity, in order.
@@ -370,38 +371,33 @@ fn verify_offline_refuses_a_signed_record_that_fails_the_checks() {
 // ---------------------------------------------------------------------------
 
 fn parsed(text: &str) -> Value {
-    serde_json::from_str(text).expect("JSON")
+    capsule_emit::jcs::decode_record(text.as_bytes()).expect("JSON")
 }
 
-/// `-0` parses as a float in Rust, so it is refused as a float in a digest
-/// field. With serde_json's `arbitrary_precision` feature, which another crate
-/// in the same build can turn on (the workspace's `capsule-emit-artifact` does,
-/// through `agent-action-capsule`), serde_json reads `-0` as the integer 0
-/// instead, as the Go and Python references do, and the record passes.
+/// `-0` is the integer 0, as the Go and Python references read it: no
+/// number finding.
 #[test]
-fn negative_zero_is_refused_as_a_float() {
+fn negative_zero_is_the_integer_zero() {
     let mut text = record().to_string();
     text.insert_str(text.len() - 1, r#","n":-0"#);
-    let value = parsed(&text);
-    let report = check_structure(&value);
-    let refused = report.errors().any(|f| f.code == "float_in_digest_field");
-    let read_as_float = value["n"]
-        .as_number()
-        .is_some_and(serde_json::Number::is_f64);
-    assert_eq!(refused, read_as_float);
+    let report = check_structure(&parsed(&text));
+    assert!(!report.errors().any(|f| matches!(
+        f.code,
+        "float_in_digest_field" | "unsafe_integer_in_digest_field"
+    )));
 }
 
-/// An integer above u64::MAX parses as a float in Rust: refused as
-/// `float_in_digest_field` (Python: `unsafe_integer_in_digest_field`).
+/// An integer above u64::MAX is refused as `unsafe_integer_in_digest_field`,
+/// as the Python reference refuses it, never as a float.
 #[test]
-fn an_integer_past_u64_is_refused_as_a_float() {
+fn an_integer_past_u64_is_refused_as_an_unsafe_integer() {
     let mut text = record().to_string();
     text.insert_str(text.len() - 1, r#","n":18446744073709551616"#);
     let report = check_structure(&parsed(&text));
-    assert!(report.errors().any(|f| f.code == "float_in_digest_field"));
-    assert!(!report
+    assert!(report
         .errors()
         .any(|f| f.code == "unsafe_integer_in_digest_field"));
+    assert!(!report.errors().any(|f| f.code == "float_in_digest_field"));
 }
 
 /// A `references[]` entry's `retention` (§5.5.5) is checked as the reference
