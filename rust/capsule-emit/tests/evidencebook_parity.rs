@@ -43,15 +43,14 @@
 
 use capsule_emit::anchor::AnchorClient;
 use capsule_emit::capsule::{
-    attach_producer_envelope, payload_bytes, seal, CapsuleInput, ChainLink, STORE_NONCE_FIELD,
+    attach_producer_envelope, payload_bytes, seal, CapsuleInput, ChainLink,
 };
 use capsule_emit::checkpoint::{
     inclusion_proof_json, CheckpointCadenceConfig, CheckpointRecord, CheckpointState, PaddingSink,
 };
 use capsule_emit::cose::{build_signed_statement, SignedStatementInput};
-use capsule_emit::jcs::compute_capsule_id;
 use capsule_emit::ledger::Ledger;
-use capsule_emit::padding::{PADDING_CONTENT_TYPE, PADDING_EPISTEMIC_TYPE, RECORD_TYPE_PADDING};
+use capsule_emit::padding::{padding_record_with_nonce, PADDING_CONTENT_TYPE};
 use cll::checkpoint::checkpoint_to_cose;
 use cll::mmr::{add_leaf, consistency_proof, leaf_hash, peaks, MemoryNodeStore, NodeReader};
 use ed25519_dalek::{Signer, SigningKey};
@@ -206,16 +205,12 @@ impl PaddingSink for FixedNoncePadder {
         let (mut ledger, _) = Ledger::open(&self.dir).map_err(|e| e.to_string())?;
         let mut next = self.next_nonce.lock().unwrap();
         while !(ledger.lines().len() as u64).is_multiple_of(bucket) {
-            let mut body = Map::new();
-            body.insert("record_type".into(), json!(RECORD_TYPE_PADDING));
-            body.insert("epistemic_type".into(), json!(PADDING_EPISTEMIC_TYPE));
-            body.insert(STORE_NONCE_FIELD.into(), json!(format!("{:064x}", *next)));
+            // This crate's builder with a fixed nonce: the pinned ids were
+            // written by evidencebook's padding record shape, so they also pin
+            // the builder byte for byte.
+            let mut record = padding_record_with_nonce(&format!("{:064x}", *next)).unwrap();
             *next += 1;
-            let capsule_id = compute_capsule_id(&Value::Object(body.clone())).unwrap();
-            let mut record = Map::new();
-            record.insert("capsule_id".into(), json!(capsule_id));
-            record.extend(body);
-            let mut record = Value::Object(record);
+            let capsule_id = record["capsule_id"].as_str().unwrap().to_string();
             attach_producer_envelope(&mut record, &self.key).unwrap();
             let statement = build_signed_statement(
                 &SignedStatementInput {

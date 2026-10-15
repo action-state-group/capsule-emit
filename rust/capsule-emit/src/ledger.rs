@@ -608,14 +608,7 @@ impl Ledger {
         }
         let missing = (bucket - self.entries % bucket) % bucket;
         for _ in 0..missing {
-            // The builder hashes only strings, so it cannot fail; its error
-            // is the padding module's canonicalizer's, not this crate's.
-            let mut record = crate::padding::build_padding_record().map_err(|e| {
-                LedgerError::MalformedPadding {
-                    line: self.entries as usize + 1,
-                    detail: e.to_string(),
-                }
-            })?;
+            let mut record = crate::padding::build_padding_record()?;
             crate::capsule::attach_producer_envelope(&mut record, signing_key)
                 .expect("build_padding_record always sets a hex capsule_id");
             let capsule_id = record["capsule_id"]

@@ -7,6 +7,17 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+- **No longer depends on `evidencebook`** (#321): `cargo tree -p capsule-emit`
+  holds neither `evidencebook` nor `evidence-request`, and one
+  `checkpointed-local-log` (0.3.1). The padding module is this crate's own:
+  `build_padding_record`, `check_padding_shape`, `is_padding`,
+  `fresh_store_nonce` and the constants keep their names and output (the
+  parity fixture's padded ids are reproduced through the builder), and
+  `build_padding_record` now returns this crate's `jcs::JcsError`. New:
+  `padding_record_with_nonce`, for checking against conformance vectors.
+  `check_padding_shape` now also requires `record_type` `padding` and
+  `epistemic_type` `producer_claim`, as the Evidence Layer draft does and as
+  every known writer (this crate, evidencebook, capsule-cli) writes them.
 - The checkpoint path sits on `checkpointed-local-log` directly, as the
   Python producer does, instead of on `evidencebook`'s `CllSubstrate` (#321).
   `checkpoints.jsonl`, `mmr_nodes.dat`, checkpoint roots, signatures, COSE
