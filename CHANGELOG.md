@@ -6,6 +6,12 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+## 0.10.0 — 2026-10-15
+
+A minor release with breaking changes: the HTML pages, `capsule-emit report`
+and `ledger view --html` are removed (now in capsule-viewer), and the package
+requires `checkpointed-local-log>=0.6,<0.7`.
+
 ### Removed (breaking): the HTML pages moved to capsule-viewer
 
 `capsule-emit report`, `capsule-emit ledger view --html`,
@@ -71,8 +77,8 @@ new line instead of merging into it.
 The Rust ledger (`capsules.jsonl` + `signed-statements/`) is a CLL entry log
 and artifact store too, as `capsule_emit_artifact::legacy::LegacyLedger`
 behind the crate's `legacy` feature (see `rust/capsule-emit-artifact/CHANGELOG.md`).
-The Rust crate now requires `checkpointed-local-log` 0.3.1 and `evidencebook`
-0.0.4, one CLL version in the lock.
+The Rust crate now requires `checkpointed-local-log` 0.3.1, one CLL version in
+the lock.
 
 ### Changed: requires `checkpointed-local-log` 0.6
 
