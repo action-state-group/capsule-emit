@@ -20,6 +20,11 @@ the disclosure. `LegacyLedger` keeps no originals and is refused as `store`;
 [legacy-ledger.md](docs/legacy-ledger.md#disclosing-originals) shows how to pair
 a legacy `ledger.jsonl` with a separate store, or keep using `reveal`.
 
+A JSON `null` original, from the store or from `reveal`, is now checked
+against its committed digest and disclosed. Before, `reveal={id: {field:
+None}}` was silently withheld while `payloads="all"` counted the field as
+supplied.
+
 ### Removed (breaking): `ledger_io.local_payload_store()`
 
 `capsule_emit.ledger_io.local_payload_store()` is removed, and with it the last

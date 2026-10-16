@@ -248,7 +248,13 @@ def _store_originals(
             continue
         except ArtifactError as exc:
             raise DiscloseError(f"{cid}: artifact store: {exc.code}: {exc}") from exc
-        by_field = {bindings[a.binding]: a for a in stored.artifacts if a.binding in bindings}
+        # Names are unique but bindings need not be: a present original wins
+        # over another artifact bound to the same digest, in any order.
+        by_field: dict[str, Any] = {}
+        for a in stored.artifacts:
+            field = bindings.get(a.binding)
+            if field is not None and (field not in by_field or a.state == PRESENT):
+                by_field[field] = a
         for field in committed:
             a = by_field.get(field)
             if a is None:
@@ -356,6 +362,8 @@ def disclose(
     """
     import os
 
+    from agent_action_capsule.canonical import json_digest
+
     from .bundle import BundleError
     from .bundle import bundle as _bundle_fn
     from .disclosure import DISCLOSURE_ELIGIBLE_FIELDS, DisclosureError
@@ -440,6 +448,14 @@ def disclose(
             )
         except DisclosureError as exc:
             raise DiscloseError(f"{cid}: {exc}") from exc
+        # The envelope builder reads None as "withheld", so an original that
+        # is JSON null is checked against its digest and added here.
+        ca = (r.get("model_attestation") or {}).get("compute_attestation") or {}
+        for field in DISCLOSURE_ELIGIBLE_FIELDS:
+            if field in fields and fields[field] is None:
+                if ca.get(DISCLOSURE_ELIGIBLE_FIELDS[field]) != json_digest(None):
+                    raise DiscloseError(f"{cid}: {field} does not match the committed digest")
+                envelopes[cid]["disclosures"][field] = None
 
     completeness = _completeness(selected, records_mode, payloads, tuple(sorted(suppress_set)), unavailable)
 

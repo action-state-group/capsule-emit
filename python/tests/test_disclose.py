@@ -810,10 +810,11 @@ def test_verify_disclosure_trusts_no_built_in_witness_key(three_record_ledger, s
 # ---------------------------------------------------------------------------
 
 
-def _artifact_store(tmp_path, ledger_path, caps, payloads, *, states=None):
+def _artifact_store(tmp_path, ledger_path, caps, payloads, *, states=None, extra=None):
     """A JSONL Artifact Store next to the legacy ledger, holding each capsule
     with its payload and agent output. ``states`` maps an index to
-    ``{field: "purge" | "never_retained" | "omit"}``."""
+    ``{field: "purge" | "never_retained" | "omit"}``; ``extra`` maps an index
+    to ``(first, artifact)``, an artifact put before (or after) the others."""
     from capsule_emit.artifact import (
         AGENT_OUTPUT_DIGEST,
         NEVER_RETAINED,
@@ -846,6 +847,9 @@ def _artifact_store(tmp_path, ledger_path, caps, payloads, *, states=None):
             record.artifacts.append(Artifact(field, PRESENT, binding, content))
             if how == "purge" and cap["capsule_id"] not in purge:
                 purge.append(cap["capsule_id"])
+        if i in (extra or {}):
+            first, artifact = extra[i]
+            record.artifacts.insert(0 if first else len(record.artifacts), artifact)
         store.put(record)
     for cid in purge:
         store.purge(cid)
@@ -964,3 +968,25 @@ def test_disclose_refuses_legacy_ledger_as_store(three_record_ledger):
             disclose(ledger_path, caps[0]["capsule_id"], audience="auditor", store=legacy)
     finally:
         legacy.close()
+
+
+@pytest.mark.parametrize("first", [True, False])
+def test_disclose_present_original_wins_over_a_duplicate_binding(three_record_ledger, tmp_path, first):
+    from capsule_emit.artifact import AGENT_OUTPUT_DIGEST, NEVER_RETAINED, Artifact
+
+    ledger_path, caps, payloads = three_record_ledger
+    cid = caps[0]["capsule_id"]
+    old = Artifact("agent_output_old", NEVER_RETAINED, AGENT_OUTPUT_DIGEST)
+    store = _artifact_store(tmp_path, ledger_path, caps, payloads, extra={0: (first, old)})
+    d = disclose(ledger_path, cid, audience="auditor", store=store)
+    assert d.envelopes[cid]["disclosures"]["agent_output"] == payloads[0][1]
+    assert "unavailable" not in d.completeness
+
+
+def test_disclose_null_original_is_digest_checked_not_withheld(three_record_ledger):
+    ledger_path, caps, _payloads = three_record_ledger
+    cid = caps[0]["capsule_id"]
+    # A JSON null must be checked like any other value, never read as
+    # "withheld" while payloads="all" counts the field as supplied.
+    with pytest.raises(DiscloseError, match="agent_output does not match the committed digest"):
+        disclose(ledger_path, cid, audience="auditor", reveal={cid: {"agent_input": {"n": 0, "kind": "input"}, "agent_output": None}})
