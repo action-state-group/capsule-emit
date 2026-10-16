@@ -259,15 +259,11 @@ def row_for(directory: Any, ts_url: str) -> dict | None:
     """The row a receipt's witness URL belongs to: same binding (a row
     without ``binding`` is ``cll``) and the same https endpoint, trailing
     slash ignored. ``None`` when no row matches -- a receipt from an unlisted
-    witness is then ``not checked`` unless the verifier pins a key itself."""
-    from .witness_bindings import binding_of, endpoint_of
+    witness is then ``not checked`` unless the verifier pins a key itself.
+    agent-action-capsule's ``witness.row_for``."""
+    from agent_action_capsule.witness import row_for as _row_for
 
-    binding = binding_of(ts_url)
-    endpoint = endpoint_of(ts_url)
-    for row in _rows(directory):
-        if row.get("binding", DEFAULT_BINDING) == binding and row.get("endpoint", "").rstrip("/") == endpoint:
-            return row
-    return None
+    return _row_for(directory, ts_url)
 
 
 def row_public_keys_pem(row: dict) -> list[bytes]:
@@ -276,32 +272,11 @@ def row_public_keys_pem(row: dict) -> list[bytes]:
     or an Ed25519 key by its raw bytes) when there is one, else the key id
     read as a raw Ed25519 key -- except in
     a ``rekor`` row, where an uncovered key id raises ``ValueError`` (it is a
-    log ID, and reading it as a key would fail silently)."""
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-    from cryptography.hazmat.primitives.serialization import (
-        Encoding,
-        PublicFormat,
-        load_der_public_key,
-    )
+    log ID, and reading it as a key would fail silently).
+    agent-action-capsule's ``witness.row_public_keys_pem``."""
+    from agent_action_capsule.witness import row_public_keys_pem as _row_public_keys_pem
 
-    by_hash = {}
-    for b64 in row.get("public_keys", []):
-        der = _der(b64)
-        if der is not None:
-            by_hash[hashlib.sha256(der).hexdigest()] = der
-            raw = _raw_ed25519(der)
-            if raw is not None:
-                by_hash[raw] = der
-    pems = []
-    for key_id in row.get("key_ids", []):
-        if key_id in by_hash:
-            key = load_der_public_key(by_hash[key_id])
-        elif row.get("binding") == "rekor":
-            raise ValueError(f"rekor row {row.get('name')!r}: no public key for log ID {key_id[:16]}...")
-        else:
-            key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(key_id))
-        pems.append(key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo))
-    return pems
+    return _row_public_keys_pem(row)
 
 
 def main(argv: list[str] | None = None) -> int:

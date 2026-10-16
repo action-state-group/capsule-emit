@@ -33,6 +33,25 @@ import of the archived `capsule_ledger` package. It returned capsule-ledger's
 caller in this package. Keep originals in an Artifact Store and pass it to
 `disclose(store=...)` instead. Ships in 0.11.0.
 
+### Changed: verification is agent-action-capsule's
+
+Evidence-file, witness-receipt, producer-signature and settlement verification now live in
+agent-action-capsule (action-state-group/agent-action-capsule#280), and this package calls them.
+The package requires `agent-action-capsule>=0.9.0`. Results are unchanged on this package's
+tests and vectors.
+
+- `capsule_emit.evidence_file.check_evidence_file` (`capsule-emit verify --bundle`) reads the
+  file and reports AAC's `verify_bundle(bundle, strict=True, ...)`.
+- `capsule_emit.settlement.verify_settlements` and the draft's tables (`LEGS`, `MEMBERS`,
+  `structure_failures`, ...) come from `agent_action_capsule.settlement`. Building and sealing
+  legs (`amount`, `wrap`, `build_leg`, `seal_leg`) stay here.
+- `signing.verify_capsule_signature_tristate`, `witness_bindings.verify_rekor_receipt`,
+  `verify_scrapi_receipt`, `binding_of`, `endpoint_of`, and `witness_directory.row_for` and
+  `row_public_keys_pem` call AAC's `producer_envelope.verify_record_signature` and
+  `agent_action_capsule.witness`. Their signatures are unchanged.
+- One tightening comes with AAC: a witness receipt counts as a stub only when `is_stub` is JSON
+  `true`.
+
 ## 0.10.0 — 2026-10-15
 
 A minor release with breaking changes: the HTML pages, `capsule-emit report`

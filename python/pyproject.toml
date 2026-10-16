@@ -35,7 +35,7 @@ classifiers = [
 # cll.ledger.segments directly -- segment rotation/archival (list_segments,
 # mount_segment/unmount_segment, SegmentManifest) shipped in 0.2.0.
 dependencies = [
-    "agent-action-capsule[anchor,envelope]>=0.7.0",  # 0.7.0: the -05 wire (0.6.0+) and the #147-#150 verifier rules
+    "agent-action-capsule[anchor,envelope]>=0.9.0",  # 0.9.0: strict verify_bundle and the settlement verifier (AAC #280)
     "cryptography>=42.0",
     # 0.4.0: range/inclusion proofs for verify --bundle; 0.4.1: scan compares instants (--period).
     # 0.5: no default witness and no built-in witness key (verification trusts only the caller's keys).

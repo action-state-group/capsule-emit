@@ -2,18 +2,17 @@
 """Check an evidence file: an AAC Evidence Bundle (``evidence-bundle/v2``,
 draft-mih-zhang-agent-disclosure-bundle-00) saved by any producer.
 
-Offline. Composes two checks that neither does alone:
+Offline. Every check is agent-action-capsule's strict
+``verify_bundle(bundle, strict=True, ...)``; this module reads the file,
+calls it, and reports the result in plain sentences:
 
-* ``agent_action_capsule.bundle.verify_bundle``: every record's
-  ``capsule_id`` recomputes, citation closure as declared, interval coverage
-  under the checkpoint's range root, each record's inclusion proof, the
-  portable COSE checkpoint (``checkpoint.cose``) when the file carries one,
-  and each member of the ``disclosures`` overlay when it carries one (a
-  member that does not match the digest its record commits to fails the
-  file, as ``disclosures``).
-* the producer signature on every record
-  (:func:`capsule_emit.signing.verify_capsule_signature_tristate`), which the
-  neutral verifier deliberately leaves to the substrate.
+* every record's ``capsule_id`` recomputes, citation closure as declared,
+  interval coverage under the checkpoint's range root, each record's
+  inclusion proof, and each member of the ``disclosures`` overlay when the
+  file carries one (a member that does not match the digest its record
+  commits to fails the file, as ``disclosures``);
+* the producer signature on every record (vintage ``jcs-n`` records
+  included).
 
 The checkpoint is read only from its signed COSE form (``checkpoint.cose``):
 its log, size, root, key and time are taken from the verified statement, and
@@ -28,7 +27,8 @@ owner signed. A key says who holds it, not who that is.
 
 Witness receipts the checkpoint carries (``checkpoint.witnesses``) are
 checked against the signed checkpoint under the keys of a witness directory
-(:mod:`capsule_emit.witness_directory`) the verifier supplies; no witness is
+(a parsed ``witnesses.json``, see :mod:`capsule_emit.witness_directory`) the
+verifier supplies; no witness is
 trusted by default, so without one no receipt is checked. The result is
 reported as ``witnesses``: ``pass`` when a receipt verifies under a key in
 the directory, ``withheld`` when the file carries none or the directory has
@@ -43,14 +43,10 @@ load_evidence_file(path) -> dict
 """
 from __future__ import annotations
 
-import base64
-import binascii
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-from .signing import AuthorshipVerdict, verify_capsule_signature_tristate
 
 __all__ = [
     "BUNDLE_KIND",
@@ -62,10 +58,6 @@ __all__ = [
 ]
 
 BUNDLE_KIND = "evidence-bundle/v2"
-
-# The checkpoint fields a signed COSE checkpoint states; the JSON copy must
-# match every one.
-_SIGNED_CHECKPOINT_FIELDS = ("log_id", "mmr_size", "root", "key_id", "timestamp", "prev_size", "prev_root")
 
 # One plain sentence per claim status; `verify --bundle` and capsule-viewer's
 # evidence report both read these.
@@ -242,68 +234,21 @@ def check_evidence_file(
     accepts none, so every receipt is ``withheld``."""
     from agent_action_capsule.bundle import verify_bundle
 
-    if not isinstance(bundle, dict) or bundle.get("bundle_kind") != BUNDLE_KIND or bundle.get("bundle_version") != "2":
+    if not isinstance(bundle, dict):
         return EvidenceFileCheck(
             kind_ok=False,
             bundle_digest=None,
             root=None,
             checks=[Check("records", "fail", ("not_an_evidence_bundle_v2",))],
         )
-
-    result = verify_bundle(bundle)
-    raw_records = [r for r in bundle.get("records") or [] if isinstance(r, dict)]
-    memberships = _memberships(bundle)
-    records: list[RecordCheck] = []
-    for record in raw_records:
-        cid = str(record.get("capsule_id", ""))
-        verdict, messages = verify_capsule_signature_tristate(record)
-        aac = result.capsule_results.get(cid)
-        records.append(
-            RecordCheck(
-                capsule_id=cid,
-                identity_ok=bool(aac is not None and aac.ok and aac.capsule_id == cid),
-                signature=verdict.value,
-                key_id=record.get("key_id") if isinstance(record.get("key_id"), str) else None,
-                seq=memberships.get(cid),
-                messages=tuple(messages),
-            )
-        )
-
-    identity = Check(
-        "records",
-        "pass" if records and all(r.identity_ok for r in records) else "fail",
-        tuple(f"record_identity_invalid:{r.capsule_id}" for r in records if not r.identity_ok)
-        or (() if records else ("no_records",)),
+    result = verify_bundle(
+        bundle, strict=True, require_signature=require_signature, witness_directory=witness_directory
     )
-    signatures = _signature_check(records, require_signature)
-    stated = bundle.get("checkpoint") if isinstance(bundle.get("checkpoint"), dict) else {}
-    checkpoint_check, signed = _checkpoint_check(stated)
-    interval = _claim("interval_coverage", result.interval_coverage)
-    membership = _claim("per_record_membership", result.per_record_membership)
-    if _producer_selected(bundle) and not _verifier_knows_selected():
-        # This agent-action-capsule release reads a producer-selected
-        # certificate as a broken interval proof. Its selection cannot be
-        # checked here; each record's own proof still can be.
-        interval = Check("interval_coverage", "withheld", ("selection_not_checkable",))
-        membership = _selected_membership(bundle, signed if checkpoint_check.status == "pass" else {})
-    if checkpoint_check.status != "pass":
-        # Proofs to a checkpoint nobody signed prove nothing about a log.
-        interval, membership = _unanchored(interval), _unanchored(membership)
-    checks = [
-        identity,
-        signatures,
-        _claim("graph_closure", result.graph_closure),
-        checkpoint_check,
-        interval,
-        membership,
-    ]
-    if "disclosures" in bundle:
-        checks.append(_disclosure_check(result.disclosures))
+    checks = [Check(name, claim.status, tuple(claim.findings)) for name, claim in result.claims]
+    if not result.kind_ok:
+        return EvidenceFileCheck(kind_ok=False, bundle_digest=None, root=None, checks=checks)
 
-    authenticated = checkpoint_check.status == "pass"
-    witness, witness_receipts = _witness_check(stated, signed if authenticated else None, witness_directory)
-    checkpoint_key = signed.get("key_id") if authenticated else None
-    signer_match = all(r.key_id == checkpoint_key for r in records) if checkpoint_key and records else None
+    witness = Check("witnesses", result.witnesses.status, tuple(result.witnesses.findings))
     completeness = bundle.get("completeness") if isinstance(bundle.get("completeness"), dict) else {}
     missing = completeness.get("missing") if isinstance(completeness.get("missing"), list) else []
     depth = completeness.get("closure_depth", 2)
@@ -313,221 +258,20 @@ def check_evidence_file(
         bundle_digest=result.bundle_digest,
         root=bundle.get("root") if isinstance(bundle.get("root"), str) else None,
         checks=checks,
-        records=records,
-        checkpoint=signed if authenticated else {},
-        checkpoint_authenticated=authenticated,
-        signer_matches_checkpoint=signer_match,
+        records=[
+            RecordCheck(r.capsule_id, r.identity_ok, r.signature, r.key_id, r.seq, r.messages)
+            for r in result.records
+        ],
+        checkpoint=dict(result.signed_checkpoint),
+        checkpoint_authenticated=bool(result.signed_checkpoint),
+        signer_matches_checkpoint=result.signer_matches_checkpoint,
         missing=tuple(str(m) for m in missing),
         closure_depth=depth if isinstance(depth, int) and not isinstance(depth, bool) else None,
         countersignatures=len(result.countersignatures),
         extensions=tuple(sorted(str(k) for k in extensions)),
         witness=witness,
-        witness_receipts=witness_receipts,
+        witness_receipts=[
+            {"ts_url": w.ts_url, "binding": w.binding, "status": w.status, "reason": w.reason}
+            for w in result.witness_receipts
+        ],
     )
-
-
-def _disclosure_check(results: Any) -> Check:
-    """The ``disclosures`` overlay as the bundle verifier resolved it: each
-    disclosed member a match or withheld, else the file fails, naming each
-    member by its status (a mismatch, an ineligible member, a member with no
-    committed digest, or a malformed overlay)."""
-    findings = tuple(
-        f"{d.status}:{d.capsule_id}:{d.member}" for d in results if d.status not in ("disclosure_match", "withheld")
-    )
-    return Check("disclosures", "fail" if findings else "pass", findings)
-
-
-def _witness_check(
-    stated: dict[str, Any], signed: dict[str, Any] | None, directory: Any
-) -> tuple[Check, list[dict[str, Any]]]:
-    """Every receipt in ``checkpoint.witnesses``, verified against the SIGNED
-    checkpoint (``signed``; ``None`` when it did not verify) under
-    ``directory``'s keys."""
-    import dataclasses
-
-    raw = stated.get("witnesses")
-    if not isinstance(raw, list) or not raw:
-        return Check("witnesses", "withheld", ("witness_receipt_absent",)), []
-    if signed is None:
-        return Check("witnesses", "withheld", ("checkpoint_unverified",)), []
-    from cll.checkpoint import CheckpointRecord, WitnessRecord
-
-    from .witness_bindings import binding_of, verify_witnesses
-
-    names = {f.name for f in dataclasses.fields(WitnessRecord)}
-    receipts: list[Any] = []
-    malformed: list[str] = []
-    for index, entry in enumerate(raw):
-        try:
-            if not isinstance(entry, dict) or not isinstance(entry.get("ts_url"), str):
-                raise TypeError("not a receipt")
-            receipts.append(WitnessRecord(**{k: v for k, v in entry.items() if k in names}))
-        except (TypeError, ValueError):
-            malformed.append(f"witness_receipt_malformed:{index}")
-    checkpoint = CheckpointRecord(
-        v=1,
-        kind="mmr_checkpoint",
-        signature="",
-        witnesses=[],
-        **{k: signed[k] for k in ("log_id", "mmr_size", "root", "prev_size", "prev_root", "key_id", "timestamp")},
-    )
-    cose = stated.get("cose")
-    cose_hex = base64.urlsafe_b64decode(cose + "=" * (-len(cose) % 4)).hex()
-    result = verify_witnesses(
-        checkpoint,
-        receipts,
-        directory={"witnesses": []} if directory is None else directory,
-        checkpoint_cose_hex=cose_hex,
-    )
-    entries: list[dict[str, Any]] = []
-    findings = list(malformed)
-    for verdict in result.receipts:
-        reason = verdict.reason or "not checked: no key in the directory row for this witness"
-        if verdict.verified:
-            status = "pass"
-        elif not verdict.reason or reason.startswith(("not checked", "stub receipt")):
-            status = "withheld"
-            findings.append(f"witness_unverified:{verdict.ts_url}")
-        else:
-            status = "fail"
-            findings.append(f"witness_receipt_invalid:{verdict.ts_url}")
-        entries.append(
-            {"ts_url": verdict.ts_url, "binding": binding_of(verdict.ts_url), "status": status, "reason": reason}
-        )
-    statuses = {e["status"] for e in entries}
-    if malformed or "fail" in statuses:
-        overall = "fail"
-    elif "pass" in statuses:
-        overall = "pass"
-    else:
-        overall = "withheld"
-    return Check("witnesses", overall, tuple(findings)), entries
-
-
-def _claim(name: str, claim: Any) -> Check:
-    return Check(name, claim.status, tuple(claim.findings))
-
-
-def _unanchored(check: Check) -> Check:
-    """A proof claim with no signed checkpoint behind it: a failure stays a
-    failure; anything else is not shown."""
-    if check.status == "fail":
-        return check
-    return Check(check.name, "withheld", tuple(dict.fromkeys((*check.findings, "checkpoint_unverified"))))
-
-
-def _checkpoint_check(stated: dict[str, Any]) -> tuple[Check, dict[str, Any]]:
-    """Verify ``checkpoint.cose`` and hold the JSON copy to it. Returns the
-    check and, when it passed, the signed checkpoint's own fields."""
-    encoded = stated.get("cose")
-    if encoded is None:
-        return Check("checkpoint", "withheld", ("checkpoint_signature_absent",)), {}
-    try:
-        from cll.checkpoint import verify_checkpoint_cose_offline
-    except ImportError:
-        return Check("checkpoint", "withheld", ("checkpoint_verifier_unavailable",)), {}
-    try:
-        if not isinstance(encoded, str):
-            raise ValueError("checkpoint.cose is not a string")
-        raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
-        result = verify_checkpoint_cose_offline(raw)
-    except (ValueError, TypeError, binascii.Error):
-        return Check("checkpoint", "fail", ("checkpoint_signature_malformed",)), {}
-    if not result.ok or result.decoded is None:
-        return Check("checkpoint", "fail", ("checkpoint_signature_invalid",)), {}
-    signed = {name: getattr(result.decoded, name) for name in _SIGNED_CHECKPOINT_FIELDS}
-    mismatched = tuple(
-        f"checkpoint_field_mismatch:{name}"
-        for name in _SIGNED_CHECKPOINT_FIELDS
-        if name in stated and stated[name] != signed[name]
-    )
-    missing = tuple(
-        f"checkpoint_field_missing:{name}" for name in ("log_id", "mmr_size", "root") if name not in stated
-    )
-    if mismatched or missing:
-        return Check("checkpoint", "fail", mismatched + missing), {}
-    signed["witnesses"] = stated.get("witnesses") if isinstance(stated.get("witnesses"), list) else []
-    return Check("checkpoint", "pass"), signed
-
-
-def _signature_check(records: list[RecordCheck], require_signature: bool) -> Check:
-    invalid = [r for r in records if r.signature == AuthorshipVerdict.INVALID.value]
-    unclaimed = [r for r in records if r.signature == AuthorshipVerdict.UNCLAIMED.value]
-    findings = tuple(
-        [f"producer_signature_invalid:{r.capsule_id}" for r in invalid]
-        + [f"producer_signature_unclaimed:{r.capsule_id}" for r in unclaimed]
-    )
-    if invalid or (unclaimed and require_signature) or not records:
-        return Check("signatures", "fail", findings)
-    return Check("signatures", "withheld" if unclaimed else "pass", findings)
-
-
-def _producer_selected(bundle: dict) -> bool:
-    completeness = bundle.get("completeness")
-    return isinstance(completeness, dict) and completeness.get("selection") == "producer-selected"
-
-
-def _verifier_knows_selected() -> bool:
-    from agent_action_capsule import bundle as aac_bundle
-
-    return hasattr(aac_bundle, "PRODUCER_SELECTED")
-
-
-def _selected_membership(bundle: dict, signed: dict[str, Any]) -> Check:
-    """Each record's inclusion proof against the signed checkpoint's root and
-    size, for a producer-selected file the installed verifier does not read.
-    With no signed checkpoint nothing is shown (the caller withholds it)."""
-    name = "per_record_membership"
-    if not signed:
-        return Check(name, "withheld", ("checkpoint_unverified",))
-    try:
-        from cll.checkpoint import InclusionProof, verify_inclusion
-    except ImportError:
-        return Check(name, "withheld", ("membership_verifier_unavailable",))
-    certificate = bundle.get("completeness_certificate")
-    members = certificate.get("memberships") if isinstance(certificate, dict) else None
-    if not isinstance(members, dict) or certificate.get("range_root") != signed.get("root"):
-        return Check(name, "fail", ("completeness_certificate_invalid",))
-    root, size, log_id = bytes.fromhex(signed["root"]), signed["mmr_size"], signed["log_id"]
-    ids = [str(r.get("capsule_id", "")) for r in bundle.get("records") or [] if isinstance(r, dict)]
-    findings: list[str] = []
-    seen: set[int] = set()
-    for cid in ids:
-        member = members.get(cid)
-        coords = member.get("log_coordinates") if isinstance(member, dict) else None
-        if not isinstance(coords, dict):
-            findings.append(f"membership_record_unbound:{cid}")
-            continue
-        seq, index = coords.get("seq"), coords.get("leaf_index")
-        if (
-            coords.get("log_id") != log_id
-            or not all(isinstance(v, int) and not isinstance(v, bool) for v in (seq, index))
-            or seq < 1
-            or index != seq - 1
-            or seq in seen
-        ):
-            findings.append(f"membership_coordinates_invalid:{cid}")
-            continue
-        seen.add(seq)
-        try:
-            raw = member["inclusion_proof"]
-            proof = InclusionProof(**{k: tuple(v) if isinstance(v, list) else v for k, v in raw.items()})
-            if proof.size != size or not verify_inclusion(root, size, index, bytes.fromhex(cid), proof):
-                findings.append(f"membership_proof_invalid:{cid}")
-        except (TypeError, ValueError, KeyError, AttributeError):
-            findings.append(f"membership_proof_invalid:{cid}")
-    findings += [f"membership_record_unknown:{cid}" for cid in members if cid not in ids]
-    return Check(name, "fail" if findings else "pass", tuple(findings))
-
-
-def _memberships(bundle: dict) -> dict[str, int]:
-    certificate = bundle.get("completeness_certificate")
-    members = certificate.get("memberships") if isinstance(certificate, dict) else None
-    out: dict[str, int] = {}
-    if isinstance(members, dict):
-        for cid, member in members.items():
-            coords = member.get("log_coordinates") if isinstance(member, dict) else None
-            seq = coords.get("seq") if isinstance(coords, dict) else None
-            if isinstance(seq, int) and not isinstance(seq, bool):
-                out[str(cid)] = seq
-    return out
