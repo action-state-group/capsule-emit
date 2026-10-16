@@ -181,7 +181,11 @@ from capsule_emit.legacy_ledger import LegacyLedger
 
 store = JsonlArtifactStore("originals.jsonl", "originals", [producer_public_key])
 store.init()
-record = LegacyLedger("ledger.jsonl").get(capsule_id)
+legacy = LegacyLedger("ledger.jsonl")
+try:
+    record = legacy.get(capsule_id)
+finally:
+    legacy.close()
 record.artifacts = [
     Artifact("payload", PRESENT, PAYLOAD_DIGEST, json.dumps(payload).encode()),
     Artifact("agent_output", PRESENT, AGENT_OUTPUT_DIGEST, json.dumps(output).encode()),

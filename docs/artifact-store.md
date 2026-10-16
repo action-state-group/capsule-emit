@@ -221,6 +221,13 @@ transaction, at most four times with bounded backoff; `put_tx` never does. A
 CLL append does not belong in the same transaction unless the CLL backend
 supports that transaction too.
 
+## Consumers
+
+Python's `capsule_emit.disclose.disclose(..., store=...)` reads the originals
+it discloses from any `Store`, and reports a `purged`, `never_retained`,
+missing or undeclared original by state instead of dropping it (see
+[checkpoint.md](checkpoint.md#disclose--bundles-conscious-sibling)).
+
 ## Built-in backends and shared formats
 
 | Backend | Storage | Transactions |

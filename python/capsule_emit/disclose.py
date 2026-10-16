@@ -44,7 +44,11 @@ member that has a committed digest on every selected record, UNLESS that
 field is explicitly named in ``suppress`` — :func:`disclose` refuses
 (raises :class:`DiscloseError`) rather than silently ship a disclosure that
 claims completeness while quietly withholding a field. ``"selected"``
-discloses exactly the payloads supplied, nothing implied either way.
+discloses exactly the payloads supplied, nothing implied either way. With a
+``store``, "supplied" means ``reveal`` plus every original the store holds for
+the selection: passing a store is the producer's choice to disclose its
+originals, so the completeness statement is the same as for passing them
+through ``reveal``.
 
 **Where originals come from.** The capsule commits only to digests, so the
 original content has to come from somewhere. Pass ``store``, an Artifact
@@ -65,7 +69,10 @@ it with a separate originals-capable store, or keeps passing ``reveal``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .artifact import Store
 
 __all__ = ["NOT_STORED", "UNDECLARED", "Disclosure", "DiscloseError", "disclose", "verify_disclosure"]
 
@@ -307,7 +314,7 @@ def disclose(
     suppress: list[str] | tuple[str, ...] | None = None,
     signer: Any = None,
     signing_key_path: Any = None,
-    store: Any = None,
+    store: Store | None = None,
 ) -> Disclosure:
     """Build and seal a :class:`Disclosure` for ``selector`` against the
     JSONL ledger at ``path``: bundle + selected payload content +

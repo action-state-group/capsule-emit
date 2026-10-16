@@ -844,7 +844,7 @@ def _artifact_store(tmp_path, ledger_path, caps, payloads, *, states=None):
                 continue
             content = json.dumps(value).encode()
             record.artifacts.append(Artifact(field, PRESENT, binding, content))
-            if how == "purge":
+            if how == "purge" and cap["capsule_id"] not in purge:
                 purge.append(cap["capsule_id"])
         store.put(record)
     for cid in purge:

@@ -654,7 +654,10 @@ envelopes and completeness statement as passing the same originals through
 `reveal`. Any other store error (`corrupt`, `untrusted_signer`, ...) fails the
 disclosure. The legacy `ledger.jsonl` keeps no originals, so passing a
 `LegacyLedger` as `store` is refused; see
-[legacy-ledger.md](legacy-ledger.md#disclosing-originals).
+[legacy-ledger.md](legacy-ledger.md#disclosing-originals). With a store,
+`payloads="selected"` discloses every original the store holds for the
+selection, plus `reveal`. The `capsule-emit disclose` command takes no store
+yet: it reads originals only from `--reveal`.
 
 **The act seals its own receipt.** `disclose()` builds one
 `capsule_emit.disclosure.build_disclosure_envelope` per selected record
