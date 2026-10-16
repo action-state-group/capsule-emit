@@ -185,8 +185,8 @@ jobs:
 
       # `cargo publish --dry-run` resolves dependencies from the crates.io
       # index only (a workspace [patch] would not count). The crate's own
-      # dependencies (checkpointed-local-log 0.3.1, evidencebook 0.0.4) are
-      # published, so the dry run runs; DEPS_ON_CRATES_IO stays as the switch
+      # dependencies (agent-action-capsule 0.1, checkpointed-local-log 0.3.1)
+      # are published, so the dry run runs; DEPS_ON_CRATES_IO stays as the switch
       # should a dependency ever again be ahead of crates.io.
       - name: Publish dry run, capsule-emit (no upload)
         if: env.DEPS_ON_CRATES_IO == 'true'
