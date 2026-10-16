@@ -241,6 +241,7 @@ class TestDispositionVocab:
         from agent_action_capsule.contracts import (
             EffectRecord as _ER,
         )
+
         from capsule_emit.builder import build_capsule as aac_emit
 
         # Non-dispatching verdicts cannot carry a dispatched/confirmed effect

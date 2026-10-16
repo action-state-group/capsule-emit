@@ -42,9 +42,9 @@ from agent_action_capsule.contracts import (  # noqa: E402  # type: ignore[impor
     Disposition,
     EffectRecord,
 )
-from capsule_emit.builder import build_capsule as _base_emit  # noqa: E402  # type: ignore[import-untyped]
 from agent_action_capsule.verify import verify  # noqa: E402  # type: ignore[import-untyped]
 
+from capsule_emit.builder import build_capsule as _base_emit  # noqa: E402  # type: ignore[import-untyped]
 from capsule_emit.ledger import append_to_ledger  # noqa: E402
 
 try:

@@ -35,9 +35,9 @@ from pathlib import Path
 from agent_action_capsule.anchor import anchor as _anchor
 from agent_action_capsule.canonical import json_digest
 from agent_action_capsule.contracts import Disposition, EffectRecord
-from capsule_emit.builder import build_capsule as _aac_emit
 
 from capsule_emit import read_ledger
+from capsule_emit.builder import build_capsule as _aac_emit
 from capsule_emit.gate import run_gate
 from capsule_emit.ledger import append_to_ledger
 from capsule_emit.signing import verify_store_signed

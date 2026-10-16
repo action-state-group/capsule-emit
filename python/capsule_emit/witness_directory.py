@@ -249,12 +249,6 @@ def load_directory(path: str | Path) -> dict:
 # -- reading rows: the same code path for every row ---------------------------
 
 
-def _rows(directory: Any) -> list[dict]:
-    if isinstance(directory, dict):
-        return list(directory.get("witnesses") or [])
-    return list(directory or [])
-
-
 def row_for(directory: Any, ts_url: str) -> dict | None:
     """The row a receipt's witness URL belongs to: same binding (a row
     without ``binding`` is ``cll``) and the same https endpoint, trailing

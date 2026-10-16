@@ -68,7 +68,7 @@ def _emit_records(
 ) -> dict:
     emitted = {}
     uuids = iter(uuid.UUID(record["uuid"]) for record in spec["records"])
-    base_emit = importlib.import_module("agent_action_capsule.emit")
+    base_emit = importlib.import_module("capsule_emit.builder")
     core = importlib.import_module("capsule_emit.core")
     with (
         mock.patch.object(base_emit.uuid, "uuid4", side_effect=lambda: next(uuids)),

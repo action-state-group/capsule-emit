@@ -27,7 +27,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from capsule_emit.builder import build_capsule as base_emit
 from agent_action_capsule.contracts import (
     ConstraintRecord,
     Disposition,
@@ -35,6 +34,7 @@ from agent_action_capsule.contracts import (
 )
 
 from capsule_emit import seal
+from capsule_emit.builder import build_capsule as base_emit
 from capsule_emit.ledger import append_to_ledger
 
 # ---------------------------------------------------------------------------
