@@ -627,6 +627,38 @@ for this audience even when a payload is available, and is recorded on the
 disclosure record rather than silently dropped — suppression is a per-call
 choice, never a default.
 
+**Originals from an Artifact Store.** The capsule commits only to digests,
+so the originals have to come from somewhere. An application that keeps them
+in an [Artifact Store](artifact-store.md) passes it as `store`, and
+`disclose()` reads each selected record's bound `agent_input` and
+`agent_output` originals by `capsule_id`. An application that keeps them in
+its own database keeps passing `reveal`. When both are given, a field in
+`reveal` wins over the store's copy:
+
+```python
+from capsule_emit.artifact.sqlite import SqliteArtifactStore
+
+store = SqliteArtifactStore(conn, "originals", [producer_public_key])
+d = disclose("ledger.jsonl", f"{first}..{last}", audience="auditor", store=store)
+```
+
+A committed field the store cannot supply is reported by its state, never
+dropped: `purged` or `never_retained` (the store's retention state),
+`not_stored` (no record for the `capsule_id`) or `undeclared` (the record
+declares no original bound to the field). `payloads="all"` refuses and names
+each such field and state. `payloads="selected"` discloses what is available
+and lists the rest in the signed completeness statement as
+`completeness["unavailable"]` (`capsule_id -> {field: state}`); the key is
+absent when nothing is unavailable, so a store-backed disclosure has the same
+envelopes and completeness statement as passing the same originals through
+`reveal`. Any other store error (`corrupt`, `untrusted_signer`, ...) fails the
+disclosure. The legacy `ledger.jsonl` keeps no originals, so passing a
+`LegacyLedger` as `store` is refused; see
+[legacy-ledger.md](legacy-ledger.md#disclosing-originals). With a store,
+`payloads="selected"` discloses every original the store holds for the
+selection, plus `reveal`. The `capsule-emit disclose` command takes no store
+yet: it reads originals only from `--reveal`.
+
 **The act seals its own receipt.** `disclose()` builds one
 `capsule_emit.disclosure.build_disclosure_envelope` per selected record
 (the existing single-capsule payload primitive — see `disclosure.py`), then

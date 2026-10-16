@@ -158,6 +158,42 @@ storage (identity, capsule, envelope, signer) before it refuses an original.
 `capsule_emit.legacy_ledger.CAPABILITIES` and
 `capsule_emit_artifact::legacy::CAPABILITIES` list them.
 
+### Disclosing originals
+
+Because the legacy ledger keeps no originals, `disclose()` refuses a
+`LegacyLedger` as its `store`. An application still on a legacy `ledger.jsonl`
+has two options:
+
+- keep the ledger and put each capsule's originals in a separate,
+  originals-capable artifact store, then pass that store to `disclose()`. The
+  ledger line already holds the Capsule and its Producer Envelope, so the
+  store record is `LegacyLedger.get(capsule_id)` with the originals added as
+  artifacts;
+- keep the originals elsewhere and pass them to `disclose()` through `reveal`.
+
+```python
+import json
+
+from capsule_emit.artifact import AGENT_OUTPUT_DIGEST, PAYLOAD_DIGEST, PRESENT, Artifact
+from capsule_emit.artifact.jsonl import JsonlArtifactStore
+from capsule_emit.disclose import disclose
+from capsule_emit.legacy_ledger import LegacyLedger
+
+store = JsonlArtifactStore("originals.jsonl", "originals", [producer_public_key])
+store.init()
+legacy = LegacyLedger("ledger.jsonl")
+try:
+    record = legacy.get(capsule_id)
+finally:
+    legacy.close()
+record.artifacts = [
+    Artifact("payload", PRESENT, PAYLOAD_DIGEST, json.dumps(payload).encode()),
+    Artifact("agent_output", PRESENT, AGENT_OUTPUT_DIGEST, json.dumps(output).encode()),
+]
+store.put(record)
+d = disclose("ledger.jsonl", capsule_id, audience="auditor", store=store)
+```
+
 Each backend runs the subset of the shared conformance suites these limits
 allow: the CLL vectors without `digest-append`, and the artifact vectors whose
 cases need neither originals nor purge (the `bare_*` cases and
