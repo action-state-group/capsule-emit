@@ -44,7 +44,7 @@ from pathlib import Path
 from agent_action_capsule.anchor import anchor as _anchor
 from agent_action_capsule.canonical import json_digest
 from agent_action_capsule.contracts import Disposition, EffectRecord
-from agent_action_capsule.emit import emit as _aac_emit
+from capsule_emit.builder import build_capsule as _aac_emit
 
 from capsule_emit import read_ledger
 from capsule_emit.bilateral import seal_ghost

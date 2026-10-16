@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_action_capsule import emit as base_emit
+from capsule_emit.builder import build_capsule as base_emit
 from agent_action_capsule.contracts import (
     ConstraintRecord,
     Disposition,

@@ -513,3 +513,13 @@ def test_a_counterparty_citation_is_carried_as_custody(tmp_path):
     assert q["references"] == [{"type": "agent-action-capsule", "digest_alg": "SHA-256", "digest": p["capsule_id"],
                                 "citation_purpose": "counterparty_half"}]
     assert _state([terms, p, q])["payment_state"] == "agreed"
+
+
+def test_aac_tightening_refuses_an_impossible_time():
+    from capsule_emit.settlement import SettlementError, amount, build_leg
+
+    with pytest.raises(SettlementError) as err:
+        build_leg("payer_observed", "payer", terms_ref="0" * 64, amount=amount(1, "USD", 2),
+                  payment_ref={"type": "acp.order_id", "value": "o-1"}, status="settled",
+                  observed_at="2026-02-30T00:00:00Z")
+    assert "settlement_malformed" in err.value.codes

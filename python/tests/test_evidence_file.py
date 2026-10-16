@@ -266,3 +266,22 @@ def test_a_disclosure_that_does_not_match_fails_the_file(tmp_path, capsys, overl
     path.write_text(json.dumps(bundle))
     assert main(["verify", "--bundle", str(path)]) == 1
     assert "does not match what its record commits to" in capsys.readouterr().out
+
+
+def test_a_padded_checkpoint_cose_fails_the_checkpoint_claim(tmp_path):
+    bundle = build_bundle(tmp_path)
+    cose = bundle["checkpoint"]["cose"]
+    bundle["checkpoint"]["cose"] = cose + "=" * (-len(cose) % 4) if len(cose) % 4 else cose + "===="[:0]
+    if bundle["checkpoint"]["cose"] == cose:
+        pytest.skip("this checkpoint's base64url needs no padding")
+    status = {c.name: c for c in check_evidence_file(bundle).checks}
+    assert status["checkpoint"].status == "fail"
+    assert status["checkpoint"].findings == ("checkpoint_signature_malformed",)
+
+
+def test_signature_hex_with_whitespace_is_invalid(tmp_path):
+    bundle = build_bundle(tmp_path, n=1)
+    bundle["records"][0]["signature"] = " " + bundle["records"][0]["signature"]
+    check = check_evidence_file(bundle)
+    assert check.records[0].signature == "invalid"
+    assert {c.name: c.status for c in check.checks}["signatures"] == "fail"

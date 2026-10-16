@@ -67,8 +67,19 @@ tests and vectors.
   `verify_scrapi_receipt`, `binding_of`, `endpoint_of`, and `witness_directory.row_for` and
   `row_public_keys_pem` call AAC's `producer_envelope.verify_record_signature` and
   `agent_action_capsule.witness`. Their signatures are unchanged.
-- One tightening comes with AAC: a witness receipt counts as a stub only when `is_stub` is JSON
-  `true`.
+- AAC's checks are stricter in a few places, so some inputs this package accepted before are now
+  refused:
+  - A witness receipt counts as a stub only when `is_stub` is JSON `true`.
+  - `checkpoint.cose` must be unpadded canonical base64url. A padded one was already INVALID,
+    because AAC refused it for interval coverage and membership. Now the `checkpoint` claim fails
+    too (`checkpoint_signature_malformed`).
+  - A record's `signature` and `key_id` must be hex digit pairs with no whitespace, or the
+    signature is `invalid`. The message for a malformed envelope is AAC's.
+  - Settlement legs, in `build_leg`, `seal_leg` and `verify_settlements`: an RFC 3339 time must
+    name a real instant (no 30 February, no leap second), payment-reference qualifiers must be
+    strings, and the optional delivery members must have the draft's types. A leg sealed by 0.10
+    with such a value is now reported `settlement_malformed`. In `verify_settlements`, wrapped
+    `content` that is not canonical unpadded base64url is `wrapped_digest_mismatch`.
 
 ## 0.10.0 — 2026-10-15
 

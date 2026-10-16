@@ -94,3 +94,16 @@ def test_envelope_disclosure_matches_verify_input_digest_result():
     envelope = build_disclosure_envelope(capsule, agent_input=payload)
 
     assert verify_input_digest(envelope["capsule"], envelope["disclosures"]["agent_input"])
+
+
+@pytest.mark.parametrize("value", [1.5, 2**60])
+def test_a_value_that_cannot_be_canonicalized_is_named(value):
+    import json
+
+    from agent_action_capsule.canonical import json_digest
+
+    capsule = {"model_attestation": {"compute_attestation": {"agent_input_digest": json_digest({"q": 1})}}}
+    with pytest.raises(DisclosureError, match="cannot be canonicalized"):
+        build_disclosure_envelope(capsule, agent_input={"q": value})
+    assert json.dumps({"q": 1})  # the committed value itself still discloses
+    assert build_disclosure_envelope(capsule, agent_input={"q": 1})["disclosures"] == {"agent_input": {"q": 1}}
