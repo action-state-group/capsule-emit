@@ -33,6 +33,24 @@ import of the archived `capsule_ledger` package. It returned capsule-ledger's
 caller in this package. Keep originals in an Artifact Store and pass it to
 `disclose(store=...)` instead. Ships in 0.11.0.
 
+### Changed: capsule-emit builds Capsules itself
+
+agent-action-capsule 0.9.0 deprecates its producer, `agent_action_capsule.emit()`, and its
+CrewAI and LangChain integrations (action-state-group/agent-action-capsule#281). Producing
+Capsules is this package's job:
+
+- `capsule_emit.builder.build_capsule` is the builder `seal()`, `received()` and `log()` use. It is
+  `agent_action_capsule.emit()` moved here unchanged in behaviour, so every Capsule this package
+  seals stays byte-for-byte the same, and it seals through AAC's `Capsule.seal()`. Nothing here
+  calls a deprecated AAC API any more.
+- `capsule_emit.adapters.crewai.CrewAICapsuleEmitter` and
+  `capsule_emit.adapters.langchain.LangChainCapsuleEmitter` are the replacements AAC's
+  deprecation warnings name.
+- `build_disclosure_envelope` checks with AAC's `disclosure_envelope.build_disclosure_envelope`,
+  keeping this package's keyword signature and `DisclosureError` messages.
+- The builder tests AAC dropped live here now (`tests/test_builder*.py`), together with the
+  adapter behaviours AAC's integration tests covered (`tests/test_adapters_moved_from_aac.py`).
+
 ### Changed: verification is agent-action-capsule's
 
 Evidence-file, witness-receipt, producer-signature and settlement verification now live in

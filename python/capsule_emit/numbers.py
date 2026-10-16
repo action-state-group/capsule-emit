@@ -4,7 +4,7 @@
 ``CANONICALIZATION_ID`` — the profile default identifier recorded by the
 core emission path (``seal()``/``received()`` via
 ``capsule_emit.core._emit_capsule``, which delegates to
-``agent_action_capsule.emit()``) at the top-level ``canonicalization_id``
+:func:`capsule_emit.builder.build_capsule`) at the top-level ``canonicalization_id``
 field (the self-describing binding slot, inside the signed payload). It
 names the digest algorithm used to compute ``capsule_id``: RFC 8785 plain
 JCS (no absent-field normalization); SHA-256; lowercase hex. Registered in
@@ -12,7 +12,7 @@ the CPB Payload Canonicalization Algorithm Registry
 (draft-mih-sokolov-scitt-payload-binding).
 
 Canonicalization FOLLOWS ``format_version`` — it is not a single global
-default. ``agent_action_capsule.emit()`` builds only ``format_version``
+default. :func:`capsule_emit.builder.build_capsule` builds only ``format_version``
 ``"4"`` (draft-04) and REQUIRES ``canonicalization_id="jcs"`` (§5.1); since
 the core path always delegates to that ``emit()``, this constant is pinned
 to ``"jcs"``. ``capsule_emit/holds/capsules.py`` builds an
@@ -68,7 +68,7 @@ from agent_action_capsule.canonical import FloatInDigestError
 #: Identifier recorded in the self-describing binding slot (``canonicalization_id``
 #: at the top level of every core-path emitted capsule, inside the signed payload).
 #: Core-path default: ``jcs`` (plain RFC 8785 JCS, excluding only capsule_id —
-#: chain is committed; SHA-256) — REQUIRED by ``agent_action_capsule.emit()``'s
+#: chain is committed; SHA-256) — REQUIRED by :func:`capsule_emit.builder.build_capsule`'s
 #: ``format_version`` ``"4"`` (§5.1), and reused as-is by
 #: ``capsule_emit/holds/capsules.py``, the one caller that builds an
 #: ``agent_action_capsule.Capsule`` directly instead of going through

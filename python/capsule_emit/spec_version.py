@@ -7,10 +7,10 @@ and never rejects a record solely for carrying either. ``spec_version``
 selects no digest or verification algorithm (canonicalization follows
 ``format_version`` + ``canonicalization_id``), and an unrecognized value is
 informational, never by itself a rejection -- so no capsule-emit verifier
-branches on it. Same rule, same names, as ``agent_action_capsule.emit``
+branches on it. Same rule, same names, as ``agent_action_capsule.versions``
 (``DEFAULT_SPEC_VERSION`` / ``ACCEPTED_SPEC_VERSIONS``).
 
-capsule-emit passes :data:`SPEC_VERSION` to ``agent_action_capsule.emit()``
+capsule-emit passes :data:`SPEC_VERSION` to :func:`capsule_emit.builder.build_capsule`
 explicitly rather than inheriting that library's default, so what it stamps
 does not depend on which ``agent-action-capsule`` release is installed.
 """

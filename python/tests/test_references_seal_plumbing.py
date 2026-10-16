@@ -198,7 +198,7 @@ def test_slot_composition_references_committed_to_composition_capsule_id(tmp_pat
     import importlib
     import uuid
     from unittest import mock
-    _base_emit_module = importlib.import_module("agent_action_capsule.emit")
+    _base_emit_module = importlib.import_module("capsule_emit.builder")
     fixed_uuid = uuid.UUID(int=42)
     fixed_ts = "2026-09-08T00:00:00Z"
     kwargs = {"anchor": False, "signing_key_path": tmp_path / "shared.pem"}

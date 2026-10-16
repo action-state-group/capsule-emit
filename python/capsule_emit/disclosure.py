@@ -5,8 +5,9 @@ Wraps an already-sealed capsule alongside an out-of-band ``disclosures``
 object, without touching the capsule's own bytes — the wire format a
 verifier (e.g. the neutral web viewer) reads to recompute and check a
 digest-only field's committed content, per the companion profile in
-``agent-action-capsule``. Reuses the same JCS-SHA256 canonicalization
-:func:`verify_input_digest` uses; this module defines no second hashing path.
+``agent-action-capsule``. The digest check is
+agent-action-capsule's (``agent_action_capsule.disclosure_envelope``); this
+module keeps capsule-emit's keyword signature and error type.
 
 This module is the single-capsule payload primitive. The ledger-level
 ``disclose`` CLI verb (
@@ -43,49 +44,47 @@ def build_disclosure_envelope(
 ) -> dict:
     """Build a Disclosure Envelope: ``{"capsule": capsule, "disclosures": {...}}``.
 
-    ``capsule`` is included byte-for-byte unmodified — ``capsule_id`` was
-    already computed over it and is never recomputed here. Pass the raw
-    value for each artifact to disclose; an artifact left as ``None`` stays
-    WITHHELD (absent from ``disclosures``), the default posture.
+    ``capsule`` is included byte-for-byte unmodified. Pass the raw value for
+    each artifact to disclose; one left as ``None`` stays WITHHELD.
 
-    When ``strict`` (the default), each provided value is checked against
-    the digest already committed in ``capsule.model_attestation
-    .compute_attestation.<field>_digest`` — using the same JCS-SHA256
-    primitive :func:`capsule_emit.verify.verify_input_digest` uses — and a
-    :class:`DisclosureError` is raised on a mismatch or a missing committed
-    digest, so a producer catches a copy-paste error at build time rather
-    than shipping a link that renders REVEALED · MISMATCH. Pass
-    ``strict=False`` to build an envelope without this check (for example,
-    to deliberately construct a mismatching fixture for testing).
+    With ``strict`` (the default) the envelope is built by
+    agent-action-capsule's ``disclosure_envelope.build_disclosure_envelope``,
+    which checks each value against the digest committed in
+    ``model_attestation.compute_attestation``; a mismatch or a missing
+    committed digest raises :class:`DisclosureError`. Pass ``strict=False``
+    to build an envelope without the check (for example, a deliberately
+    mismatching test fixture).
     """
-    disclosures: dict[str, Any] = {}
-    for member, value in (("agent_input", agent_input), ("agent_output", agent_output)):
-        if value is None:
-            continue
-        disclosures[member] = value
+    from agent_action_capsule.disclosure_envelope import (
+        NO_COMMITTED_DIGEST,
+    )
+    from agent_action_capsule.disclosure_envelope import (
+        build_disclosure_envelope as _build,
+    )
 
-    if strict:
-        compute_attestation = (
-            capsule.get("model_attestation", {}).get("compute_attestation", {})
-            if isinstance(capsule, dict)
-            else {}
-        )
-        for member, value in disclosures.items():
-            digest_field = DISCLOSURE_ELIGIBLE_FIELDS[member]
-            stored = compute_attestation.get(digest_field)
-            if stored is None:
-                raise DisclosureError(
-                    f"capsule has no {digest_field} committed — cannot disclose {member!r}"
-                )
-            try:
-                computed = json_digest(value)
-            except (FloatInDigestError, TypeError, ValueError) as exc:
-                raise DisclosureError(f"{member} value cannot be canonicalized: {exc}") from exc
-            if computed != stored:
-                raise DisclosureError(
-                    f"{member} does not match the committed digest "
-                    f"(computed {computed}, capsule has {stored}) — "
-                    "pass strict=False to build the envelope anyway"
-                )
-
-    return {"capsule": capsule, "disclosures": disclosures}
+    disclosures = {
+        member: value
+        for member, value in (("agent_input", agent_input), ("agent_output", agent_output))
+        if value is not None
+    }
+    if not strict:
+        return {"capsule": capsule, "disclosures": disclosures}
+    try:
+        return _build(capsule, disclosures)
+    except ValueError as exc:
+        code, _, member = str(exc).partition(": ")
+        digest_field = DISCLOSURE_ELIGIBLE_FIELDS.get(member, member)
+        if code == NO_COMMITTED_DIGEST:
+            raise DisclosureError(
+                f"capsule has no {digest_field} committed — cannot disclose {member!r}"
+            ) from exc
+        try:
+            computed = json_digest(disclosures[member])
+        except (FloatInDigestError, TypeError, ValueError) as err:
+            raise DisclosureError(f"{member} value cannot be canonicalized: {err}") from exc
+        stored = (capsule.get("model_attestation") or {}).get("compute_attestation", {}).get(digest_field)
+        raise DisclosureError(
+            f"{member} does not match the committed digest "
+            f"(computed {computed}, capsule has {stored}) — "
+            "pass strict=False to build the envelope anyway"
+        ) from exc

@@ -8,7 +8,7 @@ tagging, kept deliberately OUTSIDE that block (see
 **Where the block lives in v0.** The draft frames `org.agentactioncapsule.otel`
 as "a top-level payload member" of the Capsule, parallel to `action_id` /
 `operator` / etc. -- but nothing in the currently-installed
-`agent_action_capsule.emit()` (spec -04, format_version "4") accepts an
+`capsule_emit.builder.build_capsule()` (spec -04, format_version "4") accepts an
 arbitrary top-level member; only `compute_attestation` (nested under
 `model_attestation`) is extensible today, exactly the container
 `docs/extensions/mcp-toolset-digest.md`'s `ext.mcp` already uses. v0 places

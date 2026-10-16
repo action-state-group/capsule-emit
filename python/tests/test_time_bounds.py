@@ -76,7 +76,7 @@ def test_a_period_scan_of_the_ledger_store_keeps_the_last_second(tmp_path):
     from capsule_emit import seal
     from capsule_emit.ledger_io import ScanQuery
 
-    emit = importlib.import_module("agent_action_capsule.emit")
+    emit = importlib.import_module("capsule_emit.builder")
     since, until = period_bounds("month", anchor=datetime(2026, 8, 15, tzinfo=timezone.utc))
     stamps = ["2026-08-01T00:00:00Z", "2026-08-31T23:59:59Z", "2026-09-01T00:00:00Z"]
     store = LedgerStore(root=tmp_path / "store", rotate_at_checkpoint=True)
