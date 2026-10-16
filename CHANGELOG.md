@@ -6,6 +6,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+## 0.11.0 — 2026-10-16
+
+A minor release with breaking changes. `ledger_io.local_payload_store()` is
+removed, and `disclose()` can read originals from an Artifact Store (#331).
+Evidence-file, settlement, witness-receipt and producer-signature verification
+are agent-action-capsule's, and capsule-emit builds Capsules itself, so the
+package requires `agent-action-capsule>=0.9.0` and calls no deprecated AAC
+API (#332). Some inputs AAC's stricter checks refuse are listed below.
+
 ### Added: `disclose()` reads originals from an Artifact Store
 
 `disclose(..., store=...)` takes an optional Artifact Store
@@ -31,7 +40,7 @@ supplied.
 import of the archived `capsule_ledger` package. It returned capsule-ledger's
 `PayloadStore`, worked only with that package installed from git, and had no
 caller in this package. Keep originals in an Artifact Store and pass it to
-`disclose(store=...)` instead. Ships in 0.11.0.
+`disclose(store=...)` instead.
 
 ### Changed: capsule-emit builds Capsules itself
 
