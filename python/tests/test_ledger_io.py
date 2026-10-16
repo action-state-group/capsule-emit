@@ -4,9 +4,7 @@ moved here from capsule-ledger's (archived) cli/ledger_io.py.
 
 ``open_ledger``/``require_ledger_path``/``add_scan_query_args``/
 ``build_scan_query``/``echo_parts`` use ``cll.ledger`` (already a hard
-dependency) and are exercised unconditionally. ``local_payload_store``
-needs the optional ``capsule-emit[ledger-io]`` extra (``capsule_ledger``,
-Python >=3.10) and is skipped when that is not installed.
+dependency) and are exercised unconditionally.
 """
 from __future__ import annotations
 
@@ -75,30 +73,6 @@ def test_open_ledger_over_a_jsonl_fixture_imports_into_a_throwaway_store(flat_le
         assert _ids(scanned) == [c["capsule_id"] for c in caps]
     # the throwaway tempdir is cleaned up on exit -- nothing left rooted at path's dir
     assert not (path.parent / "does-not-linger").exists()
-
-
-def test_local_payload_store_none_for_a_non_directory(tmp_path):
-    missing = tmp_path / "not-a-real-path.jsonl"
-    assert ledger_io.local_payload_store(missing) is None
-
-
-def test_local_payload_store_none_for_a_directory_with_no_payload_store(tmp_path):
-    pytest.importorskip("capsule_ledger")
-    plain_dir = tmp_path / "store"
-    plain_dir.mkdir()
-    assert ledger_io.local_payload_store(plain_dir) is None
-
-
-def test_local_payload_store_returns_a_store_once_populated(tmp_path):
-    pytest.importorskip("capsule_ledger")
-    from capsule_ledger.payload_store import PayloadStore
-
-    ledger_dir = tmp_path / "store"
-    ledger_dir.mkdir()
-    PayloadStore(ledger_dir).put({"k": "v"})
-    resolved = ledger_io.local_payload_store(ledger_dir)
-    assert resolved is not None
-    assert resolved.exists is True
 
 
 def _args(**overrides):

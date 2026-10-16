@@ -802,3 +802,165 @@ def test_verify_disclosure_trusts_no_built_in_witness_key(three_record_ledger, s
 
     ok, errors = verify_disclosure(d2, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM})
     assert ok, errors
+
+
+# ---------------------------------------------------------------------------
+# Originals from an Artifact Store (#328). The ledger stays the legacy
+# ledger.jsonl that seal() writes; the originals live in a separate store.
+# ---------------------------------------------------------------------------
+
+
+def _artifact_store(tmp_path, ledger_path, caps, payloads, *, states=None):
+    """A JSONL Artifact Store next to the legacy ledger, holding each capsule
+    with its payload and agent output. ``states`` maps an index to
+    ``{field: "purge" | "never_retained" | "omit"}``."""
+    from capsule_emit.artifact import (
+        AGENT_OUTPUT_DIGEST,
+        NEVER_RETAINED,
+        PAYLOAD_DIGEST,
+        PRESENT,
+        Artifact,
+    )
+    from capsule_emit.artifact.jsonl import JsonlArtifactStore
+    from capsule_emit.legacy_ledger import LegacyLedger
+
+    states = states or {}
+    legacy = LegacyLedger(ledger_path)
+    trusted = [bytes.fromhex(caps[0]["key_id"])]
+    store = JsonlArtifactStore(tmp_path / "originals.jsonl", "originals", trusted)
+    store.init()
+    purge = []
+    for i, cap in enumerate(caps):
+        record = legacy.get(cap["capsule_id"])
+        for field, binding, value in (
+            ("agent_input", PAYLOAD_DIGEST, payloads[i][0]),
+            ("agent_output", AGENT_OUTPUT_DIGEST, payloads[i][1]),
+        ):
+            how = states.get(i, {}).get(field)
+            if how == "omit":
+                continue
+            if how == "never_retained":
+                record.artifacts.append(Artifact(field, NEVER_RETAINED, binding))
+                continue
+            content = json.dumps(value).encode()
+            record.artifacts.append(Artifact(field, PRESENT, binding, content))
+            if how == "purge":
+                purge.append(cap["capsule_id"])
+        store.put(record)
+    for cid in purge:
+        store.purge(cid)
+    legacy.close()
+    return store
+
+
+def _strip_seal(d):
+    """The parts of a Disclosure that do not depend on when it was sealed."""
+    return d.envelopes, d.completeness, d.suppressed_fields, d.record_ids
+
+
+def test_disclose_from_store_matches_reveal(three_record_ledger, tmp_path):
+    ledger_path, caps, payloads = three_record_ledger
+    store = _artifact_store(tmp_path, ledger_path, caps, payloads)
+    selector = f"{caps[0]['capsule_id']}..{caps[2]['capsule_id']}"
+
+    via_store = disclose(ledger_path, selector, audience="auditor", store=store)
+    via_reveal = disclose(ledger_path, selector, audience="auditor", reveal=_reveal_all(caps, payloads))
+
+    assert _strip_seal(via_store) == _strip_seal(via_reveal)
+    assert "unavailable" not in via_store.completeness
+    ok, errors = verify_disclosure(via_store)
+    assert ok, errors
+
+
+def test_disclose_reveal_takes_precedence_over_store(three_record_ledger, tmp_path):
+    ledger_path, caps, payloads = three_record_ledger
+    cid = caps[0]["capsule_id"]
+    store = _artifact_store(tmp_path, ledger_path, caps, payloads)
+    # A wrong value in reveal must be the one used (and so fail its digest),
+    # proving the store's correct copy did not override it.
+    with pytest.raises(DiscloseError, match=cid):
+        disclose(ledger_path, cid, audience="auditor", store=store, reveal={cid: {"agent_input": {"n": 99}}})
+    d = disclose(ledger_path, cid, audience="auditor", store=store, reveal={cid: {"agent_input": payloads[0][0]}})
+    assert d.envelopes[cid]["disclosures"] == {"agent_input": payloads[0][0], "agent_output": payloads[0][1]}
+
+
+@pytest.mark.parametrize(
+    ("how", "state"),
+    [("purge", "purged"), ("never_retained", "never_retained"), ("omit", "undeclared")],
+)
+def test_disclose_from_store_reports_unavailable_originals(three_record_ledger, tmp_path, how, state):
+    ledger_path, caps, payloads = three_record_ledger
+    cid = caps[1]["capsule_id"]
+    store = _artifact_store(tmp_path, ledger_path, caps, payloads, states={1: {"agent_output": how}})
+
+    with pytest.raises(DiscloseError, match=rf"agent_output \({state}\)"):
+        disclose(ledger_path, cid, audience="auditor", store=store)
+
+    d = disclose(ledger_path, cid, audience="auditor", store=store, payloads="selected")
+    disclosed = d.envelopes[cid]["disclosures"]
+    if how == "purge":  # purge erases every original of the record
+        assert disclosed == {}
+        assert d.completeness["unavailable"] == {cid: {"agent_input": "purged", "agent_output": "purged"}}
+    else:
+        assert disclosed == {"agent_input": payloads[1][0]}
+        assert d.completeness["unavailable"] == {cid: {"agent_output": state}}
+    assert "could not supply" in d.completeness["payloads_note"]
+    assert d.disclosure_record["completeness"] == d.completeness
+    ok, errors = verify_disclosure(d)
+    assert ok, errors
+
+
+def test_disclose_unavailable_original_can_be_suppressed_or_revealed(three_record_ledger, tmp_path):
+    ledger_path, caps, payloads = three_record_ledger
+    cid = caps[1]["capsule_id"]
+    store = _artifact_store(tmp_path, ledger_path, caps, payloads, states={1: {"agent_output": "never_retained"}})
+
+    suppressed = disclose(ledger_path, cid, audience="auditor", store=store, suppress=["agent_output"])
+    assert "unavailable" not in suppressed.completeness
+    revealed = disclose(
+        ledger_path, cid, audience="auditor", store=store, reveal={cid: {"agent_output": payloads[1][1]}}
+    )
+    assert "unavailable" not in revealed.completeness
+    assert revealed.envelopes[cid]["disclosures"]["agent_output"] == payloads[1][1]
+
+
+def test_disclose_record_missing_from_store_is_not_stored(three_record_ledger, tmp_path):
+    from capsule_emit.artifact.memory import MemoryArtifactStore
+
+    ledger_path, caps, _payloads = three_record_ledger
+    cid = caps[0]["capsule_id"]
+    store = MemoryArtifactStore("originals", [bytes.fromhex(caps[0]["key_id"])])
+    store.init()
+
+    with pytest.raises(DiscloseError, match=r"agent_input \(not_stored\)"):
+        disclose(ledger_path, cid, audience="auditor", store=store)
+    d = disclose(ledger_path, cid, audience="auditor", store=store, payloads="selected")
+    assert d.completeness["unavailable"] == {cid: {"agent_input": "not_stored", "agent_output": "not_stored"}}
+
+
+def test_disclose_store_errors_fail_closed(three_record_ledger, tmp_path):
+    from capsule_emit.artifact.jsonl import JsonlArtifactStore
+
+    ledger_path, caps, payloads = three_record_ledger
+    _artifact_store(tmp_path, ledger_path, caps, payloads)
+    # The same file opened with a different trusted key: every read is
+    # untrusted_signer, which must not read as "not stored".
+    untrusting = JsonlArtifactStore(tmp_path / "originals.jsonl", "originals", [b"\x01" * 32])
+    cid = caps[0]["capsule_id"]
+    with pytest.raises(DiscloseError, match="untrusted_signer"):
+        disclose(ledger_path, cid, audience="auditor", store=untrusting, payloads="selected")
+    # A record whose every field reveal supplies is not read from the store.
+    d = disclose(ledger_path, cid, audience="auditor", store=untrusting, reveal=_reveal_all(caps[:1], payloads))
+    assert set(d.envelopes[cid]["disclosures"]) == {"agent_input", "agent_output"}
+
+
+def test_disclose_refuses_legacy_ledger_as_store(three_record_ledger):
+    from capsule_emit.legacy_ledger import LegacyLedger
+
+    ledger_path, caps, _payloads = three_record_ledger
+    legacy = LegacyLedger(ledger_path)
+    try:
+        with pytest.raises(DiscloseError, match="keeps no originals"):
+            disclose(ledger_path, caps[0]["capsule_id"], audience="auditor", store=legacy)
+    finally:
+        legacy.close()

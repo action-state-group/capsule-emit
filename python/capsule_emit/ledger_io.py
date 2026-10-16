@@ -20,14 +20,6 @@ dependency and no Python-floor gate (import, never vendor --
 and importing the alias's target rather than the archived alias itself is
 the more honest "import").
 
-``PayloadStore`` has no ``cll`` equivalent -- it stays ``capsule_ledger``'s
-own class, so :func:`local_payload_store` imports it lazily, on call. There
-is no ``capsule-emit[ledger-io]`` extra: ``capsule-ledger`` is not on PyPI
-and its repository was archived 2026-09-02, so the extra could never
-resolve for anyone installing a published wheel. That one function now
-raises with a from-source install line; every other function in this module
-works unconditionally.
-
 ``--ledger`` accepts either a real ``LedgerStore`` root (a directory) or a
 plain JSONL fixture file (imported into an ephemeral, throwaway store for
 the duration of the command) -- the same convenience ``fold test`` already
@@ -44,12 +36,8 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from cll.ledger import LedgerStore, ScanQuery
-
-if TYPE_CHECKING:
-    from capsule_ledger.payload_store import PayloadStore
 
 __all__ = [
     "open_ledger",
@@ -57,7 +45,6 @@ __all__ = [
     "add_scan_query_args",
     "build_scan_query",
     "echo_parts",
-    "local_payload_store",
 ]
 
 
@@ -80,38 +67,6 @@ def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
     finally:
         store.close()
         shutil.rmtree(tmp_root, ignore_errors=True)
-
-
-def local_payload_store(ledger_path: str | os.PathLike) -> PayloadStore | None:
-    """The resolve-at-read gate (item 5a): auto-resolve applies only on a
-    LOCAL, standalone-grade ledger with a payload store actually present --
-    never on an imported JSONL fixture or a foreign bundle, which
-    ``open_ledger()`` opens into a throwaway tempdir with no lasting home
-    for one. Returns ``None`` (never a store you'd have to remember to
-    check ``.exists`` on) unless both conditions hold.
-
-    Requires the optional ``capsule-emit[ledger-io]`` extra (Python >=3.10)
-    -- imported lazily here so the rest of this module stays usable without
-    it."""
-    root = Path(ledger_path)
-    if not root.is_dir():
-        return None
-    try:
-        from capsule_ledger.payload_store import PayloadStore
-    except ImportError as exc:  # pragma: no cover - depends on the environment
-        raise ImportError(
-            "local_payload_store() needs capsule-ledger's PayloadStore, and "
-            "capsule-ledger is not on PyPI (its repository was archived "
-            "2026-09-02). There is no `capsule-emit[ledger-io]` extra for the "
-            "same reason: a published package cannot depend on a git URL. "
-            "Install it from source if you need this one function:\n"
-            "    pip install 'capsule-ledger @ git+https://github.com/"
-            "action-state-group/capsule-ledger.git'\n"
-            "Every other function in capsule_emit.ledger_io works without it."
-        ) from exc
-
-    store = PayloadStore(root)
-    return store if store.exists else None
 
 
 def require_ledger_path(verb: str, args: argparse.Namespace) -> str | None:

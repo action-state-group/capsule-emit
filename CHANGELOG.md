@@ -6,6 +6,28 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added: `disclose()` reads originals from an Artifact Store
+
+`disclose(..., store=...)` takes an optional Artifact Store
+(`capsule_emit.artifact.Store`) and reads each selected record's bound
+`agent_input` and `agent_output` originals from it by `capsule_id` (#328).
+`reveal` still works for applications that keep originals elsewhere, and a
+field in `reveal` wins over the store's copy. A committed field the store
+cannot supply is reported by state (`purged`, `never_retained`, `not_stored`,
+`undeclared`): `payloads="all"` refuses and names it, and `payloads="selected"`
+records it in the signed `completeness["unavailable"]`. Other store errors fail
+the disclosure. `LegacyLedger` keeps no originals and is refused as `store`;
+[legacy-ledger.md](docs/legacy-ledger.md#disclosing-originals) shows how to pair
+a legacy `ledger.jsonl` with a separate store, or keep using `reveal`.
+
+### Removed (breaking): `ledger_io.local_payload_store()`
+
+`capsule_emit.ledger_io.local_payload_store()` is removed, and with it the last
+import of the archived `capsule_ledger` package. It returned capsule-ledger's
+`PayloadStore`, worked only with that package installed from git, and had no
+caller in this package. Keep originals in an Artifact Store and pass it to
+`disclose(store=...)` instead. Ships in 0.11.0.
+
 ## 0.10.0 — 2026-10-15
 
 A minor release with breaking changes: the HTML pages, `capsule-emit report`

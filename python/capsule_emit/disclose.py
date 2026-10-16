@@ -45,6 +45,21 @@ field is explicitly named in ``suppress`` — :func:`disclose` refuses
 (raises :class:`DiscloseError`) rather than silently ship a disclosure that
 claims completeness while quietly withholding a field. ``"selected"``
 discloses exactly the payloads supplied, nothing implied either way.
+
+**Where originals come from.** The capsule commits only to digests, so the
+original content has to come from somewhere. Pass ``store``, an Artifact
+Store (``capsule_emit.artifact.Store``) that keeps originals, and
+:func:`disclose` reads each selected record's bound originals from it by
+``capsule_id``. An application that keeps originals in its own database
+passes them through ``reveal`` instead. Both may be given: a field ``reveal``
+supplies wins over the store's copy of it. A field the store cannot supply
+(its record or artifact is absent, or its original was purged or never
+retained) is never dropped silently: ``payloads="all"`` refuses and names the
+state, and ``payloads="selected"`` lists it under ``completeness["unavailable"]``.
+
+``capsule_emit.legacy_ledger.LegacyLedger`` keeps no originals, so it is
+refused as ``store``. An application on a legacy ``ledger.jsonl`` either pairs
+it with a separate originals-capable store, or keeps passing ``reveal``.
 """
 
 from __future__ import annotations
@@ -52,9 +67,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["Disclosure", "DiscloseError", "disclose", "verify_disclosure"]
+__all__ = ["NOT_STORED", "UNDECLARED", "Disclosure", "DiscloseError", "disclose", "verify_disclosure"]
 
 _PAYLOAD_MODES = ("all", "selected")
+
+#: Why a store could not supply an original, besides the store's own
+#: ``purged`` and ``never_retained`` retention states.
+NOT_STORED = "not_stored"  # the store holds no record for the capsule_id
+UNDECLARED = "undeclared"  # the record declares no original bound to the field
 
 
 class DiscloseError(RuntimeError):
@@ -178,8 +198,68 @@ def _missing_for_all(
     return missing
 
 
+def _store_originals(
+    store: Any, records: list[dict], reveal: dict[str, dict[str, Any]], suppress: frozenset[str]
+) -> tuple[dict, dict]:
+    """Reads from ``store`` every committed original of the selected records
+    that ``reveal`` does not supply and ``suppress`` does not withhold; a
+    record needing none is not read. Returns ``(originals, states)``:
+    ``originals`` maps ``capsule_id -> {field: value}`` for every present
+    original, and ``states`` maps ``capsule_id -> {field: state}`` for every
+    needed field the store could not supply. A store
+    error other than ``not_found`` (corrupt, untrusted signer, digest
+    mismatch...) fails the disclosure rather than reading as absence."""
+    from .artifact import AGENT_OUTPUT_DIGEST, PAYLOAD_DIGEST, PRESENT, ArtifactError, NotFoundError
+    from .artifact.record import decode_strict_json
+    from .disclosure import DISCLOSURE_ELIGIBLE_FIELDS
+    from .legacy_ledger import LegacyLedger
+
+    if isinstance(store, LegacyLedger):
+        raise DiscloseError(
+            "store: the legacy ledger keeps no originals; pair it with a separate "
+            "originals-capable Artifact Store, or pass the originals through reveal"
+        )
+    bindings = {PAYLOAD_DIGEST: "agent_input", AGENT_OUTPUT_DIGEST: "agent_output"}
+
+    originals: dict[str, dict[str, Any]] = {}
+    states: dict[str, dict[str, str]] = {}
+    for r in records:
+        cid = r["capsule_id"]
+        ca = (r.get("model_attestation") or {}).get("compute_attestation") or {}
+        supplied = reveal.get(cid, {})
+        committed = [
+            f
+            for f, digest_field in DISCLOSURE_ELIGIBLE_FIELDS.items()
+            if ca.get(digest_field) and f not in supplied and f not in suppress
+        ]
+        if not committed:
+            continue
+        try:
+            stored = store.get(cid)
+        except NotFoundError:
+            states[cid] = {f: NOT_STORED for f in committed}
+            continue
+        except ArtifactError as exc:
+            raise DiscloseError(f"{cid}: artifact store: {exc.code}: {exc}") from exc
+        by_field = {bindings[a.binding]: a for a in stored.artifacts if a.binding in bindings}
+        for field in committed:
+            a = by_field.get(field)
+            if a is None:
+                states.setdefault(cid, {})[field] = UNDECLARED
+            elif a.state != PRESENT:
+                states.setdefault(cid, {})[field] = a.state
+            else:
+                # The store verified this content against the committed digest.
+                originals.setdefault(cid, {})[field] = decode_strict_json(a.content)
+    return originals, states
+
+
 def _completeness(
-    records: list[dict], records_mode: str, payloads_mode: str, suppress: tuple[str, ...]
+    records: list[dict],
+    records_mode: str,
+    payloads_mode: str,
+    suppress: tuple[str, ...],
+    unavailable: dict[str, dict[str, str]],
 ) -> dict:
     n = len(records)
     if records_mode == "contiguous":
@@ -201,12 +281,20 @@ def _completeness(
             f"; {len(suppress)} field(s) explicitly suppressed for this audience: {', '.join(suppress)}"
         )
 
-    return {
+    completeness: dict[str, Any] = {
         "records_mode": records_mode,
         "records_note": records_note,
         "payloads_mode": payloads_mode,
         "payloads_note": payloads_note,
     }
+    if unavailable:
+        n_fields = sum(len(v) for v in unavailable.values())
+        completeness["payloads_note"] += (
+            f"; {n_fields} committed field(s) not disclosed because the artifact store "
+            "could not supply the original (see unavailable)"
+        )
+        completeness["unavailable"] = unavailable
+    return completeness
 
 
 def disclose(
@@ -219,6 +307,7 @@ def disclose(
     suppress: list[str] | tuple[str, ...] | None = None,
     signer: Any = None,
     signing_key_path: Any = None,
+    store: Any = None,
 ) -> Disclosure:
     """Build and seal a :class:`Disclosure` for ``selector`` against the
     JSONL ledger at ``path``: bundle + selected payload content +
@@ -231,13 +320,26 @@ def disclose(
     with no entry (or an empty one) discloses no payload content, bundle
     only. Every key must belong to a record the selector resolved to.
 
+    ``store`` is an optional Artifact Store (``capsule_emit.artifact.Store``)
+    holding the selected records' originals; :func:`disclose` reads every
+    eligible field's original from it, and a field also in ``reveal`` takes
+    ``reveal``'s value. A committed field the store cannot supply is reported
+    by state (``purged``, ``never_retained``, :data:`NOT_STORED`,
+    :data:`UNDECLARED`): ``payloads="all"`` raises naming it unless it is
+    suppressed, and ``payloads="selected"`` records it in
+    ``completeness["unavailable"]`` (``capsule_id -> {field: state}``), a key
+    present only when something is unavailable. Fields ``reveal`` supplies or
+    ``suppress`` withholds are never reported unavailable.
+
     ``suppress`` names fields withheld from EVERY selected record for this
     audience, regardless of whether ``reveal`` supplied them — supplying a
     payload for a suppressed field is a contradiction and raises
     :class:`DiscloseError`.
 
     Raises :class:`DiscloseError` if: ``payloads`` is not ``"all"``/``"selected"``;
-    the selector doesn't resolve; ``reveal``/``suppress`` name an unknown
+    the selector doesn't resolve; ``store`` is a ``LegacyLedger`` (which keeps
+    no originals) or fails a read other than ``not_found``;
+    ``reveal``/``suppress`` name an unknown
     field, an unselected record, or contradict each other; any selected
     record isn't yet bundle-able (``capsule_emit.bundle.BundleError`` is
     wrapped, not swallowed); a disclosed payload doesn't match its committed
@@ -290,10 +392,20 @@ def disclose(
                 "suppress — a field cannot be disclosed and suppressed in the same call"
             )
 
+    unavailable: dict[str, dict[str, str]] = {}
+    supplied: dict[str, dict[str, Any]] = {cid: dict(fields) for cid, fields in reveal.items()}
+    if store is not None:
+        originals, unavailable = _store_originals(store, selected, reveal, suppress_set)
+        for cid, fields in originals.items():
+            supplied.setdefault(cid, {}).update(fields)
+
     if payloads == "all":
-        missing = _missing_for_all(selected, reveal, suppress_set)
+        missing = _missing_for_all(selected, supplied, suppress_set)
         if missing:
-            detail = ", ".join(f"{cid[:12]}…:{field}" for cid, field in missing)
+            detail = ", ".join(
+                f"{cid[:12]}…:{field}" + (f" ({unavailable[cid][field]})" if field in unavailable.get(cid, {}) else "")
+                for cid, field in missing
+            )
             raise DiscloseError(
                 f"payloads='all' but {len(missing)} eligible field(s) have no supplied "
                 f"payload and are not suppressed: {detail} — supply a payload, add to "
@@ -309,7 +421,7 @@ def disclose(
         except BundleError as exc:
             raise DiscloseError(f"{cid}: cannot bundle — {exc}") from exc
 
-        fields = dict(reveal.get(cid, {}))
+        fields = dict(supplied.get(cid, {}))
         for suppressed_field in suppress_set:
             fields.pop(suppressed_field, None)
         try:
@@ -322,7 +434,7 @@ def disclose(
         except DisclosureError as exc:
             raise DiscloseError(f"{cid}: {exc}") from exc
 
-    completeness = _completeness(selected, records_mode, payloads, tuple(sorted(suppress_set)))
+    completeness = _completeness(selected, records_mode, payloads, tuple(sorted(suppress_set)), unavailable)
 
     record = {
         "kind": DISCLOSURE_RECORD_KIND,
