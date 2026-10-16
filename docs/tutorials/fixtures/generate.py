@@ -77,7 +77,7 @@ def _pin_determinism() -> None:
     # Import the submodule for its side effect (registering it) and bind the
     # module object directly — importlib.import_module keeps this lint-clean
     # (no "imported but unused") while still patching the real code path.
-    _emit_mod = importlib.import_module("agent_action_capsule.emit")
+    _emit_mod = importlib.import_module("capsule_emit.builder")
 
     counter = itertools.count(1)
 

@@ -33,6 +33,54 @@ import of the archived `capsule_ledger` package. It returned capsule-ledger's
 caller in this package. Keep originals in an Artifact Store and pass it to
 `disclose(store=...)` instead. Ships in 0.11.0.
 
+### Changed: capsule-emit builds Capsules itself
+
+agent-action-capsule 0.9.0 deprecates its producer, `agent_action_capsule.emit()`, and its
+CrewAI and LangChain integrations (action-state-group/agent-action-capsule#281). Producing
+Capsules is this package's job:
+
+- `capsule_emit.builder.build_capsule` is the builder `seal()`, `received()` and `log()` use. It is
+  `agent_action_capsule.emit()` moved here unchanged in behaviour, so every Capsule this package
+  seals stays byte-for-byte the same, and it seals through AAC's `Capsule.seal()`. Nothing here
+  calls a deprecated AAC API any more.
+- `capsule_emit.adapters.crewai.CrewAICapsuleEmitter` and
+  `capsule_emit.adapters.langchain.LangChainCapsuleEmitter` are the replacements AAC's
+  deprecation warnings name.
+- `build_disclosure_envelope` checks with AAC's `disclosure_envelope.build_disclosure_envelope`,
+  keeping this package's keyword signature and `DisclosureError` messages.
+- The builder tests AAC dropped live here now (`tests/test_builder*.py`), together with the
+  adapter behaviours AAC's integration tests covered (`tests/test_adapters_moved_from_aac.py`).
+
+### Changed: verification is agent-action-capsule's
+
+Evidence-file, witness-receipt, producer-signature and settlement verification now live in
+agent-action-capsule (action-state-group/agent-action-capsule#280), and this package calls them.
+The package requires `agent-action-capsule>=0.9.0`. Results are unchanged on this package's
+tests and vectors.
+
+- `capsule_emit.evidence_file.check_evidence_file` (`capsule-emit verify --bundle`) reads the
+  file and reports AAC's `verify_bundle(bundle, strict=True, ...)`.
+- `capsule_emit.settlement.verify_settlements` and the draft's tables (`LEGS`, `MEMBERS`,
+  `structure_failures`, ...) come from `agent_action_capsule.settlement`. Building and sealing
+  legs (`amount`, `wrap`, `build_leg`, `seal_leg`) stay here.
+- `signing.verify_capsule_signature_tristate`, `witness_bindings.verify_rekor_receipt`,
+  `verify_scrapi_receipt`, `binding_of`, `endpoint_of`, and `witness_directory.row_for` and
+  `row_public_keys_pem` call AAC's `producer_envelope.verify_record_signature` and
+  `agent_action_capsule.witness`. Their signatures are unchanged.
+- AAC's checks are stricter in a few places, so some inputs this package accepted before are now
+  refused:
+  - A witness receipt counts as a stub only when `is_stub` is JSON `true`.
+  - `checkpoint.cose` must be unpadded canonical base64url. A padded one was already INVALID,
+    because AAC refused it for interval coverage and membership. Now the `checkpoint` claim fails
+    too (`checkpoint_signature_malformed`).
+  - A record's `signature` and `key_id` must be hex digit pairs with no whitespace, or the
+    signature is `invalid`. The message for a malformed envelope is AAC's.
+  - Settlement legs, in `build_leg`, `seal_leg` and `verify_settlements`: an RFC 3339 time must
+    name a real instant (no 30 February, no leap second), payment-reference qualifiers must be
+    strings, and the optional delivery members must have the draft's types. A leg sealed by 0.10
+    with such a value is now reported `settlement_malformed`. In `verify_settlements`, wrapped
+    `content` that is not canonical unpadded base64url is `wrapped_digest_mismatch`.
+
 ## 0.10.0 — 2026-10-15
 
 A minor release with breaking changes: the HTML pages, `capsule-emit report`

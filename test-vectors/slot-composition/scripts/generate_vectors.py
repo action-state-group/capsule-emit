@@ -74,7 +74,7 @@ def _write_case(case_dir: Path, spec_version: str) -> None:
 
     from capsule_emit.surface import can, did, received, seal, who
 
-    base_emit_module = importlib.import_module("agent_action_capsule.emit")
+    base_emit_module = importlib.import_module("capsule_emit.builder")
     core_module = importlib.import_module("capsule_emit.core")
 
     if _LEDGER_PATH.exists():

@@ -30,7 +30,7 @@ from capsule_emit.verification import verify_capsule as verify
 # target built on either is unreliable (confirmed to resolve differently
 # between Python 3.9 and 3.13's unittest.mock). importlib.import_module()
 # reads sys.modules directly, sidestepping the shadowed attribute.
-_base_emit_module = importlib.import_module("agent_action_capsule.emit")
+_base_emit_module = importlib.import_module("capsule_emit.builder")
 
 
 def test_seal_returns_capsule_and_verifies_offline(tmp_path, monkeypatch):

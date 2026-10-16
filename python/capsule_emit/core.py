@@ -2,7 +2,7 @@
 """capsule-emit core — the internal capsule-construction primitive.
 
 This is the adoption-surface API described in capsule-emit-quickstart.md.
-It wraps ``agent_action_capsule.emit()`` with:
+It wraps :func:`capsule_emit.builder.build_capsule` with:
 - A friendlier signature (action, operator, developer, agent_input, agent_output, model, verdict, effect)
 - Digest-only commitment of agent_input / agent_output (content stays local)
 - Optional per-emit digest salting (``salt_digests=True``), for a privacy-sensitive
@@ -76,13 +76,13 @@ import warnings
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from agent_action_capsule import emit as _base_emit
 from agent_action_capsule.anchor import AnchorError, AnchorFuture, AnchorResult, async_anchor
 from agent_action_capsule.canonical import jcs, json_digest, normalize
 from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError, ReferenceEntry
 
 from . import signing as _signing
 from . import witness as _witness
+from .builder import build_capsule as _base_emit
 from .canonicalization import compute_capsule_id
 from .numbers import CANONICALIZATION_ID
 from .relations import REGISTERED_RELATIONS
@@ -711,7 +711,7 @@ def _emit_capsule(
             ``canonicalization_id`` field (the self-describing binding slot —
             inside the signed payload, committed to ``capsule_id``).  Default is
             ``CANONICALIZATION_ID`` (``"jcs"``) — this path always delegates to
-            ``agent_action_capsule.emit()``, which builds only ``format_version``
+            :func:`capsule_emit.builder.build_capsule`, which builds only ``format_version``
             ``"4"`` and REQUIRES ``canonicalization_id="jcs"`` (§5.1). Pass a
             different registered value only for deliberate negative/mutant
             testing — a mismatched declaration makes the resulting capsule fail

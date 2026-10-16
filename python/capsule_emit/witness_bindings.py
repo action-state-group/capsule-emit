@@ -53,7 +53,6 @@ from a witness with no directory row is ``not checked``.
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import time
 import urllib.error
@@ -61,8 +60,6 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
-
-from .witness import GRADE_OBSERVED_ONLY, normalize_receipt_grade
 
 __all__ = [
     "BINDING_CLL",
@@ -111,20 +108,17 @@ class WitnessBindingError(RuntimeError):
 def binding_of(url: str) -> str:
     """The binding a witness URL names: ``rekor+...`` -> ``rekor``,
     ``scrapi+...`` -> ``scrapi``, anything else -> ``cll``."""
-    scheme = url.split("://", 1)[0].lower() if "://" in url else ""
-    if scheme.startswith(BINDING_REKOR + "+"):
-        return BINDING_REKOR
-    if scheme.startswith(BINDING_SCRAPI + "+"):
-        return BINDING_SCRAPI
-    return BINDING_CLL
+    from agent_action_capsule.witness import binding_of as _binding_of
+
+    return _binding_of(url)
 
 
 def endpoint_of(url: str) -> str:
     """The HTTP(S) base URL to dial, with any binding prefix removed and no
     trailing slash."""
-    if binding_of(url) != BINDING_CLL:
-        url = url.split("+", 1)[1]
-    return url.rstrip("/")
+    from agent_action_capsule.witness import endpoint_of as _endpoint_of
+
+    return _endpoint_of(url)
 
 
 def operator_of(url: str, directory: Any = None) -> str:
@@ -247,12 +241,6 @@ def register_rekor(
     )
 
 
-def _canonical_json(obj: Any) -> bytes:
-    # Sorted keys, no whitespace. Enough for RFC 8785 here: every value
-    # canonicalized below is a string or an integer.
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-
-
 def verify_rekor_receipt(
     receipt: dict,
     *,
@@ -260,69 +248,17 @@ def verify_rekor_receipt(
     checkpoint_key_id: str,
     rekor_public_key_pem: bytes,
 ) -> tuple[bool, str]:
-    """Offline check of one Rekor entry against the checkpoint it claims.
+    """Offline check of one Rekor entry against the checkpoint it claims:
+    agent-action-capsule's ``witness.verify_rekor_receipt``. Returns ``(ok,
+    reason)``; never raises."""
+    from agent_action_capsule.witness import verify_rekor_receipt as _verify
 
-    Passes only if all hold:
-
-    1. **Rekor signed it.** The Signed Entry Timestamp verifies under
-       ``rekor_public_key_pem`` over ``{body, integratedTime, logID,
-       logIndex}``, and ``logID`` is that key's id.
-    2. **It is this checkpoint.** The entry body is a ``dsse`` entry whose
-       ``payloadHash`` is ``sha256(checkpoint_cose)``.
-    3. **The log's own key signed it.** The entry's only verifier key is the
-       Ed25519 key ``checkpoint_key_id`` names -- so someone else logging
-       our checkpoint bytes under their key does not count as our receipt.
-
-    Returns ``(ok, reason)``; never raises."""
-    try:
-        from cryptography.exceptions import InvalidSignature
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.hazmat.primitives.serialization import (
-            Encoding,
-            PublicFormat,
-            load_pem_public_key,
-        )
-
-        rekor_key = load_pem_public_key(rekor_public_key_pem)
-        log_id = hashlib.sha256(
-            rekor_key.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
-        ).hexdigest()
-        if receipt.get("logID") != log_id:
-            return False, "logID is not the pinned Rekor key"
-        set_b64 = (receipt.get("verification") or {}).get("signedEntryTimestamp")
-        if not set_b64:
-            return False, "no signedEntryTimestamp"
-        signed = _canonical_json(
-            {
-                "body": receipt["body"],
-                "integratedTime": int(receipt["integratedTime"]),
-                "logID": receipt["logID"],
-                "logIndex": int(receipt["logIndex"]),
-            }
-        )
-        try:
-            rekor_key.verify(base64.b64decode(set_b64), signed, ec.ECDSA(hashes.SHA256()))
-        except InvalidSignature:
-            return False, "signedEntryTimestamp does not verify under the pinned Rekor key"
-
-        entry = json.loads(base64.b64decode(receipt["body"]))
-        if entry.get("kind") != "dsse":
-            return False, f"entry kind {entry.get('kind')!r}, expected 'dsse'"
-        spec = entry.get("spec") or {}
-        payload_hash = (spec.get("payloadHash") or {}).get("value")
-        if payload_hash != hashlib.sha256(checkpoint_cose).hexdigest():
-            return False, "entry payloadHash is not this checkpoint's bytes"
-        sigs = spec.get("signatures") or []
-        expected_pem = _ed25519_spki_pem(bytes.fromhex(checkpoint_key_id))
-        verifiers = {
-            base64.b64decode(s.get("verifier", "")).replace(b"\r", b"").strip() for s in sigs
-        }
-        if verifiers != {expected_pem.strip()}:
-            return False, "entry is not signed by the checkpoint's key"
-        return True, "ok"
-    except Exception as exc:  # noqa: BLE001 -- verification degrades to "no", never raises
-        return False, f"unreadable receipt: {exc}"
+    return _verify(
+        receipt,
+        checkpoint_cose=checkpoint_cose,
+        checkpoint_key_id=checkpoint_key_id,
+        rekor_public_key_pem=rekor_public_key_pem,
+    )
 
 
 # -- SCRAPI -------------------------------------------------------------------
@@ -385,37 +321,12 @@ def verify_scrapi_receipt(
     checkpoint_cose: bytes,
     service_public_key_pem: bytes | str | None,
 ) -> tuple[bool, str, str | None]:
-    """Offline check of a SCRAPI receipt: an RFC 9162 inclusion receipt over
-    the leaf ``sha256(checkpoint_cose)``, signed by the key the verifier
-    pinned for that service. Returns ``(ok, reason, grade)``.
+    """Offline check of a SCRAPI receipt (RFC 9162 inclusion over the leaf
+    ``sha256(checkpoint_cose)``) under the pinned key: agent-action-capsule's
+    ``witness.verify_scrapi_receipt``. Returns ``(ok, reason, grade)``."""
+    from agent_action_capsule.witness import verify_scrapi_receipt as _verify
 
-    Without a pinned key nothing is checked (``not checked``, no grade):
-    a key served by the service itself would prove nothing. A service whose
-    receipts use another tree algorithm (e.g. CCF) also fails here and does
-    not count until a verifier for that format is added."""
-    if service_public_key_pem is None:
-        return False, "not checked: no key pinned for this service", None
-    try:
-        from scitt_cose import verify_receipt
-    except ImportError:
-        return False, "not checked: scitt_cose not installed", None
-    try:
-        result = verify_receipt(
-            receipt_bytes,
-            leaf_entry_hex=hashlib.sha256(checkpoint_cose).hexdigest(),
-            log_public_key_pem=service_public_key_pem,
-        )
-    except Exception as exc:  # noqa: BLE001
-        return False, f"unreadable receipt: {exc}", None
-    if not result.ok:
-        return False, "receipt does not verify for this checkpoint under the pinned key", None
-    label = (getattr(result, "protected_header_ext", None) or {}).get(-65537)
-    if label is None:
-        return True, "ok", GRADE_OBSERVED_ONLY
-    grade = normalize_receipt_grade(label)
-    if grade is not None:
-        return True, "ok", grade
-    return True, "ok (unknown grade label ignored)", GRADE_OBSERVED_ONLY
+    return _verify(receipt_bytes, checkpoint_cose=checkpoint_cose, service_public_key_pem=service_public_key_pem)
 
 
 # -- plurality policy ---------------------------------------------------------
@@ -464,33 +375,16 @@ class PluralityResult:
 
 
 def _verify_one(checkpoint: Any, w: Any, pem: bytes, cose: bytes | None) -> tuple[bool, str, str | None]:
-    """One receipt under one key. The same call for every row's key."""
-    binding = binding_of(w.ts_url)
-    if binding == BINDING_CLL:
-        from .checkpoint import StampVerdict, verify_witness_stamp_tristate
-        from .witness import _receipt_grade
+    """One receipt under one key: agent-action-capsule's
+    ``witness.verify_receipt``, the same check ``verify_bundle(strict=True)``
+    applies to an evidence file's receipts."""
+    from agent_action_capsule.witness import verify_receipt
 
-        grade = _receipt_grade(checkpoint, w, ts_pubkey_pem=pem)
-        if grade is not None:
-            return True, "ok", grade
-        verdict, errors = verify_witness_stamp_tristate(checkpoint, w, ts_pubkey_pem=pem)
-        if verdict is StampVerdict.WITNESSED:
-            return True, "ok (receipt carries no grade label)", None
-        return False, "; ".join(errors) or str(verdict), None
-    if cose is None:
-        return False, "not checked: checkpoint COSE statement not available", None
-    if binding == BINDING_REKOR:
-        try:
-            receipt = json.loads(base64.b64decode(w.receipt_b64))
-        except ValueError as exc:
-            return False, f"unreadable receipt: {exc}", None
-        ok, reason = verify_rekor_receipt(
-            receipt, checkpoint_cose=cose, checkpoint_key_id=checkpoint.key_id, rekor_public_key_pem=pem
-        )
-        return ok, reason, GRADE_OBSERVED_ONLY if ok else None
-    return verify_scrapi_receipt(
-        base64.b64decode(w.receipt_b64), checkpoint_cose=cose, service_public_key_pem=pem
-    )
+    signed = {
+        name: getattr(checkpoint, name)
+        for name in ("log_id", "mmr_size", "root", "prev_size", "prev_root", "key_id", "timestamp")
+    }
+    return verify_receipt(signed, w.to_dict(), pem, cose)
 
 
 def verify_witnesses(

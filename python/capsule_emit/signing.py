@@ -428,41 +428,10 @@ def verify_capsule_signature_tristate(capsule: dict) -> tuple[AuthorshipVerdict,
     (nothing wrong to report), and carries a human-readable finding for
     :attr:`AuthorshipVerdict.INVALID`.
     """
-    from agent_action_capsule.producer_envelope import verify_producer_envelope
+    from agent_action_capsule.producer_envelope import verify_record_signature
 
-    from .canonicalization import compute_capsule_id
-
-    if not isinstance(capsule, dict):
-        return AuthorshipVerdict.INVALID, ["not a mapping"]
-
-    cid = capsule.get("capsule_id", "<none>")
-    has_signature = "signature" in capsule
-    has_key_id = "key_id" in capsule
-
-    if not has_signature and not has_key_id:
-        return AuthorshipVerdict.UNCLAIMED, []
-    if has_signature != has_key_id:
-        return AuthorshipVerdict.INVALID, [
-            f"capsule_id={cid}: only one of signature/key_id present -- "
-            "malformed producer envelope"
-        ]
-
-    try:
-        envelope_hex = capsule["signature"]
-        key_id = capsule["key_id"]
-        capsule_id = compute_capsule_id(capsule)
-        envelope = bytes.fromhex(envelope_hex)
-        result = verify_producer_envelope(capsule_id, envelope)
-        ok = result.ok and result.public_key == bytes.fromhex(key_id)
-    except (KeyError, ValueError, TypeError) as exc:
-        return AuthorshipVerdict.INVALID, [f"capsule_id={cid}: producer envelope malformed: {exc}"]
-
-    if ok:
-        return AuthorshipVerdict.AUTHORED, []
-    return AuthorshipVerdict.INVALID, [
-        f"capsule_id={cid}: self-attested Ed25519 signature does not verify against key_id -- "
-        "content, signature, or key_id was tampered or forged"
-    ]
+    verdict, messages = verify_record_signature(capsule)
+    return AuthorshipVerdict(verdict), messages
 
 
 def verify_capsule_signature(capsule: dict) -> bool:
