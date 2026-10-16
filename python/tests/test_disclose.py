@@ -990,3 +990,38 @@ def test_disclose_null_original_is_digest_checked_not_withheld(three_record_ledg
     # "withheld" while payloads="all" counts the field as supplied.
     with pytest.raises(DiscloseError, match="agent_output does not match the committed digest"):
         disclose(ledger_path, cid, audience="auditor", reveal={cid: {"agent_input": {"n": 0, "kind": "input"}, "agent_output": None}})
+
+
+def test_disclose_null_original_from_store_and_reveal(tmp_path, stub_ts, monkeypatch):
+    from agent_action_capsule.canonical import json_digest
+
+    from capsule_emit import core
+
+    # seal() commits no digest for None, so a capsule committing to JSON null
+    # (as another producer may seal) is made by sealing a marker as null.
+    real_digest = core._digest
+    monkeypatch.setattr(core, "_digest", lambda v, salt=None: json_digest(None) if v == "<null>" else real_digest(v, salt))
+    monkeypatch.setenv("CAPSULE_WITNESS_CADENCE_ENTRIES", "1")
+    ts_url, _received = stub_ts
+    ledger_path = tmp_path / "ledger.jsonl"
+    agent_input = {"kind": "input"}
+    result = seal(
+        agent_input, action="act", operator="acme", agent_output="<null>", anchor=False,
+        ledger=ledger_path, witness_url=ts_url,
+    )
+    assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
+    cap = result.capsule
+    cid = cap["capsule_id"]
+    assert cap["model_attestation"]["compute_attestation"]["agent_output_digest"] == json_digest(None)
+
+    store = _artifact_store(tmp_path, ledger_path, [cap], [(agent_input, None)])
+    via_store = disclose(ledger_path, cid, audience="auditor", store=store)
+    via_reveal = disclose(
+        ledger_path, cid, audience="auditor", reveal={cid: {"agent_input": agent_input, "agent_output": None}}
+    )
+    assert via_store.envelopes[cid]["disclosures"] == {"agent_input": agent_input, "agent_output": None}
+    assert _strip_seal(via_store) == _strip_seal(via_reveal)
+    assert via_store.disclosure_record["disclosed_fields"][cid] == ["agent_input", "agent_output"]
+    for d in (via_store, via_reveal):
+        ok, errors = verify_disclosure(d)
+        assert ok, errors
