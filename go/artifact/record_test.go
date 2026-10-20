@@ -89,6 +89,7 @@ func TestVerifyPadding(t *testing.T) {
 		"padding.id_mismatch":            artifact.ErrInvalid,
 		"padding.envelope_other_capsule": artifact.ErrInvalid,
 		"padding.content_tampered":       artifact.ErrInvalid,
+		"padding.proto_member":           artifact.ErrInvalid,
 	} {
 		_, err := artifact.Verify(v.Records[name], trusted)
 		assert.ErrorIs(t, err, want, name)

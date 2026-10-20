@@ -190,6 +190,10 @@ async function verifyPadding(
   id: string,
   padding: { [member: string]: ParsedJson },
 ): Promise<void> {
+  // The strict decoder makes a "__proto__" member the object's prototype,
+  // where Object.keys never sees it; the other languages read it as a member.
+  if (Object.getPrototypeOf(padding) !== Object.prototype)
+    throw new ArtifactError("invalid", 'padding record carries "__proto__"');
   for (const member of Object.keys(padding))
     if (!PADDING_MEMBERS.has(member))
       throw new ArtifactError(

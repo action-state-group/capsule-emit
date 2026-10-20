@@ -21,13 +21,12 @@ constructor vector and case for a test runner to parametrize over, and
 
 from __future__ import annotations
 
-import base64
 import json
 from dataclasses import dataclass
 from importlib import resources
 from typing import Any, Callable
 
-from .record import PADDING_RECORD_TYPE, ArtifactError, Record, decode_record
+from .record import ArtifactError, Record, decode_record
 
 __all__ = ["ConformanceTest", "Harness", "Outcome", "diff", "load_vectors", "needs", "run", "tests"]
 
@@ -43,10 +42,8 @@ class Harness:
     ``shared_backing``: stores with different namespaces can share a backing.
     ``close(backing)``, if given, releases a backing after its case.
     ``originals`` and ``purge`` are ``False`` for a store that declares it
-    keeps no originals or refuses purge (the legacy ledger), and ``padding``
-    for one that cannot hold padding records (Python's legacy ledger, whose
-    ``ledger.jsonl`` never has them); the cases that need them are skipped (see
-    :func:`needs`).
+    keeps no originals or refuses purge (the legacy ledger); the cases that
+    need them are skipped (see :func:`needs`).
     """
 
     new_backing: Callable[[], Any]
@@ -56,7 +53,6 @@ class Harness:
     close: Callable[[Any], None] | None = None
     originals: bool = True
     purge: bool = True
-    padding: bool = True
 
 
 @dataclass
@@ -195,24 +191,12 @@ def _case_test(harness: Harness, vectors: dict, case: dict) -> Callable[[], None
     return run
 
 
-def _is_padding(wire: dict) -> bool:
-    """Whether a vector record in the wire shape is a padding record."""
-    try:
-        capsule = json.loads(base64.b64decode(wire["capsule"]))
-    except (ValueError, TypeError):
-        return False
-    return isinstance(capsule, dict) and capsule.get("record_type") == PADDING_RECORD_TYPE
-
-
 def needs(vectors: dict, case: dict) -> list:
-    """The capabilities ``case`` needs: its ``requires`` plus three derived
-    from its steps, ``originals`` when it puts a record that declares
-    artifacts, ``purge`` when it purges with any expected outcome but
-    ``invalid``, and ``padding`` when it puts a padding record."""
+    """The capabilities ``case`` needs: its ``requires`` plus two derived from
+    its steps, ``originals`` when it puts a record that declares artifacts and
+    ``purge`` when it purges with any expected outcome but ``invalid``."""
     required = list(case.get("requires", []))
     steps = case["steps"]
-    if any(s["op"] == "put" and _is_padding(vectors["records"][s["record"]]) for s in steps):
-        required.append("padding")
     if any(s["op"] == "put" and vectors["records"][s["record"]]["artifacts"] for s in steps):
         required.append("originals")
     if any(s["op"] == "purge" and s["expect"] != "invalid" for s in steps):
@@ -231,7 +215,6 @@ def tests(harness: Harness, vectors: dict | None = None) -> list:
         "shared_backing": harness.shared_backing,
         "originals": harness.originals,
         "purge": harness.purge,
-        "padding": harness.padding,
     }
     for case in vectors["cases"]:
         missing = [r for r in needs(vectors, case) if not capabilities.get(r, False)]

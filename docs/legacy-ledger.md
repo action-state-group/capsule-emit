@@ -126,10 +126,12 @@ public key, hex). `get` returns:
   (`log()` entries, and capsules sealed before producer envelopes).
 
 Checkpoint stamps, disclosure records and witness backfills are log entries
-only. `get` reports them `not_found`. A Rust padding line is a record (see the
-contract's [padding records](artifact-store.md#padding-records)): `get` returns
-it like a capsule line, and `put` of a padding record appends it as a padding
-line, outside the chain.
+only. `get` reports them `not_found`. A padding line is a record, in both
+languages (see the contract's [padding records](artifact-store.md#padding-records)):
+`get` checks and returns it like a capsule line, and `put` of a padding record
+appends it as a padding line (in Rust, outside the chain). A padding line
+without its producer envelope, or not in a padding record's shape, is
+`invalid`.
 
 Rust adds one attachment. Each line has a `signed-statements/<capsule_id>.cose`,
 a COSE_Sign1 whose payload is the whole capsule line. `get` returns it as the

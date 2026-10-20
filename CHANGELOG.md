@@ -16,9 +16,10 @@ checked by its closed member set, its `store_nonce` and its recomputed
 trusted Producer Envelope, and may declare only unbound artifacts. `get` can
 therefore return a padding record; a caller that needs a Capsule checks
 `record_type` (`PADDING_RECORD_TYPE` in each language). The conformance
-vectors add padding cases and a derived `padding` capability; Python's legacy
-ledger declares it lacks it (`Harness.padding`). Rust's legacy ledger stores a
-padding record through `put` and returns it from `get` (it was `not_found`).
+vectors add padding cases. Both legacy ledgers (Python `ledger.jsonl`, Rust
+`capsules.jsonl`) store a padding record through `put` and return it from
+`get`; it was `not_found`, and a padding line not in a padding record's shape
+is now `invalid`.
 This lets a log keep its padding leaves in the same store as its Capsules
 (capsule-emit#341).
 

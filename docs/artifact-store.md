@@ -50,11 +50,13 @@ A padding record (Evidence Layer -00, "What a Checkpoint Reveals") is a log
 leaf that is not a Capsule: a store appends padding records so that a
 checkpoint's size falls on a bucket boundary. It is stored like a Capsule, so a
 log that keeps its records here keeps its padding here too. Its `capsule` bytes
-are a JSON object with `record_type: "padding"` and exactly the members
-`capsule_id`, `record_type`, `epistemic_type` and `store_nonce`, in the
-serialization agent-action-capsule's padding vectors
-(`vectors/evidence-layer/padding/`) pin; the local-only `signature` and
-`key_id` are not stored, as for a Capsule. It carries a Producer Envelope like
+decode to a JSON object with `record_type: "padding"` and exactly the members
+`capsule_id`, `record_type`, `epistemic_type` and `store_nonce`, the record
+agent-action-capsule's padding vectors (`vectors/evidence-layer/padding/`)
+define; the local-only `signature` and `key_id` are not stored, as for a
+Capsule. Admission checks the decoded members and the recomputed
+`capsule_id` (Verification, step 2), not a byte form: like a Capsule, any
+strict-JSON serialization of the record is accepted. It carries a Producer Envelope like
 a Capsule and may declare only unbound artifacts, because it commits to no
 digest.
 
@@ -255,8 +257,9 @@ A consumer that reads Capsules from a store checks `record_type`, because `get`
 can return a padding record. Python's
 `capsule_emit.disclose.disclose(..., store=...)` reads the originals it
 discloses from any `Store`, only for the Capsule IDs of the Capsules it
-discloses, so it never asks for a padding record's ID. It and reports a `purged`, `never_retained`,
-missing or undeclared original by state instead of dropping it (see
+discloses, so it never asks for a padding record's ID. It reports a `purged`,
+`never_retained`, missing or undeclared original by state instead of dropping
+it (see
 [checkpoint.md](checkpoint.md#disclose--bundles-conscious-sibling)).
 
 ## Built-in backends and shared formats

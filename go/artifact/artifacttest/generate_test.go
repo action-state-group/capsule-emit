@@ -279,6 +279,11 @@ func generate(t *testing.T) []byte {
 	g.variant("padding.envelope_other_capsule", "padding", func(r *artifact.Record) { r.ProducerEnvelope = empty.Envelope })
 	// Another valid nonce under the original capsule_id and envelope: only the
 	// recomputed id catches it.
+	// A "__proto__" member, which a JavaScript decoder may not list among the
+	// object's own members: every language must still see it and refuse it.
+	g.variant("padding.proto_member", "padding", func(r *artifact.Record) {
+		r.Capsule = append([]byte(`{"__proto__":{"links":[]},`), r.Capsule[1:]...)
+	})
 	g.variant("padding.content_tampered", "padding", func(r *artifact.Record) {
 		r.Capsule = bytes.Replace(r.Capsule, []byte(strings.Repeat("11", 32)), []byte(strings.Repeat("99", 32)), 1)
 	})
@@ -492,7 +497,7 @@ func cases(r map[string]artifact.Record) []Case {
 				put("padding.extra_member", "invalid"), put("padding.epistemic_type", "invalid"),
 				put("padding.nonce_uppercase", "invalid"), put("padding.nonce_missing", "invalid"),
 				put("padding.id_mismatch", "invalid"), put("padding.envelope_other_capsule", "invalid"),
-				put("padding.content_tampered", "invalid"),
+				put("padding.content_tampered", "invalid"), put("padding.proto_member", "invalid"),
 				get(padding, "not_found", "")}},
 		{Name: "padding_unbound_original", Description: "A padding record may keep an unbound attachment, which purges like any original, but no bound one.", Stores: main,
 			Steps: []Step{put("padding.bound", "invalid"), put("padding.with_note", "ok"), get(paddingNote, "ok", "padding.with_note.stored"),

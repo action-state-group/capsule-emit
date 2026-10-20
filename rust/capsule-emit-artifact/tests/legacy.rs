@@ -189,7 +189,6 @@ fn artifact_conformance_subset() {
     // own producer key (the vector keys are seeds 1, 2, 3), as seal() does.
     let limits = Limits {
         originals: false,
-        padding: true,
         purge: false,
         before_put: Some(Box::new(|mut record: Record| {
             let mut line: Value = serde_json::from_slice(&record.capsule).unwrap_or(json!({}));

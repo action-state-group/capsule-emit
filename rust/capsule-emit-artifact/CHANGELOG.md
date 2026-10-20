@@ -22,6 +22,5 @@ the `originals` and `purge` capabilities from each case's steps.
 
 Stores admit padding records (`PADDING_RECORD_TYPE`, `is_padding`): checked by
 their closed shape instead of AAC Class 1, with a trusted envelope and only
-unbound artifacts. `conformance::Limits::padding` declares whether a store
-holds them. `LegacyLedger` stores a padding record through `put` and returns
+unbound artifacts. `LegacyLedger` stores a padding record through `put` and returns
 it from `get`.
