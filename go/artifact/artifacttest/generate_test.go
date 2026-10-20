@@ -277,6 +277,11 @@ func generate(t *testing.T) []byte {
 		r.ProducerEnvelope = signID(t, other.CapsuleID, g.keys["trusted"])
 	})
 	g.variant("padding.envelope_other_capsule", "padding", func(r *artifact.Record) { r.ProducerEnvelope = empty.Envelope })
+	// Another valid nonce under the original capsule_id and envelope: only the
+	// recomputed id catches it.
+	g.variant("padding.content_tampered", "padding", func(r *artifact.Record) {
+		r.Capsule = bytes.Replace(r.Capsule, []byte(strings.Repeat("11", 32)), []byte(strings.Repeat("99", 32)), 1)
+	})
 
 	// Codec-only synthetic records: opaque bytes, not a verifiable Capsule.
 	g.add("synthetic", artifact.Record{CapsuleID: strings.Repeat("a", 64), Capsule: []byte("{}"), ProducerEnvelope: []byte{0, 1, 2, 255},
@@ -487,6 +492,7 @@ func cases(r map[string]artifact.Record) []Case {
 				put("padding.extra_member", "invalid"), put("padding.epistemic_type", "invalid"),
 				put("padding.nonce_uppercase", "invalid"), put("padding.nonce_missing", "invalid"),
 				put("padding.id_mismatch", "invalid"), put("padding.envelope_other_capsule", "invalid"),
+				put("padding.content_tampered", "invalid"),
 				get(padding, "not_found", "")}},
 		{Name: "padding_unbound_original", Description: "A padding record may keep an unbound attachment, which purges like any original, but no bound one.", Stores: main,
 			Steps: []Step{put("padding.bound", "invalid"), put("padding.with_note", "ok"), get(paddingNote, "ok", "padding.with_note.stored"),

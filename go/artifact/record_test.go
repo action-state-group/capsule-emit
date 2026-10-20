@@ -88,6 +88,7 @@ func TestVerifyPadding(t *testing.T) {
 		"padding.nonce_missing":          artifact.ErrInvalid,
 		"padding.id_mismatch":            artifact.ErrInvalid,
 		"padding.envelope_other_capsule": artifact.ErrInvalid,
+		"padding.content_tampered":       artifact.ErrInvalid,
 	} {
 		_, err := artifact.Verify(v.Records[name], trusted)
 		assert.ErrorIs(t, err, want, name)

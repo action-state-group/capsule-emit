@@ -2287,6 +2287,12 @@
       "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCB84YT150H4sO8ACic4L3Is2wHKPbTnE2y+Zx70/6DzMFhAshWIPIYkYHc1GOLhpm1yNtXFx7nghGFKwqYzpJD+emGdMLFOaA7Y4Xxqv4q1kvM9USI6iOhs5vr5xvsAIxF/Dw==",
       "artifacts": []
     },
+    "padding.content_tampered": {
+      "capsule_id": "0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiMGVlMzU0ZmNiNDZhMjc5NWI0ZDZiZDQ2MzczNmQ4MzJiNGI5YTI4YzllNmZiYTdjZjlhOTRiODdjODQ2MTMwYSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6Ijk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTkifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCAO41T8tGonlbTWvUY3NtgytLmijJ5vunz5qUuHyEYTClhAwjMAGBfv/NK5cx8tvGM944EfCSo4RGY+BxZpN+Oz6OY8hX4pr71NePlTbNFRLvQN3iU3ij8jyvmodkMaY/evAA==",
+      "artifacts": []
+    },
     "padding.envelope_other_capsule": {
       "capsule_id": "0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a",
       "capsule": "eyJjYXBzdWxlX2lkIjoiMGVlMzU0ZmNiNDZhMjc5NWI0ZDZiZDQ2MzczNmQ4MzJiNGI5YTI4YzllNmZiYTdjZjlhOTRiODdjODQ2MTMwYSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEifQ==",
@@ -3548,6 +3554,11 @@
         {
           "op": "put",
           "record": "padding.envelope_other_capsule",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "padding.content_tampered",
           "expect": "invalid"
         },
         {
