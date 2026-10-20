@@ -9,9 +9,8 @@ All notable changes to `capsule-emit` are documented here. The format follows
 Evidence Bundles (`evidence-bundle/v2`) now come from one producer,
 agent-action-capsule's `agent_action_capsule.bundle.build_evidence_bundle`;
 capsule-emit supplies the proof sources for its ledgers and no longer builds
-bundles itself (#338). This requires the agent-action-capsule release that
-ships that producer; the dependency floor is raised to it when it is
-published.
+bundles itself (#338). The package now requires `agent-action-capsule>=0.11.0`,
+the release that ships that producer.
 
 ### Added
 
