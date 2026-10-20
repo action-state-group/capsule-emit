@@ -12,8 +12,8 @@ to miss: the record is itself an attack surface against whoever reads it.
 Two related documents:
 
 - The record format is the Agent Action Capsule profile,
-  `draft-mih-scitt-agent-action-capsule`, whose current posted revision is
-  `-05` ([AAC-05]). On any conflict the profile text wins. Its Security
+  `draft-mih-scitt-agent-action-capsule`; at the time of writing its current
+  posted revision is `-05` ([AAC-05]). On any conflict the profile text wins. Its Security
   Considerations section is the normative floor this document builds on.
 - [`a2a-extension/threat-model.md`](a2a-extension/threat-model.md) is a
   narrower model for one composition, task evidence carried over an
@@ -72,12 +72,14 @@ depends on what the client is already able to do.
 |---|---|---|---|
 | 0 | Nothing | A signed, chained, offline-checkable account by the producer, honest about later tampering | That any client ever made the request. A producer can author a plausible history from nothing |
 | 1 | A fresh, unpredictable value bound into the record | The producer can no longer fabricate an exchange with this client, or replay an old one as fresh to it | **Any identity.** A fresh value is unpredictable and anonymous |
-| 2 | A signature over a commitment to the exact request | Who asked (as far as the client's key is bound to an identity), that this record answers that exact request, and the authorization the client gave | That the client's key belongs to the person or organization it claims; that is the relying party's key policy, as for any signer |
+| 2 | A signature over a commitment to the exact request, including a fresh value | Who asked (as far as the client's key is bound to an identity), that this record answers that exact request, any authorization bound in that request, and, through the fresh value, that it is not a replay | That the client's key belongs to the person or organization it claims; that is the relying party's key policy, as for any signer |
 
 **The step most often misread.** Rung 0 to rung 1 buys resistance to
 fabrication and replay, not identity. Rung 1 to rung 2 buys who. These are two
 steps, not one. A record that says a value was "supplied by the client" means
-only that the producer had help; it identifies no one.
+only that the producer had help; it identifies no one. Nor does a signature
+alone give freshness: a signed request with no fresh value inside it can be
+replayed as it is, so rung 2 includes rung 1 rather than replacing it.
 
 Two further points:
 
@@ -100,14 +102,17 @@ same thing either excludes the clients that cannot or wastes the ones that
 already can. A deployment states which rung each class of client reaches and
 records that rung honestly.
 
-**How the profile records rung 2.** When the client is a counterparty that
-returns its own signed half, the record's `cross_party` block and
-`assurance.cross_party_rung` (`unilateral_fallback`, `acknowledged_receipt`,
-`full_bilateral`) say how much of that half is bound in. A verifier derives
-the rung from the block's own bytes and reports an overclaim, but this is a
-structural check: it does not verify the counterparty's signature itself,
-which is checked where that half is verified ([AAC-05-crossparty]). A record
-with no client contribution is `unilateral_fallback`.
+**The ladder is not `cross_party_rung`.** As for rung 1, the profile has no
+dedicated field for a client's request signature; a producer commits it with
+the request, and no verifier of the record checks a claimed client rung. The
+profile's `assurance.cross_party_rung` (`unilateral_fallback`,
+`acknowledged_receipt`, `full_bilateral`) is a separate scale: it says how much
+of a counterparty's own signed half of an exchange is bound into the record's
+`cross_party` block. A record with no counterparty half is
+`unilateral_fallback` whatever rung its client reached. A verifier derives
+that rung from the block's own bytes and reports an overclaim, but this is a
+structural check: it does not verify the counterparty's signature, which is
+checked where that half is verified ([AAC-05-crossparty]).
 
 ## 2. Parties and what each fears
 
@@ -132,7 +137,7 @@ anyone outside it.
 | # | Fear | Evidence that addresses it | Limit |
 |---|---|---|---|
 | CL1 | The producer did something other than what was asked | Rung 2: a client signature over the request, bound into the record (section 1.1) | Below rung 2 the record is the producer's account alone |
-| CL2 | An old result is replayed as fresh | Rung 1 or higher | A value the producer minted itself is not replay evidence (rule 2, section 5) |
+| CL2 | An old result is replayed as fresh | Rung 1, or rung 2 with the fresh value inside the signed request | A value the producer minted itself is not replay evidence (rule 2, section 5) |
 | CL3 | The producer later denies or rewrites what it did | Signed, chained records; registration to a log the producer does not control | Chaining alone shows order within one history, not that it is the only history |
 | CL4 | More was done than authorized | The authorization bound and what was performed recorded as two separate facts | A record shows both; it cannot stop an action, only show it |
 | CL5 | The request content leaks | Payloads committed by digest, never in clear ([context hygiene](context-hygiene.md)) | Low-entropy values are recoverable by guessing; the producer's runtime sees plaintext |
@@ -160,7 +165,7 @@ anyone outside it.
 |---|---|---|---|
 | R1 | The record cannot be checked without the producer's cooperation | Offline verification from the record and bundle alone | Witness receipts need the witnesses' keys (section 4.4) |
 | R2 | The record is internally valid and describes a fiction | Key policy (who may sign for what), registration, counterparty halves | A compromised producer can sign true-shaped statements about false events. This is the permanent floor |
-| R3 | A different history is shown to each reader | Registration, and witnesses co-signing the log's checkpoint | One log alone can still equivocate; witnesses reduce this to collusion |
+| R3 | A different history is shown to each reader | Registration, and witnesses that check each checkpoint is consistent with the last one they saw | One log alone can still equivocate. A witness that only observes a checkpoint can receipt two conflicting ones; only consistency-checking witnesses that every reader trusts reduce this to collusion |
 | R4 | A check that never ran looks like a pass | Three states everywhere; verifiers list what they did not check | Enforced per implementation |
 | R5 | The rules in force at the time cannot be established | Constraint and manifest references in the record, and configuration epochs ([AAC-05] Configuration epochs) | The manifest itself must be retained and disclosed |
 | R6 | **Reading the record harms the reader** | Section 4 | Readable fields cannot be made inert |
@@ -197,18 +202,21 @@ but not checked, or checked (and a failed check is a checked state).
 
 | Class | Establishes | Does not establish | Where it lives |
 |---|---|---|---|
-| **A. Record integrity** | Recorded: a signed commitment to the action. Chained: order within one history. Registered: the record existed in a log by a point in time, shown by a Receipt. Witnessed: other parties co-signed the log's checkpoint | Registered alone: that the log shows every reader the same view. Witnessed: that the witnesses are honest, only that equivocation needs their collusion | [AAC-05-registration]; [`checkpoint.md`](checkpoint.md) |
+| **A. Record integrity** | Recorded: a signed commitment to the action. Chained: order within one history. Registered: the record existed in a log by a point in time, shown by a Receipt. Witnessed: other parties co-signed the log's checkpoint, either as observed only (existence and time) or after checking it is consistent with the checkpoint they saw before | Registered alone: that the log shows every reader the same view. Witnessed as observed only: the same. Witnessed with consistency checks: that the witnesses are honest, only that equivocation needs their collusion | [AAC-05-registration]; [`checkpoint.md`](checkpoint.md) |
 | **B. Signer identity** | Which key signed | Whose key it is, or what it may sign for | [AAC-05-issuer] |
-| **C. Client and counterparty** | The rung of section 1.1; the `cross_party_rung` | Truth of either party's statement | [AAC-05-crossparty] |
+| **C. Client and counterparty** | The client's rung (section 1.1), which the record does not itself state; separately, how much of a counterparty's signed half is bound in (`cross_party_rung`) | Truth of either party's statement | [AAC-05-crossparty] |
 | **D. Effect** | That the producer bound the bytes of a response it observed | That the world reached the state, or that the responder was authentic | [AAC-05-confirmed] |
 | **E. Confidentiality** | Payloads committed by digest, revealed only by disclosure | Secrecy of low-entropy values; secrecy from the producer's own runtime | [context hygiene](context-hygiene.md); [AAC-05] Privacy Considerations |
 
 Three acts in class A are kept apart. **Registration** is submitting a signed
 statement to a transparency service ([RFC 9943]). A **Receipt** is what the
 service returns, a signed inclusion proof ([RFC 9942]). **Witnessing** is a
-separate party co-signing the log's checkpoint so the log cannot present
-different views to different readers. A good Receipt from an unwitnessed log
-is registered, not witnessed.
+separate party co-signing the log's checkpoint. A witness's receipt says
+which it did: `observed-only` attests existence and time, while `mmr-verified`
+says the witness checked the new checkpoint is consistent with the one it saw
+before ([`checkpoint.md`](checkpoint.md)). Only the second stops the log
+presenting different views to readers who rely on the same witness. A good
+Receipt from an unwitnessed log is registered, not witnessed.
 
 ## 4. The reader as a target
 
@@ -276,11 +284,11 @@ what bundle content can do:
   ([AAC-PC-chrome], [AAC-PC-checklists]).
 - A page built by the reference emitter carries a Content-Security-Policy
   that runs only scripts whose hashes it lists, and allows no network
-  connection, form submission or base URL change ([emitter-csp]).
+  connection, form submission or base URL change ([EMITTER-csp]).
 
 At the reader: treat every value read from a record as data to quote, never as
 an instruction to follow, however authentic its signature. A verified record
-says who wrote the bytes, not that the bytes are safe to act on.
+says which key signed the bytes, not that the bytes are safe to act on.
 
 ### 4.4 The page verifier: what it checks and what it cannot
 
@@ -290,17 +298,18 @@ itself in the browser. Two limits matter.
 **The page is delivered by the producer.** The verification code ships inside
 the file it verifies. An honest builder pins that code by hash and sets the
 Content-Security-Policy above, but a dishonest producer can ship a page whose
-verifier says anything. A page's own verdict is therefore evidence only of
-what an honest copy of that page would say. To rely on a bundle, check it with
-a verifier you obtained separately. capsulectl's `verify --bundle` takes the
+verifier says anything. A page's verdict is only as trustworthy as the page's
+own bytes, which the producer chose. To rely on a bundle, check it with a
+verifier you obtained separately. capsulectl's `verify --bundle` takes the
 bundle file, and also reads the bundle embedded in a self-contained receipt
-page ([capsulectl-receipt-page]). capsulectl writes a page only for a bundle
-its own `verify --bundle` calls VALID ([capsulectl-page-gate]), but a reader
-cannot tell from a page alone which tool built it.
+page ([CLI-receipt-page]). capsulectl writes a page only for a bundle
+its own `verify --bundle` calls VALID ([CLI-page-gate]), with no witness
+directory, so no receipt was checked; and a reader cannot tell from a page
+alone which tool built it.
 
 **The in-page runtime runs some checks and not others.** The page lists, from
 its own results and never from the bundle, what it checked, what failed and
-what it did not check ([AAC-PC-checklists], [page-checks]). In a browser:
+what it did not check ([AAC-PC-checklists], [PAGE-checks]). In a browser:
 
 | Check | On the page | With capsulectl `verify --bundle` |
 |---|---|---|
@@ -309,28 +318,28 @@ what it did not check ([AAC-PC-checklists], [page-checks]). In a browser:
 | Graph closure from the root record | Checked | Checked |
 | Range completeness and per-record membership in the log | Checked when the bundle carries a completeness certificate and checkpoint | Checked |
 | Disclosed values against their committed digests | Checked | Checked |
-| Countersignatures over the bundle digest | Checked when the browser provides Ed25519; otherwise not checked ([page-countersign]) | Not checked by `verify --bundle`, which lists each as unverified ([go-countersign]); checked by `countersign verify`, which resolves signers against a directory the reader chooses ([capsulectl-countersign]) |
+| Countersignatures over the bundle digest | `countersign/v1` entries are checked when the browser provides Ed25519; other types, or a browser without Ed25519, are not checked ([PAGE-countersign]) | Not checked by `verify --bundle`, which lists each as unverified ([GO-countersign]); checked by `countersign verify`, which resolves signers against a directory the reader chooses ([CLI-countersign]) |
 | Producer signature on the records a page module cites as signers | Checked, marked beside each signer | Checked (as part of every record) |
-| **Producer signature on every record** | **Not checked** ([page-not-checked]) | Checked, under the key the record names ([capsulectl-signatures]) |
-| **The log checkpoint's COSE signature** | **Not checked in a browser**: the authenticator is available only outside the browser, so the page reports the claims that rest on it as passing without it and says so ([page-checkpoint]) | Checked ([capsulectl-checkpoint]) |
-| **Witness receipts** | **Not checked** ([page-not-checked]) | Checked only against a witness directory the reader supplies; with none, no receipt is checked ([capsulectl-witness]) |
+| **Producer signature on every record** | **Not checked** ([PAGE-not-checked]) | Checked, under the key the record names ([CLI-signatures]) |
+| **The log checkpoint's COSE signature** | **Not checked in a browser**: the authenticator runs only outside the browser, so the page marks the checkpoint unverified (producer-asserted), still checks completeness and membership from the log's Merkle tree, and, when those pass, shows the bundle as passing without the checkpoint and says so ([PAGE-checkpoint]) | Checked ([CLI-checkpoint]) |
+| **Witness receipts** | **Not checked** ([PAGE-not-checked]) | Checked only against a witness directory the reader supplies; with none, no receipt is checked. Only a failing receipt changes the verdict, so VALID does not mean witnessed: read the report's `witnesses` status ([CLI-witness], [CLI-verdict]) |
 
 Signatures over the whole record set are therefore a full-verifier check: a
 page that says "passed" has not checked that every record was signed by the
 key it names, nor that the checkpoint and its receipts are genuine. The two
-verifiers are not nested, though: countersignatures are checked on the page and
-by `countersign verify`, not by `verify --bundle`. A reader who needs every
+verifiers are not nested, though: `countersign/v1` countersignatures are
+checked on the page and by `countersign verify`, not by `verify --bundle`. A reader who needs every
 check runs both commands.
 
 **What neither verifier establishes.** The page says so in its own words:
 none of its checks says who produced the records, or that the file is the most
-recent copy ([page-scope], [AAC-PC-checklists]). The same holds for capsulectl:
+recent copy ([PAGE-scope], [AAC-PC-checklists]). The same holds for capsulectl:
 
 - A producer signature is checked under the public key the record itself
-  carries ([capsulectl-signatures]). That proves which key signed, not whose
+  carries ([CLI-signatures]). That proves which key signed, not whose
   key it is. Key authorization stays with the relying party ([AAC-05-signer]).
 - A checkpoint signature is likewise checked under the key the checkpoint
-  names ([cll-checkpoint-key]). Whether that is the log you meant to trust is
+  names ([CLL-checkpoint-key]). Whether that is the log you meant to trust is
   your decision, made by pinning its key.
 - A witness receipt counts only under a key you listed for that witness.
   Without a directory you chose, no witness is trusted.
@@ -379,20 +388,21 @@ in its own document, referencing this one for the general case.
 [AAC-PC-declarative]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/spec/presentation-contract-v0.md?plain=1#L444-L474
 [AAC-PC-chrome]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/spec/presentation-contract-v0.md?plain=1#L476-L511
 [AAC-PC-checklists]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/spec/presentation-contract-v0.md?plain=1#L527-L563
-[page-checks]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/ts/src/verification-page.ts#L466-L591
-[page-not-checked]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/ts/src/verification-page.ts#L556-L567
-[page-scope]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/ts/src/verification-page.ts#L395-L399
-[page-checkpoint]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/ts/src/bundle.ts#L951-L963
-[page-countersign]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/ts/src/countersignature-stamp.ts#L222-L265
-[capsulectl-checkpoint]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/verify_bundle.go#L24-L46
-[capsulectl-signatures]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/verify_bundle.go#L94-L137
-[capsulectl-witness]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/bundle_witness.go#L58-L97
-[go-countersign]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/go/bundle/bundle.go#L179-L184
-[capsulectl-countersign]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/countersign.go#L697
-[capsulectl-receipt-page]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/verify_bundle.go#L379-L397
-[capsulectl-page-gate]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/page_gate.go#L10-L40
-[cll-checkpoint-key]: https://github.com/action-state-group/checkpointed-local-log/blob/40dabd74508d0f8649c8754873e316badef1057d/ts/src/checkpoint.ts#L427-L436
-[emitter-csp]: https://github.com/action-state-group/capsule-viewer/blob/1d393519a0a2980e7baaa81e687f2a8bd68a18c6/ts/src/emitter.ts#L232-L248
+[PAGE-checks]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/ts/src/verification-page.ts#L466-L591
+[PAGE-not-checked]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/ts/src/verification-page.ts#L556-L567
+[PAGE-scope]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/ts/src/verification-page.ts#L395-L399
+[PAGE-checkpoint]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/ts/src/bundle.ts#L951-L963
+[PAGE-countersign]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/ts/src/countersignature-stamp.ts#L222-L265
+[CLI-checkpoint]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/verify_bundle.go#L24-L46
+[CLI-signatures]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/verify_bundle.go#L94-L137
+[CLI-witness]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/bundle_witness.go#L58-L97
+[GO-countersign]: https://github.com/action-state-group/agent-action-capsule/blob/572b00795dc627033422e2ce711173ca9a50bcfb/go/bundle/bundle.go#L179-L184
+[CLI-countersign]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/countersign.go#L697
+[CLI-verdict]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/verify_bundle.go#L283-L288
+[CLI-receipt-page]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/verify_bundle.go#L379-L397
+[CLI-page-gate]: https://github.com/action-state-group/capsule-cli/blob/318d5f1f18deca0db619e82a71ff3352677341f5/internal/cli/page_gate.go#L10-L40
+[CLL-checkpoint-key]: https://github.com/action-state-group/checkpointed-local-log/blob/40dabd74508d0f8649c8754873e316badef1057d/go/checkpoint/checkpoint.go#L291-L307
+[EMITTER-csp]: https://github.com/action-state-group/capsule-viewer/blob/1d393519a0a2980e7baaa81e687f2a8bd68a18c6/ts/src/emitter.ts#L232-L248
 [RFC 5705]: https://www.rfc-editor.org/rfc/rfc5705
 [RFC 9266]: https://www.rfc-editor.org/rfc/rfc9266
 [RFC 9942]: https://www.rfc-editor.org/rfc/rfc9942
