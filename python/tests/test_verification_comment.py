@@ -176,3 +176,25 @@ def test_cli_bundle_file(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "this link carries no log proof (INCOMPLETE under strict verification)" in out
+
+
+def test_a_checkpoint_member_alone_is_not_a_log_proof(tmp_path):
+    capsules = read_ledger(_ledger(tmp_path))
+    linked = _linked_bundle(build_verification_comment(capsules, base_url=BASE_URL))
+    linked["checkpoint"] = {}
+    md = build_verification_comment(capsules, bundle=linked, base_url=BASE_URL)
+    assert "this link carries no log proof (INCOMPLETE under strict verification)" in md
+
+
+def test_a_bundle_that_does_not_carry_the_listed_capsules_is_refused(tmp_path):
+    capsules = read_ledger(_ledger(tmp_path))
+    other = tmp_path / "other"
+    other.mkdir()
+    foreign = _linked_bundle(build_verification_comment(read_ledger(_ledger(other)), base_url=BASE_URL))
+    with pytest.raises(VerificationCommentError, match="does not carry"):
+        build_verification_comment(capsules, bundle=foreign, base_url=BASE_URL)
+    from agent_action_capsule.bundle import build_unproven_bundle
+
+    partial = build_unproven_bundle(capsules[1:], root=capsules[-1]["capsule_id"], closure_depth=0)
+    with pytest.raises(VerificationCommentError, match="does not carry 1 of"):
+        build_verification_comment(capsules, bundle=partial, base_url=BASE_URL)

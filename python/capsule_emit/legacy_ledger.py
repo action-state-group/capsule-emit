@@ -279,6 +279,33 @@ def _verify_capsule(capsule_id: str, capsule: dict, envelope: bytes | None, trus
     return result.public_key.hex()
 
 
+def checked_record(capsule_id: str, obj: dict, trusted: list | None = None) -> Record:
+    """The verified record a capsule line holds: the capsule without its
+    inline ``signature`` and ``key_id``, and the Producer Envelope they claim.
+    A claim must be complete (both members, non-empty hex), verify over the
+    capsule ID and name its own signer as ``key_id``; a line with neither is
+    unsigned. Raises the artifact ``InvalidError`` (or ``UntrustedSignerError``)
+    otherwise."""
+    obj = dict(obj)
+    claimed = [name in obj for name in _ENVELOPE_MEMBERS]
+    signature = obj.pop("signature", None)
+    key_id = obj.pop("key_id", None)
+    envelope = None
+    if any(claimed):
+        if not all(claimed) or not isinstance(signature, str) or not isinstance(key_id, str):
+            raise InvalidError("envelope: signature and key_id must both be present strings")
+        try:
+            envelope = bytes.fromhex(signature)
+        except ValueError as exc:
+            raise InvalidError("envelope: signature is not hex") from exc
+        if not envelope:
+            raise InvalidError("envelope: signature is empty")
+    signer = _verify_capsule(capsule_id, obj, envelope, trusted)
+    if signer is not None and signer != key_id.lower():
+        raise InvalidError("envelope: key_id is not the envelope's signer")
+    return Record(capsule_id, _line_form(obj).encode("ascii"), envelope or b"", [])
+
+
 class LegacyLedger:
     """A ``ledger.jsonl`` file as a CLL ``EntryStore`` and an artifact
     ``Store``, with the capability limits in ``CAPABILITIES``.
@@ -608,24 +635,7 @@ class LegacyLedger:
             raise InvalidError(f"capsule verification: {exc}") from exc
         if not isinstance(obj, dict):
             raise InvalidError("capsule verification: capsule is not an object")
-        capsule_id = line.entry.value.hex()
-        claimed = [name in obj for name in _ENVELOPE_MEMBERS]
-        signature = obj.pop("signature", None)
-        key_id = obj.pop("key_id", None)
-        envelope = None
-        if any(claimed):
-            if not all(claimed) or not isinstance(signature, str) or not isinstance(key_id, str):
-                raise InvalidError("envelope: signature and key_id must both be present strings")
-            try:
-                envelope = bytes.fromhex(signature)
-            except ValueError as exc:
-                raise InvalidError("envelope: signature is not hex") from exc
-            if not envelope:
-                raise InvalidError("envelope: signature is empty")
-        signer = _verify_capsule(capsule_id, obj, envelope, self._trusted)
-        if signer is not None and signer != key_id.lower():
-            raise InvalidError("envelope: key_id is not the envelope's signer")
-        return Record(capsule_id, _line_form(obj).encode("ascii"), envelope or b"", [])
+        return checked_record(line.entry.value.hex(), obj, self._trusted)
 
     def purge(self, capsule_id: str) -> None:
         if not valid_id(capsule_id):

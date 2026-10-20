@@ -196,7 +196,7 @@ The package installs three commands:
 
 | Command | What it does |
 |---|---|
-| `capsule-emit` | `ledger view` / `ledger show` (read the local ledger), `verify`, `status` (what is logged, which checkpoint covers what, the witnessing lag), `bundle` (an Evidence Bundle for a third party, proven under the log's signed checkpoint: one exchange, peer, window or record, or the whole log with `--all`), `evidence` (a verification comment built from a ledger, re-verifying every capsule first), `disclose` (record proofs plus selected content, with its own sealed disclosure record), `permalink` (a demo verify-page link for a bundle file, or for capsule files as a bundle with no log proof) |
+| `capsule-emit` | `ledger view` / `ledger show` (read the local ledger), `verify`, `status` (what is logged, which checkpoint covers what, the witnessing lag), `bundle` (an Evidence Bundle for a third party, proven under the log's signed checkpoint: one exchange, peer, window or record, or the whole log with `--all` when no checkpoint stamp or padding leaf falls inside it, since a range cannot yet cover a non-record leaf), `evidence` (a verification comment built from a ledger, re-verifying every capsule first), `disclose` (record proofs plus selected content, with its own sealed disclosure record), `permalink` (a demo verify-page link for a bundle file, or for capsule files as a bundle with no log proof) |
 | `capsule-emit-server` | a companion MCP server (`capsule_emit/server.py`), run as a Goose extension or by any MCP client, to record, verify and inspect capsules from a session |
 | `capsule-emit-agentgateway` | the agentgateway adapter's process entry point |
 

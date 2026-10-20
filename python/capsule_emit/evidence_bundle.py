@@ -38,13 +38,12 @@ from cll.log import CorruptError as LogCorruptError
 from cll.log.engine import check_scan
 
 from .artifact.record import InvalidError, NotFoundError, Record, valid_id
-from .legacy_ledger import _EPOCH, _cll_state_at, _line_time
+from .legacy_ledger import _EPOCH, _cll_state_at, _line_time, checked_record
 
 __all__ = ["MeshLedgerError", "MeshLedgerLog"]
 
 _CHECKPOINT_KIND = "mmr_checkpoint"
 _PADDING = "padding"
-_ENVELOPE_MEMBERS = ("signature", "key_id")
 
 
 class MeshLedgerError(ValueError):
@@ -171,8 +170,14 @@ class MeshLedgerLog:
         if not checked.ok or checked.decoded is None:
             raise MeshLedgerError(f"checkpoint mmr_size={cp.mmr_size}: its checkpoint_cose does not verify")
         signed = checked.decoded
-        if (signed.mmr_size, signed.root, signed.log_id) != (cp.mmr_size, cp.root, cp.log_id):
-            raise MeshLedgerError(f"checkpoint mmr_size={cp.mmr_size}: its checkpoint_cose states another checkpoint")
+        # The statement must be this checkpoint, signed by its key, with its
+        # time and history: every field the signature-verified line states.
+        fields = ("mmr_size", "root", "log_id", "key_id", "timestamp", "prev_size", "prev_root")
+        differs = [name for name in fields if getattr(signed, name) != getattr(cp, name)]
+        if differs:
+            raise MeshLedgerError(
+                f"checkpoint mmr_size={cp.mmr_size}: its checkpoint_cose states another checkpoint ({', '.join(differs)})"
+            )
         return cose
 
     def _signed_cose(self, cp: Any, values: list) -> bytes:
@@ -232,18 +237,7 @@ class MeshLedgerLog:
         index = self._records.get(capsule_id)
         if index is None:
             raise NotFoundError("capsule not found")
-        capsule = dict(self._lines[index])
-        signature = capsule.pop("signature", None)
-        capsule.pop("key_id", None)
-        envelope = b""
-        if signature is not None:
-            try:
-                envelope = bytes.fromhex(signature) if isinstance(signature, str) else b""
-            except ValueError as exc:
-                raise InvalidError("envelope: signature is not hex") from exc
-            if not envelope:
-                raise InvalidError("envelope: signature is not a non-empty hex string")
-        return Record(capsule_id, json.dumps(capsule, separators=(",", ":")).encode("ascii"), envelope, [])
+        return checked_record(capsule_id, self._lines[index])
 
     def close(self) -> None:
         """Nothing to release: the files were read when the log was opened."""

@@ -281,7 +281,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--all",
         action="store_true",
         help="every record of the log, every counterparty, with a range proof from seq 1 and "
-        "citation closure depth 2: only on purpose",
+        "citation closure depth 2: only on purpose. A range cannot yet cover a leaf that is not "
+        "a record (a ledger.jsonl's checkpoint stamps, a padding line): such a log is refused; "
+        "use a scope with --interval-from after the last such leaf",
     )
     bundle_p.add_argument(
         "--interval-from",

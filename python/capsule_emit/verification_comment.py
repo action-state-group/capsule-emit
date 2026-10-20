@@ -83,19 +83,37 @@ def _unproven(capsules: list[dict[str, Any]]) -> dict[str, Any]:
         raise VerificationCommentError(str(exc)) from exc
 
 
-def _proof_note(bundle: Any) -> str:
-    """What a caller's bundle proves, for the link text; refuses an INVALID one."""
+def _proof_note(bundle: Any, capsules: list[dict[str, Any]]) -> str:
+    """What a caller's bundle proves, for the link text. Refuses an INVALID
+    bundle, and one that does not carry every capsule the comment lists."""
     from agent_action_capsule.bundle import verify_bundle
 
-    verdict = verify_bundle(bundle, strict=True).verdict
-    if verdict == "INVALID":
+    if not isinstance(bundle, dict):
+        raise VerificationCommentError("the bundle is not a JSON object")
+    result = verify_bundle(bundle, strict=True)
+    if result.verdict == "INVALID":
         raise VerificationCommentError(
             "the bundle is INVALID under strict verification — refusing to link it "
             "(run `capsule-emit verify --bundle` for the findings)"
         )
-    if not isinstance(bundle.get("checkpoint"), dict):
-        return f"this link carries no log proof ({verdict} under strict verification)"
-    return f"this link carries a log proof under the log's signed checkpoint ({verdict} under strict verification)"
+    records = bundle.get("records") if isinstance(bundle.get("records"), list) else []
+    carried = {r.get("capsule_id") for r in records if isinstance(r, dict)}
+    absent = [c.get("capsule_id") for c in capsules if c.get("capsule_id") not in carried]
+    if absent:
+        raise VerificationCommentError(
+            f"the bundle does not carry {len(absent)} of the capsules this comment lists "
+            f"(first: {str(absent[0])[:16]}…) — refusing to link it"
+        )
+    claims = dict(result.claims)
+    proven = all(
+        name in claims and claims[name].status == "pass" for name in ("checkpoint", "per_record_membership")
+    )
+    if not proven:
+        return f"this link carries no log proof ({result.verdict} under strict verification)"
+    return (
+        "this link carries a log proof under the log's signed checkpoint "
+        f"({result.verdict} under strict verification)"
+    )
 
 
 def build_verification_comment(
@@ -183,7 +201,7 @@ def build_verification_comment(
         if bundle is None:
             linked, note = _unproven(capsules), "this link carries no log proof"
         else:
-            linked, note = bundle, _proof_note(bundle)
+            linked, note = bundle, _proof_note(bundle, capsules)
         try:
             url = build_url(linked, base_url=base_url)
         except PermalinkError as exc:  # e.g. a ledger too large for an inline permalink

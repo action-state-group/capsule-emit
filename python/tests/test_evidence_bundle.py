@@ -456,3 +456,61 @@ def test_cli_flat_ledger_scopes(witnessed_ledger, tmp_path, capsys):
 
     code, _, err = _cli(capsys, path, "--record", caps[1]["capsule_id"], "--signing-key", tmp_path / "k.pem", "-o", out)
     assert code == 1 and "--signing-key applies to a mesh ledger directory" in err
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (lambda line: line.pop("signature"), "must both be present"),
+        (lambda line: line.pop("key_id"), "must both be present"),
+        (lambda line: line.__setitem__("key_id", "ab" * 32), "is not the envelope's signer"),
+        (lambda line: line.__setitem__("signature", ""), "must both be present|empty"),
+    ],
+)
+def test_a_mesh_record_with_a_broken_signature_claim_is_refused(tmp_path, edit, message):
+    from capsule_emit.artifact import InvalidError
+    from capsule_emit.evidence_bundle import MeshLedgerLog
+
+    d, _, capsules = _mesh_ledger(tmp_path, padding=False)
+    lines = [json.loads(x) for x in (d / "capsules.jsonl").read_text().splitlines()]
+    assert "signature" in lines[0] and "key_id" in lines[0]
+    edit(lines[0])
+    (d / "capsules.jsonl").write_text("".join(json.dumps(x) + "\n" for x in lines))
+    with pytest.raises(InvalidError, match=message):
+        MeshLedgerLog(d).get(capsules[0]["capsule_id"])
+
+
+@pytest.mark.parametrize("change", [{"timestamp": "2001-01-01T00:00:00Z"}, {"key_id": "other"}])
+def test_a_checkpoint_cose_that_states_other_fields_is_refused(tmp_path, change):
+    """The newest line's statement is re-signed over the same size and root
+    but with another timestamp, or by another key: only that field differs."""
+    from cll.checkpoint import MmrLedger, checkpoint_to_cose
+
+    from capsule_emit.evidence_bundle import MeshLedgerError, MeshLedgerLog
+
+    d, key, _ = _mesh_ledger(tmp_path, padding=False)
+    rows = [json.loads(x) for x in (d / "checkpoints.jsonl").read_text().splitlines()]
+    newest = max(rows, key=lambda r: r["mmr_size"])
+    prev = min(rows, key=lambda r: r["mmr_size"])
+    mmr = MmrLedger(_MemoryLog())
+    for line in (d / "capsules.jsonl").read_text().splitlines():
+        mmr.append({"capsule_id": json.loads(line)["capsule_id"]})
+    signer = LocalKeypairSigner(key)
+    if "key_id" in change:
+        signer = LocalKeypairSigner(tmp_path / "other-key.pem")
+        change = {"key_id": signer.key_id}
+    from cll.checkpoint import CheckpointRecord
+
+    cp = CheckpointRecord.from_dict({k: v for k, v in newest.items() if k != "checkpoint_cose"})
+    other = dataclasses.replace(cp, **change)
+    newest["checkpoint_cose"] = checkpoint_to_cose(
+        other,
+        signer,
+        mmr.peak_hashes_at(cp.mmr_size),
+        prev_peak_hashes=mmr.peak_hashes_at(prev["mmr_size"]),
+        consistency_proof=mmr.consistency_proof(prev["mmr_size"], cp.mmr_size),
+    ).hex()
+    (d / "checkpoints.jsonl").write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows))
+    field = next(iter(change))
+    with pytest.raises(MeshLedgerError, match=f"states another checkpoint \\({field}\\)"):
+        MeshLedgerLog(d).load_cll()
