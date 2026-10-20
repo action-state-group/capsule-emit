@@ -20,6 +20,7 @@ You add one `seal()` call at each consequential action, and you get a **witnesse
 - **[Chaining — within one agent, and across agents](chaining.md)** — how capsules link by content address into verifiable trails, and why the ledger is a DAG, not one line. A capsule from another organization is cited in `references[]`.
 - **[Why anchoring makes it trustworthy](why-anchoring.md)** — why a record *you* keep isn't proof to anyone else, and how a shared, append-only log fixes that. The heart of the whole thing.
 - **[The public log, explained](the-public-log-explained.md)** — plain-English (+ FAQ): what the transparency log is, how Merkle proofs work, what's visible vs hidden, and what you can progressively share. The page to read before someone asks *"you're putting our data on a public log?"*
+- **[Threat model](THREAT-MODEL.md)** — what a record can and cannot establish, the client capability ladder, and the reader as a target: what the in-page verifier checks and what only a full verifier does.
 - **[Concurrency — one log, one writer](concurrency.md)** — why two processes never write the same ledger at once, what the error looks like, and how to resolve it.
 
 ## Wire it into your stack
