@@ -312,7 +312,7 @@ def test_cli_mesh_all_is_valid_and_a_one_byte_tamper_is_invalid(tmp_path, capsys
     out = tmp_path / "all.json"
     code, stdout, err = _cli(capsys, d, "--all", "-o", out)
     assert code == 0, err
-    assert "VALID" in stdout
+    assert "VALID" in stdout and "no range" not in stdout
     raw = out.read_bytes()
     bundle = json.loads(raw)
     assert jcs(bundle) == raw
@@ -326,10 +326,18 @@ def test_cli_mesh_all_is_valid_and_a_one_byte_tamper_is_invalid(tmp_path, capsys
     assert verify_bundle(json.loads(tampered), strict=True).verdict == "INVALID"
 
 
-def test_cli_mesh_all_over_padding_is_refused_by_name(tmp_path, capsys):
-    d, _, _ = _mesh_ledger(tmp_path)
-    code, _, err = _cli(capsys, d, "--all", "-o", tmp_path / "b.json")
-    assert code == 1 and "seq 2 in the interval is not a record" in err
+def test_cli_mesh_all_over_padding_drops_the_range_and_names_the_leaf(tmp_path, capsys):
+    d, _, capsules = _mesh_ledger(tmp_path)
+    out = tmp_path / "b.json"
+    code, stdout, err = _cli(capsys, d, "--all", "-o", out)
+    assert code == 0, err
+    assert "no range: seq 2 is a padding or checkpoint-stamp leaf, not a record" in stdout
+    assert "agent-action-capsule#339" in stdout
+    bundle = json.loads(out.read_text())
+    assert [r["capsule_id"] for r in bundle["records"]] == [c["capsule_id"] for c in capsules]
+    assert "range_proof" not in bundle["completeness_certificate"]
+    assert bundle["completeness"]["selection"] == "producer-selected"
+    assert verify_bundle(bundle, strict=True).verdict == "INCOMPLETE"
 
 
 def test_cli_scopes_read_the_mesh_fields(tmp_path, capsys):
@@ -439,8 +447,13 @@ def test_cli_flat_ledger_scopes(witnessed_ledger, tmp_path, capsys):
     path, caps = witnessed_ledger
     out = tmp_path / "b.json"
 
-    code, _, err = _cli(capsys, path, "--all", "-o", out)
-    assert code == 1 and "seq 3 in the interval is not a record" in err
+    code, stdout, err = _cli(capsys, path, "--all", "-o", out)
+    assert code == 0, err
+    assert "no range: seq 3 is a padding or checkpoint-stamp leaf, not a record" in stdout
+    bundle = json.loads(out.read_bytes())
+    assert [r["capsule_id"] for r in bundle["records"]] == [c["capsule_id"] for c in caps]
+    assert "range_proof" not in bundle["completeness_certificate"]
+    assert verify_bundle(bundle, strict=True).verdict == "INCOMPLETE"
 
     code, stdout, err = _cli(capsys, path, "--since", caps[2]["timestamp"], "--interval-from", "4", "-o", out)
     assert code == 0, err
@@ -514,3 +527,13 @@ def test_a_checkpoint_cose_that_states_other_fields_is_refused(tmp_path, change)
     field = next(iter(change))
     with pytest.raises(MeshLedgerError, match=f"states another checkpoint \\({field}\\)"):
         MeshLedgerLog(d).load_cll()
+
+
+def test_cli_all_leaves_out_records_past_the_checkpoint(tmp_path, capsys):
+    d, _, capsules = _mesh_ledger(tmp_path, padding=False, extra_after_checkpoint=True)
+    out = tmp_path / "b.json"
+    code, stdout, err = _cli(capsys, d, "--all", "-o", out)
+    assert code == 0, err
+    bundle = json.loads(out.read_text())
+    assert [r["capsule_id"] for r in bundle["records"]] == [c["capsule_id"] for c in capsules[:-1]]
+    assert "1 record(s) past the checkpoint left out" in stdout

@@ -20,9 +20,14 @@ the release that ships that producer.
   `--record` carries exactly the records in scope, each with its inclusion
   proof (no range proof unless `--interval-from SEQ`, closure depth 0 unless
   `--closure-depth N`); `--all` proves the whole log, seq 1 to the checkpoint
-  tip, at closure depth 2. A record the checkpoint does not cover yet, and a
-  range over a leaf that is not a record (a checkpoint stamp, a padding line),
-  are refused by name. A Python mesh `LedgerStore` directory (the frozen
+  tip, at closure depth 2, leaving out records appended after the checkpoint.
+  A range cannot yet cover a leaf that is not a record (a `ledger.jsonl`'s
+  checkpoint stamps, a padding line); agent-action-capsule#339 lifts this. So
+  when such a leaf lies inside, `--all` carries no range, proves each record
+  alone (the bundle reads INCOMPLETE) and names the leaf; `--interval-from`
+  over one is refused by name, as is a scoped record the checkpoint does not
+  cover yet.
+  A Python mesh `LedgerStore` directory (the frozen
   harness's layout) is refused; `bundle` reads the flat `capsules.jsonl` +
   `checkpoints.jsonl` layout the Rust plugin writes.
 - `LegacyLedger.load_cll()` reads a `ledger.jsonl`'s CLL checkpoint state: the
