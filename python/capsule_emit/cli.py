@@ -157,9 +157,9 @@ def _build_parser() -> argparse.ArgumentParser:
     # status
     status_p = sub.add_parser(
         "status",
-        help="ladder position: what's logged, which checkpoint covers what, which "
-        "stamps are back, honest witnessing lag -- contacts the witness read-only "
-        "to re-confirm existing receipts unless --offline",
+        help="receipts sealed, witnessed and awaiting witness (--verbose adds the "
+        "checkpoint and stamp detail) -- contacts the witness read-only to "
+        "re-confirm existing receipts unless --offline",
     )
     status_p.add_argument("path", help="path to a JSONL ledger file")
     status_p.add_argument(
@@ -183,6 +183,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "CAPSULE_WITNESS_URL (no built-in default)",
     )
     status_p.add_argument("--json", dest="as_json", action="store_true", help="raw JSON output")
+    status_p.add_argument(
+        "--verbose",
+        action="store_true",
+        help="also show the checkpoint detail: checkpoint count, the latest checkpoint's "
+        "grade and coverage, records awaiting checkpoint, checkpoints awaiting stamp, "
+        "and the per-witness backlog",
+    )
 
     # permalink
     from .permalink import MAX_INLINE_URL_BYTES
@@ -584,7 +591,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
         print(f"status: {args.path} — empty or not found")
         return 0
 
-    render_status(result)
+    render_status(result, verbose=args.verbose)
     return 0
 
 

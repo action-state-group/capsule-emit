@@ -40,6 +40,16 @@ is malformed, overclaims its time rung, or has the time-laundering shape;
 The TypeScript package adds no Evidence Bundle API: an artifact `Store` is
 already a record store for AAC's `proofSourceFromCll` (capsule-emit#347).
 
+### Changed: `capsule-emit status` speaks in receipts
+
+The default text view of `capsule-emit status` (Python) now reports receipts
+sealed, witnessed and awaiting witness, with no checkpoint vocabulary. The
+checkpoint count, the latest checkpoint's grade and coverage, records awaiting
+checkpoint, checkpoints awaiting stamp and the per-witness backlog move to the
+new `--verbose` flag. `--json` output is unchanged. A script that read those
+lines from the default text view should read `--json` instead
+(capsule-emit#337).
+
 ### Fixed
 
 - `capsule-emit bundle --all`'s help, its "no range" message and the README

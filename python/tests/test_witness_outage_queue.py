@@ -512,6 +512,14 @@ def test_status_json_and_cli_surface_the_backlog(tmp_path, dead_ts, monkeypatch,
     rc = cli_main(["status", str(ledger_path), "--offline", "--witness-url", dead_ts])
     assert rc == 0
     rendered = capsys.readouterr().out
+    # The default view reports the outage as receipts awaiting witness; the
+    # per-witness backlog is checkpoint detail, shown with --verbose.
+    assert "awaiting witness              2" in rendered
+    assert "witness backlog" not in rendered
+
+    rc = cli_main(["status", str(ledger_path), "--offline", "--witness-url", dead_ts, "--verbose"])
+    assert rc == 0
+    rendered = capsys.readouterr().out
     assert "witness backlog" in rendered
     assert dead_ts in rendered
 

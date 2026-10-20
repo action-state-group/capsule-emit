@@ -303,7 +303,15 @@ entries are indexed as leaves too.
 capsule-emit status ./ledger.jsonl              # renders text, re-checks the latest witness receipt
 capsule-emit status ./ledger.jsonl --offline    # local-only, no network call
 capsule-emit status ./ledger.jsonl --json       # machine-readable
+capsule-emit status ./ledger.jsonl --verbose    # text, plus the checkpoint detail
 ```
+
+The default text view speaks in receipts: how many are sealed, how many a
+checked witness receipt covers (**witnessed**), and how many still await a
+witness. Only the latest checkpoint is graded, so a receipt counts as
+witnessed when that checkpoint is witnessed under the keys you supplied and
+covers it. The checkpoint numbers below print with `--verbose` and are always
+in `--json`.
 
 `status` answers, from the ledger alone: how many capsules are sealed, how
 many checkpoints exist and each one's ladder rung (`self-attested` /
