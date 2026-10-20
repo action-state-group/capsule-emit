@@ -35,8 +35,8 @@ dropped out, so a bound original carrying one failed verification with
 AAC 0.4.0 also adds Class 1 check 9 (`provenance_mode`), so `verifyCapsule`,
 and every artifact store read, now refuses a Capsule whose `provenance_mode`
 is malformed, overclaims its time rung, or has the time-laundering shape;
-0.1.0 accepted these. Tests replay the provenance-mode vectors in
-`go/testdata/provenance-mode-vectors`.
+0.1.0 accepted these. Tests replay the 23 single-Capsule cases of AAC's
+`provenance-mode-vectors` at the pin.
 The TypeScript package adds no Evidence Bundle API: an artifact `Store` is
 already a record store for AAC's `proofSourceFromCll` (capsule-emit#347).
 
