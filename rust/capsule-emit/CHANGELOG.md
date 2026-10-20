@@ -5,6 +5,38 @@ Python package in this repository keeps its own changelog at the repository
 root. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
+## Unreleased
+
+- **A ledger in the standard storage layers** (#341):
+  `ledger::Ledger::open_stores(log, artifacts)` keeps the ledger in a CLL
+  entry log (`cll::log::EntryStore`: memory, jsonl, sqlite, mysql) plus a
+  `capsule-emit-artifact` `Store`. Each record keeps its producer envelope and
+  its signed statement as the unbound attachment `signed-statement`. Every
+  `Ledger` method works on both layouts, and the same sealing sequence gives
+  the same capsule IDs and lines. Chain linkage, the `capsule_id` recompute,
+  padding shape and the statement are checked before every write and on
+  reopen. A torn tail is the backends' to repair. An entry without a record,
+  or a record the store refuses, fails `open_stores`. `LedgerLine::offset` is
+  the log `seq` on this layout. New `LedgerError` variants: `MissingRecord`,
+  `Store`, `Log`, `AlreadyInLog` and `Envelope`.
+- **Checkpoints in a CLL backend's state** (#341):
+  `checkpoint::CheckpointState::load_log(log, log_id, cfg, signers)` folds
+  leaves from any `checkpoint::CheckpointLog` (a CLL entry source with
+  checkpoint state) and commits the MMR and each checkpoint's COSE form with
+  `commit_cll`, so `agent_action_capsule::bundle::proof_source_from_cll` reads
+  them. On load it checks every stored node against the entries and the
+  checkpoint's COSE against the MMR at its size, and signs the JSON checkpoint
+  record again with the signer whose key cut it (pass archived keys after a
+  rotation). The same entries give the same root as `CheckpointState::load`.
+  A `cfg` with `witness_urls` is refused for now. New `SubstrateError`
+  variants and `CheckpointStateError::Log`.
+- **`legacy_ledger`** (moved): `LegacyLedger`, the `capsules.jsonl` ledger as
+  an artifact store and a CLL entry log, moved here from
+  `capsule_emit_artifact::legacy` (feature `legacy`), because this crate now
+  depends on `capsule-emit-artifact`. It is unchanged otherwise.
+- Depends on `capsule-emit-artifact` 0.0.1, which must be published before
+  this crate's next release.
+
 ## 0.0.8
 
 - **No longer depends on `evidencebook`** (#321): `cargo tree -p capsule-emit`

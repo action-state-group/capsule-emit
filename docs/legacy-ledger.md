@@ -11,7 +11,7 @@ now sit behind the same two interfaces as every other backend:
 | Language | Ledger | Backend |
 |---|---|---|
 | Python | `ledger.jsonl` | `capsule_emit.legacy_ledger.LegacyLedger` |
-| Rust | `capsules.jsonl` + `signed-statements/` | `capsule_emit_artifact::legacy::LegacyLedger` (crate `capsule-emit-artifact`, feature `legacy`) |
+| Rust | `capsules.jsonl` + `signed-statements/` | `capsule_emit::legacy_ledger::LegacyLedger` (crate `capsule-emit`) |
 
 Legacy ledgers keep their own formats and are exempt from cross-language
 storage interop. Existing ledgers open unchanged: the same lines, the same
@@ -194,7 +194,7 @@ storage (identity, capsule, envelope, signer) before it refuses an original.
 | Writers | One. Python: a `flock` on `<ledger>.lock` excludes a second writer process (`LedgerLockedError`). Rust: the handle that opened the ledger; open no second one |
 
 `capsule_emit.legacy_ledger.CAPABILITIES` and
-`capsule_emit_artifact::legacy::CAPABILITIES` list them.
+`capsule_emit::legacy_ledger::CAPABILITIES` list them.
 
 ### Disclosing originals
 

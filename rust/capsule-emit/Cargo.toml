@@ -38,6 +38,15 @@ thiserror = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 ureq = { version = "2", features = ["json"] }
 base64 = "0.22"
+# The artifact store a store-backed `ledger::Ledger` keeps its records in, and
+# the `Store` the legacy ledger implements.
+capsule-emit-artifact = { version = "0.0.1", path = "../capsule-emit-artifact" }
 
 [dev-dependencies]
 tempfile = "3"
+cll = { package = "checkpointed-local-log", version = "0.3.1", features = ["sqlite"] }
+capsule-emit-artifact = { version = "0.0.1", path = "../capsule-emit-artifact", features = ["sqlite"] }
+# The Evidence Bundle producer, to check that a store-backed log is a CLL
+# backend it reads.
+aac-bundle = { package = "agent-action-capsule", version = "0.4", features = ["strict"] }
+rusqlite = { version = "0.40", features = ["bundled"] }

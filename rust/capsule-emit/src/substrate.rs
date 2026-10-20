@@ -26,23 +26,37 @@
 //! [`CllSubstrate::commit_checkpoint`] persists it. Checkpoint time is the
 //! caller's: coarsening it is a privacy decision of the store, not of the log.
 
+use cll::checkpoint::verify_checkpoint_cose_offline;
 use cll::checkpoint::{
     checkpoint_to_cose, try_sign_checkpoint_digest, CheckpointRecord as LogCheckpoint,
     CheckpointSigner as LogSigner, Signature as LogSignature, SignerError as LogSignerError,
     WitnessRecord as LogWitness,
 };
+use cll::log::{
+    CheckpointState as LogCheckpointState, CheckpointStateStore, EntrySource, State as LogState,
+    Timestamp,
+};
 use cll::mmr::{
     add_leaf, consistency_proof, inclusion_proof, leaf_count as mmr_leaf_count, leaf_hash,
     leaf_index_to_pos, node_count, peaks, root_from_peaks, Hash, InclusionProof as LogInclusion,
-    NodeReader,
+    MemoryNodeStore, NodeAppender, NodeReader,
 };
 use cll::node_store::FileNodeStore;
 use cll::store::{append_checkpoint, read_last_checkpoint, CheckpointLine};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Byte length of a record id (a `capsule_id`, a SHA-256 digest).
 pub(crate) const RECORD_ID_LEN: usize = 32;
+
+/// A CLL backend's entry log and checkpoint state: what a store-backed
+/// [`crate::checkpoint::CheckpointState`] folds leaves from and persists its
+/// MMR and checkpoints into (`CheckpointState::load_log`). Every CLL backend
+/// (memory, jsonl, sqlite, mysql) is one.
+pub trait CheckpointLog: EntrySource + CheckpointStateStore + Send + Sync {}
+
+impl<T: EntrySource + CheckpointStateStore + Send + Sync + ?Sized> CheckpointLog for T {}
 
 /// A record id as the substrate commits it.
 pub(crate) type RecordId = [u8; RECORD_ID_LEN];
@@ -298,6 +312,16 @@ pub enum SubstrateError {
     Signer(String),
     #[error("cannot checkpoint an empty MMR (no leaves appended yet)")]
     EmptyMmr,
+    #[error("CLL log error: {0}")]
+    Log(cll::log::Error),
+    #[error("the CLL state's checkpoint or MMR does not match the log's entries: {0}")]
+    StateInvalid(String),
+    #[error("the CLL state indexes {stored_leaves} leaves but the log has only {log_leaves}")]
+    StateAhead { stored_leaves: u64, log_leaves: u64 },
+    #[error("the last checkpoint is signed by {key_id}, and no signer given has that key")]
+    NoSigner { key_id: String },
+    #[error("a checkpoint kept in a CLL backend needs its COSE wire form: {0}")]
+    NoCose(String),
     #[error(
         "MMR size {current_size} is not greater than the previous checkpoint's size {prev_size} \
          -- monotonicity violated"
@@ -347,6 +371,12 @@ from_log!(cll::node_store::NodeStoreError, NodeStore);
 from_log!(cll::store::StoreError, Store);
 from_log!(LogSignerError, Signer);
 
+impl<T> FromLog<T> for Result<T, cll::log::Error> {
+    fn log_err(self) -> Result<T, SubstrateError> {
+        self.map_err(SubstrateError::Log)
+    }
+}
+
 /// A signed checkpoint not yet persisted. Witness receipts may be attached
 /// to `checkpoint.witnesses` before [`CllSubstrate::commit_checkpoint`].
 #[derive(Debug, Clone)]
@@ -370,11 +400,57 @@ impl PreparedCheckpoint {
     }
 }
 
-/// A Checkpointed Local Log with a durable MMR node store and a JSON-lines
-/// checkpoint file.
+/// The MMR nodes a substrate commits to: a durable file, or memory that is
+/// persisted into a CLL backend with each checkpoint.
+enum Nodes {
+    File(FileNodeStore),
+    Memory(MemoryNodeStore),
+}
+
+impl NodeReader for Nodes {
+    fn size(&self) -> u64 {
+        match self {
+            Nodes::File(n) => n.size(),
+            Nodes::Memory(n) => n.size(),
+        }
+    }
+
+    fn node(&self, pos: u64) -> Hash {
+        match self {
+            Nodes::File(n) => n.node(pos),
+            Nodes::Memory(n) => n.node(pos),
+        }
+    }
+}
+
+impl NodeAppender for Nodes {
+    fn append_nodes(&mut self, hashes: &[Hash]) {
+        match self {
+            Nodes::File(n) => n.append_nodes(hashes),
+            Nodes::Memory(n) => n.append_nodes(hashes),
+        }
+    }
+}
+
+/// Where committed checkpoints go.
+enum Checkpoints {
+    /// `checkpoints.jsonl`, beside a durable node store.
+    File(PathBuf),
+    /// A CLL backend's state, which holds the nodes and the checkpoint's COSE
+    /// form together. `committed_size` and `committed_checkpoint` are the
+    /// state's as last read or written: the compare-and-set's expectations.
+    Log {
+        backend: Arc<dyn CheckpointLog>,
+        committed_size: u64,
+        committed_checkpoint: Option<Vec<u8>>,
+    },
+}
+
+/// A Checkpointed Local Log: a durable MMR node store and a JSON-lines
+/// checkpoint file, or a CLL backend's state.
 pub(crate) struct CllSubstrate {
-    node_store: FileNodeStore,
-    checkpoints_path: PathBuf,
+    node_store: Nodes,
+    checkpoints: Checkpoints,
     last_checkpoint: Option<CheckpointRecord>,
     last_checkpoint_cose: Option<Vec<u8>>,
 }
@@ -397,8 +473,8 @@ impl CllSubstrate {
             .and_then(|hex_str| hex::decode(hex_str).ok());
         Ok((
             Self {
-                node_store,
-                checkpoints_path: checkpoints_path.to_path_buf(),
+                node_store: Nodes::File(node_store),
+                checkpoints: Checkpoints::File(checkpoints_path.to_path_buf()),
                 last_checkpoint,
                 last_checkpoint_cose,
             },
@@ -406,6 +482,74 @@ impl CllSubstrate {
                 node_count: report.node_count,
                 truncated_bytes: report.truncated_bytes,
             },
+        ))
+    }
+
+    /// Open the substrate kept in `backend`'s CLL state over the log whose
+    /// record ids are `ids`, in order. CLL checks the state's shape, not its
+    /// content, so this checks each persisted piece against the prefix of
+    /// `ids` it covers: every stored node (leaves first, then the rest)
+    /// through the state's `indexed_seq`, and the checkpoint's COSE (its
+    /// signature, `log_id`, size, root and peaks) through the checkpoint's
+    /// `indexed_seq`. Entries past the state are folded in memory. The JSON
+    /// checkpoint record is rebuilt from the COSE and signed again by the
+    /// signer the checkpoint names; Ed25519 is deterministic, so it is the
+    /// record first cut. Also returns the leaves the state already indexed.
+    pub(crate) fn open_log(
+        backend: Arc<dyn CheckpointLog>,
+        log_id: &str,
+        ids: &[RecordId],
+        signers: &[&dyn CheckpointSigner],
+    ) -> Result<(Self, u64), SubstrateError> {
+        let state = backend.load_cll().log_err()?;
+        if state.indexed_seq > ids.len() as u64 {
+            return Err(SubstrateError::StateAhead {
+                stored_leaves: state.indexed_seq,
+                log_leaves: ids.len() as u64,
+            });
+        }
+        let mut rebuilt = MemoryNodeStore::new();
+        for id in ids {
+            add_leaf(&mut rebuilt, leaf_hash(id)).log_err()?;
+        }
+        let stored = |pos: u64| state.nodes.get(pos as usize).map(Vec::as_slice);
+        for (leaf_index, id) in ids.iter().enumerate().take(state.indexed_seq as usize) {
+            let pos = leaf_index_to_pos(leaf_index as u64).log_err()?;
+            let expected_leaf = leaf_hash(id);
+            if stored(pos) != Some(&expected_leaf[..]) {
+                return Err(SubstrateError::LeafMismatch {
+                    leaf_index: leaf_index as u64,
+                    stored_leaf: hex::encode(stored(pos).unwrap_or_default()),
+                    expected_leaf: hex::encode(expected_leaf),
+                });
+            }
+        }
+        for pos in 0..state.size {
+            if stored(pos) != Some(&rebuilt.node(pos)[..]) {
+                return Err(SubstrateError::StateInvalid(format!(
+                    "the stored MMR node at position {pos} is not the node the log's entries give"
+                )));
+            }
+        }
+        let (last_checkpoint, last_checkpoint_cose) = match &state.checkpoint {
+            None => (None, None),
+            Some(cp) => {
+                let record = checked_checkpoint(cp, log_id, &rebuilt, signers)?;
+                (Some(record), Some(cp.bytes.clone()))
+            }
+        };
+        Ok((
+            Self {
+                node_store: Nodes::Memory(rebuilt),
+                checkpoints: Checkpoints::Log {
+                    backend,
+                    committed_size: state.size,
+                    committed_checkpoint: state.checkpoint.map(|c| c.bytes),
+                },
+                last_checkpoint,
+                last_checkpoint_cose,
+            },
+            state.indexed_seq,
         ))
     }
 
@@ -561,7 +705,9 @@ impl CllSubstrate {
         prepared: PreparedCheckpoint,
     ) -> Result<CheckpointRecord, SubstrateError> {
         let PreparedCheckpoint {
-            checkpoint, cose, ..
+            checkpoint,
+            cose,
+            cose_error: prepared_cose_error,
         } = prepared;
         // A prepared checkpoint chains to the checkpoint that was latest when
         // it was prepared; if another was committed since, it would fork.
@@ -575,14 +721,55 @@ impl CllSubstrate {
                 latest_size,
             });
         }
-        append_checkpoint(
-            &self.checkpoints_path,
-            &CheckpointLine {
-                record: checkpoint.to_log(),
-                checkpoint_cose_hex: cose.as_ref().map(hex::encode),
-            },
-        )
-        .log_err()?;
+        match &mut self.checkpoints {
+            Checkpoints::File(path) => append_checkpoint(
+                path,
+                &CheckpointLine {
+                    record: checkpoint.to_log(),
+                    checkpoint_cose_hex: cose.as_ref().map(hex::encode),
+                },
+            )
+            .log_err()?,
+            Checkpoints::Log {
+                backend,
+                committed_size,
+                committed_checkpoint,
+            } => {
+                let bytes = cose.clone().ok_or_else(|| {
+                    SubstrateError::NoCose(
+                        prepared_cose_error.unwrap_or_else(|| "it was not built".into()),
+                    )
+                })?;
+                let size = self.node_store.size();
+                let indexed_seq = mmr_leaf_count(size).log_err()?;
+                let cut_leaves = mmr_leaf_count(checkpoint.mmr_size).log_err()?;
+                let next = LogState {
+                    size,
+                    nodes: (0..size)
+                        .map(|p| self.node_store.node(p).to_vec())
+                        .collect(),
+                    indexed_seq,
+                    first_pending_at: (indexed_seq > cut_leaves).then(Timestamp::now),
+                    checkpoint: Some(LogCheckpointState {
+                        bytes: bytes.clone(),
+                        size: checkpoint.mmr_size,
+                        indexed_seq: cut_leaves,
+                        peaks: peaks(checkpoint.mmr_size)
+                            .log_err()?
+                            .iter()
+                            .map(|&p| self.node_store.node(p).to_vec())
+                            .collect(),
+                    }),
+                    // The compare-and-set keeps the stored witness rows.
+                    witnesses: Vec::new(),
+                };
+                backend
+                    .commit_cll(*committed_size, committed_checkpoint.as_deref(), &next)
+                    .log_err()?;
+                *committed_size = size;
+                *committed_checkpoint = Some(bytes);
+            }
+        }
         self.last_checkpoint = Some(checkpoint.clone());
         self.last_checkpoint_cose = cose;
         Ok(checkpoint)
@@ -607,6 +794,61 @@ impl CllSubstrate {
             .map(|&p| self.node_store.node(p))
             .collect())
     }
+}
+
+/// The checkpoint a CLL state holds, checked against the MMR the log's
+/// entries give (`rebuilt`), as a signed JSON record.
+fn checked_checkpoint(
+    cp: &LogCheckpointState,
+    log_id: &str,
+    rebuilt: &MemoryNodeStore,
+    signers: &[&dyn CheckpointSigner],
+) -> Result<CheckpointRecord, SubstrateError> {
+    let invalid = |detail: String| SubstrateError::StateInvalid(detail);
+    let verified = verify_checkpoint_cose_offline(&cp.bytes);
+    let decoded = match (verified.ok, verified.decoded) {
+        (true, Some(decoded)) => decoded,
+        _ => {
+            return Err(invalid(format!(
+                "the checkpoint's COSE does not verify: {}",
+                verified.errors.join("; ")
+            )))
+        }
+    };
+    if cp.size > rebuilt.size() || mmr_leaf_count(cp.size).ok() != Some(cp.indexed_seq) {
+        return Err(invalid(format!(
+            "the checkpoint at size {} indexed_seq {} is not a prefix of the log's MMR",
+            cp.size, cp.indexed_seq
+        )));
+    }
+    let peak_hashes: Vec<Hash> = peaks(cp.size)
+        .log_err()?
+        .iter()
+        .map(|&p| rebuilt.node(p))
+        .collect();
+    let root = hex::encode(root_from_peaks(&peak_hashes));
+    let stored_peaks: Vec<&[u8]> = cp.peaks.iter().map(Vec::as_slice).collect();
+    let rebuilt_peaks: Vec<&[u8]> = peak_hashes.iter().map(|h| &h[..]).collect();
+    if decoded.log_id != log_id
+        || decoded.mmr_size != cp.size
+        || decoded.root != root
+        || decoded.new_peak_hashes != peak_hashes
+        || stored_peaks != rebuilt_peaks
+    {
+        return Err(invalid(format!(
+            "the checkpoint at size {} (log {:?}) does not state this log's MMR at that size",
+            cp.size, decoded.log_id
+        )));
+    }
+    let mut record = decoded.to_checkpoint_record();
+    let signer = signers
+        .iter()
+        .find(|s| s.key_id() == record.key_id)
+        .ok_or_else(|| SubstrateError::NoSigner {
+            key_id: record.key_id.clone(),
+        })?;
+    record.signature = try_sign_checkpoint_digest(&record, &SignerAdapter(*signer)).log_err()?;
+    Ok(CheckpointRecord::from_log(record))
 }
 
 #[cfg(test)]

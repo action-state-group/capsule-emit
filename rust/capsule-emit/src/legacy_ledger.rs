@@ -35,23 +35,21 @@ use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use capsule_emit::ledger::{check_statement_matches, Ledger, LedgerError};
+use crate::ledger::{check_statement_matches, statement_artifact, Ledger, LedgerError};
 use cll::log::{
     AppendInput, AppendOutcome, AppendResult, Entry, EntrySource, EntryStore, Error as LogError,
     ErrorCode, Timestamp, ENTRY_BYTES, MAX_PORTABLE_INTEGER, MAX_SCAN_LIMIT,
 };
 use serde_json::{Map, Value};
 
-use crate::error::{ArtifactError, Result};
-use crate::record::{
-    check_config, decode_strict_json, is_padding, prepare, sha256_hex, valid_id, verify, Artifact,
-    Record, RetentionState,
+use capsule_emit_artifact::{
+    check_config, decode_strict_json, is_padding, prepare, valid_id, verify, ArtifactError, Record,
+    Result, RetentionState, Store,
 };
-use crate::store::Store;
 
 /// The name of the required, unbound `signed-statements/<capsule_id>.cose`
 /// attachment.
-pub const STATEMENT: &str = "signed-statement";
+pub use crate::ledger::STATEMENT;
 
 /// What the legacy backend offers, by capability name.
 pub const CAPABILITIES: &[(&str, bool)] = &[
@@ -82,9 +80,14 @@ pub struct LegacyLedger {
     state: Mutex<State>,
 }
 
+/// A storage failure, outside the contract's codes.
+fn storage(error: impl std::error::Error + Send + Sync + 'static) -> ArtifactError {
+    ArtifactError::Storage(Box::new(error))
+}
+
 fn corrupt(error: LedgerError) -> ArtifactError {
     match error {
-        LedgerError::Io(e) => ArtifactError::storage(e),
+        LedgerError::Io(e) => storage(e),
         other => ArtifactError::Corrupt(other.to_string()),
     }
 }
@@ -140,7 +143,7 @@ impl LegacyLedger {
     fn open_locked(&self, state: &mut State) -> Result<()> {
         if state.ledger.is_none() {
             if !self.dir.join("capsules.jsonl").exists() {
-                return Err(ArtifactError::storage(std::io::Error::other(
+                return Err(storage(std::io::Error::other(
                     "the ledger is not initialized",
                 )));
             }
@@ -154,9 +157,7 @@ impl LegacyLedger {
     fn with<T>(&self, f: impl FnOnce(&mut State) -> Result<T>) -> Result<T> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.closed {
-            return Err(ArtifactError::storage(std::io::Error::other(
-                "the store is closed",
-            )));
+            return Err(storage(std::io::Error::other("the store is closed")));
         }
         self.open_locked(&mut state)?;
         f(&mut state)
@@ -196,7 +197,7 @@ impl LegacyLedger {
             .and_then(Value::as_str)
             .filter(|id| valid_id(id))
             .ok_or_else(|| ArtifactError::Invalid("capsule id".into()))?;
-        let computed = capsule_emit::jcs::compute_capsule_id(record)
+        let computed = crate::jcs::compute_capsule_id(record)
             .map_err(|e| ArtifactError::Invalid(format!("capsule id: {e}")))?;
         if computed != capsule_id {
             return Err(ArtifactError::Invalid("capsule id mismatch".into()));
@@ -213,7 +214,7 @@ impl LegacyLedger {
             ledger(state)
                 .append_padding(record, statement)
                 .map_err(|e| match e {
-                    LedgerError::Io(e) => ArtifactError::storage(e),
+                    LedgerError::Io(e) => storage(e),
                     other => ArtifactError::Invalid(other.to_string()),
                 })?;
             sync(state)
@@ -243,14 +244,12 @@ impl LegacyLedger {
     }
 
     fn raw_line(&self, offset: u64) -> Result<Vec<u8>> {
-        let mut file =
-            File::open(self.dir.join("capsules.jsonl")).map_err(ArtifactError::storage)?;
-        file.seek(SeekFrom::Start(offset))
-            .map_err(ArtifactError::storage)?;
+        let mut file = File::open(self.dir.join("capsules.jsonl")).map_err(storage)?;
+        file.seek(SeekFrom::Start(offset)).map_err(storage)?;
         let mut line = Vec::new();
         BufReader::new(file)
             .read_until(b'\n', &mut line)
-            .map_err(ArtifactError::storage)?;
+            .map_err(storage)?;
         while line.last() == Some(&b'\n') {
             line.pop();
         }
@@ -294,7 +293,7 @@ impl LegacyLedger {
                 ))
             }
         };
-        let capsule = serde_json::to_vec(&line).map_err(ArtifactError::storage)?;
+        let capsule = serde_json::to_vec(&line).map_err(storage)?;
         let record = Record {
             capsule_id: capsule_id.to_string(),
             capsule,
@@ -341,16 +340,6 @@ fn ledger(state: &mut State) -> &mut Ledger {
     state.ledger.as_mut().expect("with() opened the ledger")
 }
 
-fn statement_artifact(statement: Vec<u8>) -> Artifact {
-    Artifact {
-        name: STATEMENT.to_string(),
-        binding: String::new(),
-        content_sha256: sha256_hex(&statement),
-        content: Some(statement),
-        state: RetentionState::Present,
-    }
-}
-
 /// Derives entries for ledger lines not yet indexed.
 fn sync(state: &mut State) -> Result<()> {
     let ledger = state.ledger.as_ref().expect("with() opened the ledger");
@@ -392,9 +381,7 @@ impl Store for LegacyLedger {
     fn init(&self) -> Result<()> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.closed {
-            return Err(ArtifactError::storage(std::io::Error::other(
-                "the store is closed",
-            )));
+            return Err(storage(std::io::Error::other("the store is closed")));
         }
         if state.ledger.is_none() {
             let (ledger, _) = Ledger::open(&self.dir).map_err(corrupt)?;
@@ -418,7 +405,7 @@ impl Store for LegacyLedger {
                 "signature and key_id are not capsule members".into(),
             ));
         }
-        if serde_json::to_vec(&capsule).map_err(ArtifactError::storage)? != prepared.capsule {
+        if serde_json::to_vec(&capsule).map_err(storage)? != prepared.capsule {
             return Err(ArtifactError::Invalid(
                 "capsule bytes are not in the ledger's line form".into(),
             ));
@@ -461,7 +448,7 @@ impl Store for LegacyLedger {
         let padding = is_padding(&line);
         check_statement_matches(&line, &prepared.capsule_id, &statement)
             .map_err(|e| ArtifactError::Invalid(format!("signed statement: {e}")))?;
-        let text = serde_json::to_vec(&line).map_err(ArtifactError::storage)?;
+        let text = serde_json::to_vec(&line).map_err(storage)?;
         self.with(|state| {
             let value = hex::decode(&prepared.capsule_id).expect("valid_id checked");
             if let Some(&index) = state.first.get(&value) {
@@ -484,7 +471,7 @@ impl Store for LegacyLedger {
                 ledger(state).append(&line, &statement)
             };
             appended.map_err(|e| match e {
-                LedgerError::Io(e) => ArtifactError::storage(e),
+                LedgerError::Io(e) => storage(e),
                 other => ArtifactError::Invalid(other.to_string()),
             })?;
             sync(state)

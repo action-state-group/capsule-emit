@@ -26,8 +26,9 @@ let capsule = seal(&input)?; // `capsule["capsule_id"]` is set
 | `jcs` | canonicalization and `capsule_id` |
 | `cose` | COSE_Sign1 signed statements and producer envelopes |
 | `keys` | Ed25519 keys: generate, load, persist (0600), rotate |
-| `ledger` | the durable local ledger, with caller-defined indexes |
-| `checkpoint` | signed checkpoints on a cadence, optional witness registration |
+| `ledger` | the durable local ledger, with caller-defined indexes: `capsules.jsonl` + `signed-statements/`, or a CLL entry log plus an artifact store |
+| `checkpoint` | signed checkpoints on a cadence, optional witness registration; kept beside `capsules.jsonl` or in a CLL backend's state |
+| `legacy_ledger` | an existing `capsules.jsonl` ledger as an artifact store and a CLL entry log, for readers |
 | `padding` | padding records, so a checkpoint's size falls on a bucket boundary |
 | `anchor` | an optional SCITT transparency service client |
 | `structure` | the Class 1 checks on a capsule's own bytes (§6, no store): the reference verifier's gating checks |
@@ -35,6 +36,54 @@ let capsule = seal(&input)?; // `capsule["capsule_id"]` is set
 | `sequence` | per-counterparty sequence numbers and the gap check |
 
 The `verify_capsule` binary verifies one capsule and statement offline.
+
+## Keeping the ledger in SQLite (or another standard backend)
+
+`Ledger::open(dir)` keeps the flat layout. `Ledger::open_stores(log,
+artifacts)` keeps the same ledger in the two standard storage layers: a CLL
+entry log (`cll::log` from `checkpointed-local-log`: memory, jsonl, sqlite or
+mysql) holding each line's `capsule_id` in order, and a
+[`capsule-emit-artifact`](../capsule-emit-artifact) store holding each line as
+a record with its producer envelope and signed statement.
+`CheckpointState::load_log(log, log_id, cfg, signers)` keeps the checkpoints in
+the same CLL backend's state, where an Evidence Bundle producer
+(`agent_action_capsule::bundle::proof_source_from_cll`) reads them. Every
+other method works as on the flat layout, and the same sealing sequence gives
+the same capsule IDs and checkpoint roots on both.
+
+With these dependencies. Neither `open_stores` nor `load_log` is in a published
+`capsule-emit` yet (0.0.8 and earlier lack them), and `capsule-emit-artifact`
+is not on crates.io yet; until the release that ships them, use both from this
+repository:
+
+```toml
+capsule-emit = { git = "https://github.com/action-state-group/capsule-emit" }
+cll = { package = "checkpointed-local-log", version = "0.3.1", features = ["sqlite"] }
+capsule-emit-artifact = { git = "https://github.com/action-state-group/capsule-emit", features = ["sqlite"] }
+rusqlite = "0.40"
+```
+
+```rust
+use std::sync::Arc;
+use capsule_emit::checkpoint::CheckpointState;
+use capsule_emit::ledger::Ledger;
+use capsule_emit_artifact::Store; // for `init`
+
+let db = "ledger.db";
+cll::log::sqlite::SqliteStore::init(db, "my-log")?;
+let log = Arc::new(cll::log::sqlite::SqliteStore::open(db, "my-log")?);
+let artifacts = capsule_emit_artifact::sqlite::SqliteStore::new(
+    rusqlite::Connection::open(db)?, "ledger", [node_public_key])?;
+artifacts.init()?;
+let (mut ledger, _) = Ledger::open_stores(log.clone(), Arc::new(artifacts))?;
+let (mut checkpoints, _) = CheckpointState::load_log(log, "my-log", cfg, &[&signing_key])?;
+```
+
+What the store layers provide and what `Ledger` checks is in the `ledger`
+module documentation. In short: records need a producer envelope from a key
+the artifact store trusts; never purge a ledger record (its signed statement
+goes with it, and reopening then fails); one `Ledger` writes a log; and
+witness registration is not supported on `load_log` yet.
 
 Anything a deployment adds beyond the core capsule members goes in
 `CapsuleInput::compute_attestation_extensions`: committed into `capsule_id`

@@ -25,6 +25,41 @@
 //! only through [`Ledger::append_padding`] / [`Ledger::pad_to_bucket`], are
 //! not indexed for lookup, and are excluded from `known_capsule_ids`.
 //!
+//! **Storage.** [`Ledger::open`] keeps the flat layout above. [`Ledger::open_stores`]
+//! keeps the same ledger in two standard layers instead: a CLL entry log
+//! ([`cll::log::EntryStore`]: jsonl, memory, sqlite or mysql) holding each
+//! line's 32-byte `capsule_id` in order, and an artifact store
+//! ([`capsule_emit_artifact::Store`]) holding each line as a record: the line
+//! without its inline `signature`/`key_id`, the producer envelope, and the
+//! signed statement as the unbound attachment
+//! [`STATEMENT`](crate::legacy_ledger::STATEMENT) (the mapping
+//! [`crate::legacy_ledger`] uses). Every method works on both. On the store
+//! layers the guarantees above hold as follows:
+//!
+//! - Chain linkage on append, and linkage, `capsule_id` recompute, padding
+//!   shape and statement on open: `Ledger` checks them, as on the flat layout.
+//!   Before writing it also runs the checks open would (the `capsule_id`
+//!   recompute, the envelope's signer named by `key_id`, the statement), since
+//!   the store checks an attachment's checksum but not its COSE meaning.
+//! - A torn tail: the backends. CLL's `JsonlStore::init` truncates an
+//!   incomplete last line and the artifact JSONL store never indexes one;
+//!   SQLite and MySQL write each operation in one transaction. The caller
+//!   provisions the stores before `open_stores`, so it logs any repair there:
+//!   [`RecoveryReport::truncated_torn_write_at`] is always `None` here.
+//! - A crash between the two writes: the record is `put` first and the log
+//!   entry appended second, so the entry is the commit point. A crash leaves a
+//!   record no entry names, and the retry's identical `put` is accepted.
+//! - Real corruption: an entry without a record ([`LedgerError::MissingRecord`]),
+//!   a record the store refuses ([`LedgerError::Store`]), a broken chain or a
+//!   bad statement fails `open_stores`.
+//!
+//! The store admits only records with a producer envelope from a key it
+//! trusts, and padding records. Never purge a ledger record: purge erases the
+//! signed statement, and `open_stores` then refuses the log. One `Ledger`
+//! writes a log: CLL `append` does not compare parents, so two writers could
+//! each extend the same head. [`LedgerLine::offset`] is the log `seq` here,
+//! where the flat layout has a byte offset.
+//!
 //! **Indexes.** A [`RecordIndexer`] derives keys from every chained record,
 //! so a caller can ask "does this ledger already hold a record of X?" (a
 //! dedup gate) without rescanning. The default indexer covers the two
@@ -32,11 +67,15 @@
 
 use crate::jcs::{compute_capsule_id, decode_record};
 use crate::padding::{check_padding_shape, is_padding};
+use capsule_emit_artifact::{Artifact, ArtifactError, Record, RetentionState, Store};
+use cll::log::{AppendInput, AppendOutcome, EntryStore, ErrorCode, Timestamp, MAX_SCAN_LIMIT};
 use serde_json::Value;
+use sha2::Digest;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LedgerError {
@@ -94,6 +133,23 @@ pub enum LedgerError {
     MalformedPadding { line: usize, detail: String },
     #[error("refusing to append: {0}")]
     PaddingMisrouted(&'static str),
+    /// A log entry whose record the artifact store does not hold.
+    #[error("ledger line {line}: the log names capsule_id {capsule_id} but the artifact store has no record of it")]
+    MissingRecord { line: usize, capsule_id: String },
+    /// The artifact store refused a read or a write.
+    #[error("artifact store: {0}")]
+    Store(#[from] ArtifactError),
+    /// The CLL entry log failed.
+    #[error("entry log: {0}")]
+    Log(#[from] cll::log::Error),
+    /// The log already holds this `capsule_id`, so appending it would not
+    /// add a line.
+    #[error("refusing to append: capsule_id {capsule_id} is already in the log")]
+    AlreadyInLog { capsule_id: String },
+    /// A store-backed ledger keeps a line's producer envelope as the record's
+    /// envelope, so the line must carry a valid one whose signer `key_id` names.
+    #[error("capsule_id {capsule_id}: producer envelope: {detail}")]
+    Envelope { capsule_id: String, detail: String },
 }
 
 /// A recovered/looked-up ledger entry: the sealed capsule plus its raw
@@ -108,7 +164,9 @@ pub struct LedgerEntry {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LedgerLine {
     pub capsule_id: String,
-    /// Byte offset of the line's start.
+    /// Where the ledger reads the line back ([`Ledger::read_line`]): the byte
+    /// offset of the line's start on the flat layout, its log `seq` on
+    /// store-backed ledgers ([`Ledger::open_stores`]).
     pub offset: u64,
     pub padding: bool,
     /// The line's top-level `timestamp`, when it has a string one.
@@ -141,10 +199,8 @@ pub struct RecoveryReport {
 
 #[derive(Debug)]
 pub struct Ledger {
-    capsules_path: PathBuf,
-    statements_dir: PathBuf,
-    append_handle: File,
-    /// capsule_id -> byte offset of the start of its line in capsules.jsonl.
+    storage: Storage,
+    /// capsule_id -> where its line is read back ([`LedgerLine::offset`]).
     index: HashMap<String, u64>,
     chain_head: Option<String>,
     /// Every line in `capsules.jsonl`, padding included -- the leaf count the
@@ -157,6 +213,276 @@ pub struct Ledger {
     indexer: RecordIndexer,
     /// Every line, padding included, in file order.
     lines: Vec<LedgerLine>,
+}
+
+/// The name of the unbound artifact that holds a line's signed statement in
+/// an artifact store (store-backed ledgers and
+/// [`crate::legacy_ledger::LegacyLedger`]).
+pub const STATEMENT: &str = "signed-statement";
+
+/// A line's signed statement as the [`STATEMENT`] artifact: present, unbound.
+pub(crate) fn statement_artifact(statement: Vec<u8>) -> Artifact {
+    Artifact {
+        name: STATEMENT.to_string(),
+        binding: String::new(),
+        content_sha256: hex::encode(sha2::Sha256::digest(&statement)),
+        content: Some(statement),
+        state: RetentionState::Present,
+    }
+}
+
+/// Where a ledger keeps its lines.
+#[derive(Debug)]
+enum Storage {
+    /// `capsules.jsonl` and `signed-statements/`.
+    Flat {
+        capsules_path: PathBuf,
+        statements_dir: PathBuf,
+        append_handle: File,
+    },
+    /// A CLL entry log and an artifact store ([`Ledger::open_stores`]).
+    Stores(Stores),
+}
+
+/// The two standard layers a store-backed ledger writes through.
+struct Stores {
+    log: Arc<dyn EntryStore + Send + Sync>,
+    artifacts: Arc<dyn Store + Send + Sync>,
+}
+
+impl std::fmt::Debug for Stores {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Stores")
+            .field("namespace", &self.artifacts.namespace())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Stores {
+    /// The record for `capsule_id` as a ledger line and its signed statement,
+    /// `None` when the statement is missing or purged. `line` numbers errors.
+    fn read(&self, line: usize, capsule_id: &str) -> Result<(Value, Option<Vec<u8>>), LedgerError> {
+        let record = match self.artifacts.get(capsule_id) {
+            Err(ArtifactError::NotFound) => {
+                return Err(LedgerError::MissingRecord {
+                    line,
+                    capsule_id: capsule_id.to_string(),
+                })
+            }
+            other => other?,
+        };
+        let mut parsed = decode_record(&record.capsule)?;
+        let envelope =
+            agent_action_capsule::envelope::verify(capsule_id, &record.producer_envelope);
+        let object = parsed
+            .as_object_mut()
+            .ok_or(LedgerError::MissingCapsuleId { line })?;
+        object.insert(
+            "signature".into(),
+            Value::String(hex::encode(&record.producer_envelope)),
+        );
+        object.insert(
+            "key_id".into(),
+            Value::String(hex::encode(&envelope.public_key)),
+        );
+        let statement = record
+            .artifacts
+            .into_iter()
+            .find(|a| a.name == STATEMENT && a.binding.is_empty())
+            .and_then(|a| a.content);
+        Ok((parsed, statement))
+    }
+
+    /// The `capsule_id` at log position `seq`.
+    fn capsule_id_at(&self, seq: u64) -> Result<String, LedgerError> {
+        let entry = self
+            .log
+            .scan_entries(seq.saturating_sub(1), 1)?
+            .into_iter()
+            .next()
+            .filter(|e| seq > 0 && e.seq == seq)
+            .ok_or_else(|| cll::log::Error::new(ErrorCode::NotFound, "no log entry at this seq"))?;
+        Ok(hex::encode(entry.value))
+    }
+
+    /// Writes one line: its record, then its log entry (the commit point).
+    /// Returns the entry's `seq`.
+    fn write(&self, capsule_id: &str, line: &Value, statement: &[u8]) -> Result<u64, LedgerError> {
+        self.artifacts
+            .put(&to_record(capsule_id, line, statement)?)?;
+        let value = hex::decode(capsule_id).map_err(|_| LedgerError::NoCapsuleId)?;
+        let appended = self.log.append(&AppendInput {
+            value,
+            appended_at: Timestamp::now(),
+        })?;
+        if appended.outcome != AppendOutcome::Inserted {
+            return Err(LedgerError::AlreadyInLog {
+                capsule_id: capsule_id.to_string(),
+            });
+        }
+        Ok(appended.entry.seq)
+    }
+}
+
+/// A ledger line as an artifact record: the line without `signature` and
+/// `key_id`, the producer envelope those carry, and the signed statement.
+/// Refuses a line without a valid envelope, or whose `key_id` is not exactly
+/// the envelope's signer (lowercase hex), so a record always reads back as the
+/// line it was written from.
+fn to_record(capsule_id: &str, line: &Value, statement: &[u8]) -> Result<Record, LedgerError> {
+    let envelope_error = |detail: &str| LedgerError::Envelope {
+        capsule_id: capsule_id.to_string(),
+        detail: detail.to_string(),
+    };
+    let mut object = line
+        .as_object()
+        .cloned()
+        .ok_or_else(|| envelope_error("the line is not a JSON object"))?;
+    let signature = object.remove("signature");
+    let key_id = object.remove("key_id");
+    let (Some(Value::String(signature)), Some(Value::String(key_id))) = (signature, key_id) else {
+        return Err(envelope_error(
+            "a store-backed ledger needs the line's producer envelope (signature and key_id)",
+        ));
+    };
+    let envelope = hex::decode(&signature).map_err(|_| envelope_error("signature is not hex"))?;
+    let verified = agent_action_capsule::envelope::verify(capsule_id, &envelope);
+    if !verified.ok {
+        return Err(envelope_error(
+            "the envelope does not verify over the capsule_id",
+        ));
+    }
+    if key_id != hex::encode(&verified.public_key) {
+        return Err(envelope_error("key_id is not the envelope's signer"));
+    }
+    // Lowercase hex, as written back on every read.
+    if signature != hex::encode(&envelope) {
+        return Err(envelope_error("signature is not lowercase hex"));
+    }
+    Ok(Record {
+        capsule_id: capsule_id.to_string(),
+        capsule: serde_json::to_vec(&Value::Object(object))?,
+        producer_envelope: envelope,
+        artifacts: vec![statement_artifact(statement.to_vec())],
+    })
+}
+
+/// What a replay builds, line by line: the same checks and index for the flat
+/// layout and the store layers.
+struct Replay {
+    index: HashMap<String, u64>,
+    chain_head: Option<String>,
+    report: RecoveryReport,
+    index_keys: HashSet<String>,
+    lines: Vec<LedgerLine>,
+    indexer: RecordIndexer,
+}
+
+impl Replay {
+    fn new(indexer: RecordIndexer) -> Self {
+        Self {
+            index: HashMap::new(),
+            chain_head: None,
+            report: RecoveryReport::default(),
+            index_keys: HashSet::new(),
+            lines: Vec::new(),
+            indexer,
+        }
+    }
+
+    /// Checks line `line_no` and indexes it at `locator`: its `capsule_id`
+    /// recomputes, padding has its shape, a chained record extends the head,
+    /// and its signed statement (read by `statement` after those checks)
+    /// matches it.
+    fn admit(
+        &mut self,
+        line_no: usize,
+        locator: u64,
+        parsed: Value,
+        statement: impl FnOnce(&str) -> Result<Vec<u8>, LedgerError>,
+    ) -> Result<(), LedgerError> {
+        let stored_id = parsed
+            .get("capsule_id")
+            .and_then(Value::as_str)
+            .ok_or(LedgerError::MissingCapsuleId { line: line_no })?
+            .to_string();
+
+        let recomputed = compute_capsule_id(&parsed)?;
+        if recomputed != stored_id {
+            return Err(LedgerError::CapsuleIdMismatch {
+                line: line_no,
+                stored: stored_id,
+                recomputed,
+            });
+        }
+
+        let padding = is_padding(&parsed);
+        if padding {
+            check_padding_shape(&parsed).map_err(|detail| LedgerError::MalformedPadding {
+                line: line_no,
+                detail,
+            })?;
+        }
+        let parent = parsed
+            .get("chain")
+            .and_then(|c| c.get("parent_capsule_id"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if !padding && parent != self.chain_head {
+            return Err(LedgerError::ChainBroken {
+                line: line_no,
+                parent,
+                head: self.chain_head.clone(),
+            });
+        }
+
+        // Existence is not enough: a garbage/swapped statement must not
+        // reload clean (see `Ledger::open`).
+        let statement_bytes = statement(&stored_id)?;
+        check_statement_matches(&parsed, &stored_id, &statement_bytes).map_err(|detail| {
+            LedgerError::StatementInvalid {
+                line: line_no,
+                capsule_id: stored_id.clone(),
+                detail,
+            }
+        })?;
+
+        self.report.valid_entries += 1;
+        self.lines
+            .push(LedgerLine::new(&stored_id, locator, &parsed));
+        if padding {
+            // Outside the chain: never the head, never indexed.
+            return Ok(());
+        }
+        self.index_keys.extend((self.indexer)(&parsed));
+        self.index.insert(stored_id.clone(), locator);
+        self.chain_head = Some(stored_id);
+        Ok(())
+    }
+
+    fn finish(self, storage: Storage) -> (Ledger, RecoveryReport) {
+        (
+            Ledger {
+                storage,
+                index: self.index,
+                chain_head: self.chain_head,
+                entries: self.report.valid_entries as u64,
+                index_keys: self.index_keys,
+                indexer: self.indexer,
+                lines: self.lines,
+            },
+            self.report,
+        )
+    }
+}
+
+/// The error for a missing or purged statement attachment.
+fn statement_missing(line: usize, capsule_id: &str) -> LedgerError {
+    LedgerError::StatementInvalid {
+        line,
+        capsule_id: capsule_id.to_string(),
+        detail: format!("the record's {STATEMENT} attachment is missing or purged"),
+    }
 }
 
 fn statement_path(statements_dir: &Path, capsule_id: &str) -> PathBuf {
@@ -320,12 +646,8 @@ impl Ledger {
         let mut raw = Vec::new();
         File::open(&capsules_path)?.read_to_end(&mut raw)?;
 
-        let mut index = HashMap::new();
-        let mut chain_head: Option<String> = None;
         let mut offset: u64 = 0;
-        let mut report = RecoveryReport::default();
-        let mut index_keys = HashSet::new();
-        let mut lines = Vec::new();
+        let mut replay = Replay::new(indexer);
 
         // Split on '\n', keeping track of whether the buffer ends with one.
         // A missing trailing newline on the final chunk means a torn write:
@@ -352,93 +674,81 @@ impl Ledger {
                 // line so the on-disk ledger never carries a partial record.
                 let f = OpenOptions::new().write(true).open(&capsules_path)?;
                 f.set_len(offset)?;
-                report.truncated_torn_write_at = Some(offset);
+                replay.report.truncated_torn_write_at = Some(offset);
                 break;
             }
 
             let parsed = decode_record(line.as_bytes())?;
-            let stored_id = parsed
-                .get("capsule_id")
-                .and_then(Value::as_str)
-                .ok_or(LedgerError::MissingCapsuleId { line: line_no })?
-                .to_string();
-
-            let recomputed = compute_capsule_id(&parsed)?;
-            if recomputed != stored_id {
-                return Err(LedgerError::CapsuleIdMismatch {
-                    line: line_no,
-                    stored: stored_id,
-                    recomputed,
-                });
-            }
-
-            let padding = is_padding(&parsed);
-            if padding {
-                check_padding_shape(&parsed).map_err(|detail| LedgerError::MalformedPadding {
-                    line: line_no,
-                    detail,
-                })?;
-            }
-            let parent = parsed
-                .get("chain")
-                .and_then(|c| c.get("parent_capsule_id"))
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            if !padding && parent != chain_head {
-                return Err(LedgerError::ChainBroken {
-                    line: line_no,
-                    parent,
-                    head: chain_head.clone(),
-                });
-            }
-
-            let stmt_path = statement_path(&statements_dir, &stored_id);
-            if !stmt_path.exists() {
-                return Err(LedgerError::MissingStatement {
-                    line: line_no,
-                    capsule_id: stored_id,
-                    path: stmt_path.display().to_string(),
-                });
-            }
-            // Existence is not enough: a garbage/swapped statement file must
-            // not reload clean (see this method's doc comment).
-            let statement_bytes = fs::read(&stmt_path)?;
-            check_statement_matches(&parsed, &stored_id, &statement_bytes).map_err(|detail| {
-                LedgerError::StatementInvalid {
-                    line: line_no,
-                    capsule_id: stored_id.clone(),
-                    detail,
+            replay.admit(line_no, offset, parsed, |stored_id| {
+                let stmt_path = statement_path(&statements_dir, stored_id);
+                if !stmt_path.exists() {
+                    return Err(LedgerError::MissingStatement {
+                        line: line_no,
+                        capsule_id: stored_id.to_string(),
+                        path: stmt_path.display().to_string(),
+                    });
                 }
+                Ok(fs::read(&stmt_path)?)
             })?;
-
-            report.valid_entries += 1;
-            lines.push(LedgerLine::new(&stored_id, offset, &parsed));
             offset += line_bytes_len;
-            if padding {
-                // Outside the chain: never the head, never indexed.
-                continue;
-            }
-            index_keys.extend(indexer(&parsed));
-            index.insert(stored_id.clone(), offset - line_bytes_len);
-            chain_head = Some(stored_id);
         }
 
         let append_handle = OpenOptions::new().append(true).open(&capsules_path)?;
+        Ok(replay.finish(Storage::Flat {
+            capsules_path,
+            statements_dir,
+            append_handle,
+        }))
+    }
 
-        Ok((
-            Self {
-                capsules_path,
-                statements_dir,
-                append_handle,
-                index,
-                chain_head,
-                entries: report.valid_entries as u64,
-                index_keys,
-                indexer,
-                lines,
-            },
-            report,
-        ))
+    /// Open a ledger kept in a CLL entry log and an artifact store (see the
+    /// module doc's **Storage**), replaying the log to recover the chain head
+    /// and index with the checks [`Self::open`] runs. Both stores must already
+    /// be provisioned (`init`); an empty log is an empty ledger. The store's
+    /// trusted keys must include every key that signed a line.
+    pub fn open_stores(
+        log: Arc<dyn EntryStore + Send + Sync>,
+        artifacts: Arc<dyn Store + Send + Sync>,
+    ) -> Result<(Self, RecoveryReport), LedgerError> {
+        Self::open_stores_with_indexer(log, artifacts, counterparty_citation_keys)
+    }
+
+    /// [`Self::open_stores`] with a caller-supplied [`RecordIndexer`].
+    pub fn open_stores_with_indexer(
+        log: Arc<dyn EntryStore + Send + Sync>,
+        artifacts: Arc<dyn Store + Send + Sync>,
+        indexer: RecordIndexer,
+    ) -> Result<(Self, RecoveryReport), LedgerError> {
+        let stores = Stores { log, artifacts };
+        let mut replay = Replay::new(indexer);
+        let mut after = 0u64;
+        loop {
+            let page = stores.log.scan_entries(after, MAX_SCAN_LIMIT)?;
+            if page.is_empty() {
+                break;
+            }
+            for entry in page {
+                after = entry.seq;
+                let line_no = entry.seq as usize;
+                let capsule_id = hex::encode(&entry.value);
+                let (parsed, statement) = stores.read(line_no, &capsule_id)?;
+                if parsed.get("capsule_id").and_then(Value::as_str) != Some(capsule_id.as_str()) {
+                    return Err(LedgerError::CapsuleIdMismatch {
+                        line: line_no,
+                        stored: parsed
+                            .get("capsule_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        recomputed: capsule_id,
+                    });
+                }
+                replay.admit(line_no, entry.seq, parsed, |stored_id| {
+                    statement.ok_or_else(|| statement_missing(line_no, stored_id))
+                })?;
+            }
+        }
+        Ok(replay.finish(Storage::Stores(stores)))
     }
 
     /// Every line in the ledger, padding included -- see [`Self::pad_to_bucket`].
@@ -547,16 +857,46 @@ impl Ledger {
         record: &Value,
         signed_statement: &[u8],
     ) -> Result<u64, LedgerError> {
-        let stmt_path = statement_path(&self.statements_dir, capsule_id);
-        let mut stmt_file = File::create(&stmt_path)?;
-        stmt_file.write_all(signed_statement)?;
-        stmt_file.sync_all()?;
+        let offset = match &mut self.storage {
+            Storage::Flat {
+                capsules_path,
+                statements_dir,
+                append_handle,
+            } => {
+                let stmt_path = statement_path(statements_dir, capsule_id);
+                let mut stmt_file = File::create(&stmt_path)?;
+                stmt_file.write_all(signed_statement)?;
+                stmt_file.sync_all()?;
 
-        let offset = fs::metadata(&self.capsules_path)?.len();
-        let mut line = serde_json::to_string(record)?;
-        line.push('\n');
-        self.append_handle.write_all(line.as_bytes())?;
-        self.append_handle.sync_all()?;
+                let offset = fs::metadata(capsules_path)?.len();
+                let mut line = serde_json::to_string(record)?;
+                line.push('\n');
+                append_handle.write_all(line.as_bytes())?;
+                append_handle.sync_all()?;
+                offset
+            }
+            Storage::Stores(stores) => {
+                // Everything open_stores will check, before anything is
+                // written: a refused line must leave both stores reopenable.
+                let line_no = self.entries as usize + 1;
+                let recomputed = compute_capsule_id(record)?;
+                if recomputed != capsule_id {
+                    return Err(LedgerError::CapsuleIdMismatch {
+                        line: line_no,
+                        stored: capsule_id.to_string(),
+                        recomputed,
+                    });
+                }
+                check_statement_matches(record, capsule_id, signed_statement).map_err(
+                    |detail| LedgerError::StatementInvalid {
+                        line: line_no,
+                        capsule_id: capsule_id.to_string(),
+                        detail,
+                    },
+                )?;
+                stores.write(capsule_id, record, signed_statement)?
+            }
+        };
         self.entries += 1;
         self.lines.push(LedgerLine::new(capsule_id, offset, record));
         Ok(offset)
@@ -634,42 +974,88 @@ impl Ledger {
         &self.lines
     }
 
-    /// The JSON of the line starting at `offset` (from [`Self::lines`]).
+    /// The JSON of the line at `offset` (from [`Self::lines`]).
     pub fn read_line(&self, offset: u64) -> Result<Value, LedgerError> {
-        let mut f = File::open(&self.capsules_path)?;
-        f.seek(SeekFrom::Start(offset))?;
-        let mut line = String::new();
-        BufReader::new(f).read_line(&mut line)?;
-        Ok(decode_record(line.trim_end().as_bytes())?)
+        match &self.storage {
+            Storage::Flat { capsules_path, .. } => {
+                let mut f = File::open(capsules_path)?;
+                f.seek(SeekFrom::Start(offset))?;
+                let mut line = String::new();
+                BufReader::new(f).read_line(&mut line)?;
+                Ok(decode_record(line.trim_end().as_bytes())?)
+            }
+            Storage::Stores(stores) => {
+                let capsule_id = stores.capsule_id_at(offset)?;
+                Ok(stores.read(offset as usize, &capsule_id)?.0)
+            }
+        }
     }
 
     /// The signed statement stored for `capsule_id`, padding included.
     pub fn read_statement(&self, capsule_id: &str) -> Result<Vec<u8>, LedgerError> {
-        Ok(fs::read(statement_path(&self.statements_dir, capsule_id))?)
+        match &self.storage {
+            Storage::Flat { statements_dir, .. } => {
+                Ok(fs::read(statement_path(statements_dir, capsule_id))?)
+            }
+            Storage::Stores(stores) => {
+                let line = self.line_number(capsule_id);
+                stores
+                    .read(line, capsule_id)?
+                    .1
+                    .ok_or_else(|| statement_missing(line, capsule_id))
+            }
+        }
+    }
+
+    /// The 1-based line holding `capsule_id`, for error messages (0 when the
+    /// ledger has no such line).
+    fn line_number(&self, capsule_id: &str) -> usize {
+        self.lines
+            .iter()
+            .position(|l| l.capsule_id == capsule_id)
+            .map_or(0, |i| i + 1)
     }
 
     /// Receipt lookup: read back the sealed capsule + its COSE_Sign1
     /// signed-statement bytes by `capsule_id`, seeking directly to the
-    /// indexed byte offset rather than scanning the file.
+    /// indexed byte offset rather than scanning the file (on store-backed
+    /// ledgers, reading its record by id).
     pub fn lookup(&self, capsule_id: &str) -> Result<Option<LedgerEntry>, LedgerError> {
         let Some(&offset) = self.index.get(capsule_id) else {
             return Ok(None);
         };
-        let mut f = File::open(&self.capsules_path)?;
-        f.seek(SeekFrom::Start(offset))?;
-        let mut reader = BufReader::new(f);
-        let mut line = String::new();
-        reader.read_line(&mut line)?;
-        let capsule = decode_record(line.trim_end().as_bytes())?;
+        match &self.storage {
+            Storage::Flat {
+                capsules_path,
+                statements_dir,
+                ..
+            } => {
+                let mut f = File::open(capsules_path)?;
+                f.seek(SeekFrom::Start(offset))?;
+                let mut reader = BufReader::new(f);
+                let mut line = String::new();
+                reader.read_line(&mut line)?;
+                let capsule = decode_record(line.trim_end().as_bytes())?;
 
-        let stmt_path = statement_path(&self.statements_dir, capsule_id);
-        let mut signed_statement = Vec::new();
-        File::open(&stmt_path)?.read_to_end(&mut signed_statement)?;
+                let stmt_path = statement_path(statements_dir, capsule_id);
+                let mut signed_statement = Vec::new();
+                File::open(&stmt_path)?.read_to_end(&mut signed_statement)?;
 
-        Ok(Some(LedgerEntry {
-            capsule,
-            signed_statement,
-        }))
+                Ok(Some(LedgerEntry {
+                    capsule,
+                    signed_statement,
+                }))
+            }
+            Storage::Stores(stores) => {
+                let line = offset as usize;
+                let (capsule, statement) = stores.read(line, capsule_id)?;
+                Ok(Some(LedgerEntry {
+                    capsule,
+                    signed_statement: statement
+                        .ok_or_else(|| statement_missing(line, capsule_id))?,
+                }))
+            }
+        }
     }
 }
 
