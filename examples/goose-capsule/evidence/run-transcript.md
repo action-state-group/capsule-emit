@@ -1,5 +1,11 @@
 # Goose Capsule Demo — Run Transcript
 
+> This transcript records the commands and APIs as they were on the run date. Since then
+> `capsule-emit permalink` no longer reads a ledger (`--ledger`, `--from-run`): it links a
+> finished Evidence Bundle (`--bundle FILE`, for example from `capsule-emit bundle`) or capsule
+> JSON files, and `capsule_emit.permalink.build_url(bundle, base_url=...)` takes a finished
+> bundle instead of capsules and a `bundle` flag.
+
 **Run:** `python3 examples/goose-capsule/demo.py`
 **Anchor:** `https://anchor.agentactioncapsule.org` (production, live)
 **Verify surface:** `https://verify.agentactioncapsule.org`

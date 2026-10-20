@@ -442,7 +442,7 @@ def log(
     full MMR leaf, checkpointed and witnessed exactly like a signed
     capsule): order, completeness, contemporaneity, tamper-evidence, and
     witnessing. **What it does NOT establish:** who authored this content —
-    :func:`capsule_emit.bundle.verify_bundle` and
+    :func:`capsule_emit.record_proof.verify_record_proof` and
     :func:`capsule_emit.signing.verify_store_signed` grade a ``log()`` entry
     :attr:`~capsule_emit.signing.AuthorshipVerdict.UNCLAIMED` ("log-verified,
     authorship not claimed"), never

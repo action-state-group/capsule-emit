@@ -39,8 +39,8 @@ from agent_action_capsule.canonical import compute_capsule_id
 
 from capsule_emit import cli, seal, status, witness
 from capsule_emit import ledger as ledger_mod
-from capsule_emit.bundle import bundle, verify_bundle
 from capsule_emit.checkpoint.emit import CheckpointRecord
+from capsule_emit.record_proof import record_proof, verify_record_proof
 from capsule_emit.signing import verify_capsule_signature, verify_store_signed
 
 # ---------------------------------------------------------------------------
@@ -257,7 +257,7 @@ def two_checkpoint_ledger(tmp_path, stub_ts, monkeypatch):
 
 def test_attack6b_tampered_receipt_body_reports_invalid_naming_the_receipt(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
-    b = bundle(ledger_path, caps[0]["capsule_id"])
+    b = record_proof(ledger_path, caps[0]["capsule_id"])
 
     # The attack: rewrite the receipt body but keep capsule_id unchanged, so
     # a verifier that only compares two labels (not recomputing content)
@@ -266,7 +266,7 @@ def test_attack6b_tampered_receipt_body_reports_invalid_naming_the_receipt(two_c
     tampered_receipt["operator"] = "ATTACKER-INC"
     mutant = replace(b, receipt=tampered_receipt)
 
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert ok is False
     assert any("does not hash to its own capsule_id" in e for e in errors)
     assert any(b.capsule_id in e for e in errors)
@@ -274,8 +274,8 @@ def test_attack6b_tampered_receipt_body_reports_invalid_naming_the_receipt(two_c
 
 def test_attack6b_positive_control_untampered_bundle_still_verifies(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
-    b = bundle(ledger_path, caps[0]["capsule_id"])
-    ok, errors = verify_bundle(b)
+    b = record_proof(ledger_path, caps[0]["capsule_id"])
+    ok, errors = verify_record_proof(b)
     assert ok, errors
 
 
@@ -352,8 +352,8 @@ def test_attack45_file_forged_stamp_grades_self_attested_not_witnessed(tmp_path,
     # (c) bundle/verify_bundle: covers a record with this checkpoint and
     # must not report VALID over an all-forged witnesses list.
     record_id = ledger_mod.read_ledger(ledger_path)[0]["capsule_id"]
-    b = bundle(ledger_path, record_id)
-    ok, errors = verify_bundle(b)
+    b = record_proof(ledger_path, record_id)
+    ok, errors = verify_record_proof(b)
     assert ok is False
     assert any("witness stamp" in e and "INVALID" in e for e in errors)
     assert any("none verify as authentic TS Receipts" in e for e in errors)
@@ -473,8 +473,8 @@ def test_attack_sophisticated_forger_correct_entry_hash_attacker_key_stays_self_
     # trust_anchor -- proven below, where the SAME attacker-key stamp fails
     # closed once its (invented) ts_url is pinned to a DIFFERENT key.
     record_id = ledger_mod.read_ledger(ledger_path)[0]["capsule_id"]
-    b = bundle(ledger_path, record_id)
-    ok, errors = verify_bundle(b)
+    b = record_proof(ledger_path, record_id)
+    ok, errors = verify_record_proof(b)
     assert ok is True
     assert any("pin not supplied" in e and "unverified stamp" in e for e in errors)
 
@@ -488,7 +488,7 @@ def test_attack_sophisticated_forger_correct_entry_hash_attacker_key_stays_self_
     operators_real_pubkey_pem = _Ed25519PrivateKey.generate().public_key().public_bytes(
         _Encoding.PEM, _PublicFormat.SubjectPublicKeyInfo
     )
-    ok_pinned, errors_pinned = verify_bundle(
+    ok_pinned, errors_pinned = verify_record_proof(
         b, trust_anchor={"https://attacker.example": operators_real_pubkey_pem}
     )
     assert ok_pinned is False

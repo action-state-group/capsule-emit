@@ -26,14 +26,14 @@ Lifecycle mapping (what this demo simulates):
   Verification      `capsule-emit evidence --ledger … --issue <url>` renders
                     the evidence comment (see evidence/verification-comment.md
                     for this exact run's output). The reviewer re-verifies
-                    offline; the fail-closed builder refuses to render a bundle
-                    from records that don't verify.
-  Done              The issue closes with the evidence bundle in its record.
+                    offline; the fail-closed builder refuses to render a
+                    comment from records that don't verify.
+  Done              The issue closes with the evidence comment in its record.
 
 The issue below is SYNTHETIC (this repo's own #0 placeholder) — the point is
 the shape, not the target. Offline by default: the ledger is local, no anchor
 call is made (pass --anchor to submit digests to the live anchor, same as
-demo.py; the evidence bundle honestly reports either state).
+demo.py; the evidence comment honestly reports either state).
 
 Run:
     pip install "capsule-emit[dev]"
@@ -51,11 +51,14 @@ from pathlib import Path
 
 from capsule_emit import read_ledger
 from capsule_emit.adapters.mcp import MCPCapsuleEmitter
-from capsule_emit.evidence import build_evidence_markdown
 from capsule_emit.verification import verify_capsule as verify
+from capsule_emit.verification_comment import build_verification_comment
 
 # Synthetic Ready issue — the shape is the point, not the target.
 ISSUE_URL = "https://github.com/action-state-group/capsule-emit/issues/0"
+
+# The verify surface the comment's viewer link names (capsule-emit has no default).
+BASE_URL = "https://verify.agentactioncapsule.org"
 
 # The verification plan as agreed at Accepted/design (goose CONTRIBUTING:
 # "working out the design, constraints, and verification plan").
@@ -140,20 +143,21 @@ def main() -> int:
 
         # ── Verification: the evidence comment, generated from the ledger ─
         _section("Verification: the evidence comment (fail-closed)")
-        markdown = build_evidence_markdown(
+        markdown = build_verification_comment(
             capsules,
             issue_url=ISSUE_URL,
+            base_url=BASE_URL,
             ledger_name=ledger.name,
         )
         print(markdown)
 
-        # ── The fail-closed half: tampered work cannot produce a bundle ──
-        _section("Tamper check: a mutated record refuses to bundle")
+        # ── The fail-closed half: tampered work cannot produce a comment ──
+        _section("Tamper check: a mutated record refuses to render")
         tampered = [json.loads(json.dumps(c)) for c in capsules]
         tampered[1]["model_attestation"]["compute_attestation"]["agent_output_digest"] = "0" * 64
         try:
-            build_evidence_markdown(tampered, issue_url=ISSUE_URL)
-            print("  ERROR: tampered ledger produced a bundle")
+            build_verification_comment(tampered, issue_url=ISSUE_URL, base_url=BASE_URL)
+            print("  ERROR: tampered ledger produced a comment")
             return 1
         except Exception as exc:
             print(f"  refused, as designed: {str(exc)[:100]}…")

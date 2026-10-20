@@ -31,19 +31,22 @@ https://verify.agentactioncapsule.org/v/5179216505a0949e3195db1b9d180d43cea059ba
 ```
 
 This is the **withheld/bundle** permalink — the JSON-array fragment that always renders the
-Chain Navigation table, produced with `capsule_emit.permalink.build_url(..., bundle=True)` (the
-same code behind `capsule-emit permalink`). Regenerate it yourself any time:
+Chain Navigation table, produced with an earlier `capsule-emit permalink`. Build a current one
+from the run's ledger with:
 
 ```bash
-capsule-emit permalink --ledger <ledger.jsonl produced by this run> --check
+capsule-emit evidence --ledger <ledger.jsonl produced by this run> \
+    --base-url https://verify.agentactioncapsule.org
 ```
 
-> Current `capsule-emit permalink` emits an evidence-bundle/v2 Bundle on the viewer's
-> `/bundle#` route (the draft's §9 codec) instead of this legacy `/v/<id>#` array form,
-> so regenerating produces a different link. The link above predates that change.
+> Current capsule-emit links an evidence-bundle/v2 Bundle on the viewer's `/bundle#` route
+> (the draft's §9 codec) instead of this legacy `/v/<id>#` array form, so the link differs.
+> The link above predates that change. Built from a ledger alone, the bundle carries no log
+> proof; `capsule-emit bundle` builds one proven under the log's signed checkpoint, and
+> `capsule-emit permalink --bundle FILE` links it.
 
-`--check` runs `agent_action_capsule.verify()` on every capsule locally (no network) before
-printing a URL, and refuses to emit one if any capsule fails verification.
+`capsule-emit evidence` runs `agent_action_capsule.verify()` on every capsule locally (no
+network) first, and refuses to produce a link if any capsule fails verification.
 
 **Revealed links (`--reveal <artifact>`) are not available yet** — that flag depends on
 a separate, not-yet-built disclosure-envelope format change. Only

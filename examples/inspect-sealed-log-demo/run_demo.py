@@ -34,13 +34,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from agent_action_capsule.bundle import build_unproven_bundle  # noqa: E402
 from generate_eval_log import mock_generate, tiny_arithmetic  # noqa: E402
 
 from capsule_emit import witness  # noqa: E402
 from capsule_emit.adapters.inspect_ai import InspectAIListenerCore, seal_eval_log  # noqa: E402
 from capsule_emit.disclose import Disclosure, disclose, verify_disclosure  # noqa: E402
 from capsule_emit.ledger import read_ledger  # noqa: E402
-from capsule_emit.permalink import DEFAULT_BASE_URL, build_url  # noqa: E402
+from capsule_emit.permalink import build_url  # noqa: E402
+
+#: The verify surface the permalinks name (capsule-emit has no default).
+BASE_URL = "https://verify.agentactioncapsule.org"
 
 WITHHELD_SAMPLE_ID = "add-9-9"  # the sample whose payloads bundle_withheld.json omits
 
@@ -246,6 +250,14 @@ def tamper_demo(disclosed: Disclosure, out_dir: Path) -> None:
     print(f"  saved -> {out_dir / 'tamper_demo.json'}")
 
 
+def _unproven(capsules: list[dict], disclosures: dict) -> dict:
+    """The capsules as an Evidence Bundle with no log proof, rooted at the
+    last one, as ``capsule-emit permalink`` builds one from capsule files."""
+    return build_unproven_bundle(
+        capsules, root=capsules[-1]["capsule_id"], closure_depth=len(capsules), disclosures=disclosures or None
+    )
+
+
 def build_permalinks(disclosed: Disclosure, withheld: Disclosure, core: _CapturingCore, out_dir: Path) -> None:
     _section("Step 7 -- build browser-verifier permalinks (for the person-verify pass)")
     disclosed_capsules = [disclosed.envelopes[cid]["capsule"] for cid in disclosed.record_ids]
@@ -254,7 +266,7 @@ def build_permalinks(disclosed: Disclosure, withheld: Disclosure, core: _Capturi
         for cid in disclosed.record_ids
         if disclosed.envelopes[cid]["disclosures"]
     }
-    url_disclosed = build_url(disclosed_capsules, base_url=DEFAULT_BASE_URL, bundle=True, disclosures=disclosed_disclosures)
+    url_disclosed = build_url(_unproven(disclosed_capsules, disclosed_disclosures), base_url=BASE_URL)
 
     withheld_capsules = [withheld.envelopes[cid]["capsule"] for cid in withheld.record_ids]
     withheld_disclosures = {
@@ -262,7 +274,7 @@ def build_permalinks(disclosed: Disclosure, withheld: Disclosure, core: _Capturi
         for cid in withheld.record_ids
         if withheld.envelopes[cid]["disclosures"]
     }
-    url_withheld = build_url(withheld_capsules, base_url=DEFAULT_BASE_URL, bundle=True, disclosures=withheld_disclosures)
+    url_withheld = build_url(_unproven(withheld_capsules, withheld_disclosures), base_url=BASE_URL)
 
     (out_dir / "permalinks.json").write_text(
         json.dumps({"bundle_disclosed_url": url_disclosed, "bundle_withheld_url": url_withheld}, indent=2)

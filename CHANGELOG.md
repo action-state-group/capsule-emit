@@ -6,6 +6,76 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+Evidence Bundles (`evidence-bundle/v2`) now come from one producer,
+agent-action-capsule's `agent_action_capsule.bundle.build_evidence_bundle`;
+capsule-emit supplies the proof sources for its ledgers and no longer builds
+bundles itself (#338). The package now requires `agent-action-capsule>=0.11.0`,
+the release that ships that producer.
+
+### Added
+
+- `capsule-emit bundle LEDGER -o FILE` writes an Evidence Bundle of a
+  `ledger.jsonl` or a mesh ledger directory, proven under the log's signed
+  checkpoint. Name one scope: `--exchange`, `--peer`, `--since`/`--until` or
+  `--record` carries exactly the records in scope, each with its inclusion
+  proof (no range proof unless `--interval-from SEQ`, closure depth 0 unless
+  `--closure-depth N`); `--all` proves the whole log, seq 1 to the checkpoint
+  tip, at closure depth 2, leaving out records appended after the checkpoint.
+  A range cannot yet cover a leaf that is not a record (a `ledger.jsonl`'s
+  checkpoint stamps, a padding line); agent-action-capsule#339 lifts this. So
+  when such a leaf lies inside, `--all` carries no range, proves each record
+  alone (the bundle reads INCOMPLETE) and names the leaf; `--interval-from`
+  over one is refused by name, as is a scoped record the checkpoint does not
+  cover yet.
+  A Python mesh `LedgerStore` directory (the frozen
+  harness's layout) is refused; `bundle` reads the flat `capsules.jsonl` +
+  `checkpoints.jsonl` layout the Rust plugin writes.
+- `LegacyLedger.load_cll()` reads a `ledger.jsonl`'s CLL checkpoint state: the
+  newest checkpoint stamp whose `checkpoint_cose` verifies, with MMR nodes
+  folded from the ledger's own entries and checked against the signed root.
+  `proof_source_from_cll(ledger, ledger)` then feeds the producer.
+  `commit_cll` is unsupported.
+- `capsule_emit.evidence_bundle.MeshLedgerLog(ledger_dir, signing_key=None)`
+  reads a mesh ledger directory (`capsules.jsonl`, `checkpoints.jsonl`) as the
+  same three interfaces. It uses a checkpoint line's `checkpoint_cose`, or
+  signs the newest verified checkpoint with the node's key when the line has
+  none; `MeshLedgerError` names every refusal.
+
+### Breaking
+
+- `capsule_emit.bundle` is renamed `capsule_emit.record_proof`: `bundle()` is
+  `record_proof()`, `verify_bundle()` is `verify_record_proof()`, `Bundle` is
+  `RecordProof` and `BundleError` is `RecordProofError` (CLL's
+  `cll.checkpoint.bundle` types under those names).
+- `capsule_emit.evidence` is renamed `capsule_emit.verification_comment`:
+  `build_evidence_markdown()` is `build_verification_comment()` and
+  `EvidenceError` is `VerificationCommentError`. Its viewer link carries the
+  new optional `bundle=` as it is (refused when strict verification reads it
+  INVALID), else the capsules as agent-action-capsule's
+  `build_unproven_bundle`, and the comment says whether the link carries a log
+  proof. The comment's offline commands name `capsule-emit verify --store`
+  instead of `capsule-emit permalink --ledger ... --check`.
+- `capsule_emit.scoped_export` (`export`, `Scope`, `ExportError`) and the
+  `capsule-emit export` command are removed: use `capsule-emit bundle`.
+- `capsule_emit.permalink.build_bundle` is removed, and `build_url` takes a
+  finished bundle: `build_url(bundle, *, base_url, bundle_locations=None,
+  max_url_bytes=MAX_INLINE_URL_BYTES)` (it took capsules, `bundle=` and
+  `disclosures=`). Build the bundle with `capsule-emit bundle` or with
+  agent-action-capsule's `build_evidence_bundle` or `build_unproven_bundle`.
+- `capsule_emit.permalink.BUNDLE_KIND`, `capsule_emit.permalink.BUNDLE_VERSION`
+  and `capsule_emit.evidence_file.BUNDLE_KIND` are removed: use
+  `agent_action_capsule.bundle.BUNDLE_KIND`.
+- `capsule-emit permalink`: `--bundle FILE` links that file's bundle as it is
+  (it was a flag); capsule files always become one unproven bundle rooted at
+  the last file, and `--bundle-out` writes that exact bundle. `--ledger`,
+  `--from-run` and `--all` are removed. `--check` on a `--bundle` file runs
+  agent-action-capsule's strict verifier and refuses an INVALID bundle.
+- `capsule-emit evidence` gains `--bundle FILE`; its comment text changes as
+  above.
+- `test-vectors/permalink-bundle` is regenerated: each case gives the
+  `closure_depth` its bundle is built with by `build_unproven_bundle`, instead
+  of the `bundle` flag.
+
 ## 0.11.0 — 2026-10-16
 
 A minor release with breaking changes. `ledger_io.local_payload_store()` is

@@ -14,9 +14,9 @@ Cites the *shape* of the local, pre-consent evidence-request draft — a
 request map ``{subject, coverage, derivation?, deadline?, nonce}`` — never
 the draft itself. This module owns the responder's decision logic only; it
 never invents a new artifact format: a "record" subject dispatches to
-:func:`capsule_emit.bundle.bundle`, a "range" subject resolves the same
+:func:`capsule_emit.record_proof.record_proof`, a "range" subject resolves the same
 ``id1..id2`` / ``id1,id2,...`` selector syntax :mod:`capsule_emit.disclose`
-already parses and returns one :class:`~capsule_emit.bundle.Bundle` per
+already parses and returns one :class:`~capsule_emit.record_proof.RecordProof` per
 selected record — **digests only**, never :func:`capsule_emit.disclose
 .disclose`'s field-content reveal. That is deliberate: a ``bundle``-shaped
 answer to a stranger stays digests-only regardless of what a *local*
@@ -42,7 +42,7 @@ no records), under a different name. This module implements no
 Every well-formed request gets exactly one of three answers — never a bare,
 unsigned absence:
 
-  * an :class:`Artifact` (one or more offline-verifiable ``Bundle`` s);
+  * an :class:`Artifact` (one or more offline-verifiable ``RecordProof`` s);
   * a :class:`Refusal` with ``reason="request_malformed"`` or
     ``reason="derivation_unsupported"`` — a policy-shaped decline: something
     about the *request itself* this node will not act on;
@@ -366,14 +366,14 @@ def parse_request(request_bytes: bytes) -> RequestMap:
 
 @dataclass(frozen=True)
 class Artifact:
-    """One well-formed answer — one ``Bundle`` for a ``record`` subject, one
+    """One well-formed answer — one ``RecordProof`` for a ``record`` subject, one
     per selected/matched record for a ``range`` or ``correlation`` subject.
     Digests-only, always: this is the SAME object a stranger and a trusted
     counterparty both receive for the same request."""
 
     v: int
     subject_kind: str
-    bundles: tuple[Any, ...]  # capsule_emit.bundle.Bundle, one or more
+    bundles: tuple[Any, ...]  # capsule_emit.record_proof.RecordProof, one or more
     next_page_token: str | None = None
 
     def to_dict(self) -> dict:
@@ -490,7 +490,7 @@ def _record_exists(entries: list[dict], capsule_id: str) -> bool:
     ``_find_record`` uses (full id, or an unambiguous >=8-char prefix;
     checkpoint-stamp/disclosure bookkeeping entries never match) — kept
     local rather than reaching into that package's private helper, since
-    all this needs is existence, not ``bundle()``'s own ambiguous-prefix
+    all this needs is existence, not ``record_proof()``'s own ambiguous-prefix
     diagnostics."""
     from .ledger import NON_CAPSULE_KINDS
 
@@ -593,7 +593,7 @@ def _build_chain_segment(
 ) -> tuple[tuple[Any, ...] | None, str | None, str | None]:
     """The ``chain_segment`` leg of :func:`_build_bundles` — split out since
     it dispatches to :mod:`capsule_emit.chain_segment` over the checkpoint
-    CHAIN, not to :func:`capsule_emit.bundle.bundle` over individual
+    CHAIN, not to :func:`capsule_emit.record_proof.record_proof` over individual
     records. Returns the same ``(bundles, reason, next_page_token)`` shape
     :func:`_build_bundles` does — ``next_page_token`` is always ``None``
     here: a chain segment is O(checkpoints), not O(records), so it is
@@ -652,9 +652,9 @@ def _build_bundles(
     by any checkpoint). ``next_page_token`` is non-``None`` only for a
     ``range`` subject whose resolved selection exceeds one page.
     """
-    from .bundle import BundleError
-    from .bundle import bundle as _bundle_fn
     from .ledger import read_ledger_entries
+    from .record_proof import RecordProofError
+    from .record_proof import record_proof as _record_proof
 
     kind = req.subject["kind"]
     if kind == "chain_segment":
@@ -678,8 +678,8 @@ def _build_bundles(
         return None, REASON_NO_SUCH_SUBJECT, None
 
     try:
-        bundles = tuple(_bundle_fn(ledger, cid) for cid in capsule_ids)
-    except BundleError:
+        bundles = tuple(_record_proof(ledger, cid) for cid in capsule_ids)
+    except RecordProofError:
         # The record(s) exist but at least one isn't covered by any
         # checkpoint yet — a coverage lag, not an absence.
         return None, REASON_COVERAGE_UNSATISFIABLE, None
@@ -708,12 +708,12 @@ def answer(
     responder supports none itself; a caller that supports one (e.g.
     capsule-emit-mesh's ``served_summary/1``) intercepts before calling
     ``answer()``. Otherwise resolves ``coverage``, and dispatches (via
-    :func:`_build_bundles`) to :func:`capsule_emit.bundle.bundle` for the
+    :func:`_build_bundles`) to :func:`capsule_emit.record_proof.record_proof` for the
     record(s) a ``record``/``range``/``correlation`` subject names, or to
     :func:`capsule_emit.chain_segment.chain_segment` for a
     ``chain_segment`` subject. Returns exactly one of:
 
-      * :class:`Artifact` — one or more offline-verifiable ``Bundle``/
+      * :class:`Artifact` — one or more offline-verifiable ``RecordProof``/
         ``ChainSegment`` objects;
       * :class:`Refusal` — signed, offline-verifiable, one of
         ``REFUSAL_REASONS``.

@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Regenerate test-vectors/permalink-bundle/vectors.json.
 
-Seals a fresh three-capsule chain (so ``capsules`` changes on every run), then
-asks the independent Go oracle (``test-vectors/go-oracle/jcs_oracle.go``) for
+Seals a fresh three-capsule chain (so ``capsules`` changes on every run),
+builds each case's Bundle the way ``capsule-emit permalink`` does for capsule
+files (agent-action-capsule's ``build_unproven_bundle``, the last capsule as
+root, closure depth the number of capsules), then asks the independent Go
+oracle (``test-vectors/go-oracle/jcs_oracle.go``) for
 the §9 fragment and JCS SHA-256 of each Bundle and pointer object. The
 fragments and digests are never computed by capsule-emit. Set
 ``AAC_JCS_ORACLE`` to the oracle's scratch module directory.
@@ -17,8 +20,9 @@ import os
 import subprocess
 from pathlib import Path
 
+from agent_action_capsule.bundle import build_unproven_bundle
+
 from capsule_emit import seal
-from capsule_emit.permalink import build_bundle
 
 OUT = Path(__file__).resolve().parents[1] / "vectors.json"
 LOCATIONS = ["https://bundles.example.org/b/1.json", "ipfs://bafyexample"]
@@ -45,14 +49,17 @@ def main() -> None:
         capsules[1]["capsule_id"]: {"agent_output": {"reason": "over ceiling \U0001F6D1"}},
     }
     cases = [
-        {"id": "single", "bundle": False, "capsules": capsules[:1], "disclosures": None},
-        {"id": "chain", "bundle": True, "capsules": capsules, "disclosures": None},
-        {"id": "chain-disclosed", "bundle": True, "capsules": capsules, "disclosures": disclosures},
-        {"id": "partial-chain", "bundle": True, "capsules": capsules[1:], "disclosures": None},
+        {"id": "single", "capsules": capsules[:1], "disclosures": None},
+        {"id": "chain", "capsules": capsules, "disclosures": None},
+        {"id": "chain-disclosed", "capsules": capsules, "disclosures": disclosures},
+        {"id": "partial-chain", "capsules": capsules[1:], "disclosures": None},
     ]
     for case in cases:
-        case["expected_bundle"] = build_bundle(case["capsules"], bundle=case["bundle"],
-                                               disclosures=case["disclosures"])
+        case["closure_depth"] = len(case["capsules"])
+        case["expected_bundle"] = build_unproven_bundle(
+            case["capsules"], root=case["capsules"][-1]["capsule_id"], closure_depth=case["closure_depth"],
+            disclosures=case["disclosures"],
+        )
     objects = [c["expected_bundle"] for c in cases]
     oracle = os.environ["AAC_JCS_ORACLE"]
 

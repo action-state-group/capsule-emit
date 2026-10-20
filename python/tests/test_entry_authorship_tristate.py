@@ -7,8 +7,8 @@ never fatal), claimed-and-fails (INVALID -- forgery, still fatal). Covers
 ``verify_capsule_signature_tristate`` directly, its two call sites
 (``verify_bundle`` / ``verify_store_signed``), and RULING 3's ``log()`` verb.
 
-Uses the same hermetic stub-TS harness as ``test_bundle.py`` /
-``test_checkpoint_signer.py`` so ``bundle()``/``verify_bundle()`` exercise a
+Uses the same hermetic stub-TS harness as ``test_record_proof.py`` /
+``test_checkpoint_signer.py`` so ``record_proof()``/``verify_record_proof()`` exercise a
 genuinely-witnessed checkpoint chain rather than the network egress or the
 ``CAPSULE_WITNESS=stub`` in-process double (which mints a receipt shape this
 suite's own inclusion-proof reconstruction does not accept -- unrelated
@@ -30,8 +30,8 @@ from _stub_receipt import (
 
 from capsule_emit import ledger as ledger_mod
 from capsule_emit import log, seal, witness
-from capsule_emit.bundle import bundle, verify_bundle
 from capsule_emit.core import LogEntry
+from capsule_emit.record_proof import record_proof, verify_record_proof
 from capsule_emit.signing import (
     AuthorshipVerdict,
     verify_capsule_signature_tristate,
@@ -39,7 +39,7 @@ from capsule_emit.signing import (
 )
 
 # ---------------------------------------------------------------------------
-# Hermetic stub Transparency Service -- same shape as test_bundle.py.
+# Hermetic stub Transparency Service -- same shape as test_record_proof.py.
 # ---------------------------------------------------------------------------
 
 
@@ -285,8 +285,8 @@ def test_bundle_of_a_signed_capsule_verifies_authored_with_no_authorship_notice(
     witnessed_ledger,
 ):
     ledger_path, authored, _unclaimed = witnessed_ledger
-    b = bundle(ledger_path, authored["capsule_id"])
-    ok, errors = verify_bundle(b)
+    b = record_proof(ledger_path, authored["capsule_id"])
+    ok, errors = verify_record_proof(b)
     assert ok, errors
     assert not any("authorship" in e for e in errors)
 
@@ -295,8 +295,8 @@ def test_bundle_of_a_log_entry_verifies_ok_with_unclaimed_notice_not_invalid(
     witnessed_ledger,
 ):
     ledger_path, _authored, unclaimed = witnessed_ledger
-    b = bundle(ledger_path, unclaimed["capsule_id"])
-    ok, errors = verify_bundle(b)
+    b = record_proof(ledger_path, unclaimed["capsule_id"])
+    ok, errors = verify_record_proof(b)
     assert ok, errors
     assert any("log-verified, authorship not claimed" in e for e in errors)
 
@@ -306,9 +306,9 @@ def test_bundle_of_a_tampered_log_entry_content_is_still_caught_as_fatal(witness
     to fatal (via the capsule_id/hash check) -- UNCLAIMED must never become a
     free pass for content tampering."""
     ledger_path, _authored, unclaimed = witnessed_ledger
-    b = bundle(ledger_path, unclaimed["capsule_id"])
+    b = record_proof(ledger_path, unclaimed["capsule_id"])
     b.receipt["operator"] = "attacker"
-    ok, errors = verify_bundle(b)
+    ok, errors = verify_record_proof(b)
     assert not ok
     assert any("receipt body was tampered" in e for e in errors)
 
@@ -318,10 +318,10 @@ def test_bundle_of_a_capsule_with_forged_signature_is_invalid_not_unclaimed(witn
     untouched) on an otherwise-signed capsule must be graded INVALID, never
     silently reclassified as UNCLAIMED."""
     ledger_path, authored, _unclaimed = witnessed_ledger
-    b = bundle(ledger_path, authored["capsule_id"])
+    b = record_proof(ledger_path, authored["capsule_id"])
     good_len = len(b.receipt["signature"])
     b.receipt["signature"] = "00" * (good_len // 2)
-    ok, errors = verify_bundle(b)
+    ok, errors = verify_record_proof(b)
     assert not ok
     assert any("forged" in e or "tampered" in e for e in errors)
     assert not any("authorship not claimed" in e for e in errors)

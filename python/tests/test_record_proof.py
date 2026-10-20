@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for ``capsule_emit.bundle``.
+"""Tests for ``capsule_emit.record_proof``.
 
 Builds real checkpoint chains through ``seal()`` + the default witness
 wiring (same stub-TS harness as ``tests/test_checkpoint_signer.py``) and
-checks that ``bundle()`` assembles a standalone-verifiable artifact:
+checks that ``record_proof()`` assembles a standalone-verifiable artifact:
 receipt + inclusion proof + covering checkpoint + prior checkpoint +
-consistency proof — and that ``verify_bundle()`` genuinely checks each
+consistency proof — and that ``verify_record_proof()`` genuinely checks each
 piece (every negative case below flips exactly one field and confirms the
 mutant is caught).
 """
@@ -27,9 +27,9 @@ from _stub_receipt import (
 
 from capsule_emit import ledger as ledger_mod
 from capsule_emit import seal, witness
-from capsule_emit.bundle import Bundle, BundleError, bundle, verify_bundle
 from capsule_emit.checkpoint import core as mmr_core
 from capsule_emit.checkpoint import emit as checkpoint_emit_mod
+from capsule_emit.record_proof import RecordProof, RecordProofError, record_proof, verify_record_proof
 
 # ---------------------------------------------------------------------------
 # Hermetic stub Transparency Service — same shape as test_checkpoint_signer.py
@@ -158,7 +158,7 @@ def two_checkpoint_ledger(tmp_path, stub_ts, monkeypatch):
 
 def test_bundle_first_checkpoint_record_has_no_prior(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
-    b = bundle(ledger_path, caps[0]["capsule_id"])
+    b = record_proof(ledger_path, caps[0]["capsule_id"])
 
     assert b.capsule_id == caps[0]["capsule_id"]
     assert b.seq == 1
@@ -167,7 +167,7 @@ def test_bundle_first_checkpoint_record_has_no_prior(two_checkpoint_ledger):
     assert b.prior_checkpoint is None
     assert b.consistency_proof is None
 
-    ok, errors = verify_bundle(b)
+    ok, errors = verify_record_proof(b)
     assert ok, errors
 
 
@@ -176,7 +176,7 @@ def test_bundle_second_checkpoint_record_has_prior_and_consistency(two_checkpoin
     # caps[2]/caps[3] ("second-*") are only covered once the SECOND checkpoint
     # forms — that checkpoint also covers the first checkpoint's own stamp
     # entry (item 16), so its prev_size/prev_root genuinely point at checkpoint 1.
-    b = bundle(ledger_path, caps[2]["capsule_id"])
+    b = record_proof(ledger_path, caps[2]["capsule_id"])
 
     assert b.checkpoint.prev_size > 0
     assert b.prior_checkpoint is not None
@@ -184,7 +184,7 @@ def test_bundle_second_checkpoint_record_has_prior_and_consistency(two_checkpoin
     assert b.prior_checkpoint.root == b.checkpoint.prev_root
     assert b.consistency_proof is not None
 
-    ok, errors = verify_bundle(b)
+    ok, errors = verify_record_proof(b)
     assert ok, errors
 
 
@@ -202,10 +202,10 @@ def test_verify_bundle_labels_passing_consistency_proof_as_history_intact_not_fo
     two_checkpoint_ledger,
 ):
     ledger_path, caps = two_checkpoint_ledger
-    b = bundle(ledger_path, caps[2]["capsule_id"])
+    b = record_proof(ledger_path, caps[2]["capsule_id"])
     assert b.prior_checkpoint is not None  # exercising the WITH-prior branch
 
-    ok, notices = verify_bundle(b)
+    ok, notices = verify_record_proof(b)
     assert ok, notices
 
     history_notices = [n for n in notices if "history intact between checkpoints" in n]
@@ -218,10 +218,10 @@ def test_verify_bundle_labels_passing_consistency_proof_as_history_intact_not_fo
 
 def test_verify_bundle_labels_first_checkpoint_edge_honestly(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
-    b = bundle(ledger_path, caps[0]["capsule_id"])
+    b = record_proof(ledger_path, caps[0]["capsule_id"])
     assert b.prior_checkpoint is None  # exercising the first-checkpoint branch
 
-    ok, notices = verify_bundle(b)
+    ok, notices = verify_record_proof(b)
     assert ok, notices
 
     first_notices = [n for n in notices if "no prior checkpoint" in n]
@@ -237,14 +237,14 @@ def test_verify_bundle_labels_first_checkpoint_edge_honestly(two_checkpoint_ledg
 def test_bundle_accepts_unambiguous_prefix(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
     prefix = caps[0]["capsule_id"][:10]
-    b = bundle(ledger_path, prefix)
+    b = record_proof(ledger_path, prefix)
     assert b.capsule_id == caps[0]["capsule_id"]
 
 
 def test_bundle_unknown_capsule_id_raises(two_checkpoint_ledger):
     ledger_path, _caps = two_checkpoint_ledger
-    with pytest.raises(BundleError, match="no record matches"):
-        bundle(ledger_path, "f" * 64)
+    with pytest.raises(RecordProofError, match="no record matches"):
+        record_proof(ledger_path, "f" * 64)
 
 
 def test_bundle_ambiguous_prefix_raises(two_checkpoint_ledger):
@@ -253,7 +253,7 @@ def test_bundle_ambiguous_prefix_raises(two_checkpoint_ledger):
     # rejected rather than silently picking one — construct that collision
     # directly against the resolver so the test doesn't depend on hash luck.
     # `_find_record` now lives in `cll.checkpoint.bundle` (genericized,
-    # CLL extraction, 2026-09-01) -- `capsule_emit.bundle` is a thin
+    # CLL extraction, 2026-09-01) -- `capsule_emit.record_proof` is a thin
     # wrapper that no longer defines its own copy.
     from cll.checkpoint.bundle import _find_record
 
@@ -261,7 +261,7 @@ def test_bundle_ambiguous_prefix_raises(two_checkpoint_ledger):
         {"capsule_id": "aaaaaaaa1111"},
         {"capsule_id": "aaaaaaaa2222"},
     ]
-    with pytest.raises(BundleError, match="matches 2 records"):
+    with pytest.raises(RecordProofError, match="matches 2 records"):
         _find_record(entries, "aaaaaaaa", id_field="capsule_id", kind_field="kind", non_leaf_kinds=frozenset())
 
 
@@ -272,21 +272,21 @@ def test_bundle_uncovered_record_raises(tmp_path, stub_ts, monkeypatch):
     result = seal(None, action="lonely", operator="acme", anchor=False,
                    ledger=ledger_path, witness_url=ts_url)
 
-    with pytest.raises(BundleError, match="not yet covered"):
-        bundle(ledger_path, result.capsule["capsule_id"])
+    with pytest.raises(RecordProofError, match="not yet covered"):
+        record_proof(ledger_path, result.capsule["capsule_id"])
 
 
 def test_bundle_empty_ledger_raises(tmp_path):
-    with pytest.raises(BundleError, match="empty or not found"):
-        bundle(tmp_path / "nope.jsonl", "f" * 64)
+    with pytest.raises(RecordProofError, match="empty or not found"):
+        record_proof(tmp_path / "nope.jsonl", "f" * 64)
 
 
 def test_bundle_cannot_target_a_checkpoint_stamp_entry(two_checkpoint_ledger):
     ledger_path, _caps = two_checkpoint_ledger
     entries = ledger_mod.read_ledger_entries(ledger_path)
     stamp = next(e for e in entries if e.get("kind") == ledger_mod.CHECKPOINT_STAMP_KIND)
-    with pytest.raises(BundleError, match="no record matches"):
-        bundle(ledger_path, stamp["capsule_id"])
+    with pytest.raises(RecordProofError, match="no record matches"):
+        record_proof(ledger_path, stamp["capsule_id"])
 
 
 # ---------------------------------------------------------------------------
@@ -308,9 +308,9 @@ def test_bundle_self_attested_checkpoint_still_verifies(tmp_path, monkeypatch):
         caps.append(result.capsule)
     assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
 
-    b = bundle(ledger_path, caps[0]["capsule_id"])
+    b = record_proof(ledger_path, caps[0]["capsule_id"])
     assert b.checkpoint.witnesses == []
-    ok, errors = verify_bundle(b)
+    ok, errors = verify_record_proof(b)
     assert ok, errors
 
 
@@ -344,12 +344,12 @@ def test_bundle_self_hosted_unpinned_witness_is_not_invalid(
                    ledger=ledger_path, witness_url=ts_url)
     assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
 
-    b = bundle(ledger_path, result.capsule["capsule_id"])
+    b = record_proof(ledger_path, result.capsule["capsule_id"])
     assert len(b.checkpoint.witnesses) == 1
     assert b.checkpoint.witnesses[0].ts_url == ts_url
     assert ts_url != checkpoint_emit_mod.DEFAULT_TS_URL
 
-    ok, notices = verify_bundle(b)  # no trust_anchor supplied
+    ok, notices = verify_record_proof(b)  # no trust_anchor supplied
     assert ok is True, notices
     assert any("pin not supplied" in n and "unverified stamp" in n for n in notices)
     assert any(ts_url in n for n in notices)
@@ -366,8 +366,8 @@ def test_bundle_self_hosted_witness_pinned_via_trust_anchor_is_witnessed(
                    ledger=ledger_path, witness_url=ts_url)
     assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
 
-    b = bundle(ledger_path, result.capsule["capsule_id"])
-    ok, errors = verify_bundle(b, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM})
+    b = record_proof(ledger_path, result.capsule["capsule_id"])
+    ok, errors = verify_record_proof(b, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM})
     assert ok is True, errors
     assert not any("unverified" in e for e in errors)
 
@@ -385,11 +385,11 @@ def test_bundle_self_hosted_witness_pinned_but_forged_signature_is_invalid(
                    ledger=ledger_path, witness_url=ts_url)
     assert _wait_for(lambda: _stamp_count(ledger_path) >= 1)
 
-    b = bundle(ledger_path, result.capsule["capsule_id"])
+    b = record_proof(ledger_path, result.capsule["capsule_id"])
     wrong_pubkey_pem = Ed25519PrivateKey.generate().public_key().public_bytes(
         Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
     )
-    ok, errors = verify_bundle(b, trust_anchor={ts_url: wrong_pubkey_pem})
+    ok, errors = verify_record_proof(b, trust_anchor={ts_url: wrong_pubkey_pem})
     assert ok is False
     assert any("witness stamp" in e and "INVALID" in e for e in errors)
 
@@ -402,12 +402,12 @@ def test_bundle_self_hosted_witness_pinned_but_forged_signature_is_invalid(
 
 def test_bundle_json_roundtrip_still_verifies(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
-    b = bundle(ledger_path, caps[2]["capsule_id"])
+    b = record_proof(ledger_path, caps[2]["capsule_id"])
 
     raw = json.dumps(b.to_dict())
-    restored = Bundle.from_dict(json.loads(raw))
+    restored = RecordProof.from_dict(json.loads(raw))
 
-    ok, errors = verify_bundle(restored)
+    ok, errors = verify_record_proof(restored)
     assert ok, errors
     assert restored.to_dict() == b.to_dict()
 
@@ -425,33 +425,33 @@ def test_bundle_carries_checkpoint_cose_and_it_independently_verifies(two_checkp
 
     ledger_path, caps = two_checkpoint_ledger
 
-    first = bundle(ledger_path, caps[0]["capsule_id"])
+    first = record_proof(ledger_path, caps[0]["capsule_id"])
     assert first.checkpoint_cose is not None
     result = verify_checkpoint_cose_offline(first.checkpoint_cose)
     assert result.ok, result.errors
     assert result.decoded.consistency_proof is None  # first checkpoint, no prior
 
-    second = bundle(ledger_path, caps[2]["capsule_id"])
+    second = record_proof(ledger_path, caps[2]["capsule_id"])
     assert second.checkpoint_cose is not None
     result = verify_checkpoint_cose_offline(second.checkpoint_cose)
     assert result.ok, result.errors
     assert result.decoded.consistency_proof is not None  # carries the real extension proof
 
-    ok, notices = verify_bundle(second)
+    ok, notices = verify_record_proof(second)
     assert ok, notices
     assert any("COSE-wire statement independently verified" in n for n in notices)
 
 
 def test_bundle_checkpoint_cose_roundtrips_through_json(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
-    b = bundle(ledger_path, caps[2]["capsule_id"])
+    b = record_proof(ledger_path, caps[2]["capsule_id"])
     assert b.checkpoint_cose is not None
 
     raw = json.dumps(b.to_dict())
-    restored = Bundle.from_dict(json.loads(raw))
+    restored = RecordProof.from_dict(json.loads(raw))
     assert restored.checkpoint_cose == b.checkpoint_cose
 
-    ok, errors = verify_bundle(restored)
+    ok, errors = verify_record_proof(restored)
     assert ok, errors
 
 
@@ -461,20 +461,20 @@ def test_verify_bundle_catches_tampered_checkpoint_cose(valid_bundle_with_prior)
     tampered = bytearray(b.checkpoint_cose)
     tampered[-1] ^= 0xFF
     mutant = replace(b, checkpoint_cose=bytes(tampered))
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("COSE-wire statement failed to verify" in e for e in errors)
 
 
 def test_verify_bundle_catches_checkpoint_cose_from_a_different_checkpoint(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
-    first = bundle(ledger_path, caps[0]["capsule_id"])
-    second = bundle(ledger_path, caps[2]["capsule_id"])
+    first = record_proof(ledger_path, caps[0]["capsule_id"])
+    second = record_proof(ledger_path, caps[2]["capsule_id"])
     # Swap in the FIRST checkpoint's genuinely-valid COSE statement onto the
     # SECOND checkpoint's bundle -- a well-formed, correctly-signed
     # statement, just for the wrong checkpoint.
     mutant = replace(second, checkpoint_cose=first.checkpoint_cose)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("do not match the bundle's" in e for e in errors)
 
@@ -485,7 +485,7 @@ def test_verify_bundle_tolerates_missing_checkpoint_cose(valid_bundle_with_prior
     verify -- absence is not evidence of anything."""
     b = valid_bundle_with_prior
     mutant = replace(b, checkpoint_cose=None)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert ok, errors
 
 
@@ -498,7 +498,7 @@ def test_verify_bundle_tolerates_missing_checkpoint_cose(valid_bundle_with_prior
 @pytest.fixture
 def valid_bundle_with_prior(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
-    return bundle(ledger_path, caps[2]["capsule_id"])
+    return record_proof(ledger_path, caps[2]["capsule_id"])
 
 
 def test_verify_bundle_catches_receipt_capsule_id_mismatch(valid_bundle_with_prior):
@@ -506,7 +506,7 @@ def test_verify_bundle_catches_receipt_capsule_id_mismatch(valid_bundle_with_pri
     tampered_receipt = dict(b.receipt)
     tampered_receipt["capsule_id"] = "0" * 64
     mutant = replace(b, receipt=tampered_receipt)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("receipt.capsule_id" in e for e in errors)
 
@@ -517,7 +517,7 @@ def test_verify_bundle_catches_tampered_inclusion_witness(valid_bundle_with_prio
     bad_witness = ("00" * 32,) + b.inclusion_proof.witness[1:]
     mutant_proof = replace(b.inclusion_proof, witness=bad_witness)
     mutant = replace(b, inclusion_proof=mutant_proof)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("inclusion proof" in e for e in errors)
 
@@ -526,7 +526,7 @@ def test_verify_bundle_catches_tampered_checkpoint_signature(valid_bundle_with_p
     b = valid_bundle_with_prior
     mutant_cp = replace(b.checkpoint, signature="00" * 64)
     mutant = replace(b, checkpoint=mutant_cp)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("covering checkpoint signature" in e for e in errors)
 
@@ -535,7 +535,7 @@ def test_verify_bundle_catches_tampered_checkpoint_root(valid_bundle_with_prior)
     b = valid_bundle_with_prior
     mutant_cp = replace(b.checkpoint, root="ff" * 32)
     mutant = replace(b, checkpoint=mutant_cp)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     # Breaks both inclusion (wrong root) and the signature (root is signed).
     assert any("inclusion proof" in e for e in errors)
@@ -546,7 +546,7 @@ def test_verify_bundle_catches_tampered_prior_checkpoint_signature(valid_bundle_
     b = valid_bundle_with_prior
     mutant_prior = replace(b.prior_checkpoint, signature="11" * 64)
     mutant = replace(b, prior_checkpoint=mutant_prior)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("prior checkpoint signature" in e for e in errors)
 
@@ -555,7 +555,7 @@ def test_verify_bundle_catches_prev_size_mismatch(valid_bundle_with_prior):
     b = valid_bundle_with_prior
     mutant_cp = replace(b.checkpoint, prev_size=b.checkpoint.prev_size + 999)
     mutant = replace(b, checkpoint=mutant_cp)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("prev_size" in e for e in errors)
 
@@ -564,7 +564,7 @@ def test_verify_bundle_catches_prev_root_mismatch(valid_bundle_with_prior):
     b = valid_bundle_with_prior
     mutant_cp = replace(b.checkpoint, prev_root="ab" * 32)
     mutant = replace(b, checkpoint=mutant_cp)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("prev_root" in e for e in errors)
 
@@ -575,7 +575,7 @@ def test_verify_bundle_catches_tampered_consistency_proof(valid_bundle_with_prio
     bad_peaks = ("00" * 32,) + b.consistency_proof.old_peaks[1:]
     mutant_proof = replace(b.consistency_proof, old_peaks=bad_peaks)
     mutant = replace(b, consistency_proof=mutant_proof)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("consistency proof" in e for e in errors)
 
@@ -583,18 +583,18 @@ def test_verify_bundle_catches_tampered_consistency_proof(valid_bundle_with_prio
 def test_verify_bundle_catches_missing_prior_when_prev_size_nonzero(valid_bundle_with_prior):
     b = valid_bundle_with_prior
     mutant = replace(b, prior_checkpoint=None, consistency_proof=None)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("prev_size != 0" in e for e in errors)
 
 
 def test_verify_bundle_catches_consistency_proof_without_prior(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
-    first = bundle(ledger_path, caps[0]["capsule_id"])
+    first = record_proof(ledger_path, caps[0]["capsule_id"])
     assert first.prior_checkpoint is None
-    borrowed = bundle(ledger_path, caps[2]["capsule_id"]).consistency_proof
+    borrowed = record_proof(ledger_path, caps[2]["capsule_id"]).consistency_proof
     mutant = replace(first, consistency_proof=borrowed)
-    ok, errors = verify_bundle(mutant)
+    ok, errors = verify_record_proof(mutant)
     assert not ok
     assert any("without a prior_checkpoint" in e for e in errors)
 
@@ -609,7 +609,7 @@ def test_verify_checkpoint_signature_offline(two_checkpoint_ledger):
     from capsule_emit.checkpoint.emit import verify_checkpoint_signature_offline
 
     ledger_path, caps = two_checkpoint_ledger
-    b = bundle(ledger_path, caps[0]["capsule_id"])
+    b = record_proof(ledger_path, caps[0]["capsule_id"])
     assert verify_checkpoint_signature_offline(b.checkpoint)
 
     tampered = replace(b.checkpoint, signature="ff" * 64)
@@ -630,14 +630,14 @@ def test_verify_checkpoint_signature_offline_rejects_non_ed25519_key_id():
 
 
 # ---------------------------------------------------------------------------
-# core.leaf_count / inclusion sanity: bundle()'s reconstructed MMR size must
+# core.leaf_count / inclusion sanity: record_proof()'s reconstructed MMR size must
 # match the checkpoint it claims to cover.
 # ---------------------------------------------------------------------------
 
 
 def test_bundle_reconstructed_mmr_matches_checkpoint(two_checkpoint_ledger):
     ledger_path, caps = two_checkpoint_ledger
-    b = bundle(ledger_path, caps[2]["capsule_id"])
+    b = record_proof(ledger_path, caps[2]["capsule_id"])
     assert b.inclusion_proof.size == b.checkpoint.mmr_size
     assert mmr_core.leaf_count(b.checkpoint.mmr_size) >= b.seq
 
@@ -663,7 +663,7 @@ def test_checkpoint_times_are_whole_seconds_the_typescript_verifier_accepts(two_
 
     ledger_path, caps = two_checkpoint_ledger
     for capsule in (caps[0], caps[2]):
-        b = bundle(ledger_path, capsule["capsule_id"])
+        b = record_proof(ledger_path, capsule["capsule_id"])
         t = b.checkpoint.timestamp
         assert len(t) == 20 and _cll_ts_accepts_time(t), t
         decoded = verify_checkpoint_cose_offline(b.checkpoint_cose).decoded
@@ -681,13 +681,13 @@ def test_verify_bundle_trusts_no_built_in_witness_key(two_checkpoint_ledger, stu
     monkeypatch.setattr(cll_emit, "DEFAULT_TS_URL", ts_url, raising=False)
     monkeypatch.setattr(cll_emit, "DEFAULT_TS_PUBLIC_KEY_PEM", TEST_TS_PUBLIC_KEY_PEM, raising=False)
     ledger_path, caps = two_checkpoint_ledger
-    b = bundle(ledger_path, caps[0]["capsule_id"])
+    b = record_proof(ledger_path, caps[0]["capsule_id"])
     assert [w.ts_url for w in b.checkpoint.witnesses] == [ts_url]
 
-    ok, messages = verify_bundle(b)
+    ok, messages = verify_record_proof(b)
     assert ok is True, messages
     assert any(f"witnessed by {ts_url}, pin not supplied" in m for m in messages), messages
 
-    ok, messages = verify_bundle(b, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM})
+    ok, messages = verify_record_proof(b, trust_anchor={ts_url: TEST_TS_PUBLIC_KEY_PEM})
     assert ok is True, messages
     assert not any("unverified" in m for m in messages)

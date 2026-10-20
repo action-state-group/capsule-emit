@@ -387,11 +387,6 @@ def test_new_stamp_lines_are_covered_by_the_next_checkpoint(fixture_path):
 
 # -- every CLI command over a ledger written through the backend ------------------
 
-# ``export`` reads Rust's ledger directory (capsules.jsonl + checkpoints.jsonl),
-# not a ledger.jsonl; tests/test_scoped_export.py covers it.
-NOT_LEDGER_JSONL = {"export"}
-
-
 def _subcommands():
     names = set()
     for action in cli._build_parser()._subparsers._group_actions:
@@ -412,6 +407,9 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
     inputs.write_text(json.dumps(payloads[0][0]))
     outputs.write_text(json.dumps(payloads[0][1]))
     bundle = tmp_path / "bundle.json"
+    proven = tmp_path / "proven.json"
+    capsule_file = tmp_path / "capsule.json"
+    capsule_file.write_bytes(LegacyLedger(path).get(cid).capsule)
     base = "https://verify.example"
     runs = {
         "ledger view": [["ledger", "view", str(path)], ["ledger", "view", str(path), "--chains"],
@@ -419,21 +417,22 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
         "ledger show": [["ledger", "show", str(path), cid]],
         "verify": [["verify", "--store", str(path)]],
         "status": [["status", str(path), "--offline"]],
-        "permalink": [["permalink", "--base-url", base, "--ledger", str(path)],
-                      ["permalink", "--base-url", base, "--ledger", str(path), "--bundle-out", str(bundle), "--all"]],
+        "permalink": [["permalink", "--base-url", base, "--bundle", str(proven)],
+                      ["permalink", "--base-url", base, str(capsule_file), "--bundle-out", str(bundle)]],
         "evidence": [["evidence", "--base-url", base, "--ledger", str(path), "--out", str(tmp_path / "evidence.md")]],
+        "bundle": [["bundle", str(path), "--all", "-o", str(proven)]],
         "disclose": [["disclose", str(path), cid, "--audience", "auditor", "--reveal", f"{cid}:agent_input={inputs}",
                       "--reveal", f"{cid}:agent_output={outputs}"]],
     }
-    runs["verify"].append(["verify", "--bundle", str(bundle)])
-    assert _subcommands() - NOT_LEDGER_JSONL == set(runs), "a CLI command is missing from this test"
+    runs["verify"] += [["verify", "--bundle", str(bundle)], ["verify", "--bundle", str(proven)]]
+    assert _subcommands() == set(runs), "a CLI command is missing from this test"
     # An evidence file checked without a witness directory is INCOMPLETE
     # (exit 2): its receipts are not checked. Never INVALID (exit 1).
-    incomplete = {("verify", "--bundle")}
-    order = ["ledger view", "ledger show", "permalink", "verify", "status", "evidence", "disclose"]
+    incomplete = {("verify", "--bundle", str(bundle))}
+    order = ["ledger view", "ledger show", "bundle", "permalink", "verify", "status", "evidence", "disclose"]
     for name in order:
         for argv in runs[name]:
-            expected = 2 if tuple(argv[:2]) in incomplete else 0
+            expected = 2 if tuple(argv[:3]) in incomplete else 0
             assert cli.main(argv) == expected, (argv, capsys.readouterr())
 
     # The disclosure record went through the shared writer; both interfaces

@@ -29,6 +29,22 @@ file can repeat a ``capsule_id``. ``scan_entries`` returns every line,
 duplicates included, so sequence positions and roots never change;
 ``get_entry`` returns the first occurrence. New writes are idempotent.
 
+Checkpoint state
+----------------
+
+``load_cll`` reads the CLL checkpoint state (``cll.log.CllState``) the ledger
+already holds, without writing: the newest checkpoint-stamp line whose sibling
+``checkpoint_cose`` (the hex COSE_Sign1 statement ``capsule_emit.witness``
+persists beside the JSON checkpoint) verifies offline and covers no more
+leaves than the ledger has. Its MMR nodes are folded from the ledger's own
+entries up to the checkpoint's size and must rebuild the signed root, or the
+ledger is ``corrupt``. A ledger with no such stamp has no checkpoint
+(``checkpoint`` is ``None``). With ``cll.log.CheckpointStateStore``'s reader
+and the artifact ``get`` above, ``agent_action_capsule.bundle.
+proof_source_from_cll(ledger, ledger)`` builds Evidence Bundles over the
+file. ``commit_cll`` is ``unsupported``: checkpoint stamps keep their own
+writer.
+
 Writes
 ------
 
@@ -84,7 +100,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from cll.log import IDEMPOTENT, INSERTED, AppendInput, AppendResult, ClosedError, Entry
+from cll.log import (
+    IDEMPOTENT,
+    INSERTED,
+    AppendInput,
+    AppendResult,
+    CheckpointState,
+    CllState,
+    ClosedError,
+    Entry,
+)
 from cll.log import CorruptError as LogCorruptError
 from cll.log import NotFoundError as LogNotFoundError
 from cll.log import UnsupportedError as LogUnsupportedError
@@ -173,6 +198,49 @@ def _as_artifact_errors():
         raise CorruptError(str(exc)) from exc
 
 
+def _cll_state_at(values: list, cose: bytes) -> CllState:
+    """The CLL state of the checkpoint ``cose`` (a COSE_Sign1 checkpoint
+    statement, already verified by the caller) over a log whose leaf values,
+    in order, are ``values``: MMR nodes folded from the first
+    ``leaf_count(mmr_size)`` values, checked against the signed root. Raises
+    ``cll.log.CorruptError`` when the values do not rebuild that root, and
+    ``ValueError`` when the statement does not decode or covers more leaves
+    than ``values`` holds."""
+    from cll.checkpoint import (
+        MemoryNodeStore,
+        add_leaf,
+        leaf_count,
+        leaf_hash,
+        peaks,
+        root_from_peaks,
+        verify_checkpoint_cose_offline,
+    )
+
+    checked = verify_checkpoint_cose_offline(cose)
+    if not checked.ok or checked.decoded is None:
+        raise ValueError("the checkpoint statement does not verify")
+    signed = checked.decoded
+    tip = leaf_count(signed.mmr_size)
+    if tip > len(values):
+        raise ValueError(f"the checkpoint covers {tip} leaves; the log has {len(values)}")
+    nodes = MemoryNodeStore()
+    for value in values[:tip]:
+        add_leaf(nodes, leaf_hash(bytes(value)))
+    folded = [nodes.node(pos) for pos in peaks(signed.mmr_size)]
+    if nodes.size() != signed.mmr_size or root_from_peaks(folded).hex() != signed.root:
+        raise LogCorruptError(
+            f"the log's first {tip} leaves do not rebuild the root of its signed checkpoint "
+            f"(mmr_size {signed.mmr_size})"
+        )
+    node_hashes = tuple(nodes.node(pos) for pos in range(nodes.size()))
+    return CllState(
+        size=nodes.size(),
+        nodes=node_hashes,
+        indexed_seq=tip,
+        checkpoint=CheckpointState(bytes=bytes(cose), size=signed.mmr_size, indexed_seq=tip, peaks=tuple(folded)),
+    )
+
+
 def _is_capsule(obj: dict) -> bool:
     return obj.get("kind") not in _ledger.NON_CAPSULE_KINDS and obj.get("record_type") != _ledger.PADDING_RECORD_TYPE
 
@@ -209,6 +277,33 @@ def _verify_capsule(capsule_id: str, capsule: dict, envelope: bytes | None, trus
     if trusted is not None and result.public_key not in trusted:
         raise UntrustedSignerError("producer signer is not trusted")
     return result.public_key.hex()
+
+
+def checked_record(capsule_id: str, obj: dict, trusted: list | None = None) -> Record:
+    """The verified record a capsule line holds: the capsule without its
+    inline ``signature`` and ``key_id``, and the Producer Envelope they claim.
+    A claim must be complete (both members, non-empty hex), verify over the
+    capsule ID and name its own signer as ``key_id``; a line with neither is
+    unsigned. Raises the artifact ``InvalidError`` (or ``UntrustedSignerError``)
+    otherwise."""
+    obj = dict(obj)
+    claimed = [name in obj for name in _ENVELOPE_MEMBERS]
+    signature = obj.pop("signature", None)
+    key_id = obj.pop("key_id", None)
+    envelope = None
+    if any(claimed):
+        if not all(claimed) or not isinstance(signature, str) or not isinstance(key_id, str):
+            raise InvalidError("envelope: signature and key_id must both be present strings")
+        try:
+            envelope = bytes.fromhex(signature)
+        except ValueError as exc:
+            raise InvalidError("envelope: signature is not hex") from exc
+        if not envelope:
+            raise InvalidError("envelope: signature is empty")
+    signer = _verify_capsule(capsule_id, obj, envelope, trusted)
+    if signer is not None and signer != key_id.lower():
+        raise InvalidError("envelope: key_id is not the envelope's signer")
+    return Record(capsule_id, _line_form(obj).encode("ascii"), envelope or b"", [])
 
 
 class LegacyLedger:
@@ -396,6 +491,56 @@ class LegacyLedger:
                 )
             return AppendResult(line.entry, IDEMPOTENT)
 
+    # -- CLL checkpoint state (cll.log.CheckpointStateStore), read-only -------
+
+    def load_cll(self) -> CllState:
+        """The newest checkpoint-stamp line whose ``checkpoint_cose``
+        verifies and covers no more leaves than the ledger holds, as CLL
+        state, with MMR nodes folded from the ledger's own entries (see the
+        module docstring). No such stamp: a state with ``checkpoint=None``.
+        Raises ``cll.log.CorruptError`` when the entries contradict the
+        signed root."""
+        with self._lock:
+            self._require_open()
+            self._refresh()
+            lines = list(self._all())
+            values = [line.entry.value for line in lines]
+            for line in reversed(lines):
+                if line.capsule:
+                    continue
+                cose = self._stamp_cose(line)
+                if cose is None:
+                    continue
+                try:
+                    return _cll_state_at(values, cose)
+                except ValueError:
+                    continue
+            return CllState()
+
+    def _stamp_cose(self, line: _Line) -> bytes | None:
+        """The COSE statement a checkpoint-stamp line carries, or ``None``
+        for any other line or a stamp without one. Caller holds ``_lock``."""
+        try:
+            obj = json.loads(self._read_raw(line))
+        except ValueError:
+            return None
+        if not isinstance(obj, dict) or obj.get("kind") != _ledger.CHECKPOINT_STAMP_KIND:
+            return None
+        cose_hex = obj.get("checkpoint_cose")
+        if not isinstance(cose_hex, str) or not cose_hex:
+            return None
+        try:
+            return bytes.fromhex(cose_hex)
+        except ValueError:
+            return None
+
+    def commit_cll(self, expected_size: int, expected_checkpoint: bytes | None, next: CllState) -> None:
+        self._require_open()
+        raise LogUnsupportedError(
+            "the legacy ledger's checkpoint state is its checkpoint-stamp lines; "
+            "capsule_emit.witness writes them"
+        )
+
     def close(self) -> None:
         with self._lock:
             self._closed = True
@@ -490,24 +635,7 @@ class LegacyLedger:
             raise InvalidError(f"capsule verification: {exc}") from exc
         if not isinstance(obj, dict):
             raise InvalidError("capsule verification: capsule is not an object")
-        capsule_id = line.entry.value.hex()
-        claimed = [name in obj for name in _ENVELOPE_MEMBERS]
-        signature = obj.pop("signature", None)
-        key_id = obj.pop("key_id", None)
-        envelope = None
-        if any(claimed):
-            if not all(claimed) or not isinstance(signature, str) or not isinstance(key_id, str):
-                raise InvalidError("envelope: signature and key_id must both be present strings")
-            try:
-                envelope = bytes.fromhex(signature)
-            except ValueError as exc:
-                raise InvalidError("envelope: signature is not hex") from exc
-            if not envelope:
-                raise InvalidError("envelope: signature is empty")
-        signer = _verify_capsule(capsule_id, obj, envelope, self._trusted)
-        if signer is not None and signer != key_id.lower():
-            raise InvalidError("envelope: key_id is not the envelope's signer")
-        return Record(capsule_id, _line_form(obj).encode("ascii"), envelope or b"", [])
+        return checked_record(line.entry.value.hex(), obj, self._trusted)
 
     def purge(self, capsule_id: str) -> None:
         if not valid_id(capsule_id):
