@@ -290,9 +290,9 @@ def render_status(status: dict, *, out: Any = None, verbose: bool = False) -> No
                 state = "not re-checked (witness disabled)"
             elif status["offline"]:
                 state = "not re-checked (--offline)"
-            elif w["confirmed"] and cp.get("grade_keys") == "none supplied":
-                # The re-check fetched the key from the witness itself, so
-                # without a key the caller chose it confirms nothing on its own.
+            elif w["confirmed"] and cp["grade"] != "witnessed":
+                # The re-check fetched the key from the witness itself, so it
+                # confirms nothing unless the caller's keys graded it witnessed.
                 state = "valid under its own key only"
             elif w["confirmed"]:
                 state = "confirmed"

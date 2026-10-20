@@ -147,6 +147,27 @@ capsule-emit status: ledger.jsonl
 
 """,
     ),
+    "witness_valid_but_not_under_supplied_keys": (
+        _result(
+            checkpoint_count=1,
+            records_awaiting_checkpoint=0,
+            latest_checkpoint=_checkpoint(
+                grade_keys="witness directory", witnesses=[_witness(confirmed=True)]
+            ),
+        ),
+        """
+capsule-emit status: ledger.jsonl
+
+  receipts sealed               3
+  witnessed                     none confirmed
+  awaiting witness              3
+  witnessing (this process)     on
+
+  witnesses:
+    witness: witness.example · operated by: unknown     valid under its own key only
+
+""",
+    ),
     "witness_receipt_not_confirmed": (
         _result(
             checkpoint_count=1,
