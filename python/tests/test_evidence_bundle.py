@@ -252,7 +252,7 @@ def test_a_range_over_padding_is_refused_and_one_after_it_is_valid(tmp_path):
 
 def test_a_record_the_checkpoint_does_not_cover_is_refused(tmp_path):
     d, _, capsules = _mesh_ledger(tmp_path, extra_after_checkpoint=True)
-    with pytest.raises(BundleBuildError, match="not covered by the checkpoint"):
+    with pytest.raises(BundleBuildError, match="not a leaf at or below the checkpoint"):
         _build(MeshLedgerLog(d), root=capsules[-1]["capsule_id"], interval_from=None)
 
 

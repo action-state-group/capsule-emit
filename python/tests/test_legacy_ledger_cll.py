@@ -112,7 +112,7 @@ def test_a_record_past_the_checkpoint_is_refused(witnessed):
     path, url, caps = witnessed
     tail = _seal(path, url, "tail", witness=False)
     source = _source(path)
-    with pytest.raises(BundleBuildError, match="not covered by the checkpoint"):
+    with pytest.raises(BundleBuildError, match="not a leaf at or below the checkpoint"):
         build_evidence_bundle(source, root=tail["capsule_id"], interval_from=None)
     # The covered suffix still proves: the range ends at the checkpoint tip.
     bundle = build_evidence_bundle(source, root=caps[3]["capsule_id"], interval_from=4)
