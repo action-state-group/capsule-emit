@@ -21,7 +21,7 @@ Covers:
 - (g) CLI wiring: ``capsule-emit status`` renders text; ``--json`` renders
   the same data as parseable JSON
 - (h) mutation-proof: self-attested vs witnessed fixtures produce different
-  rendered output -- a status that ignored ``grade()`` and always reported
+  rendered output (exact golden renders per state are in test_status_render.py) -- a status that ignored ``grade()`` and always reported
   one value would fail this
 """
 from __future__ import annotations
@@ -276,7 +276,7 @@ def test_status_offline_skips_network_recheck(tmp_path, stub_ts, monkeypatch):
     out = io.StringIO()
     status.render_status(result, out=out)
     rendered = out.getvalue()
-    assert "unconfirmed (--offline)" in rendered
+    assert "not re-checked (--offline)" in rendered
 
 
 # ---------------------------------------------------------------------------
@@ -320,9 +320,9 @@ def test_cli_status_renders_text(tmp_path, capsys, monkeypatch):
     rc = cli.main(["status", str(ledger_path), "--offline"])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "capsules sealed" in out
-    assert "1" in out
-    assert "none yet" in out  # no checkpoint yet
+    assert "receipts sealed               1" in out
+    assert "awaiting witness              1" in out  # no checkpoint yet
+    assert "checkpoint" not in out
 
 
 def test_cli_status_json(tmp_path, capsys, monkeypatch):
@@ -386,15 +386,14 @@ def test_status_text_differs_between_self_attested_and_witnessed(
     out_b = io.StringIO()
     status.render_status(witnessed_result, out=out_b)
 
-    assert "self-attested" in out_a.getvalue()
-    assert "witnessed" in out_b.getvalue()
-    # Precise, not just "the strings differ somewhere" -- pins the *grade*
+    # Precise, not just "the strings differ somewhere" -- pins the witnessed
     # line itself, so a mutant that always reports one grade regardless of
     # input (independent of whether a witnesses section is rendered at all)
     # is caught here even if it happens to leave other lines unchanged.
-    assert "latest checkpoint grade       self-attested" in out_a.getvalue()
-    assert "latest checkpoint grade       witnessed" in out_b.getvalue()
-    assert "witnessed" not in out_a.getvalue()
+    assert "witnessed                     none confirmed" in out_a.getvalue()
+    assert "awaiting witness              2" in out_a.getvalue()
+    assert "witnessed                     2" in out_b.getvalue()
+    assert "awaiting witness              0" in out_b.getvalue()
     assert out_a.getvalue() != out_b.getvalue()
 
 

@@ -92,8 +92,8 @@ endpoint (or add more) with `seal(..., witness_url=...)` or
 **`witness=False` / `CAPSULE_WITNESS=off` is ONE switch that zeroes ALL
 egress, not just the checkpoint stream.** It also gates:
 
-- **`status`'s stamp-fetch** — the read-only GET that independently
-  re-confirms a witness receipt (see [Checking status](#checking-status---capsule-emit-status)
+- **`status`'s stamp-fetch** — the read-only GET that re-checks a witness
+  receipt against the key the witness serves (see [Checking status](#checking-status---capsule-emit-status)
   below). It skips this network call whenever the kill switch is set, even
   if you didn't also pass `--offline` — `status ./ledger.jsonl` on a process
   with `CAPSULE_WITNESS=off` never touches the network, full stop.
@@ -303,7 +303,15 @@ entries are indexed as leaves too.
 capsule-emit status ./ledger.jsonl              # renders text, re-checks the latest witness receipt
 capsule-emit status ./ledger.jsonl --offline    # local-only, no network call
 capsule-emit status ./ledger.jsonl --json       # machine-readable
+capsule-emit status ./ledger.jsonl --verbose    # text, plus the checkpoint detail
 ```
+
+The default text view speaks in receipts: how many are sealed, how many a
+checked witness receipt covers (**witnessed**), and how many still await a
+witness. Only the latest checkpoint is graded, so a receipt counts as
+witnessed when that checkpoint is witnessed under the keys you supplied and
+covers it. The checkpoint numbers below print with `--verbose` and are always
+in `--json`.
 
 `status` answers, from the ledger alone: how many capsules are sealed, how
 many checkpoints exist and each one's ladder rung (`self-attested` /
@@ -323,15 +331,17 @@ This is the CLI's read-verb family (`log`, `status`, `show`, `bundle`,
 `disclose`, `verify`): **reads never write.** Unless `--offline` is given,
 `status` makes exactly one kind of network call — a read-only GET of a
 Transparency Service's public key (`capsule_emit.checkpoint
-.verify_receipt_offline`) to independently re-confirm a witness receipt the
-ledger *already* holds for its latest checkpoint. It never re-registers a
+.verify_receipt_offline`) to re-check a witness receipt the ledger *already*
+holds for its latest checkpoint against the key that witness serves. That key
+comes from the witness itself, so the check is not independent: pass
+`--witness-directory` to check the receipt against a key you chose. It never re-registers a
 self-attested checkpoint to try to obtain a new stamp — that would create a
 new Transparency Service log entry, i.e. a write, and `push` (which forces
 a *new* checkpoint), not `status`, is where writes belong. `--offline`
 skips even the read-only re-check and reports only what the ledger already
 records. So does `CAPSULE_WITNESS=off` (the kill switch, see
 [Kill switch scope](#kill-switch-scope-o16-03) above) — a witness-disabled
-process reports each witness as `unconfirmed (witness disabled)` and never
+process reports each witness as `not re-checked (witness disabled)` and never
 attempts the GET, whether or not `--offline` was also given.
 
 ## Witness outage: durable retry, not a drop

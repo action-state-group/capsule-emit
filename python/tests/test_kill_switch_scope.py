@@ -214,7 +214,7 @@ def test_witness_off_is_zero_egress_across_all_three_paths(tmp_path, stub_ts, mo
     out = io.StringIO()
     status.render_status(result, out=out)
     rendered = out.getvalue()
-    assert "unconfirmed (witness disabled)" in rendered
+    assert "not re-checked (witness disabled)" in rendered
 
     # --- Assert: give any wrongly-dispatched worker thread a moment to land,
     # then confirm the stub -- the one shared endpoint for witness, legacy

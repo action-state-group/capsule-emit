@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``status`` — ladder position, checkpoint/stamp lag, and (unless
-``--offline``) a read-only witness re-check.
+"""``status`` — receipts sealed, witnessed and awaiting witness, the
+checkpoint/stamp lag behind them, and (unless ``--offline``) a read-only
+witness re-check. The default text view speaks in receipts; the checkpoint
+detail is in ``--json`` and ``--verbose``.
 
 Before this module there was no
 ``status`` verb and no separate ``fetch`` verb to fold into it -- this module
@@ -14,8 +16,9 @@ still awaiting a witness stamp.
 **Reads never write** (the read-verb family's standing rule). Unless
 ``offline=True``, the only network call this makes is a GET of a
 Transparency Service's public key (``capsule_emit.checkpoint
-.verify_receipt_offline``) to independently re-confirm a witness receipt
-the ledger *already* holds. It never registers a *new* stamp for a
+.verify_receipt_offline``) to re-check a witness receipt the ledger
+*already* holds against the key that witness serves -- not an independent
+check; the grade uses only keys the caller chose. It never registers a *new* stamp for a
 self-attested checkpoint -- that is a write (it creates a TS log entry),
 and ``push`` -- not ``status`` -- is the verb that writes checkpoints.
 
@@ -235,54 +238,63 @@ def _grade(state: Any, trust_anchor: dict | None, directory: Any) -> Any:
     return Grade.WITNESSED if witnessed else Grade.SELF_ATTESTED
 
 
-def render_status(status: dict, *, out: Any = None) -> None:
-    """Human-readable rendering of :func:`compute_status`'s result."""
+def render_status(status: dict, *, out: Any = None, verbose: bool = False) -> None:
+    """Human-readable rendering of :func:`compute_status`'s result.
+
+    The default view speaks in receipts: how many are sealed, how many a
+    checked witness receipt covers, and how many still await a witness.
+    Checkpoint and stamp plumbing (checkpoint count, the latest checkpoint's
+    grade and coverage, both lag numbers, the per-witness backlog) prints only
+    with ``verbose=True``; ``--json`` carries all of it unchanged.
+    """
     import sys
 
     if out is None:
         out = sys.stdout
 
-    print(f"\ncapsule-emit status: {status['path']}\n", file=out)
-    print(f"  {'capsules sealed':<30}{status['capsule_count']}", file=out)
-    print(f"  {'checkpoints':<30}{status['checkpoint_count']}", file=out)
-
     cp = status["latest_checkpoint"]
-    if cp is None:
-        print(f"  {'latest checkpoint':<30}none yet", file=out)
-    else:
-        print(f"  {'latest checkpoint grade':<30}{cp['grade']}", file=out)
-        if cp.get("grade_keys") == "none supplied" and cp["witnesses"]:
-            print(
-                f"  {'':<30}(receipts not checked: no witness keys supplied; "
-                "pass --witness-directory)",
-                file=out,
-            )
-        if cp.get("stub_witness"):
-            print(
-                f"  {'':<30}⚠ STUB WITNESS — proves nothing beyond self-attested",
-                file=out,
-            )
+    sealed = status["capsule_count"]
+    # A checkpoint covers every receipt before it, so a witnessed latest
+    # checkpoint witnesses all the receipts it covers. Only the latest
+    # checkpoint is graded, so with it unwitnessed none is shown as confirmed.
+    witnessed = (
+        sealed - status["records_awaiting_checkpoint"]
+        if cp is not None and cp["grade"] == "witnessed"
+        else 0
+    )
+
+    print(f"\ncapsule-emit status: {status['path']}\n", file=out)
+    print(f"  {'receipts sealed':<30}{sealed}", file=out)
+    print(f"  {'witnessed':<30}{witnessed if witnessed else 'none confirmed'}", file=out)
+    if cp is not None and cp.get("grade_keys") == "none supplied" and cp["witnesses"]:
         print(
-            f"  {'latest checkpoint covers':<30}{cp['leaf_count']} leaf(ves) "
-            f"(mmr_size={cp['mmr_size']}, at {cp['timestamp']})",
+            f"  {'':<30}(witness signatures not checked: no witness keys supplied; "
+            "pass --witness-directory)",
             file=out,
         )
-
-    print(f"  {'records awaiting checkpoint':<30}{status['records_awaiting_checkpoint']}", file=out)
-    print(f"  {'checkpoints awaiting stamp':<30}{status['checkpoints_awaiting_stamp']}", file=out)
+    if cp is not None and cp.get("stub_witness"):
+        print(
+            f"  {'':<30}⚠ STUB WITNESS — proves nothing beyond self-attested",
+            file=out,
+        )
+    print(f"  {'awaiting witness':<30}{sealed - witnessed}", file=out)
     mode = status.get("witnessing_mode_now", "on" if status["witnessing_enabled_now"] else "off")
     mode_display = "STUB (proves nothing beyond self-attested)" if mode == "stub" else mode
     print(f"  {'witnessing (this process)':<30}{mode_display}", file=out)
 
     if cp is not None and cp["witnesses"]:
-        print("\n  witnesses (latest checkpoint):", file=out)
+        print("\n  witnesses:", file=out)
         for w in cp["witnesses"]:
             if w.get("is_stub"):
                 state = "STUB — not a real Transparency Service"
             elif not status["witnessing_enabled_now"]:
-                state = "unconfirmed (witness disabled)"
+                state = "not re-checked (witness disabled)"
             elif status["offline"]:
-                state = "unconfirmed (--offline)"
+                state = "not re-checked (--offline)"
+            elif w["confirmed"] and cp["grade"] != "witnessed":
+                # The re-check fetched the key from the witness itself, so it
+                # confirms nothing unless the caller's keys graded it witnessed.
+                state = "valid under its own key only"
             elif w["confirmed"]:
                 state = "confirmed"
             else:
@@ -295,7 +307,31 @@ def render_status(status: dict, *, out: Any = None) -> None:
             if w.get("kid_tail"):
                 label += f" · key {w['kid_tail']}"
             label += f" · operated by: {w.get('operator', 'unknown')}"
-            print(f"    {label:<52}{state}", file=out)
+            # At least one space, so a long label never runs into its state.
+            print(f"    {label:<51} {state}", file=out)
+
+    if verbose:
+        _render_checkpoint_detail(status, out)
+
+    print(file=out)
+
+
+def _render_checkpoint_detail(status: dict, out: Any) -> None:
+    """The checkpoint and stamp plumbing behind the default view."""
+    cp = status["latest_checkpoint"]
+    print("\n  checkpoint detail:", file=out)
+    print(f"    {'checkpoints':<30}{status['checkpoint_count']}", file=out)
+    if cp is None:
+        print(f"    {'latest checkpoint':<30}none yet", file=out)
+    else:
+        print(f"    {'latest checkpoint grade':<30}{cp['grade']}", file=out)
+        print(
+            f"    {'latest checkpoint covers':<30}{cp['leaf_count']} leaf(ves) "
+            f"(mmr_size={cp['mmr_size']}, at {cp['timestamp']})",
+            file=out,
+        )
+    print(f"    {'records awaiting checkpoint':<30}{status['records_awaiting_checkpoint']}", file=out)
+    print(f"    {'checkpoints awaiting stamp':<30}{status['checkpoints_awaiting_stamp']}", file=out)
 
     # Only printed when at least one configured witness genuinely has a
     # backlog -- idle-silence precedent (checkpoint.md's age-cadence leg):
@@ -303,8 +339,6 @@ def render_status(status: dict, *, out: Any = None) -> None:
     # reassuring "0" for every witness on every call.
     backlog = {url: n for url, n in status["witness_backlog"].items() if n > 0}
     if backlog:
-        print("\n  witness backlog (checkpoints awaiting THIS witness):", file=out)
+        print("\n    witness backlog (checkpoints awaiting THIS witness):", file=out)
         for url, count in backlog.items():
-            print(f"    {url:<40}{count}", file=out)
-
-    print(file=out)
+            print(f"      {url:<40}{count}", file=out)
