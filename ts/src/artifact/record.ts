@@ -167,7 +167,7 @@ async function verifyCapsuleBytes(record: Record): Promise<void> {
     // Not strict JSON: verifyCapsule below reports it.
   }
   if (decoded?.record_type === PADDING_RECORD_TYPE)
-    return verifyPadding(record.capsuleId, decoded);
+    return verifyPadding(record.capsuleId, decoded, ownMembers(record.capsule));
   let capsuleId: string | undefined;
   try {
     capsuleId = (await verifyCapsule(record.capsule)).capsuleId;
@@ -182,19 +182,29 @@ async function verifyCapsuleBytes(record: Record): Promise<void> {
 }
 
 /**
- * Checks a padding record: exactly its four members, `epistemic_type`
+ * The top-level member names of strict-JSON `capsule` bytes, `__proto__`
+ * included. AAC's strict decoder assigns members onto a plain object, where a
+ * `__proto__` member becomes the prototype or, with a primitive value, is
+ * dropped, so `Object.keys` of its result can miss it; `JSON.parse` defines
+ * every member as an own property. The bytes already passed strict decoding,
+ * so the two read the same members otherwise.
+ */
+function ownMembers(capsule: Uint8Array): string[] {
+  return Object.keys(JSON.parse(new TextDecoder().decode(capsule)) as object);
+}
+
+/**
+ * Checks a padding record: exactly its four members (`members`, read by
+ * {@link ownMembers}), `epistemic_type`
  * `producer_claim`, a 64-lowercase-hex `store_nonce`, and a `capsule_id` that
  * is the JSON-DIGEST of the record without `capsule_id`.
  */
 async function verifyPadding(
   id: string,
   padding: { [member: string]: ParsedJson },
+  members: readonly string[],
 ): Promise<void> {
-  // The strict decoder makes a "__proto__" member the object's prototype,
-  // where Object.keys never sees it; the other languages read it as a member.
-  if (Object.getPrototypeOf(padding) !== Object.prototype)
-    throw new ArtifactError("invalid", 'padding record carries "__proto__"');
-  for (const member of Object.keys(padding))
+  for (const member of members)
     if (!PADDING_MEMBERS.has(member))
       throw new ArtifactError(
         "invalid",
