@@ -1010,14 +1010,16 @@ def _emit_capsule(
 def _in_ledger(capsule_id: str, ledger: str | os.PathLike) -> bool:
     """Whether ``ledger`` already holds ``capsule_id``: the test for a
     same-stream ``confirms=`` target. A value that is not a capsule id stays
-    on the ``chain`` path, which rejects it."""
+    on the ``chain`` path, which rejects it. A corrupt ledger raises
+    ``capsule_emit.artifact.CorruptError``, as the append would."""
     from .artifact.record import valid_id
-    from .legacy_ledger import LogNotFoundError, shared
+    from .legacy_ledger import LogNotFoundError, _as_artifact_errors, shared
 
     if not valid_id(capsule_id):
         return True
     try:
-        shared(ledger).get_entry(bytes.fromhex(capsule_id))
+        with _as_artifact_errors():
+            shared(ledger).get_entry(bytes.fromhex(capsule_id))
     except LogNotFoundError:
         return False
     return True

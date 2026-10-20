@@ -49,7 +49,8 @@ references to records outside your stream (draft-05, *Cross-record references*).
 
 `confirms=` picks the right one for you. If the ledger you seal into already holds
 the target, the link goes in `chain`, as above. Any other target goes in
-`references[]`:
+`references[]`, including a capsule of yours in another ledger file (a rotated or
+per-session one): seal into the ledger that holds the parent to keep `chain`.
 
 ```python
 # the buyer's agent sealed `order` into the buyer's ledger and sent you its capsule

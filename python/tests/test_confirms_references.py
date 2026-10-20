@@ -85,3 +85,12 @@ def test_a_caller_citation_of_the_target_is_not_repeated(tmp_path):
 def test_a_target_that_is_not_a_capsule_id_is_still_rejected(tmp_path):
     with pytest.raises(InvariantError, match="64-hex"):
         seal(None, ledger=tmp_path / "ours.jsonl", confirms="not-a-capsule-id", **KW)
+
+
+def test_a_corrupt_ledger_raises_the_artifact_error(tmp_path):
+    from capsule_emit.artifact import CorruptError
+
+    ledger = tmp_path / "ours.jsonl"
+    ledger.write_text("[1]\n")
+    with pytest.raises(CorruptError):
+        seal(None, ledger=ledger, confirms="a" * 64, **KW)
