@@ -23,8 +23,9 @@ published.
   `--closure-depth N`); `--all` proves the whole log, seq 1 to the checkpoint
   tip, at closure depth 2. A record the checkpoint does not cover yet, and a
   range over a leaf that is not a record (a checkpoint stamp, a padding line),
-  are refused by name. A segmented ledger store is refused: its checkpoints
-  are HMAC-signed, not COSE.
+  are refused by name. A Python mesh `LedgerStore` directory (the frozen
+  harness's layout) is refused; `bundle` reads the flat `capsules.jsonl` +
+  `checkpoints.jsonl` layout the Rust plugin writes.
 - `LegacyLedger.load_cll()` reads a `ledger.jsonl`'s CLL checkpoint state: the
   newest checkpoint stamp whose `checkpoint_cose` verifies, with MMR nodes
   folded from the ledger's own entries and checked against the signed root.

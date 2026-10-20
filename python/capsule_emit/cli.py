@@ -873,8 +873,8 @@ def _records_in_scope(log, args: argparse.Namespace) -> list:
 
 
 _SEGMENTED_REFUSAL = (
-    "{path} is a segmented ledger store: its checkpoints are HMAC-signed, not COSE; "
-    "it cannot back a proven bundle"
+    "{path} is a Python mesh LedgerStore directory (a frozen harness); capsule-emit bundle reads "
+    "the flat capsules.jsonl + checkpoints.jsonl layout"
 )
 
 

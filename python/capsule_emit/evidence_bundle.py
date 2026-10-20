@@ -18,9 +18,9 @@ interfaces:
   the Mesh-LLM capsule-emit-mesh plugin and Rust ``capsule-emit`` write it):
   :class:`MeshLedgerLog`, used the same way.
 
-A segmented ``cll.ledger.store.LedgerStore`` cannot back a proven bundle: its
-checkpoints are HMAC-signed JSON, not COSE statements a third party can
-verify.
+A segmented ``cll.ledger.store.LedgerStore`` directory (``manifest.json`` and
+``segments/``), which only the frozen Python mesh harness writes, is not read:
+``capsule-emit bundle`` refuses it and names the flat layout it reads.
 
 ``capsule-emit bundle LEDGER`` (``capsule_emit.cli``) picks the adapter and
 writes the bundle's JCS bytes.

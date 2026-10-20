@@ -405,7 +405,7 @@ def test_cli_refuses_a_segmented_store_by_name(tmp_path, capsys):
     (store / "manifest.json").write_text("{}")
     code, _, err = _cli(capsys, store, "--all", "-o", tmp_path / "b.json")
     assert code == 1
-    assert "its checkpoints are HMAC-signed, not COSE; it cannot back a proven bundle" in err
+    assert "is a Python mesh LedgerStore directory (a frozen harness); capsule-emit bundle reads the flat" in err
 
 
 def test_cli_refuses_a_directory_that_is_not_a_mesh_ledger(tmp_path, capsys):
