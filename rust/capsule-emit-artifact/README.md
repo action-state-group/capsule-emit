@@ -16,7 +16,6 @@ SQL rows.
 | Process memory | `memory` | none | no |
 | SQLite (rusqlite, bundled) | `sqlite` | `sqlite` | yes |
 | MySQL 8.4 (`mysql` crate) | `mysql` | `mysql` | yes |
-| capsule-emit's ledger directory | `legacy` | `legacy` | no |
 
 Without features the crate links no database driver. Every backend implements
 `Store` (`namespace`, `init`, `put`, `get`, `purge`); the SQL backends also
@@ -38,10 +37,9 @@ store.purge(&record.capsule_id)?; // erases originals, keeps their commitments
 any `Store`, including one you write; `conformance::run_limited` runs it for a
 store with capability limits.
 
-The `legacy` feature puts capsule-emit's existing ledger (`capsules.jsonl` +
-`signed-statements/`) behind `Store` and the CLL `cll::log::EntryStore`, so
-existing ledgers keep verifying: no originals besides the required
-`signed-statement` attachment, no purge, no digest-only append and one writer
+capsule-emit's existing ledger (`capsules.jsonl` + `signed-statements/`) is a
+`Store` too, in the `capsule-emit` crate (`capsule_emit::legacy_ledger`), which
+depends on this one
 ([`docs/legacy-ledger.md`](https://github.com/action-state-group/capsule-emit/blob/main/docs/legacy-ledger.md)).
 
 Building this crate in the same build as `capsule-emit` turns on serde_json's

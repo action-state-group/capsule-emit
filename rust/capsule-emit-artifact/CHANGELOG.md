@@ -11,12 +11,11 @@ the capsule-emit repository) as the `Store` and `TxStore` traits, with `jsonl`
 and `memory` backends and `sqlite` and `mysql` backends behind Cargo features,
 and `conformance::run`, the shared conformance suite. Not published yet.
 
-The `legacy` feature adds `legacy::LegacyLedger`: capsule-emit's
-`capsules.jsonl` + `signed-statements/` as a `Store` and a CLL
-`cll::log::EntryStore`, with the capability limits in `legacy::CAPABILITIES`
-(no originals besides the required `signed-statement` attachment, no purge,
-no digest-only append, no transactions, one writer; `docs/legacy-ledger.md`).
-`ArtifactError::Unsupported` reports those limits. `conformance::run_limited`
+`ArtifactError::Unsupported` reports a store's capability limits, which only
+the legacy ledgers have (`docs/legacy-ledger.md`). capsule-emit's legacy
+ledger backend is `capsule_emit::legacy_ledger::LegacyLedger` in the
+`capsule-emit` crate, which depends on this one. `check_config` and
+`decode_strict_json` are public, for a backend of your own. `conformance::run_limited`
 with `conformance::Limits` runs the suite for a store with limits, deriving
 the `originals` and `purge` capabilities from each case's steps.
 

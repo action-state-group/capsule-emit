@@ -17,6 +17,9 @@
 //! - [`cose`]: COSE_Sign1 signed statements and producer envelopes.
 //! - [`ledger`]: the durable local ledger: append, restart-safe chain
 //!   recovery, torn-write recovery, statement lookup, caller-defined indexes.
+//! - [`legacy_ledger`]: the ledger directory as an artifact store
+//!   (`capsule_emit_artifact::Store`) and a CLL entry log, for readers of
+//!   existing ledgers (`docs/legacy-ledger.md`).
 //! - [`checkpoint`]: signed checkpoints of the ledger's log, cut on a cadence,
 //!   with optional witness registration.
 //! - [`padding`]: padding records, so a checkpoint's leaf count falls on a
@@ -39,6 +42,7 @@ pub mod cose;
 pub mod jcs;
 pub mod keys;
 pub mod ledger;
+pub mod legacy_ledger;
 pub mod padding;
 pub mod sequence;
 pub mod settlement;

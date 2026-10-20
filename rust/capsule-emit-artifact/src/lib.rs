@@ -12,7 +12,6 @@
 //! | Process memory | [`memory`] | default | no |
 //! | SQLite (bundled) | `sqlite` | `sqlite` | yes |
 //! | MySQL 8.4 | `mysql` | `mysql` | yes |
-//! | capsule-emit's legacy ledger | `legacy` | `legacy` | no |
 //!
 //! Without features the crate links no database driver. Every backend
 //! implements [`Store`]; the SQL backends also implement [`TxStore`].
@@ -21,8 +20,6 @@
 pub mod conformance;
 mod error;
 pub mod jsonl;
-#[cfg(feature = "legacy")]
-pub mod legacy;
 pub mod memory;
 #[cfg(feature = "mysql")]
 pub mod mysql;
@@ -33,9 +30,9 @@ mod store;
 
 pub use error::{ArtifactError, Result};
 pub use record::{
-    decode_record, encode_record, is_padding, prepare, purged, storage_checksum, valid_id,
-    valid_name, verify, Artifact, ArtifactVerification, Record, RetentionState,
-    AGENT_OUTPUT_DIGEST, EFFECT_REQUEST_DIGEST, EFFECT_RESPONSE_DIGEST, PADDING_RECORD_TYPE,
-    PAYLOAD_DIGEST,
+    check_config, decode_record, decode_strict_json, encode_record, is_padding, prepare, purged,
+    storage_checksum, valid_id, valid_name, verify, Artifact, ArtifactVerification, Record,
+    RetentionState, AGENT_OUTPUT_DIGEST, EFFECT_REQUEST_DIGEST, EFFECT_RESPONSE_DIGEST,
+    PADDING_RECORD_TYPE, PAYLOAD_DIGEST,
 };
 pub use store::{Store, TxStore};

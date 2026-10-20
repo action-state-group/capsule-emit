@@ -11,8 +11,8 @@ use capsule_emit::capsule::{
 use capsule_emit::checkpoint::{CheckpointCadenceConfig, CheckpointState};
 use capsule_emit::cose::{build_signed_statement, SignedStatementInput};
 use capsule_emit::ledger::Ledger;
+use capsule_emit::legacy_ledger::{LegacyLedger, CAPABILITIES, STATEMENT};
 use capsule_emit_artifact::conformance::{self, Harness, Limits, Status};
-use capsule_emit_artifact::legacy::{LegacyLedger, CAPABILITIES, STATEMENT};
 use capsule_emit_artifact::{Artifact, ArtifactError, Record, RetentionState, Store};
 use cll::log::{AppendInput, AppendOutcome, EntrySource, EntryStore, ErrorCode, Timestamp};
 use ed25519_dalek::SigningKey;

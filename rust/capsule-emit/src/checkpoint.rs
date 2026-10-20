@@ -34,13 +34,15 @@
 use crate::anchor::{AnchorClient, AnchorError};
 use crate::substrate::{record_id_from_hex, CllSubstrate, RECORD_ID_LEN};
 pub use crate::substrate::{
-    verify_inclusion, CheckpointRecord, CheckpointSignError, CheckpointSigner, CheckpointWitness,
-    InclusionProof, OpenReport, SubstrateError,
+    verify_inclusion, CheckpointLog, CheckpointRecord, CheckpointSignError, CheckpointSigner,
+    CheckpointWitness, InclusionProof, OpenReport, SubstrateError,
 };
+use cll::log::MAX_SCAN_LIMIT;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Witness receipts obtained after their checkpoint was written, one JSON line
@@ -270,7 +272,12 @@ pub enum CheckpointStateError {
          capsules.jsonl -- refusing to cut an unpadded checkpoint"
     )]
     PaddingNotFolded { padded_to: u64, folded: u64 },
+    #[error("CLL log error: {0}")]
+    Log(#[from] cll::log::Error),
 }
+
+/// How errors name a store-backed state's leaf source.
+const LOG_SOURCE: &str = "the CLL entry log";
 
 /// The substrate's errors, under this module's long-standing variants and
 /// messages. A leaf mismatch is not converted here: only the caller knows
@@ -300,9 +307,21 @@ impl From<SubstrateError> for CheckpointStateError {
                 actual_root,
                 recorded_root,
             },
+            SubstrateError::StateAhead {
+                stored_leaves,
+                log_leaves,
+            } => Self::NodeStoreAheadOfLedger {
+                path: LOG_SOURCE.to_string(),
+                stored_leaves,
+                ledger_leaves: log_leaves,
+            },
             other @ (SubstrateError::LeafMismatch { .. }
             | SubstrateError::CutBeyondLog { .. }
-            | SubstrateError::StalePrepared { .. }) => Self::Checkpoint(other.to_string()),
+            | SubstrateError::StalePrepared { .. }
+            | SubstrateError::Log(_)
+            | SubstrateError::StateInvalid(_)
+            | SubstrateError::NoSigner { .. }
+            | SubstrateError::NoCose(_)) => Self::Checkpoint(other.to_string()),
         }
     }
 }
@@ -417,15 +436,9 @@ pub struct LoadReport {
 /// `capsules.jsonl`, plus the periodic signed checkpoint and (optional)
 /// witness registration. One instance per `ledger_dir`.
 pub struct CheckpointState {
-    capsules_path: PathBuf,
+    source: Source,
     substrate: CllSubstrate,
     leaf_count: u64,
-    /// Byte offset just past the last `capsules.jsonl` line folded into the
-    /// MMR: `sync` reads only from here on, never the whole file again.
-    consumed_bytes: u64,
-    /// Byte offset where that last folded line starts -- re-read on every
-    /// `sync` to catch a chain rewritten in place under the live state.
-    last_line_start: u64,
     /// `capsule_id` -> leaf index for every folded leaf (the last occurrence
     /// wins), so locating a pushed half is a lookup, not a file scan.
     leaf_index_by_id: HashMap<String, u64>,
@@ -448,6 +461,23 @@ pub struct CheckpointState {
     witness_deferred: bool,
     /// See [`PaddingSink`]; `None` cuts unpadded.
     padding: Option<Box<dyn PaddingSink>>,
+}
+
+/// Where a checkpoint state's leaves come from.
+enum Source {
+    /// `capsules.jsonl`, read incrementally by byte offset.
+    Flat {
+        capsules_path: PathBuf,
+        /// Byte offset just past the last line folded into the MMR: `sync`
+        /// reads only from here on, never the whole file again.
+        consumed_bytes: u64,
+        /// Byte offset where that last folded line starts -- re-read on every
+        /// `sync` to catch a chain rewritten in place under the live state.
+        last_line_start: u64,
+    },
+    /// A CLL backend's entry log, read incrementally by seq; the substrate
+    /// keeps the MMR and checkpoints in the same backend's state.
+    Log(Arc<dyn CheckpointLog>),
 }
 
 /// Divergence guard: verify the
@@ -574,11 +604,13 @@ impl CheckpointState {
         let entries_since_checkpoint = leaf_count.saturating_sub(last_checkpoint_leaf_count);
 
         let state = Self {
-            capsules_path,
+            source: Source::Flat {
+                capsules_path,
+                consumed_bytes,
+                last_line_start,
+            },
             substrate,
             leaf_count,
-            consumed_bytes,
-            last_line_start,
             leaf_index_by_id,
             log_id: log_id.into(),
             cfg,
@@ -591,6 +623,103 @@ impl CheckpointState {
         let report = LoadReport {
             node_store: Some(open_report),
             leaves_indexed_this_load,
+        };
+        Ok((state, report))
+    }
+
+    /// Load checkpoint state kept in a CLL backend (`backend`'s entry log and
+    /// checkpoint state, such as the log a store-backed
+    /// [`crate::ledger::Ledger`] writes): folds every entry, checks each
+    /// persisted MMR node against the entries and the stored checkpoint's COSE
+    /// against the MMR at its size, and rebuilds the latest checkpoint record.
+    /// Every later checkpoint is committed into the same backend, so any CLL
+    /// reader (an Evidence Bundle producer) sees it.
+    ///
+    /// `signers` signs: the first cuts new checkpoints, and the one whose key
+    /// signed the stored checkpoint signs its rebuilt JSON record again
+    /// (deterministic Ed25519, so the record is the one first cut). After a
+    /// key rotation pass the archived key too (`keys::rotate` keeps it); when
+    /// none matches, loading fails. Witness registration is not supported
+    /// here yet, so a `cfg` with `witness_urls` is refused.
+    pub fn load_log(
+        backend: Arc<dyn CheckpointLog>,
+        log_id: impl Into<String>,
+        cfg: CheckpointCadenceConfig,
+        signers: &[&dyn CheckpointSigner],
+    ) -> Result<(Self, LoadReport), CheckpointStateError> {
+        if !cfg.witness_urls.is_empty() {
+            return Err(CheckpointStateError::Checkpoint(
+                "witness registration is not supported on a checkpoint state kept in a CLL \
+                 backend yet; configure no witness_urls"
+                    .into(),
+            ));
+        }
+        if signers.is_empty() {
+            return Err(CheckpointStateError::Signer(
+                "load_log needs at least one signer".into(),
+            ));
+        }
+        let log_id = log_id.into();
+        let mut capsule_ids = Vec::new();
+        let mut record_ids = Vec::new();
+        loop {
+            let page = backend.scan_entries(capsule_ids.len() as u64, MAX_SCAN_LIMIT)?;
+            if page.is_empty() {
+                break;
+            }
+            for entry in page {
+                let id: crate::substrate::RecordId =
+                    entry.value.as_slice().try_into().map_err(|_| {
+                        CheckpointStateError::BadCapsuleId {
+                            line: entry.seq as usize,
+                            capsule_id: hex::encode(&entry.value),
+                        }
+                    })?;
+                record_ids.push(id);
+                capsule_ids.push(hex::encode(id));
+            }
+        }
+        let stored_leaves = backend.load_cll()?.indexed_seq;
+        let substrate = CllSubstrate::open_log(backend.clone(), &log_id, &record_ids, signers)
+            .map_err(|e| match e {
+                SubstrateError::LeafMismatch {
+                    leaf_index,
+                    stored_leaf,
+                    expected_leaf,
+                } => CheckpointStateError::NodeStoreDivergedFromLedger {
+                    leaf_index,
+                    capsule_id: capsule_ids[leaf_index as usize].clone(),
+                    stored_leaf,
+                    expected_leaf,
+                },
+                other => other.into(),
+            })?;
+        let leaf_count = capsule_ids.len() as u64;
+        let last_checkpoint_leaf_count = match substrate.last_checkpoint() {
+            Some(cp) => cp.leaf_count()?,
+            None => 0,
+        };
+        let entries_since_checkpoint = leaf_count.saturating_sub(last_checkpoint_leaf_count);
+        let state = Self {
+            source: Source::Log(backend),
+            substrate,
+            leaf_count,
+            leaf_index_by_id: capsule_ids
+                .into_iter()
+                .enumerate()
+                .map(|(i, id)| (id, i as u64))
+                .collect(),
+            log_id,
+            cfg,
+            entries_since_checkpoint,
+            pending_since: (entries_since_checkpoint > 0).then(Instant::now),
+            pending_witness_urls: Vec::new(),
+            witness_deferred: false,
+            padding: None,
+        };
+        let report = LoadReport {
+            node_store: None,
+            leaves_indexed_this_load: leaf_count - stored_leaves,
         };
         Ok((state, report))
     }
@@ -647,22 +776,38 @@ impl CheckpointState {
     /// does the full prefix check). Only newline-terminated lines are
     /// folded: a line still being written is picked up by a later call.
     fn sync(&mut self) -> Result<u64, CheckpointStateError> {
-        let file_len = match std::fs::metadata(&self.capsules_path) {
+        if let Source::Log(backend) = &self.source {
+            let backend = backend.clone();
+            return self.sync_log(backend.as_ref());
+        }
+        let Source::Flat {
+            capsules_path,
+            consumed_bytes,
+            ..
+        } = &self.source
+        else {
+            unreachable!("the log source returned above");
+        };
+        let file_len = match std::fs::metadata(capsules_path) {
             Ok(meta) => meta.len(),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => 0,
             Err(err) => return Err(err.into()),
         };
-        if file_len < self.consumed_bytes {
+        if file_len < *consumed_bytes {
             return Err(self.ahead_of_ledger());
         }
         if self.leaf_count > 0 {
             self.check_last_folded_line()?;
         }
-        let lines = read_complete_lines(
-            &self.capsules_path,
-            self.consumed_bytes,
-            self.leaf_count as usize,
-        )?;
+        let Source::Flat {
+            capsules_path,
+            consumed_bytes,
+            last_line_start,
+        } = &mut self.source
+        else {
+            unreachable!("the log source returned above");
+        };
+        let lines = read_complete_lines(capsules_path, *consumed_bytes, self.leaf_count as usize)?;
         let mut added = 0u64;
         for line in lines {
             // read_complete_lines already validated every id as RECORD_ID_LEN
@@ -672,8 +817,8 @@ impl CheckpointState {
             self.substrate.append_leaf(&record_id)?;
             self.leaf_index_by_id
                 .insert(line.capsule_id, self.leaf_count + added);
-            self.consumed_bytes = line.end;
-            self.last_line_start = line.start;
+            *consumed_bytes = line.end;
+            *last_line_start = line.start;
             added += 1;
         }
         self.leaf_count += added;
@@ -681,9 +826,55 @@ impl CheckpointState {
         Ok(added)
     }
 
+    /// [`Self::sync`] over a CLL entry log: the last folded entry must still
+    /// name the last stored leaf (a missing one reads as the log being short,
+    /// soft on tick), then entries past it are folded, by seq.
+    fn sync_log(&mut self, backend: &dyn CheckpointLog) -> Result<u64, CheckpointStateError> {
+        if self.leaf_count > 0 {
+            let last = backend
+                .scan_entries(self.leaf_count - 1, 1)?
+                .into_iter()
+                .next()
+                .filter(|e| e.seq == self.leaf_count)
+                .ok_or_else(|| self.ahead_of_ledger())?;
+            check_leaf(
+                &self.substrate,
+                self.leaf_count - 1,
+                &hex::encode(&last.value),
+            )?;
+        }
+        let mut added = 0u64;
+        loop {
+            let page = backend.scan_entries(self.leaf_count + added, MAX_SCAN_LIMIT)?;
+            if page.is_empty() {
+                break;
+            }
+            for entry in page {
+                let capsule_id = hex::encode(&entry.value);
+                let record_id = record_id_from_hex(&capsule_id).ok_or_else(|| {
+                    CheckpointStateError::BadCapsuleId {
+                        line: entry.seq as usize,
+                        capsule_id: capsule_id.clone(),
+                    }
+                })?;
+                self.substrate.append_leaf(&record_id)?;
+                self.leaf_index_by_id
+                    .insert(capsule_id, self.leaf_count + added);
+                added += 1;
+            }
+        }
+        self.leaf_count += added;
+        self.note_pending(added);
+        Ok(added)
+    }
+
     fn ahead_of_ledger(&self) -> CheckpointStateError {
+        let path = match &self.source {
+            Source::Flat { capsules_path, .. } => capsules_path.display().to_string(),
+            Source::Log(_) => LOG_SOURCE.to_string(),
+        };
         CheckpointStateError::NodeStoreAheadOfLedger {
-            path: self.capsules_path.display().to_string(),
+            path,
             stored_leaves: self.leaf_count,
             ledger_leaves: self.leaf_count.saturating_sub(1),
         }
@@ -695,18 +886,24 @@ impl CheckpointState {
     /// different capsule_id is a rewritten chain (hard).
     fn check_last_folded_line(&mut self) -> Result<(), CheckpointStateError> {
         let leaf_index = self.leaf_count - 1;
-        let line = read_complete_lines_limit(
-            &self.capsules_path,
-            self.last_line_start,
-            leaf_index as usize,
-            1,
-        )?
-        .into_iter()
-        .next()
-        .ok_or_else(|| self.ahead_of_ledger())?;
+        let Source::Flat {
+            capsules_path,
+            last_line_start,
+            ..
+        } = &self.source
+        else {
+            return Ok(());
+        };
+        let line =
+            read_complete_lines_limit(capsules_path, *last_line_start, leaf_index as usize, 1)?
+                .into_iter()
+                .next()
+                .ok_or_else(|| self.ahead_of_ledger())?;
         check_leaf(&self.substrate, leaf_index, &line.capsule_id)?;
         // Same leaf; if the line's bytes changed length, resume after it.
-        self.consumed_bytes = line.end;
+        if let Source::Flat { consumed_bytes, .. } = &mut self.source {
+            *consumed_bytes = line.end;
+        }
         Ok(())
     }
 
@@ -917,9 +1114,16 @@ impl CheckpointState {
         Ok(cp)
     }
 
-    /// `checkpoints.jsonl`, next to `capsules.jsonl`.
+    /// `checkpoints.jsonl`, next to `capsules.jsonl`. Witness registration
+    /// reads it to recognize this log's own checkpoints. A state kept in a CLL
+    /// backend has no such file and registers with no witness (`load_log`
+    /// refuses `witness_urls`), so it gets an empty path no registration
+    /// reads.
     fn checkpoints_path(&self) -> PathBuf {
-        self.capsules_path.with_file_name("checkpoints.jsonl")
+        match &self.source {
+            Source::Flat { capsules_path, .. } => capsules_path.with_file_name("checkpoints.jsonl"),
+            Source::Log(_) => PathBuf::new(),
+        }
     }
 
     /// Retry registering the last checkpoint with whichever witness URLs are

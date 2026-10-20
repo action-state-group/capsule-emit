@@ -200,7 +200,7 @@ impl<'de> Visitor<'de> for NoDuplicates {
 
 /// Decodes strict JSON: UTF-8, no duplicate keys, no trailing data, as the Go
 /// and TypeScript decoders require. Numbers keep their source text.
-pub(crate) fn decode_strict_json(data: &[u8]) -> std::result::Result<Value, String> {
+pub fn decode_strict_json(data: &[u8]) -> std::result::Result<Value, String> {
     let mut deserializer = serde_json::Deserializer::from_slice(data);
     NoDuplicates
         .deserialize(&mut deserializer)
@@ -568,8 +568,9 @@ pub(crate) fn has_purged(record: &Record) -> bool {
         .any(|a| a.state == RetentionState::Purged)
 }
 
-/// Validates a constructor's namespace and trusted keys.
-pub(crate) fn check_config<K: AsRef<[u8]>>(
+/// Validates a constructor's namespace and trusted keys (the contract's
+/// `construct` rules), returning the keys; for a backend of your own.
+pub fn check_config<K: AsRef<[u8]>>(
     namespace: &str,
     trusted: impl IntoIterator<Item = K>,
 ) -> Result<Vec<[u8; 32]>> {
