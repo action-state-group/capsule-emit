@@ -167,7 +167,7 @@ async function verifyCapsuleBytes(record: Record): Promise<void> {
     // Not strict JSON: verifyCapsule below reports it.
   }
   if (decoded?.record_type === PADDING_RECORD_TYPE)
-    return verifyPadding(record.capsuleId, decoded, ownMembers(record.capsule));
+    return verifyPadding(record.capsuleId, decoded);
   let capsuleId: string | undefined;
   try {
     capsuleId = (await verifyCapsule(record.capsule)).capsuleId;
@@ -182,29 +182,17 @@ async function verifyCapsuleBytes(record: Record): Promise<void> {
 }
 
 /**
- * The top-level member names of strict-JSON `capsule` bytes, `__proto__`
- * included. AAC's strict decoder assigns members onto a plain object, where a
- * `__proto__` member becomes the prototype or, with a primitive value, is
- * dropped, so `Object.keys` of its result can miss it; `JSON.parse` defines
- * every member as an own property. The bytes already passed strict decoding,
- * so the two read the same members otherwise.
- */
-function ownMembers(capsule: Uint8Array): string[] {
-  return Object.keys(JSON.parse(new TextDecoder().decode(capsule)) as object);
-}
-
-/**
- * Checks a padding record: exactly its four members (`members`, read by
- * {@link ownMembers}), `epistemic_type`
+ * Checks a padding record: exactly its four members, `epistemic_type`
  * `producer_claim`, a 64-lowercase-hex `store_nonce`, and a `capsule_id` that
- * is the JSON-DIGEST of the record without `capsule_id`.
+ * is the JSON-DIGEST of the record without `capsule_id`. AAC's strict decoder
+ * keeps a `__proto__` member as an own property (agent-action-capsule#224), so
+ * `Object.keys` sees every member.
  */
 async function verifyPadding(
   id: string,
   padding: { [member: string]: ParsedJson },
-  members: readonly string[],
 ): Promise<void> {
-  for (const member of members)
+  for (const member of Object.keys(padding))
     if (!PADDING_MEMBERS.has(member))
       throw new ArtifactError(
         "invalid",
