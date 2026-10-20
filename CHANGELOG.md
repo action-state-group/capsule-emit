@@ -32,6 +32,11 @@ JSON decoder keeps a member named `__proto__` as an ordinary member
 (agent-action-capsule#224); under 0.1.0 it set the object's prototype and
 dropped out, so a bound original carrying one failed verification with
 `digest_mismatch`. Such a record now round-trips through every artifact store.
+AAC 0.4.0 also adds Class 1 check 9 (`provenance_mode`), so `verifyCapsule`,
+and every artifact store read, now refuses a Capsule whose `provenance_mode`
+is malformed, overclaims its time rung, or has the time-laundering shape;
+0.1.0 accepted these. Tests replay the provenance-mode vectors in
+`go/testdata/provenance-mode-vectors`.
 The TypeScript package adds no Evidence Bundle API: an artifact `Store` is
 already a record store for AAC's `proofSourceFromCll` (capsule-emit#347).
 

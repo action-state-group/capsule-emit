@@ -198,7 +198,10 @@ An Evidence Bundle (`evidence-bundle/v2`) comes from AAC's producer:
 `buildEvidenceBundle(proofSourceFromCll(cllBackend, records), options)` from
 `@action-state-group/agent-action-capsule/bundle`. Any artifact `Store` (see
 [Artifact storage](#artifact-storage)) serves as its `records` argument, so this
-package adds no bundle API of its own.
+package adds no bundle API of its own. The bundle entry needs Node.js and AAC's
+optional peer `@action-state-group/cll`. A range proof cannot yet cover a
+padding leaf (agent-action-capsule#339), so a log with padding records gets
+such a bundle only with `intervalFrom: null` or a range that starts above them.
 
 `capsule-emit` creates no database tables. `MysqlStore.open()` and
 `SqliteStore.open()` create only CLL's internal tables, documented in the

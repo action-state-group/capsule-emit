@@ -19,9 +19,9 @@ imports no storage driver into the root; see [Artifact storage](#artifact-storag
 | `capsule-emit`         | `40b592192e19622ff7a8c82674eb7caddb52e8db` | Released 0.7.0 Python byte-exact fixtures         |
 
 These revisions record the historical implementation baseline. Runtime record
-verification uses exact npm `@action-state-group/agent-action-capsule@0.1.0`,
-whose reviewed artifact comes from `36d6770cf1856ed9043d98782275a14ce221fdde`
-(PR #184). `AAC_COMMIT` in `test/aac-pin.ts` pins the same-commit authoritative
+verification uses exact npm `@action-state-group/agent-action-capsule@0.4.0`,
+whose reviewed artifact comes from `19891d74082e862b2075c5677a4fd02c7eec7894`
+(the ts 0.4.0 release, PR #336). `AAC_COMMIT` in `test/aac-pin.ts` pins the same-commit authoritative
 corpus in tests, CI and publication checks. Other peer interoperability inputs
 continue to use their repositories' `main`.
 
