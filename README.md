@@ -82,7 +82,7 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 **Then climb, one rung at a time:**
 
 - **Capture more, write less** — a decorator [adapter](docs/adapters/) (MCP / LangChain / CrewAI / Hermes / Goose / ADK) seals each wrapped tool call automatically; the [agentgateway](docs/adapters/agentgateway.md) adapter seals all consequential traffic at the gateway chokepoint — no per-tool changes needed.
-- **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence. → `seal(payload, confirms=parent_id)` · [within one stream, and across (under revision)](docs/chaining.md)
+- **Link records into trails** — chain a confirmation capsule to its parent: *approved → executed → confirmed*, human-in-the-loop, and disclosure all ride this. This is where *may/did* becomes a verifiable sequence. → `seal(payload, confirms=parent_id)` · [within one stream, and citing other streams](docs/chaining.md)
 - **Cite external records** — add a cross-record citation to a capsule outside this chain's scope (draft-04 §5.5.5): `seal(payload, references=(ReferenceEntry(type="agent-action-capsule", digest_alg="SHA-256", digest=other_id),))`. On the slot-form `seal(who(...), did(...), references=...)` the citation lands on the composition capsule only, not the individual members. References are committed to `capsule_id` before signing.
 - **Declare now, enforce later** — a `manifest.md` declares your rules; a compatible gateway enforces the *same file*, with no change to your `seal()` calls.
 
@@ -245,7 +245,7 @@ New here? Written to be read top-to-bottom, no standards background needed:
 - **[Tutorials](docs/tutorials/)** — five-minute, copy-paste sessions: your first capsule → confirming & chaining → reading your ledger → declaring rules.
 - **[Concepts in plain words](docs/concepts.md)** — the seven words (capsule, seal, may/did, chain, break, witness, ledger), each tied to a field or command.
 - **[Anatomy of a capsule](docs/anatomy.md)** — exactly what gets sealed, the two-tier structure, how each layer is captured.
-- **[Chaining — within one agent, and across agents](docs/chaining.md)** — capsules link by content address into verifiable trails, including **cross-organizational** chains; why the ledger is a DAG, not one line.
+- **[Chaining — within one agent, and across agents](docs/chaining.md)** — capsules link by content address into verifiable trails, and cite **cross-organizational** records; why the ledger is a DAG, not one line.
 - **[Why anchoring makes it trustworthy](docs/why-anchoring.md)** — why a record *you* keep isn't proof to anyone else, and how a shared append-only log fixes it. The heart of it.
 - **[The public log, explained](docs/the-public-log-explained.md)** — plain-English + FAQ: the transparency log, how Merkle proofs work, what's visible vs hidden, what you can progressively share. For when someone asks *"you're putting our data on a public log?"*
 - **[Adapters](docs/adapters/)** — decorator adapters (MCP / LangChain / CrewAI / Hermes / [Goose](docs/adapters/goose.md) / [ADK](docs/adapters/adk.md)) seal each wrapped tool call; [agentgateway](docs/adapters/agentgateway.md) seals all `tools/call` traffic at the gateway layer. Paste-to-your-coding-agent prompt on each page.

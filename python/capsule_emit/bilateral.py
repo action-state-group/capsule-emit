@@ -501,7 +501,9 @@ def seal_action(
 ) -> EmitResult:  # type: ignore[name-defined]
     """Emit a capsule recording Org B's action attestation.
 
-    Chains onto the requester's capsule.  ``verdict`` reflects B's
+    Follows up the requester's capsule: ``chain`` when ``ledger`` holds it,
+    otherwise a ``references[]`` citation (``capsule_emit.core``'s
+    ``confirms``), the usual case for two organizations.  ``verdict`` reflects B's
     disposition (executed / blocked / denied / escalated).  Gate check
     results from the constraint evaluation are stored in compute_attestation.
     """

@@ -32,8 +32,8 @@ present "tried to charge the card" as "charged the card."
 Actions link together. A *confirm* (or a human approval) is its own capsule that
 points back at the one before it (`chain.parent_capsule_id`), by content address.
 String them up and *attempted → approved → confirmed* becomes one trail you can
-follow and verify — within one stream today; cross-organizational chaining
-guidance is under revision.
+follow and verify within one stream. A capsule from another stream is cited
+in `references[]` instead.
 → `seal(..., confirms=earlier_id)` · [within & across agents](chaining.md)
 
 ### Break

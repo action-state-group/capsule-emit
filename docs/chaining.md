@@ -2,7 +2,8 @@
 
 A single capsule records one action. **Chaining** links capsules into a verifiable
 *trail* within one stream. This is where the may/did distinction becomes a sequence.
-Cross-organizational chaining guidance is under revision — see below.
+A capsule from another stream (another agent, organization or ledger) is cited in
+`references[]` instead — see below.
 
 ## How the link works
 
@@ -39,22 +40,44 @@ done = seal({"po_id": "PO-7781"}, action="write_po", operator="acme-co", develop
 That turns *approved → executed → confirmed* (and human-in-the-loop approval) into one
 verifiable sequence in your ledger. (See [tutorial 2](tutorials/02-confirming-and-chaining.md).)
 
-## Across agents — under revision
+## Across agents — `references[]`
 
-> **⚠ Under revision.** This section previously recommended `confirms=` for
-> linking capsules across different organizations/ledgers. That guidance is
-> being replaced: a dedicated cross-stream reference mechanism has been decided
-> and is not yet shipped. **Don't use `confirms=` to link capsules across
-> different organizations/ledgers in new integrations** — treat it as valid only
-> for links within one stream (see "Within one agent" above). This section will
-> be rewritten in full once the replacement ships.
+`chain` names only a capsule from your own stream: the ledger you seal into. A
+capsule another agent sealed into its own ledger is not your parent, and `chain`
+has no way to say otherwise. You cite it in **`references[]`**, a list of digest
+references to records outside your stream (draft-05, *Cross-record references*).
 
-The mechanical fact that doesn't change: because `capsule_id` is a content
-address, a capsule in one ledger can reference a capsule in another by id alone
-— no shared database is required. What's changing is which relation you use to
-express that cross-stream link; this page will be updated when that lands.
+`confirms=` picks the right one for you. If the ledger you seal into already holds
+the target, the link goes in `chain`, as above. Any other target goes in
+`references[]`:
 
-> `confirms=` writes `relation: "confirms"`; `relation=` picks another of the five
+```python
+# the buyer's agent sealed `order` into the buyer's ledger and sent you its capsule
+ack = seal({"po_id": "PO-7781"}, action="accept_po", operator="supplier-co",
+           developer="intake-agent@v2", ledger="supplier-ledger.jsonl",
+           confirms=order_capsule_id)         # not in supplier-ledger.jsonl
+```
+
+```jsonc
+"references": [
+  { "type": "agent-action-capsule", "digest_alg": "SHA-256",
+    "digest": "4650e8f9…16f03", "citation_purpose": "responds_to" }
+]
+```
+
+- The capsule has no `chain`, and `relation=` is not written: a relation describes
+  a step within one stream, and you can't confirm, supersede or close another
+  producer's record from yours.
+- `citation_purpose` is `responds_to`: this capsule answers the cited one. For
+  another purpose (`acted_on`, `counterparty_half`, …), pass the entry yourself with
+  `references=`; `confirms=` doesn't add a second entry for a digest you already cite.
+- The citation is part of the capsule's content, so its `capsule_id` and signature
+  cover it, the same as a `chain` link.
+
+To check a citation you need the cited capsule: recompute its `capsule_id` and
+compare it with the entry's `digest`.
+
+> For a same-stream target, `confirms=` writes `relation: "confirms"`; `relation=` picks another of the five
 > registered values (`follows`, `confirms`, `supersedes`, `epoch_opens`,
 > `duplicates`), and capsule-emit refuses any other. New values are registered
 > first ([registry-extensible](going-deeper.md)), then written.
@@ -126,9 +149,9 @@ chain is exactly as trustworthy as the content-addressing underneath it.
 ## Why cross-agent chaining works at all
 
 It works **because the capsule is a neutral open format**, not a vendor's internal record.
-Emitter B can reference emitter A's capsule because both produce the *same* standard
+Emitter B can cite emitter A's capsule because both produce the *same* standard
 capsule, the `capsule_id` is computed the *same* way everywhere, and any verifier can
-check the link from the bytes. A format owned by one vendor couldn't do this across an
+check the citation from the bytes. A format owned by one vendor couldn't do this across an
 org boundary; an open, content-addressed one can. (More: [going deeper](going-deeper.md).)
 
 ---

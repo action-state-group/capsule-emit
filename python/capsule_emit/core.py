@@ -38,6 +38,8 @@ to the witness kill switch** — ``witness=False`` /
 included. See ``docs/why-anchoring.md`` and ``docs/checkpoint.md``.
 
 The ``confirms`` parameter threads a "did → confirmed" chain without a scheduler.
+A ``confirms`` target from another stream is cited in ``references[]`` instead
+(see ``docs/chaining.md``).
 
 The same ``_emit_capsule()`` calls and ledger files are compatible with gateway
 layers that enforce declared manifests — no code changes required to add
@@ -589,7 +591,13 @@ def _emit_capsule(
         model: Dict with ``"provider"`` and ``"model_id"`` keys.
         verdict: Disposition verdict_class (e.g. ``"executed"``, ``"confirmed"``).
         effect: Effect dict with ``"type"`` and ``"status"`` (and optional ``"autonomy"``).
-        confirms: capsule_id of the prior capsule this one chains to.
+        confirms: capsule_id of the prior capsule this one follows up. A
+            capsule already in ``ledger`` is this stream's own record, so it
+            becomes ``chain.parent_capsule_id``. Any other capsule belongs to
+            another stream (another agent, organization or ledger), which
+            ``chain`` cannot name: it becomes a ``references[]`` entry of type
+            ``agent-action-capsule`` with ``citation_purpose: "responds_to"``,
+            the capsule has no ``chain``, and ``relation`` is not written.
         relation: Chain relation, one of the five registered values
             (:data:`capsule_emit.relations.REGISTERED_RELATIONS`): ``"follows"``
             (ordering only), ``"confirms"`` (observes or records the parent's
@@ -834,8 +842,13 @@ def _emit_capsule(
         authority=disposition_authority,
     )
 
+    parent = confirms
+    if confirms is not None and not _in_ledger(confirms, ledger):
+        parent = None
+        references = _cite_foreign(confirms, references)
+
     chain_relation: str | None = None
-    if confirms is not None:
+    if parent is not None:
         # relation=None keeps the link without asserting anything about the
         # parent: the registered bare next-link, "follows" (left unset, the
         # library underneath would fill in its own unregistered default).
@@ -854,7 +867,7 @@ def _emit_capsule(
         provider=provider,
         compute_attestation=compute_att if compute_att else None,
         effect=effect_record,
-        prior_capsule_id=confirms,
+        prior_capsule_id=parent,
         chain_relation=chain_relation,
         disposition=disposition,
         references=references,
@@ -992,6 +1005,40 @@ def _emit_capsule(
         seq=seq,
         witness_outcome=witness_outcome,
     )
+
+
+def _in_ledger(capsule_id: str, ledger: str | os.PathLike) -> bool:
+    """Whether ``ledger`` already holds ``capsule_id``: the test for a
+    same-stream ``confirms=`` target. A value that is not a capsule id stays
+    on the ``chain`` path, which rejects it."""
+    from .artifact.record import valid_id
+    from .legacy_ledger import LogNotFoundError, shared
+
+    if not valid_id(capsule_id):
+        return True
+    try:
+        shared(ledger).get_entry(bytes.fromhex(capsule_id))
+    except LogNotFoundError:
+        return False
+    return True
+
+
+def _cite_foreign(
+    capsule_id: str, references: tuple[ReferenceEntry, ...] | None
+) -> tuple[ReferenceEntry, ...]:
+    """``references`` plus a ``responds_to`` citation of another stream's
+    capsule, unless an entry already cites that digest (draft-05 §5.5.5
+    identifies a target by ``{digest_alg, digest}`` alone)."""
+    references = tuple(references or ())
+    if any(r.digest_alg == "SHA-256" and r.digest == capsule_id for r in references):
+        return references
+    cite = ReferenceEntry(
+        type="agent-action-capsule",
+        digest_alg="SHA-256",
+        digest=capsule_id,
+        citation_purpose="responds_to",
+    )
+    return (*references, cite)
 
 
 def _append_capsule(capsule: dict[str, Any], ledger: str | os.PathLike) -> int:
