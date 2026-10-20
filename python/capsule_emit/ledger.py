@@ -109,7 +109,7 @@ ARCHIVED_SEGMENT_KIND = "archived_segment"
 
 #: Every ``kind`` a ledger line can carry that is NOT a capsule -- the
 #: log's own bookkeeping. Consumers that must resolve a *record* (a sealed
-#: capsule -- ``capsule_emit.bundle``, ``capsule_emit.disclose``) filter
+#: capsule -- ``capsule_emit.record_proof``, ``capsule_emit.disclose``) filter
 #: these out the same way ``read_ledger`` does, so bookkeeping entries are
 #: never mistaken for the capsule they happen to share a ``capsule_id``-shaped
 #: field with.

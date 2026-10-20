@@ -3,7 +3,7 @@
 kind, ``{kind: "chain_segment", from_size, to_size}`` or ``{last: N}``).
 
 Without this, a stranger's ``range`` ask is one full :class:`~capsule_emit
-.bundle.Bundle` per record — O(n) checkpoint copies, and the range cap makes
+.record_proof.RecordProof` per record — O(n) checkpoint copies, and the range cap makes
 deep history unreachable. A ``chain_segment`` answers over the checkpoint
 CHAIN instead of individual records: cp_a..cp_b — each signed checkpoint,
 its witness receipts (already carried on ``CheckpointRecord.witnesses``),
@@ -194,7 +194,7 @@ class ChainSegment:
     def checkpoint(self) -> CheckpointRecord:
         """The segment's LAST (``to``) checkpoint — what a requester's
         ``coverage.expected_pin``/``min_freshness`` pins against, the same
-        convention :class:`capsule_emit.bundle.Bundle` uses for a single
+        convention :class:`capsule_emit.record_proof.RecordProof` uses for a single
         record. This lets :mod:`capsule_emit.evidence_request`'s existing
         pin/freshness resolution work UNCHANGED for this subject kind too."""
         return self.links[-1].checkpoint

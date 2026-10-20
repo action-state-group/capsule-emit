@@ -2,7 +2,7 @@
 """Tests for ``capsule_emit.disclose``.
 
 Builds real checkpoint chains through ``seal()`` + the default witness
-wiring (same stub-TS harness as ``tests/test_bundle.py``), then checks that
+wiring (same stub-TS harness as ``tests/test_record_proof.py``), then checks that
 ``disclose()`` assembles bundle + selected payload content + a completeness
 statement + audience-suppression profile + its own self-sealed disclosure
 record — and that ``verify_disclosure()`` genuinely checks each piece
@@ -29,11 +29,11 @@ from _stub_receipt import (
 
 from capsule_emit import ledger as ledger_mod
 from capsule_emit import seal, witness
-from capsule_emit.bundle import BundleError, bundle
 from capsule_emit.disclose import DiscloseError, Disclosure, disclose, verify_disclosure
+from capsule_emit.record_proof import RecordProofError, record_proof
 
 # ---------------------------------------------------------------------------
-# Hermetic stub Transparency Service — same shape as test_bundle.py
+# Hermetic stub Transparency Service — same shape as test_record_proof.py
 # ---------------------------------------------------------------------------
 
 
@@ -448,8 +448,8 @@ def test_disclosure_record_cannot_be_targeted_by_bundle(three_record_ledger):
         audience="auditor",
         reveal={cid: {"agent_input": payloads[0][0], "agent_output": payloads[0][1]}},
     )
-    with pytest.raises(BundleError, match="no record matches"):
-        bundle(ledger_path, d.disclosure_record["capsule_id"])
+    with pytest.raises(RecordProofError, match="no record matches"):
+        record_proof(ledger_path, d.disclosure_record["capsule_id"])
 
 
 def test_disclosure_record_becomes_an_mmr_leaf_for_the_next_checkpoint(

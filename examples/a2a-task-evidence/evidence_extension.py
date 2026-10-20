@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from capsule_emit import seal
-from capsule_emit.bundle import bundle as build_bundle
+from capsule_emit.record_proof import record_proof
 from capsule_emit.signing import AuthorshipVerdict, verify_capsule_signature_tristate
 from capsule_emit.witness import WitnessRequiredError
 
@@ -217,7 +217,7 @@ def seal_task_evidence(
         )
 
     capsule = result.capsule
-    bundle_obj = build_bundle(ledger_path, result.capsule_id)
+    bundle_obj = record_proof(ledger_path, result.capsule_id)
 
     signature_verdict, _ = verify_capsule_signature_tristate(capsule)
     if signature_verdict is not AuthorshipVerdict.AUTHORED:

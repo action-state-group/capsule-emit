@@ -439,19 +439,19 @@ document.
 
 The verification chain above (`checkpoint/emit.py`'s module docstring) is four
 separate, caller-composed primitives — inclusion, checkpoint signature, TS
-receipt, rollback/consistency. `capsule_emit.bundle.bundle()` assembles all
+receipt, rollback/consistency. `capsule_emit.record_proof.record_proof()` assembles all
 of them, plus the record's own receipt and the *prior* checkpoint's
 consistency proof, into one standalone object for a single record — the
 the shape the public API defines:
 
 ```python
-from capsule_emit.bundle import bundle, verify_bundle
+from capsule_emit.record_proof import record_proof, verify_record_proof
 
-b = bundle("ledger.jsonl", capsule_id)   # or an unambiguous >=8-char prefix
-ok, errors = verify_bundle(b)            # pure, offline, never raises
+b = record_proof("ledger.jsonl", capsule_id)   # or an unambiguous >=8-char prefix
+ok, errors = verify_record_proof(b)            # pure, offline, never raises
 ```
 
-### Anti-equivocation: verify with `bundle()`, not `verify_input_digest()`
+### Anti-equivocation: verify with `record_proof()`, not `verify_input_digest()`
 
 Named explicitly here because it was the gap in the acceptance shape
 JamesCarnley's `projnanda/nandatown#217` review called out: **`verify_input_digest()`
@@ -465,15 +465,15 @@ different party (equivocation). A verifier that only calls
 un-equivocated" is trusting exactly the weaker of the two primitives this
 library ships.
 
-**For anti-equivocation, verify with `capsule_emit.bundle`** (`bundle()` +
-`verify_bundle()`, above): it is the one primitive that actually chains a
+**For anti-equivocation, verify with `capsule_emit.record_proof`** (`record_proof()` +
+`verify_record_proof()`, above): it is the one primitive that actually chains a
 record to a signed checkpoint, an inclusion proof, a witness stamp, and the
 prior checkpoint's consistency proof — the full two-sided append bracket.
 `verify_input_digest()` still has a legitimate, narrower job (confirming a
 plaintext candidate matches a specific committed field, e.g. when handling a
 `disclose()`d payload) — it is simply the wrong tool for "was this capsule
 honestly logged," and a profile or verifier claiming anti-equivocation MUST
-reach for `bundle`/`verify_bundle` instead.
+reach for `record_proof`/`verify_record_proof` instead.
 
 **The discipline that makes any of this matter: verify against the
 ORIGINALLY pinned commitment, never whichever capsule the presenter or a
@@ -481,7 +481,7 @@ local cache happens to supply.** A verifier that re-fetches "the current
 capsule for this id" from a mutable cache — rather than checking the exact
 capsule bytes it first pinned (by `capsule_id`, or better, by an already-held
 `Bundle`/checkpoint) — has no anti-equivocation property left, no matter how
-strong `verify_bundle()`'s own checks are: a cache-overwrite between the
+strong `verify_record_proof()`'s own checks are: a cache-overwrite between the
 first pin and the later re-check silently substitutes a different capsule
 underneath the verifier, and it never notices. This was the concrete bug in
 the reviewed PR's patch (a cache-overwrite that let a later, different
@@ -505,14 +505,14 @@ sight, and verify against that pin every time after — never against
   edge case, not a gap.
 
 A record only becomes bundle-able once some checkpoint's `mmr_size` reaches
-it — `bundle()` raises `BundleError` for a record still awaiting its first
+it — `record_proof()` raises `RecordProofError` for a record still awaiting its first
 checkpoint (see `capsule_emit.status` for a read-only way to check that lag
-first). `bundle()` never caches anything: every call re-reads the ledger and
+first). `record_proof()` never caches anything: every call re-reads the ledger and
 re-derives the MMR fresh, so a bundle can be built by a completely different
 process than the one that sealed the record, at any later time, as long as
 the log still retains it.
 
-`verify_bundle()` checks every link the two-sided append bracket depends on
+`verify_record_proof()` checks every link the two-sided append bracket depends on
 — inclusion, both checkpoints' signatures (via
 `checkpoint.verify_checkpoint_signature_offline`, which needs only the
 checkpoint's own `key_id`, never a private key or a live `Signer` — this is
@@ -544,7 +544,7 @@ handed to someone else's process.
 `Bundle.checkpoint_cose` carries the covering checkpoint as a COSE_Sign1
 statement over a CBOR claims map, built once at production time (in
 `witness._build_and_register`, the only place the signing key is actually
-available) and carried through unchanged from there on — `bundle()` never
+available) and carried through unchanged from there on — `record_proof()` never
 re-signs anything. `None` for a bundle built from a ledger predating this
 field, or if the COSE serialization failed at production time (best-effort;
 never blocks the JSON checkpoint path).
@@ -570,7 +570,7 @@ self-reported string: `verify_checkpoint_cose_offline` independently
 recomputes whether the claimed `prev_commitment` peaks actually bag up to
 the claimed `commitment`, and rejects a checkpoint whose continuity is
 merely asserted, not proven (same anti-REWRITE-not-anti-FORK honesty as
-`verify_bundle`'s own consistency check above).
+`verify_record_proof`'s own consistency check above).
 
 ```python
 from capsule_emit.checkpoint.cose_wire import verify_checkpoint_cose_offline
@@ -581,14 +581,14 @@ if b.checkpoint_cose is not None:
     assert result.ok, result.errors
 ```
 
-`verify_bundle()` performs this same check automatically when
+`verify_record_proof()` performs this same check automatically when
 `checkpoint_cose` is present, cross-checking the decoded fields against
 `Bundle.checkpoint` and failing the bundle if they disagree; absence is
 never fatal.
 
 ## Disclose — bundle's conscious sibling
 
-`bundle` above is always safe — digests only, no producer decision needed.
+`record_proof` above is always safe — digests only, no producer decision needed.
 `capsule-emit disclose` is the deliberate, recorded act of handing
 **bundle plus content** to a named audience:
 
@@ -669,7 +669,7 @@ audience, when — to the SAME ledger, signed with the same producer
 any other entry the next time a checkpoint covers it: disclosures are
 receipts too, and the audit trail of showing evidence is part of the
 history. It is excluded from `read_ledger()` (and therefore `ledger
-view`/`show`/`verify`) and from `bundle()`'s own record resolution — it is
+view`/`show`/`verify`) and from `record_proof()`'s own record resolution — it is
 the log's bookkeeping, never a bundle target itself.
 
 **Viewing is not disclosing.** Reading your own ledger — `ledger show`,

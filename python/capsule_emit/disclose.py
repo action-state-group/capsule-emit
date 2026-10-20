@@ -2,7 +2,7 @@
 """``disclose()`` — the deliberate, recorded act of handing bundle + content
 to an audience.
 
-``disclose`` is ``bundle`` (``capsule_emit.bundle``) plus:
+``disclose`` is ``record_proof`` (``capsule_emit.record_proof``) plus:
 selected payload content (the existing single-capsule Disclosure Envelope,
 ``capsule_emit.disclosure.build_disclosure_envelope``, applied per record), a
 **completeness statement** so a partial disclosure can never read as a full
@@ -93,14 +93,14 @@ class DiscloseError(RuntimeError):
 @dataclass(frozen=True)
 class Disclosure:
     """A standalone, JSON-round-trippable disclosure — one or more
-    :class:`~capsule_emit.bundle.Bundle` s, the payload content actually
+    :class:`~capsule_emit.record_proof.RecordProof` s, the payload content actually
     disclosed for each, the completeness statement, and the sealed
     disclosure record itself."""
 
     v: int
     audience: str
     record_ids: tuple[str, ...]  # capsule_ids disclosed, in ledger order
-    bundles: dict[str, Any]  # capsule_id -> capsule_emit.bundle.Bundle
+    bundles: dict[str, Any]  # capsule_id -> capsule_emit.record_proof.RecordProof
     envelopes: dict[str, dict]  # capsule_id -> {"capsule": ..., "disclosures": {...}}
     completeness: dict[str, Any]
     suppressed_fields: tuple[str, ...]
@@ -120,13 +120,13 @@ class Disclosure:
 
     @classmethod
     def from_dict(cls, d: dict) -> Disclosure:
-        from .bundle import Bundle
+        from .record_proof import RecordProof
 
         return cls(
             v=int(d["v"]),
             audience=d["audience"],
             record_ids=tuple(d["record_ids"]),
-            bundles={cid: Bundle.from_dict(b) for cid, b in d["bundles"].items()},
+            bundles={cid: RecordProof.from_dict(b) for cid, b in d["bundles"].items()},
             envelopes=d["envelopes"],
             completeness=d["completeness"],
             suppressed_fields=tuple(d.get("suppressed_fields", ())),
@@ -354,7 +354,7 @@ def disclose(
     no originals) or fails a read other than ``not_found``;
     ``reveal``/``suppress`` name an unknown
     field, an unselected record, or contradict each other; any selected
-    record isn't yet bundle-able (``capsule_emit.bundle.BundleError`` is
+    record isn't yet bundle-able (``capsule_emit.record_proof.RecordProofError`` is
     wrapped, not swallowed); a disclosed payload doesn't match its committed
     digest (``capsule_emit.disclosure.DisclosureError`` wrapped likewise);
     or ``payloads="all"`` is requested but a non-suppressed eligible field
@@ -364,11 +364,11 @@ def disclose(
 
     from agent_action_capsule.canonical import json_digest
 
-    from .bundle import BundleError
-    from .bundle import bundle as _bundle_fn
     from .disclosure import DISCLOSURE_ELIGIBLE_FIELDS, DisclosureError
     from .disclosure import build_disclosure_envelope as _build_envelope
     from .ledger import DISCLOSURE_RECORD_KIND, append_to_ledger, read_ledger
+    from .record_proof import RecordProofError
+    from .record_proof import record_proof as _record_proof
 
     if payloads not in _PAYLOAD_MODES:
         raise DiscloseError(f"payloads must be one of {_PAYLOAD_MODES!r}, got {payloads!r}")
@@ -432,8 +432,8 @@ def disclose(
     for r in selected:
         cid = r["capsule_id"]
         try:
-            bundles[cid] = _bundle_fn(path, cid)
-        except BundleError as exc:
+            bundles[cid] = _record_proof(path, cid)
+        except RecordProofError as exc:
             raise DiscloseError(f"{cid}: cannot bundle — {exc}") from exc
 
         fields = dict(supplied.get(cid, {}))
@@ -518,13 +518,13 @@ def verify_disclosure(
     """Pure, offline, total verification of a standalone :class:`Disclosure`
     — no reader, no network, never raises. ``trust_anchor``
     is forwarded unchanged to every
-    ``capsule_emit.bundle.verify_bundle`` call below — see that function's
+    ``capsule_emit.record_proof.verify_record_proof`` call below — see that function's
     docstring for its three-state witness-stamp semantics.
 
     Checks: the disclosure record's own signature
     (``capsule_emit.signing.verify_capsule_signature``); that the record's
     ``audience``/``disclosed_capsule_ids`` agree with the ``Disclosure``
-    object; every bundle (``capsule_emit.bundle.verify_bundle``); and, for
+    object; every bundle (``capsule_emit.record_proof.verify_record_proof``); and, for
     every disclosed payload field, that it recomputes to the digest
     committed on that record's receipt — a tampered payload names itself
     exactly the way a tampered bundle does.
@@ -535,8 +535,8 @@ def verify_disclosure(
     try:
         from agent_action_capsule.canonical import FloatInDigestError, json_digest
 
-        from .bundle import verify_bundle
         from .disclosure import DISCLOSURE_ELIGIBLE_FIELDS
+        from .record_proof import verify_record_proof
         from .signing import verify_capsule_signature
 
         if not verify_capsule_signature(d.disclosure_record):
@@ -558,7 +558,7 @@ def verify_disclosure(
             if b is None:
                 errors.append(f"{cid}: missing bundle")
                 continue
-            ok, berrors = verify_bundle(b, trust_anchor=trust_anchor)
+            ok, berrors = verify_record_proof(b, trust_anchor=trust_anchor)
             if not ok:
                 errors.extend(f"{cid}: {e}" for e in berrors)
 

@@ -6,8 +6,8 @@ a plaintext candidate matches a digest a capsule already claims to have
 sealed — it says nothing about the log, checkpoint, or witness the capsule
 may or may not actually be entered into. For anti-equivocation (was this
 capsule honestly logged, never rewritten, never shown differently to two
-parties), verify with ``capsule_emit.bundle`` (``bundle()`` /
-``verify_bundle()``) instead — see ``docs/checkpoint.md``'s "Anti-
+parties), verify with ``capsule_emit.record_proof`` (``record_proof()`` /
+``verify_record_proof()``) instead — see ``docs/checkpoint.md``'s "Anti-
 equivocation" section (per
 JamesCarnley's projnanda/nandatown#217 review).
 

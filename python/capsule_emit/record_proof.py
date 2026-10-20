@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``bundle()`` — the hand-to-anyone artifact.
+"""``record_proof()``: one record's standalone proof, the hand-to-anyone artifact.
 
 **Thin wrapper over ``cll.checkpoint.bundle`` (2026-09-01, the CLL
 extraction).** The generic record/range-level disclosure-bundle mechanism
@@ -23,8 +23,8 @@ assembles them into ONE standalone object for one record, per §2.5:
     {receipt, inclusion proof, covering checkpoint (+ its witness stamp),
      prior checkpoint, consistency proof between the two}
 
-Once built, a ``Bundle`` is offline-verifiable by a stranger — no account,
-no further help from the producer, no network (see :func:`verify_bundle`;
+Once built, a ``RecordProof`` is offline-verifiable by a stranger — no account,
+no further help from the producer, no network (see :func:`verify_record_proof`;
 witness-stamp re-confirmation is a separate, explicitly optional step since
 it may need a network fetch of the Transparency Service's public key). It
 gives the two-sided append bracket the public API names: the
@@ -35,7 +35,7 @@ where there is no prior checkpoint to bound the lower side (``prior_checkpoint``
 and ``consistency_proof`` are both ``None``; ``checkpoint.prev_size == 0``
 says so honestly rather than gap-filling one).
 
-A bundle is buildable at any later time for any record the log still
+A record proof is buildable at any later time for any record the log still
 retains — this module never caches or persists one; every call re-reads the
 ledger and re-derives the MMR fresh from it, exactly the way
 ``capsule_emit.witness`` built it at production time (each raw ledger line —
@@ -44,28 +44,36 @@ capsule or checkpoint-stamp alike — is one leaf, in append order; see
 
 Deliberately NOT imported from ``capsule_emit/__init__.py`` — like
 ``capsule_emit.checkpoint`` and ``capsule_emit.status``, this stays
-structurally opt-in (``from capsule_emit.bundle import bundle``) so a bare
-``import capsule_emit`` never pays for the MMR/checkpoint subpackage (see
-``tests/test_checkpoint_layer0_cost.py``).
+structurally opt-in (``from capsule_emit.record_proof import record_proof``)
+so a bare ``import capsule_emit`` never pays for the MMR/checkpoint
+subpackage (see ``tests/test_checkpoint_layer0_cost.py``).
+
+A record proof is not an Evidence Bundle (``evidence-bundle/v2``): it proves
+one record with CLL's own object. An Evidence Bundle of several records comes
+from agent-action-capsule's producer (``capsule-emit bundle``,
+``capsule_emit.evidence_bundle``). ``RecordProof`` and ``RecordProofError``
+are CLL's ``cll.checkpoint.bundle.Bundle`` and ``BundleError`` under the
+names this module gives them.
 """
 from __future__ import annotations
 
-from cll.checkpoint.bundle import Bundle, BundleError
+from cll.checkpoint.bundle import Bundle as RecordProof
+from cll.checkpoint.bundle import BundleError as RecordProofError
 
-__all__ = ["Bundle", "BundleError", "bundle", "verify_bundle"]
+__all__ = ["RecordProof", "RecordProofError", "record_proof", "verify_record_proof"]
 
 
-def bundle(path, capsule_id: str) -> Bundle:
-    """Build a standalone-verifiable :class:`Bundle` for one record in the
+def record_proof(path, capsule_id: str) -> RecordProof:
+    """Build a standalone-verifiable :class:`RecordProof` for one record in the
     JSONL ledger at ``path``.
 
     Re-reads the whole ledger and re-derives the MMR fresh each call — this
-    never assumes an in-process ``MmrLedger`` is warm (bundle can be built by
+    never assumes an in-process ``MmrLedger`` is warm (a proof can be built by
     a completely different process than the one that sealed the record).
 
-    Raises :class:`BundleError` if ``capsule_id`` doesn't resolve to exactly
+    Raises :class:`RecordProofError` if ``capsule_id`` doesn't resolve to exactly
     one record, or if that record is not yet covered by any checkpoint (a
-    record only becomes bundle-able once a checkpoint's ``mmr_size`` reaches
+    record only becomes provable once a checkpoint's ``mmr_size`` reaches
     it — see ``capsule_emit.status`` for a read-only way to check that lag
     before calling this).
     """
@@ -75,14 +83,14 @@ def bundle(path, capsule_id: str) -> Bundle:
 
     entries = read_ledger_entries(path)
     if not entries:
-        raise BundleError(f"{path}: empty or not found")
+        raise RecordProofError(f"{path}: empty or not found")
     return _cll_bundle(entries, capsule_id, non_leaf_kinds=frozenset(NON_CAPSULE_KINDS))
 
 
-def verify_bundle(
-    b: Bundle, *, trust_anchor: dict[str, bytes | str] | None = None
+def verify_record_proof(
+    b: RecordProof, *, trust_anchor: dict[str, bytes | str] | None = None
 ) -> tuple[bool, list[str]]:
-    """Pure, offline, total verification of a standalone :class:`Bundle` —
+    """Pure, offline, total verification of a standalone :class:`RecordProof` —
     no reader, no network, never raises. ``trust_anchor``
     is an optional caller-supplied mapping
     of ``ts_url -> pubkey_pem`` — the Transparency Services the caller
@@ -93,7 +101,7 @@ def verify_bundle(
 
       1. the receipt's own ``capsule_id`` matches the leaf the inclusion
          proof was built for, AND is recomputed from the receipt's own
-         content (not just compared as an opaque label) — a bundle whose
+         content (not just compared as an opaque label) — a proof whose
          receipt body was tampered but whose ``capsule_id`` was left alone
          is caught here; AND its self-attested producer-authorship claim is
          graded THREE-STATE
@@ -101,7 +109,7 @@ def verify_bundle(
          claimed-and-verifies is
          fine; claimed-and-fails — a receipt body rewritten with a matching,
          recomputed ``capsule_id`` (a producer-signature
-         forgery, replayed against a bundle) — is FATAL here; absent (a
+         forgery, replayed against a proof) — is FATAL here; absent (a
          :func:`capsule_emit.surface.log` entry, no ``signature``/``key_id``
          at all) is a non-fatal notice, never treated as forgery. This step
          is capsule-specific and lives in THIS module (see :func:`cll.

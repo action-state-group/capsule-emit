@@ -16,7 +16,6 @@ import pytest
 import capsule_emit.evidence_request as evidence_request
 from capsule_emit import seal, witness
 from capsule_emit.adjudication import VERDICT_CORROBORATED, contradicted, seal_adjudication
-from capsule_emit.bundle import bundle as _bundle_fn
 from capsule_emit.evidence_request import (
     LEGACY_REFUSAL_REASON_ALIASES,
     REASON_COVERAGE_UNSATISFIABLE,
@@ -33,6 +32,7 @@ from capsule_emit.evidence_request import (
     parse_request,
     verify_refusal_offline,
 )
+from capsule_emit.record_proof import record_proof as _record_proof
 
 
 @pytest.fixture(autouse=True)
@@ -138,7 +138,7 @@ def test_answer_record_returns_artifact_matching_bundle(covered_ledger):
     assert isinstance(result, Artifact)
     assert result.subject_kind == "record"
     assert len(result.bundles) == 1
-    expected = _bundle_fn(ledger_path, cid)
+    expected = _record_proof(ledger_path, cid)
     assert result.bundles[0].to_dict() == expected.to_dict()
 
 
@@ -308,7 +308,7 @@ def test_range_paging_caller_invariance(monkeypatch, five_capsule_ledger):
 def test_answer_wrong_pin_is_coverage_unsatisfiable(covered_ledger):
     ledger_path, caps = covered_ledger
     cid = caps[0]["capsule_id"]
-    real = _bundle_fn(ledger_path, cid)
+    real = _record_proof(ledger_path, cid)
 
     wrong_root_request = _record_request(
         cid, expected_pin={"mmr_size": real.checkpoint.mmr_size, "root": "00" * 32}
@@ -329,7 +329,7 @@ def test_answer_wrong_pin_is_coverage_unsatisfiable(covered_ledger):
 def test_answer_correct_pin_succeeds(covered_ledger):
     ledger_path, caps = covered_ledger
     cid = caps[0]["capsule_id"]
-    real = _bundle_fn(ledger_path, cid)
+    real = _record_proof(ledger_path, cid)
 
     request = _record_request(cid, expected_pin={"mmr_size": real.checkpoint.mmr_size, "root": real.checkpoint.root})
     result = answer(request, ledger=ledger_path)

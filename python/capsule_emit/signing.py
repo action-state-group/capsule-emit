@@ -370,10 +370,10 @@ class AuthorshipVerdict(str, Enum):
     witness-stamp authenticity are different concepts living in different
     repos (``capsule_emit`` carries capsule vocabulary that
     ``cll``/``cll.checkpoint`` deliberately never does -- see
-    ``capsule_emit.bundle``'s module docstring), so this is a distinct enum
+    ``capsule_emit.record_proof``'s module docstring), so this is a distinct enum
     rather than a re-exported one -- "one shared tri-state code path" here
     means every capsule-emit call site that must grade authorship
-    (:func:`capsule_emit.bundle.verify_bundle`,
+    (:func:`capsule_emit.record_proof.verify_record_proof`,
     :func:`verify_store_signed`) routes through the ONE function below
     (:func:`verify_capsule_signature_tristate`), not that the two repos
     share a Python class across the capsule/log boundary.
@@ -413,7 +413,7 @@ def verify_capsule_signature_tristate(capsule: dict) -> tuple[AuthorshipVerdict,
     exact ``capsule_id``"; it does NOT prove who that key belongs to (see the identity-binding layers for that), and it does
     NOT by itself prove ``capsule_id`` matches this capsule's carried value
     -- callers that read a carried ``capsule_id`` separately (e.g.
-    ``capsule_emit.bundle.verify_bundle``) check that independently.
+    ``capsule_emit.record_proof.verify_record_proof``) check that independently.
 
     ``capsule_id`` is signer-independent (draft-04 reversal):
     computed over the signature-free payload,
@@ -440,7 +440,7 @@ def verify_capsule_signature(capsule: dict) -> bool:
     ``seal()``/``received()`` is always signed (0.5.0, no opt-out), so for
     that whole population this is equivalent to the pre-tristate behavior.
     Callers that must tell an honestly-unclaimed :func:`capsule_emit.surface.log`
-    entry apart from a forged one -- :func:`capsule_emit.bundle.verify_bundle`,
+    entry apart from a forged one -- :func:`capsule_emit.record_proof.verify_record_proof`,
     :func:`verify_store_signed` -- use the tristate function instead; this
     bool form flattens :attr:`AuthorshipVerdict.UNCLAIMED` and
     :attr:`AuthorshipVerdict.INVALID` together, which is exactly the

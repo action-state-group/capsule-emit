@@ -21,7 +21,7 @@ classifiers = [
 ]
 # checkpointed-local-log's `cll` package -- the CLL/MMR core, graduated out
 # of this repo on 2026-09-01 (was capsule_emit.checkpoint, itself ported
-# from capsule-ledger's mmr/{core,index,store}.py on 2026-08-21). capsule_emit.checkpoint / capsule_emit.bundle are now thin
+# from capsule-ledger's mmr/{core,index,store}.py on 2026-08-21). capsule_emit.checkpoint / capsule_emit.record_proof are now thin
 # compatibility re-exports over it -- see those modules' docstrings. Pulls in
 # scitt-cose + cbor2 + agent-action-capsule transitively. A CORE dependency,
 # not an extra: capsule_emit/checkpoint/*.py import `cll.checkpoint.*`
