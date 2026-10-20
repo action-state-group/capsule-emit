@@ -267,7 +267,7 @@ def render_status(status: dict, *, out: Any = None, verbose: bool = False) -> No
     print(f"  {'witnessed':<30}{witnessed if witnessed else 'none confirmed'}", file=out)
     if cp is not None and cp.get("grade_keys") == "none supplied" and cp["witnesses"]:
         print(
-            f"  {'':<30}(witness receipts not checked: no witness keys supplied; "
+            f"  {'':<30}(witness signatures not checked: no witness keys supplied; "
             "pass --witness-directory)",
             file=out,
         )
@@ -287,9 +287,13 @@ def render_status(status: dict, *, out: Any = None, verbose: bool = False) -> No
             if w.get("is_stub"):
                 state = "STUB — not a real Transparency Service"
             elif not status["witnessing_enabled_now"]:
-                state = "unconfirmed (witness disabled)"
+                state = "not re-checked (witness disabled)"
             elif status["offline"]:
-                state = "unconfirmed (--offline)"
+                state = "not re-checked (--offline)"
+            elif w["confirmed"] and cp.get("grade_keys") == "none supplied":
+                # The re-check fetched the key from the witness itself, so
+                # without a key the caller chose it confirms nothing on its own.
+                state = "valid under its own key only"
             elif w["confirmed"]:
                 state = "confirmed"
             else:

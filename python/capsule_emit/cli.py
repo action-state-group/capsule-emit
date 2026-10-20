@@ -161,7 +161,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "status",
         help="receipts sealed, witnessed and awaiting witness (--verbose adds the "
         "checkpoint and stamp detail) -- contacts the witness read-only to "
-        "re-confirm existing receipts unless --offline",
+        "re-check its existing signatures unless --offline",
     )
     status_p.add_argument("path", help="path to a JSONL ledger file")
     status_p.add_argument(

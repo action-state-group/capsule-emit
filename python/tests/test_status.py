@@ -276,7 +276,7 @@ def test_status_offline_skips_network_recheck(tmp_path, stub_ts, monkeypatch):
     out = io.StringIO()
     status.render_status(result, out=out)
     rendered = out.getvalue()
-    assert "unconfirmed (--offline)" in rendered
+    assert "not re-checked (--offline)" in rendered
 
 
 # ---------------------------------------------------------------------------

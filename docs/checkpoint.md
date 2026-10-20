@@ -339,7 +339,7 @@ a *new* checkpoint), not `status`, is where writes belong. `--offline`
 skips even the read-only re-check and reports only what the ledger already
 records. So does `CAPSULE_WITNESS=off` (the kill switch, see
 [Kill switch scope](#kill-switch-scope-o16-03) above) — a witness-disabled
-process reports each witness as `unconfirmed (witness disabled)` and never
+process reports each witness as `not re-checked (witness disabled)` and never
 attempts the GET, whether or not `--offline` was also given.
 
 ## Witness outage: durable retry, not a drop

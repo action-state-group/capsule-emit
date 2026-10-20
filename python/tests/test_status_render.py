@@ -114,12 +114,12 @@ capsule-emit status: ledger.jsonl
 
   receipts sealed               3
   witnessed                     none confirmed
-                                (witness receipts not checked: no witness keys supplied; pass --witness-directory)
+                                (witness signatures not checked: no witness keys supplied; pass --witness-directory)
   awaiting witness              3
   witnessing (this process)     on
 
   witnesses:
-    witness: witness.example · key …9dc0afe1 · operated by: Example confirmed
+    witness: witness.example · key …9dc0afe1 · operated by: Example valid under its own key only
 
 """,
     ),
@@ -187,7 +187,7 @@ capsule-emit status: ledger.jsonl
   witnessing (this process)     on
 
   witnesses:
-    witness: witness.example · operated by: unknown     unconfirmed (--offline)
+    witness: witness.example · operated by: unknown     not re-checked (--offline)
 
 """,
     ),
@@ -210,7 +210,7 @@ capsule-emit status: ledger.jsonl
   witnessing (this process)     off
 
   witnesses:
-    witness: witness.example · operated by: unknown     unconfirmed (witness disabled)
+    witness: witness.example · operated by: unknown     not re-checked (witness disabled)
 
 """,
     ),
