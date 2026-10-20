@@ -282,9 +282,10 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="every record of the log up to its checkpoint, every counterparty, at citation "
         "closure depth 2, with a range proof from seq 1 when every leaf there is a record: only "
-        "on purpose. A range cannot yet cover a leaf that is not a record (a ledger.jsonl's "
-        "checkpoint stamps, a padding line; agent-action-capsule#339 lifts this), so with one "
-        "the bundle carries no range, each record proven alone (INCOMPLETE), and says which leaf",
+        "on purpose. A range cannot yet cover a leaf that is not a record (a padding line, which "
+        "agent-action-capsule#339 will let a range cover; a ledger.jsonl's checkpoint stamps, which "
+        "stay uncovered until a draft defines the stamp record), so with one the bundle carries "
+        "no range, each record proven alone (INCOMPLETE), and says which leaf",
     )
     bundle_p.add_argument(
         "--interval-from",
@@ -973,8 +974,9 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
             return 1
         ids = [capsule["capsule_id"] for capsule in selected]
         # --all keeps the range from seq 1 when every leaf up to the checkpoint
-        # is a record. A range cannot yet cover any other leaf
-        # (agent-action-capsule#339), so without one each record is proven
+        # is a record. A range cannot yet cover any other leaf (padding waits
+        # for agent-action-capsule#339; checkpoint stamps for a draft that
+        # defines the stamp record), so without one each record is proven
         # alone and the bundle reads INCOMPLETE.
         interval_from = args.interval_from
         if args.all:
@@ -996,7 +998,8 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
         seq, what = non_record
         print(
             f"bundle: no range: seq {seq} {what}; each record is proven alone "
-            "(a range over such a leaf waits for agent-action-capsule#339)"
+            "(a range over padding waits for agent-action-capsule#339; over a checkpoint stamp, "
+            "for a draft that defines the stamp record)"
         )
     if left_out:
         print(f"bundle: {left_out} record(s) past the checkpoint left out; bundle again after the next checkpoint")

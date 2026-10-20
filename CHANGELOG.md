@@ -6,6 +6,14 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed
+
+- `capsule-emit bundle --all`'s help, its "no range" message and the README
+  no longer say agent-action-capsule#339 lifts the limit for checkpoint
+  stamps. #339 will let a range cover padding leaves only; a range over a
+  `ledger.jsonl`'s checkpoint stamps stays refused, and such a bundle reads
+  INCOMPLETE, until a draft defines the stamp record.
+
 ## 0.12.0 — 2026-10-20
 
 A minor release with breaking changes. Evidence Bundles (`evidence-bundle/v2`)
