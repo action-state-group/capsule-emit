@@ -334,7 +334,7 @@ def test_cli_mesh_all_over_padding_drops_the_range_and_names_the_leaf(tmp_path, 
     code, stdout, err = _cli(capsys, d, "--all", "-o", out)
     assert code == 0, err
     assert "no range: seq 2 is a padding or checkpoint-stamp leaf, not a record" in stdout
-    assert "agent-action-capsule#339" in stdout
+    assert "a range over padding waits for agent-action-capsule#339" in stdout
     bundle = json.loads(out.read_text())
     assert [r["capsule_id"] for r in bundle["records"]] == [c["capsule_id"] for c in capsules]
     assert "range_proof" not in bundle["completeness_certificate"]
@@ -547,6 +547,7 @@ def test_cli_all_over_a_repeated_leaf_drops_the_range_and_names_it(tmp_path, cap
     code, stdout, err = _cli(capsys, d, "--all", "-o", out)
     assert code == 0, err
     assert "no range: seq 4 repeats an earlier leaf" in stdout
+    assert "a range over a repeated leaf stays refused" in stdout and "#339" not in stdout
     bundle = json.loads(out.read_text())
     assert [r["capsule_id"] for r in bundle["records"]] == [c["capsule_id"] for c in capsules]
     assert "range_proof" not in bundle["completeness_certificate"]

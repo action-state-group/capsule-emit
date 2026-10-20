@@ -6,6 +6,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed
+
+- `capsule-emit bundle --all`'s help, its "no range" message and the README
+  no longer say agent-action-capsule#339 lifts the limit for checkpoint
+  stamps. #339 will let a range cover padding leaves only; a range over a
+  `ledger.jsonl`'s checkpoint stamps stays refused, and such a bundle reads
+  INCOMPLETE, until a draft defines the stamp record. For a repeated leaf the
+  message now says a range stays refused, instead of pointing at #339.
+
 ## 0.12.0 — 2026-10-20
 
 A minor release with breaking changes. Evidence Bundles (`evidence-bundle/v2`)
@@ -25,7 +34,8 @@ that producer.
   `--closure-depth N`); `--all` proves the whole log, seq 1 to the checkpoint
   tip, at closure depth 2, leaving out records appended after the checkpoint.
   A range cannot yet cover a leaf that is not a record (a `ledger.jsonl`'s
-  checkpoint stamps, a padding line); agent-action-capsule#339 lifts this. So
+  checkpoint stamps, a padding line); agent-action-capsule#339 lifts this for
+  padding only (see the Unreleased Fixed entry). So
   when such a leaf lies inside, `--all` carries no range, proves each record
   alone (the bundle reads INCOMPLETE) and names the leaf; `--interval-from`
   over one is refused by name, as is a scoped record the checkpoint does not

@@ -282,9 +282,10 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="every record of the log up to its checkpoint, every counterparty, at citation "
         "closure depth 2, with a range proof from seq 1 when every leaf there is a record: only "
-        "on purpose. A range cannot yet cover a leaf that is not a record (a ledger.jsonl's "
-        "checkpoint stamps, a padding line; agent-action-capsule#339 lifts this), so with one "
-        "the bundle carries no range, each record proven alone (INCOMPLETE), and says which leaf",
+        "on purpose. A range cannot yet cover a leaf that is not a record (a padding line, which "
+        "agent-action-capsule#339 will let a range cover; a ledger.jsonl's checkpoint stamps, which "
+        "stay uncovered until a draft defines the stamp record), so with one the bundle carries "
+        "no range, each record proven alone (INCOMPLETE), and says which leaf",
     )
     bundle_p.add_argument(
         "--interval-from",
@@ -850,16 +851,16 @@ def _in_scope(capsule: dict, args: argparse.Namespace) -> bool:
 
 def _records_in_scope(
     log, args: argparse.Namespace, up_to_seq: int | None = None
-) -> tuple[list, int, tuple[int, str] | None]:
+) -> tuple[list, int, tuple[int, str, str] | None]:
     """The records of ``log`` in scope, in ledger order; how many in-scope
     records lie past ``up_to_seq`` and were left out; and the first leaf at or
-    below ``up_to_seq`` that is not a record ``(seq, what)``, which no range
-    can cover yet. Without ``up_to_seq`` the records past the checkpoint are
+    below ``up_to_seq`` that is not a record ``(seq, what, until)``, which no
+    range can cover yet; ``until`` says what would let one. Without ``up_to_seq`` the records past the checkpoint are
     included (the producer refuses those by name)."""
     seen: set = set()
     selected: list = []
     left_out = 0
-    non_record: tuple[int, str] | None = None
+    non_record: tuple[int, str, str] | None = None
     after = 0
     while True:
         page = log.scan_entries(after, 1000)
@@ -871,7 +872,8 @@ def _records_in_scope(
             capsule_id = entry.value.hex()
             if capsule_id in seen:
                 if within and non_record is None:
-                    non_record = (entry.seq, "repeats an earlier leaf")
+                    # agent-action-capsule#339 leaves a repeated leaf out of scope.
+                    non_record = (entry.seq, "repeats an earlier leaf", "a range over a repeated leaf stays refused")
                 continue
             seen.add(capsule_id)
             try:
@@ -879,7 +881,12 @@ def _records_in_scope(
             except Exception as exc:  # the artifact-store contract's not-found code
                 if getattr(exc, "code", None) == "not_found":
                     if within and non_record is None:
-                        non_record = (entry.seq, "is a padding or checkpoint-stamp leaf, not a record")
+                        non_record = (
+                            entry.seq,
+                            "is a padding or checkpoint-stamp leaf, not a record",
+                            "a range over padding waits for agent-action-capsule#339; over a checkpoint "
+                            "stamp, for a draft that defines the stamp record",
+                        )
                     continue
                 raise
             capsule = json.loads(record.capsule)
@@ -973,8 +980,9 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
             return 1
         ids = [capsule["capsule_id"] for capsule in selected]
         # --all keeps the range from seq 1 when every leaf up to the checkpoint
-        # is a record. A range cannot yet cover any other leaf
-        # (agent-action-capsule#339), so without one each record is proven
+        # is a record. A range cannot yet cover any other leaf (padding waits
+        # for agent-action-capsule#339; checkpoint stamps for a draft that
+        # defines the stamp record), so without one each record is proven
         # alone and the bundle reads INCOMPLETE.
         interval_from = args.interval_from
         if args.all:
@@ -993,11 +1001,8 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
     verdict = verify_bundle(bundle, strict=True).verdict
     print(f"bundle: {len(bundle['records'])} record(s), {verdict} under strict verification -- wrote {args.out}")
     if args.all and non_record:
-        seq, what = non_record
-        print(
-            f"bundle: no range: seq {seq} {what}; each record is proven alone "
-            "(a range over such a leaf waits for agent-action-capsule#339)"
-        )
+        seq, what, until = non_record
+        print(f"bundle: no range: seq {seq} {what}; each record is proven alone ({until})")
     if left_out:
         print(f"bundle: {left_out} record(s) past the checkpoint left out; bundle again after the next checkpoint")
     return 0
