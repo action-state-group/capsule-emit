@@ -10,12 +10,14 @@ Four rendering levels for the ledger:
 
     capsule-emit verify --store <path>           — verify all capsules in a ledger
 
-    capsule-emit status <path> [--offline]       — ladder position: what's
-                                                    logged, which checkpoint
-                                                    covers what, which stamps
-                                                    are back, honest lag;
-                                                    read-only witness re-check
-                                                    unless --offline
+    capsule-emit status <path> [--offline] [--verbose]
+                                                 — receipts sealed, witnessed
+                                                    and awaiting witness;
+                                                    --verbose adds which
+                                                    checkpoint covers what and
+                                                    the stamp lag; read-only
+                                                    witness re-check unless
+                                                    --offline
 
     capsule-emit permalink --bundle FILE         — build a demo verify-surface
     capsule-emit permalink <capsule.json ...>      permalink: a bundle file
