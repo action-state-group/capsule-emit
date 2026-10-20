@@ -39,12 +39,14 @@ Four rendering levels for the ledger:
                                                       deliberate, recorded
                                                       act (never a default)
 
-    capsule-emit export <ledger_dir>             — a SCOPED evidence file for a
-      (--exchange ID | --peer NODE |               third party: only the records
-       --since/--until TIME | --record ID |        in scope, the signed
-       --all) --signing-key KEY.pem -o FILE        checkpoint, one inclusion
-                                                    proof per record; a whole
-                                                    ledger only with --all
+    capsule-emit bundle <ledger> -o FILE         — an Evidence Bundle for a
+      (--exchange ID | --peer NODE |               third party, built by
+       --since/--until TIME | --record ID |        agent-action-capsule's
+       --all) [--interval-from SEQ]                producer from a ledger.jsonl
+      [--closure-depth N] [--signing-key KEY.pem]  or a mesh ledger directory:
+                                                    the records in scope, proven
+                                                    under the signed checkpoint;
+                                                    the whole log only with --all
 
 Exit codes: 0 = ok, 1 = error.
 """
@@ -253,38 +255,62 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="with --ledger and --bundle-out: write every record of the ledger to the evidence "
         "file, across every counterparty. Without it the whole-ledger file is refused; "
-        "use `capsule-emit export` for a scoped, proven one",
+        "use `capsule-emit bundle` for a scoped, proven one",
     )
 
-    # export
-    export_p = sub.add_parser(
-        "export",
-        help="write a SCOPED evidence file (evidence-bundle/v2) for a third party: one exchange, "
-        "one peer or one time window, each record proven in the node's signed checkpoint",
+    # bundle
+    bundle_p = sub.add_parser(
+        "bundle",
+        help="write an Evidence Bundle (evidence-bundle/v2) of a ledger's records, proven against "
+        "its signed checkpoint, for a third party: one exchange, one peer, one time window, one "
+        "record, or --all",
+        description="Write an Evidence Bundle (evidence-bundle/v2) built by agent-action-capsule's "
+        "producer from a ledger.jsonl file or a mesh ledger directory. A scoped bundle carries "
+        "exactly the records in scope, each with an inclusion proof under the signed checkpoint "
+        "(no range proof unless --interval-from, no cited records unless --closure-depth); "
+        "--all proves the whole log, seq 1 to the checkpoint tip. A record the checkpoint does "
+        "not cover yet, or a range over a leaf that is not a record, is refused by name.",
     )
-    export_p.add_argument("ledger_dir", metavar="LEDGER_DIR", help="the ledger directory (capsules.jsonl, checkpoints.jsonl)")
-    export_p.add_argument("--exchange", metavar="ID", default=None, help="the records of one exchange")
-    export_p.add_argument("--peer", metavar="NODE", default=None, help="the records naming one peer node")
-    export_p.add_argument("--since", metavar="TIME", default=None, help="records at or after TIME (ISO 8601)")
-    export_p.add_argument("--until", metavar="TIME", default=None, help="records at or before TIME (ISO 8601)")
-    export_p.add_argument("--record", metavar="CAPSULE_ID", default=None, help="one record")
-    export_p.add_argument(
-        "--all", action="store_true", help="every record of the ledger, every counterparty: only on purpose"
+    bundle_p.add_argument(
+        "ledger",
+        metavar="LEDGER",
+        help="a ledger.jsonl file, or a mesh ledger directory (capsules.jsonl, checkpoints.jsonl)",
     )
-    export_p.add_argument(
+    bundle_p.add_argument("--exchange", metavar="ID", default=None, help="the records of one exchange")
+    bundle_p.add_argument("--peer", metavar="NODE", default=None, help="the records naming one peer node")
+    bundle_p.add_argument("--since", metavar="TIME", default=None, help="records at or after TIME (ISO 8601)")
+    bundle_p.add_argument("--until", metavar="TIME", default=None, help="records at or before TIME (ISO 8601)")
+    bundle_p.add_argument("--record", metavar="CAPSULE_ID", default=None, help="one record")
+    bundle_p.add_argument(
+        "--all",
+        action="store_true",
+        help="every record of the log, every counterparty, with a range proof from seq 1 and "
+        "citation closure depth 2: only on purpose",
+    )
+    bundle_p.add_argument(
+        "--interval-from",
+        metavar="SEQ",
+        type=int,
+        default=None,
+        help="with a scope: add a range proof from SEQ to the checkpoint tip, carrying every "
+        "record in it (default: none, each record proven on its own)",
+    )
+    bundle_p.add_argument(
+        "--closure-depth",
+        metavar="N",
+        type=int,
+        default=None,
+        help="with a scope: also carry the records the scoped records cite, N citation steps "
+        "deep from the last one (default: 0)",
+    )
+    bundle_p.add_argument(
         "--signing-key",
         metavar="KEY.pem",
-        required=True,
-        help="the node's Ed25519 key (PKCS#8 PEM) that signed the checkpoint, used to give the "
-        "checkpoint its portable COSE form; never created",
+        default=None,
+        help="mesh directory only: the node's Ed25519 key (PKCS#8 PEM) that signed the checkpoint, "
+        "needed only when its checkpoint line carries no checkpoint_cose; never created",
     )
-    export_p.add_argument(
-        "-o",
-        "--out",
-        metavar="PATH",
-        required=True,
-        help="the evidence file to write",
-    )
+    bundle_p.add_argument("-o", "--out", metavar="PATH", required=True, help="the bundle file to write (JCS JSON)")
 
     # evidence
     evidence_p = sub.add_parser(
@@ -713,7 +739,7 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
         print(
             f"permalink: refusing to write every record of {args.ledger} ({len(capsules)}) to an "
             "evidence file: that is the whole history, across every counterparty. Pass --all if "
-            "that is what you mean, or use `capsule-emit export` for a scoped, proven file",
+            "that is what you mean, or use `capsule-emit bundle` for a scoped, proven file",
             file=sys.stderr,
         )
         return 1
@@ -745,21 +771,130 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_export(args: argparse.Namespace) -> int:
-    from agent_action_capsule.canonical import jcs
+def _mesh_fields(capsule: dict) -> dict:
+    """The exchange and peers a Mesh-LLM capsule names."""
+    compute = (capsule.get("model_attestation") or {}).get("compute_attestation") or {}
+    poc = compute.get("x-mesh-poc-v1") or {}
+    serving = poc.get("serving_provenance") or {}
+    settlement = compute.get("x-mesh-settlement-v1") or {}
+    return {
+        "exchange_id": serving.get("exchange_id") or settlement.get("exchange_id"),
+        "peers": {p for p in (serving.get("served_by_node_id"), serving.get("requesting_party")) if p},
+    }
 
-    from .scoped_export import ExportError, Scope, export
 
-    scope = Scope(
-        exchange=args.exchange, peer=args.peer, since=args.since, until=args.until, record=args.record, all=args.all
+def _in_scope(capsule: dict, args: argparse.Namespace) -> bool:
+    if args.all:
+        return True
+    if args.record:
+        return capsule.get("capsule_id") == args.record
+    if args.exchange:
+        return _mesh_fields(capsule)["exchange_id"] == args.exchange
+    if args.peer:
+        return args.peer in _mesh_fields(capsule)["peers"]
+    stamp = capsule.get("timestamp") or ""
+    return (not args.since or stamp >= args.since) and (not args.until or stamp <= args.until)
+
+
+def _records_in_scope(log, args: argparse.Namespace) -> list:
+    """The records of ``log`` in scope, in ledger order, past the checkpoint
+    included (the producer refuses those by name)."""
+    seen: set = set()
+    selected: list = []
+    after = 0
+    while True:
+        page = log.scan_entries(after, 1000)
+        if not page:
+            return selected
+        after = page[-1].seq
+        for entry in page:
+            capsule_id = entry.value.hex()
+            if capsule_id in seen:
+                continue
+            seen.add(capsule_id)
+            try:
+                record = log.get(capsule_id)
+            except Exception as exc:  # the artifact-store contract's not-found code
+                if getattr(exc, "code", None) == "not_found":
+                    continue
+                raise
+            capsule = json.loads(record.capsule)
+            if _in_scope(capsule, args):
+                selected.append(capsule)
+
+
+_SEGMENTED_REFUSAL = (
+    "{path} is a segmented ledger store: its checkpoints are HMAC-signed, not COSE; "
+    "it cannot back a proven bundle"
+)
+
+
+def _open_bundle_log(args: argparse.Namespace):
+    from .evidence_bundle import MeshLedgerLog
+    from .ledger import is_ledger_store
+    from .legacy_ledger import LegacyLedger
+
+    path = Path(args.ledger)
+    if is_ledger_store(path):
+        raise ValueError(_SEGMENTED_REFUSAL.format(path=path))
+    if path.is_dir():
+        if not (path / "checkpoints.jsonl").is_file():
+            raise ValueError(f"{path}: not a mesh ledger directory (no checkpoints.jsonl)")
+        return MeshLedgerLog(path, signing_key=args.signing_key)
+    if not path.is_file():
+        raise ValueError(f"{path}: no ledger there")
+    if args.signing_key is not None:
+        raise ValueError("--signing-key applies to a mesh ledger directory; a ledger.jsonl carries its own COSE checkpoints")
+    return LegacyLedger(path)
+
+
+def _cmd_bundle(args: argparse.Namespace) -> int:
+    from agent_action_capsule.bundle import (
+        BundleBuildError,
+        build_evidence_bundle,
+        proof_source_from_cll,
+        verify_bundle,
     )
+    from agent_action_capsule.canonical import jcs
+    from cll.log import CllError
+
+    from .artifact.record import ArtifactError
+
+    scopes = [bool(args.exchange), bool(args.peer), bool(args.since or args.until), bool(args.record), args.all]
+    if sum(scopes) != 1:
+        print(
+            "bundle: name exactly one scope: --exchange ID, --peer NODE, --since/--until TIME, "
+            "--record ID, or --all (the whole log, every counterparty)",
+            file=sys.stderr,
+        )
+        return 1
+    if args.all and (args.interval_from is not None or args.closure_depth is not None):
+        print(
+            "bundle: --all proves the whole log (range from seq 1, closure depth 2); "
+            "--interval-from and --closure-depth apply to a scoped bundle",
+            file=sys.stderr,
+        )
+        return 1
     try:
-        bundle = export(args.ledger_dir, scope, signing_key=args.signing_key)
-    except ExportError as exc:
-        print(f"export: {exc}", file=sys.stderr)
+        log = _open_bundle_log(args)
+        selected = _records_in_scope(log, args)
+        if not selected:
+            print("bundle: no record in scope", file=sys.stderr)
+            return 1
+        ids = [capsule["capsule_id"] for capsule in selected]
+        bundle = build_evidence_bundle(
+            proof_source_from_cll(log, log),
+            root=ids[-1],
+            include=ids[:-1],
+            interval_from=1 if args.all else args.interval_from,
+            closure_depth=2 if args.all else (args.closure_depth if args.closure_depth is not None else 0),
+        )
+    except (BundleBuildError, CllError, ArtifactError, ValueError, OSError) as exc:
+        print(f"bundle: {exc}", file=sys.stderr)
         return 1
     Path(args.out).write_bytes(jcs(bundle))
-    print(f"export: {len(bundle['records'])} record(s) in scope {scope.describe()} -- wrote {args.out}")
+    verdict = verify_bundle(bundle, strict=True).verdict
+    print(f"bundle: {len(bundle['records'])} record(s), {verdict} under strict verification -- wrote {args.out}")
     return 0
 
 
@@ -850,8 +985,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "disclose":
         return _cmd_disclose(args)
 
-    if args.command == "export":
-        return _cmd_export(args)
+    if args.command == "bundle":
+        return _cmd_bundle(args)
 
     parser.error(f"unknown command {args.command!r}")
     return 1
