@@ -324,7 +324,8 @@ capsule-emit evidence --ledger ledger.jsonl --issue <ready-issue-url> --out comm
 
 The output is a markdown comment for the PR/issue: per-step sealed records
 (action, verdict, effect, capsule_id), the chain summary, offline verify
-commands, and a viewer permalink. Fail-closed — every capsule is re-verified
+commands, and a viewer permalink (the capsules as an Evidence Bundle with no
+log proof, or the bundle `--bundle FILE` names, as it is). Fail-closed — every capsule is re-verified
 locally at generation time; a tampered ledger refuses to render. Runnable
 end-to-end: `examples/goose-capsule/contribution_demo.py` (offline by
 default), with a committed real run at

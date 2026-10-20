@@ -38,22 +38,24 @@ https://verify.agentactioncapsule.org/v/f708b92a34b15b582db60042619c37b380f0b64b
 ```
 
 This is the **withheld/bundle** permalink — the JSON-array fragment that always renders the
-Chain Navigation table. It was independently reproduced byte-for-byte with the
-`capsule-emit permalink` subcommand (`capsule_emit.permalink.build_url(..., bundle=True)`)
-against this same 3-capsule ledger, and re-verified with:
+Chain Navigation table. It was reproduced byte-for-byte at the time with the `capsule-emit
+permalink` subcommand of that release, against this same 3-capsule ledger. Re-verify the
+ledger with:
 
 ```bash
-capsule-emit permalink --ledger <this run's ledger.jsonl> --check
-# → permalink --check: 3/3 capsule(s) VALID
-# → 3 capsules — chain: executed → blocked → executed (f708b92a → 16a6ab95 → 061e6bde)
+capsule-emit verify --store <this run's ledger.jsonl>
+# → 3/3 VALID
 ```
 
-> Current `capsule-emit permalink` emits an evidence-bundle/v2 Bundle on the viewer's
+> Current `capsule-emit permalink` links an evidence-bundle/v2 Bundle on the viewer's
 > `/bundle#` route (the draft's §9 codec) instead of this legacy `/v/<id>#` array form,
-> so regenerating produces a different link. The link above predates that change.
+> so the link differs. The link above predates that change. `capsule-emit permalink
+> --bundle FILE` links a bundle `capsule-emit bundle` built with its log proof; given
+> capsule JSON files instead, it links them as a bundle with no log proof.
 
-`--check` runs `agent_action_capsule.verify()` on every capsule locally (no network) and refuses
-to emit a URL if any capsule fails verification — so a presenter can't hand out a bad demo link.
+`--check` runs `agent_action_capsule.verify()` on every capsule file locally (no network) and
+refuses to emit a URL if any capsule fails verification — so a presenter can't hand out a bad
+demo link.
 `demo.py`'s own `_permalink`/`_bundle_permalink` helpers (step 9 of the run — see
 `evidence/run-transcript.md`) produce the identical byte-for-byte URL; they predate the CLI and
 haven't been migrated to call `capsule_emit.permalink` directly yet.
@@ -96,10 +98,12 @@ disclosure is a separate, later, revocable choice about the same sealed bytes.
 The array-fragment *bundle* permalink also supports per-item disclosure now — each capsule in
 the bundle can independently be disclosed or left withheld. Use `SELECTOR:FIELD=payload.json`,
 where `SELECTOR` is the 1-based record number shown in the chain summary (or an `>=8`-char
-`capsule_id` prefix, same convention as `ledger show`):
+`capsule_id` prefix, same convention as `ledger show`). With each capsule of the run saved as
+its own JSON file, in chain order:
 
 ```bash
-capsule-emit permalink --ledger <this run's ledger.jsonl> --check \
+capsule-emit permalink --base-url https://verify.agentactioncapsule.org --check \
+  capsule1.json capsule2.json capsule3.json \
   --reveal 1:agent_input=capsule1_input.json --reveal 1:agent_output=capsule1_output.json \
   --reveal 2:agent_input=capsule2_input.json --reveal 2:agent_output=capsule2_output.json \
   --reveal 3:agent_input=capsule3_input.json --reveal 3:agent_output=capsule3_output.json
