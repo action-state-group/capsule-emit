@@ -194,6 +194,12 @@ try {
 Neither package depends on the other. An application that uses both declares
 both dependencies explicitly.
 
+An Evidence Bundle (`evidence-bundle/v2`) comes from AAC's producer:
+`buildEvidenceBundle(proofSourceFromCll(cllBackend, records), options)` from
+`@action-state-group/agent-action-capsule/bundle`. Any artifact `Store` (see
+[Artifact storage](#artifact-storage)) serves as its `records` argument, so this
+package adds no bundle API of its own.
+
 `capsule-emit` creates no database tables. `MysqlStore.open()` and
 `SqliteStore.open()` create only CLL's internal tables, documented in the
 [`@action-state-group/cll` backend guide](https://github.com/action-state-group/checkpointed-local-log/tree/main/ts#sqlite-and-mysql-tables).
@@ -231,7 +237,7 @@ Tests replay the complete upstream AAC corpus, all Producer Envelope vectors,
 and Go/Python authored, received, WHO, DID, and composition fixtures.
 
 The runtime dependency is pinned to
-`@action-state-group/agent-action-capsule@0.1.0`. AAC remains external in the
+`@action-state-group/agent-action-capsule@0.4.0`. AAC remains external in the
 build and carries its BSD-3-Clause license; this package remains Apache-2.0.
 The AAC corpus is pinned by `AAC_COMMIT` in `test/aac-pin.ts` to the source of
 that reviewed npm artifact. Tests require a clean AAC checkout at that exact

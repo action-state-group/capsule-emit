@@ -23,6 +23,18 @@ is now `invalid`.
 This lets a log keep its padding leaves in the same store as its Capsules
 (capsule-emit#341).
 
+### Changed: TypeScript requires agent-action-capsule 0.4.0
+
+`@action-state-group/capsule-emit` now pins
+`@action-state-group/agent-action-capsule` at 0.4.0 instead of 0.1.0, and its
+tests replay the AAC corpus at the 0.4.0 release commit. AAC 0.4.0's strict
+JSON decoder keeps a member named `__proto__` as an ordinary member
+(agent-action-capsule#224); under 0.1.0 it set the object's prototype and
+dropped out, so a bound original carrying one failed verification with
+`digest_mismatch`. Such a record now round-trips through every artifact store.
+The TypeScript package adds no Evidence Bundle API: an artifact `Store` is
+already a record store for AAC's `proofSourceFromCll` (capsule-emit#347).
+
 ### Fixed
 
 - `capsule-emit bundle --all`'s help, its "no range" message and the README

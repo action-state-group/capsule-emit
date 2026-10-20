@@ -14,6 +14,7 @@ import {
   type Artifact,
   type Record,
 } from "../../src/artifact/index.js";
+import { MemoryArtifactStore } from "../../src/artifact/memory.js";
 function utf8(value: string): Uint8Array {
   return new Uint8Array(Buffer.from(value, "utf8"));
 }
@@ -229,6 +230,64 @@ describe("verify", () => {
     expect(() => prepare(record)).toThrow(
       expect.objectContaining({ code: "purged" }),
     );
+  });
+  it("round-trips a record whose payload has a __proto__ member", async () => {
+    const identity = createEd25519Identity(
+      generateKeyPairSync("ed25519").privateKey,
+    );
+    // JSON.parse, unlike an object literal, makes __proto__ an own member.
+    const text = '{"__proto__":{"x":1},"n":2}';
+    const payload = JSON.parse(text) as object;
+    expect(Object.keys(payload)).toEqual(["__proto__", "n"]);
+    const sealed = await seal({
+      capsule: {
+        actionId: "proto-member",
+        actionType: "fyi",
+        operator: "test-operator",
+        developer: "test-developer",
+        timestamp: new Date(Date.UTC(2026, 8, 8, 1, 2, 3)),
+      },
+      payload,
+      identity,
+    });
+    expect(await digestJSON(payload)).not.toBe(await digestJSON({ n: 2 }));
+    const store = new MemoryArtifactStore("proto", [identity.publicKey]);
+    await store.put({
+      capsuleId: sealed.capsuleId,
+      capsule: sealed.payload,
+      producerEnvelope: sealed.envelope,
+      artifacts: [
+        {
+          name: "payload",
+          binding: PAYLOAD_DIGEST,
+          content: utf8(text),
+          state: "present",
+        },
+      ],
+    });
+    const got = await store.get(sealed.capsuleId);
+    expect(new TextDecoder().decode(got.artifacts[0]!.content)).toBe(text);
+    const checks = await verify(got, [identity.publicKey]);
+    expect(checks.get("payload")?.verified).toBe(true);
+  });
+  it("rejects a padding record carrying a __proto__ member", async () => {
+    const capsule =
+      '{"__proto__":1,"capsule_id":"' +
+      "a".repeat(64) +
+      '","epistemic_type":"producer_claim","record_type":"padding","store_nonce":"' +
+      "b".repeat(64) +
+      '"}';
+    await expect(
+      verify(
+        {
+          capsuleId: "a".repeat(64),
+          capsule: utf8(capsule),
+          producerEnvelope: new Uint8Array(),
+          artifacts: [],
+        },
+        [],
+      ),
+    ).rejects.toThrow('padding record carries "__proto__"');
   });
   it("exposes ArtifactError as the thrown type", async () => {
     await expect(
