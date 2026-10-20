@@ -62,7 +62,7 @@ def _padding() -> dict:
     return {"capsule_id": secrets.token_hex(32), "record_type": "padding", "store_nonce": secrets.token_hex(16)}
 
 
-def _mesh_ledger(tmp_path, *, padding=True, cose=True, extra_after_checkpoint=False, mesh=None):
+def _mesh_ledger(tmp_path, *, padding=True, cose=True, extra_after_checkpoint=False, mesh=None, repeat_first=False):
     """A mesh ledger directory: three sealed capsules (a padding leaf after
     the first unless ``padding=False``), a first checkpoint over the first two
     leaves and a second over all of them, the second extending the first.
@@ -76,6 +76,8 @@ def _mesh_ledger(tmp_path, *, padding=True, cose=True, extra_after_checkpoint=Fa
         seal(None, action=action, operator="acme", anchor=False, ledger=flat, witness_url=_NO_WITNESS, **extra)
     capsules = read_ledger(flat)
     lines = [capsules[0], _padding(), capsules[1], capsules[2]] if padding else list(capsules)
+    if repeat_first:  # a historical line written twice: one leaf each time
+        lines.append(capsules[0])
 
     key = tmp_path / "node-key.pem"
     signer = LocalKeypairSigner(key)
@@ -537,3 +539,48 @@ def test_cli_all_leaves_out_records_past_the_checkpoint(tmp_path, capsys):
     bundle = json.loads(out.read_text())
     assert [r["capsule_id"] for r in bundle["records"]] == [c["capsule_id"] for c in capsules[:-1]]
     assert "1 record(s) past the checkpoint left out" in stdout
+
+
+def test_cli_all_over_a_repeated_leaf_drops_the_range_and_names_it(tmp_path, capsys):
+    d, _, capsules = _mesh_ledger(tmp_path, padding=False, repeat_first=True)
+    out = tmp_path / "b.json"
+    code, stdout, err = _cli(capsys, d, "--all", "-o", out)
+    assert code == 0, err
+    assert "no range: seq 4 repeats an earlier leaf" in stdout
+    bundle = json.loads(out.read_text())
+    assert [r["capsule_id"] for r in bundle["records"]] == [c["capsule_id"] for c in capsules]
+    assert "range_proof" not in bundle["completeness_certificate"]
+    assert verify_bundle(bundle, strict=True).verdict == "INCOMPLETE"
+
+
+def test_cli_all_names_a_log_whose_records_all_follow_the_checkpoint(tmp_path, capsys, monkeypatch):
+    from capsule_emit import cli as cli_mod
+
+    d, _, _ = _mesh_ledger(tmp_path, padding=False)
+    monkeypatch.setattr(cli_mod, "_records_in_scope", lambda log, args, up_to_seq=None: ([], 3, None))
+    code, _, err = _cli(capsys, d, "--all", "-o", tmp_path / "b.json")
+    assert code == 1 and "no record covered by the checkpoint yet" in err
+
+
+def test_bundle_selection_and_proofs_read_one_checkpoint(tmp_path):
+    from capsule_emit.cli import _PinnedLog
+
+    class Counting:
+        def __init__(self, inner):
+            self.inner, self.loads = inner, 0
+
+        def load_cll(self):
+            self.loads += 1
+            return self.inner.load_cll()
+
+        def scan_entries(self, after, limit):
+            return self.inner.scan_entries(after, limit)
+
+        def get(self, capsule_id):
+            return self.inner.get(capsule_id)
+
+    d, _, _ = _mesh_ledger(tmp_path, padding=False)
+    counting = Counting(MeshLedgerLog(d))
+    pinned = _PinnedLog(counting)
+    first, second = pinned.load_cll(), pinned.load_cll()
+    assert first is second and counting.loads == 1

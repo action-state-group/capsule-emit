@@ -916,6 +916,24 @@ def _open_bundle_log(args: argparse.Namespace):
     return LegacyLedger(path)
 
 
+class _PinnedLog:
+    """A log whose checkpoint state is read once: record selection and the
+    proofs then describe the same checkpoint even while the log is written."""
+
+    def __init__(self, log) -> None:
+        self._log = log
+        self._state = log.load_cll()
+
+    def load_cll(self):
+        return self._state
+
+    def scan_entries(self, after_seq: int, limit: int):
+        return self._log.scan_entries(after_seq, limit)
+
+    def get(self, capsule_id: str):
+        return self._log.get(capsule_id)
+
+
 def _cmd_bundle(args: argparse.Namespace) -> int:
     from agent_action_capsule.bundle import (
         BundleBuildError,
@@ -944,13 +962,14 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
         )
         return 1
     try:
-        log = _open_bundle_log(args)
+        log = _PinnedLog(_open_bundle_log(args))
         # --all proves the log up to its checkpoint: records appended since
         # are left out (named below), not refused.
         checkpoint = log.load_cll().checkpoint if args.all else None
         selected, left_out, non_record = _records_in_scope(log, args, checkpoint.indexed_seq if checkpoint else None)
         if not selected:
-            print("bundle: no record in scope", file=sys.stderr)
+            reason = "no record covered by the checkpoint yet" if left_out else "no record in scope"
+            print(f"bundle: {reason}", file=sys.stderr)
             return 1
         ids = [capsule["capsule_id"] for capsule in selected]
         # --all keeps the range from seq 1 when every leaf up to the checkpoint
