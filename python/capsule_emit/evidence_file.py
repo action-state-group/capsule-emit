@@ -49,15 +49,12 @@ from pathlib import Path
 from typing import Any
 
 __all__ = [
-    "BUNDLE_KIND",
     "Check",
     "EvidenceFileCheck",
     "RecordCheck",
     "check_evidence_file",
     "load_evidence_file",
 ]
-
-BUNDLE_KIND = "evidence-bundle/v2"
 
 # One plain sentence per claim status; `verify --bundle` and capsule-viewer's
 # evidence report both read these.

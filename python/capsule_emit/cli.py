@@ -17,17 +17,22 @@ Four rendering levels for the ledger:
                                                     read-only witness re-check
                                                     unless --offline
 
-    capsule-emit permalink <capsule.json ...>    — build a demo verify-surface
-                                                    permalink (withheld/bundle,
-                                                    or disclosed via --reveal
-                                                    FIELD=payload.json single-
-                                                    capsule / --reveal
+    capsule-emit permalink --bundle FILE         — build a demo verify-surface
+    capsule-emit permalink <capsule.json ...>      permalink: a bundle file
+                                                    linked as it is, or capsule
+                                                    files as a bundle with no
+                                                    log proof (fields disclosed
+                                                    via --reveal FIELD=payload.json
+                                                    for one capsule / --reveal
                                                     SELECTOR:FIELD=payload.json
-                                                    per bundle item)
+                                                    per item)
 
     capsule-emit evidence --ledger <path>        — build a Verification-stage
-                                                    evidence comment (markdown)
-                                                    from a ledger; fail-closed
+      [--bundle FILE]                              comment (markdown) from a
+                                                    ledger; fail-closed. Its
+                                                    viewer link carries FILE's
+                                                    bundle, else one with no
+                                                    log proof
 
     capsule-emit disclose <path> <id|range>      — bundle plus selected
       --audience NAME [--payloads all|selected]    payload content, a
@@ -184,28 +189,27 @@ def _build_parser() -> argparse.ArgumentParser:
 
     permalink_p = sub.add_parser(
         "permalink",
-        help="build a demo verify-surface permalink (withheld/bundle, disclosed via --reveal)",
+        help="build a demo verify-surface permalink for an Evidence Bundle: a bundle file as it "
+        "is (--bundle), or capsule files as an unproven bundle (disclosed fields via --reveal)",
+        description="Build a verify-surface permalink whose fragment carries an Evidence Bundle "
+        "(evidence-bundle/v2). --bundle FILE links that file's bundle unchanged, for example one "
+        "`capsule-emit bundle` wrote with its log proof. Capsule files instead become a bundle with "
+        "no log proof (agent-action-capsule's build_unproven_bundle), the last file as its root.",
     )
     permalink_p.add_argument(
         "capsule_files",
         nargs="*",
         metavar="CAPSULE.json",
-        help="one or more capsule JSON files (mutually exclusive with --ledger/--from-run)",
-    )
-    permalink_p.add_argument(
-        "--ledger", metavar="PATH", default=None, help="read capsules from a JSONL ledger file"
-    )
-    permalink_p.add_argument(
-        "--from-run",
-        metavar="DIR",
-        default=None,
-        help="read capsules from a run directory (its ledger.jsonl if present, else its *.json files)",
+        help="one or more capsule JSON files, in chain order; the last is the bundle's root "
+        "(mutually exclusive with --bundle)",
     )
     permalink_p.add_argument(
         "--bundle",
-        action="store_true",
-        help="carry every capsule as a record of one Evidence Bundle (the chain view); "
-        "this is the DEFAULT whenever more than one capsule is supplied",
+        dest="bundle_file",
+        metavar="FILE",
+        default=None,
+        help="link the Evidence Bundle in FILE as it is (mutually exclusive with capsule files, "
+        "--reveal and --bundle-out)",
     )
     permalink_p.add_argument(
         "--base-url",
@@ -216,7 +220,8 @@ def _build_parser() -> argparse.ArgumentParser:
     permalink_p.add_argument(
         "--check",
         action="store_true",
-        help="run verify() on every capsule first (no network); refuse to emit a URL if any capsule fails",
+        help="verify first (no network) and refuse to emit a URL on a failure: every capsule "
+        "file with verify(), or the --bundle file with agent-action-capsule's strict bundle verifier",
     )
     permalink_p.add_argument(
         "--reveal",
@@ -225,10 +230,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="disclose a field (agent_input or agent_output) by reading its exact "
         "payload from a JSON file, e.g. --reveal agent_input=input.json for a "
-        "single capsule. For a bundle (--bundle, or --ledger/--from-run yielding "
-        "more than one capsule), prefix with a selector: --reveal "
+        "single capsule file. With more than one capsule file, prefix a selector: --reveal "
         "SELECTOR:FIELD=payload.json, where SELECTOR is a 1-based record number "
-        "(as shown in the chain summary) or an >=8-char capsule_id prefix — repeat "
+        "(as shown in the chain summary) or an >=8-char capsule_id prefix; repeat "
         "--reveal per field/item to disclose more than one. Goes in the Bundle's "
         "disclosures overlay; items with no --reveal stay withheld.",
     )
@@ -236,8 +240,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--bundle-out",
         metavar="PATH",
         default=None,
-        help="also write the Evidence Bundle (JCS JSON) to PATH, for hosting it "
-        "behind a pointer permalink",
+        help="with capsule files: also write the exact Evidence Bundle the link carries (JCS JSON) "
+        "to PATH, for hosting it behind a pointer permalink",
     )
     permalink_p.add_argument(
         "--bundle-location",
@@ -248,14 +252,6 @@ def _build_parser() -> argparse.ArgumentParser:
         f"inline permalink would exceed {MAX_INLINE_URL_BYTES // (1024 * 1024)} MiB: "
         "the fragment then carries a digest-checked pointer instead of the bundle. "
         "Without it an oversize permalink is refused.",
-    )
-
-    permalink_p.add_argument(
-        "--all",
-        action="store_true",
-        help="with --ledger and --bundle-out: write every record of the ledger to the evidence "
-        "file, across every counterparty. Without it the whole-ledger file is refused; "
-        "use `capsule-emit bundle` for a scoped, proven one",
     )
 
     # bundle
@@ -315,7 +311,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # evidence
     evidence_p = sub.add_parser(
         "evidence",
-        help="build a Verification-stage evidence comment (markdown) from a ledger; "
+        help="build a Verification-stage comment (markdown) from a ledger; "
         "fail-closed — every capsule is re-verified first",
     )
     evidence_p.add_argument(
@@ -353,6 +349,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="verify-surface base URL for the viewer link (required unless --no-viewer-link; "
         "no default), for example https://verify.agentactioncapsule.org",
+    )
+    evidence_p.add_argument(
+        "--bundle",
+        dest="bundle_file",
+        metavar="FILE",
+        default=None,
+        help="the Evidence Bundle the viewer link carries, as it is (for example one "
+        "`capsule-emit bundle` wrote, with its log proof); without it the link carries the "
+        "capsules as a bundle with no log proof",
     )
     evidence_p.add_argument(
         "--no-viewer-link",
@@ -412,8 +417,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_evidence(args: argparse.Namespace) -> int:
-    from .evidence import EvidenceError, build_evidence_markdown
     from .permalink import PermalinkError, load_capsules
+    from .verification_comment import VerificationCommentError, build_verification_comment
 
     try:
         capsules = load_capsules(
@@ -425,17 +430,27 @@ def _cmd_evidence(args: argparse.Namespace) -> int:
         print(f"evidence: {exc}", file=sys.stderr)
         return 1
 
+    bundle = None
+    if args.bundle_file:
+        try:
+            with open(args.bundle_file, encoding="utf-8") as fh:
+                bundle = json.load(fh)
+        except (OSError, ValueError) as exc:
+            print(f"evidence: {args.bundle_file}: {exc}", file=sys.stderr)
+            return 1
+
     ledger_name = Path(args.ledger).name if args.ledger else "ledger.jsonl"
     try:
-        markdown = build_evidence_markdown(
+        markdown = build_verification_comment(
             capsules,
+            bundle=bundle,
             issue_url=args.issue,
             title=args.title,
             base_url=args.base_url,
             viewer_link=not args.no_viewer_link,
             ledger_name=ledger_name,
         )
-    except EvidenceError as exc:
+    except VerificationCommentError as exc:
         print(f"evidence: {exc}", file=sys.stderr)
         return 1
 
@@ -671,27 +686,59 @@ def _check_reveal_digests_per_capsule(capsules: list[dict], disclosures: dict[st
 _FRAGMENT_SIZE_WARN_BYTES = 16 * 1024
 
 
-def _cmd_permalink(args: argparse.Namespace) -> int:
+def _permalink_bundle_file(args: argparse.Namespace) -> tuple[dict, str] | None:
+    """``--bundle FILE``: the file's bundle, unchanged, and its summary line;
+    ``None`` after printing why it cannot be linked."""
+    from .permalink import summarize
+
+    if args.capsule_files or args.reveal or args.bundle_out:
+        print(
+            "permalink: --bundle links a finished bundle as it is; it takes no capsule files, "
+            "--reveal or --bundle-out",
+            file=sys.stderr,
+        )
+        return None
+    try:
+        with open(args.bundle_file, encoding="utf-8") as fh:
+            bundle = json.load(fh)
+    except (OSError, ValueError) as exc:
+        print(f"permalink: {args.bundle_file}: {exc}", file=sys.stderr)
+        return None
+    records = bundle.get("records") if isinstance(bundle, dict) else None
+    if not isinstance(records, list) or not all(isinstance(r, dict) for r in records):
+        print(f"permalink: {args.bundle_file}: not an Evidence Bundle (no records)", file=sys.stderr)
+        return None
+    if args.check:
+        from agent_action_capsule.bundle import verify_bundle
+
+        verdict = verify_bundle(bundle, strict=True).verdict
+        if verdict == "INVALID":
+            print(
+                f"permalink --check: {args.bundle_file} is INVALID under strict verification -- "
+                "refusing to emit a URL (run `capsule-emit verify --bundle` for the findings)",
+                file=sys.stderr,
+            )
+            return None
+        print(f"permalink --check: {args.bundle_file} is {verdict} under strict verification")
+    return bundle, summarize(records)
+
+
+def _permalink_capsule_files(args: argparse.Namespace) -> tuple[dict, str] | None:
+    """Capsule files: the unproven bundle they make, and its summary line;
+    ``None`` after printing why there is none."""
+    from agent_action_capsule.bundle import BundleBuildError, build_unproven_bundle
     from agent_action_capsule.canonical import jcs
 
-    from .permalink import (
-        PermalinkError,
-        build_bundle,
-        build_url,
-        check_capsules,
-        load_capsules,
-        summarize,
-    )
+    from .permalink import PermalinkError, _load_json_file, check_capsules, summarize
 
+    if not args.capsule_files:
+        print("permalink: no input -- pass capsule JSON file(s) or --bundle FILE", file=sys.stderr)
+        return None
     try:
-        capsules = load_capsules(
-            capsule_files=args.capsule_files or None,
-            ledger_path=args.ledger,
-            from_run=args.from_run,
-        )
-    except PermalinkError as exc:
+        capsules = [_load_json_file(p) for p in args.capsule_files]
+    except (OSError, ValueError) as exc:
         print(f"permalink: {exc}", file=sys.stderr)
-        return 1
+        return None
 
     if args.check:
         results = check_capsules(capsules)
@@ -706,19 +753,17 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
                 cid = (cap.get("capsule_id") or "<no-capsule_id>")[:16]
                 detail = "; ".join(f"{f.check}: {f.detail}" for f in res.errors) or "verification failed"
                 print(f"  {cid}  {detail}", file=sys.stderr)
-            return 1
+            return None
         print(f"permalink --check: {len(capsules)}/{len(capsules)} capsule(s) VALID")
-
-    bundle = args.bundle or len(capsules) > 1
 
     disclosures = None
     if args.reveal:
         try:
-            per_capsule = _parse_reveal_args(args.reveal, capsules)
+            disclosures = _parse_reveal_args(args.reveal, capsules)
         except PermalinkError as exc:
             print(f"permalink: {exc}", file=sys.stderr)
-            return 1
-        mismatches = _check_reveal_digests_per_capsule(capsules, per_capsule)
+            return None
+        mismatches = _check_reveal_digests_per_capsule(capsules, disclosures)
         if mismatches:
             print(
                 "permalink --reveal: disclosed payload does not match the committed "
@@ -727,34 +772,38 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
             )
             for m in mismatches:
                 print(f"  {m}", file=sys.stderr)
-            return 1
-        n_fields = sum(len(fields) for fields in per_capsule.values())
+            return None
+        n_fields = sum(len(fields) for fields in disclosures.values())
         print(
             f"permalink --reveal: {n_fields}/{n_fields} disclosed field(s) digest-match VALID "
-            f"({len(per_capsule)}/{len(capsules)} capsule(s) disclosed)"
+            f"({len(disclosures)}/{len(capsules)} capsule(s) disclosed)"
         )
-        disclosures = per_capsule if bundle else next(iter(per_capsule.values()))
-
-    if args.bundle_out and args.ledger and len(capsules) > 1 and not args.all:
-        print(
-            f"permalink: refusing to write every record of {args.ledger} ({len(capsules)}) to an "
-            "evidence file: that is the whole history, across every counterparty. Pass --all if "
-            "that is what you mean, or use `capsule-emit bundle` for a scoped, proven file",
-            file=sys.stderr,
-        )
-        return 1
 
     try:
-        if args.bundle_out:
-            bundle_obj = build_bundle(capsules, bundle=bundle, disclosures=disclosures)
-            Path(args.bundle_out).write_bytes(jcs(bundle_obj))
-        url = build_url(
+        # Closure deep enough to reach every supplied record from the root.
+        bundle = build_unproven_bundle(
             capsules,
-            base_url=args.base_url,
-            bundle=bundle,
+            root=capsules[-1].get("capsule_id"),
+            closure_depth=len(capsules),
             disclosures=disclosures,
-            bundle_locations=args.bundle_location,
         )
+    except BundleBuildError as exc:
+        print(f"permalink: {exc}", file=sys.stderr)
+        return None
+    if args.bundle_out:
+        Path(args.bundle_out).write_bytes(jcs(bundle))
+    return bundle, summarize(capsules)
+
+
+def _cmd_permalink(args: argparse.Namespace) -> int:
+    from .permalink import PermalinkError, build_url
+
+    built = _permalink_bundle_file(args) if args.bundle_file else _permalink_capsule_files(args)
+    if built is None:
+        return 1
+    bundle, summary = built
+    try:
+        url = build_url(bundle, base_url=args.base_url, bundle_locations=args.bundle_location)
     except PermalinkError as exc:
         print(f"permalink: {exc}", file=sys.stderr)
         return 1
@@ -766,7 +815,7 @@ def _cmd_permalink(args: argparse.Namespace) -> int:
             "some browsers/proxies/shell history truncate or choke on URLs this long",
             file=sys.stderr,
         )
-    print(summarize(capsules))
+    print(summary)
     print(url)
     return 0
 

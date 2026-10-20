@@ -408,6 +408,8 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
     outputs.write_text(json.dumps(payloads[0][1]))
     bundle = tmp_path / "bundle.json"
     proven = tmp_path / "proven.json"
+    capsule_file = tmp_path / "capsule.json"
+    capsule_file.write_bytes(LegacyLedger(path).get(cid).capsule)
     base = "https://verify.example"
     runs = {
         "ledger view": [["ledger", "view", str(path)], ["ledger", "view", str(path), "--chains"],
@@ -415,8 +417,8 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
         "ledger show": [["ledger", "show", str(path), cid]],
         "verify": [["verify", "--store", str(path)]],
         "status": [["status", str(path), "--offline"]],
-        "permalink": [["permalink", "--base-url", base, "--ledger", str(path)],
-                      ["permalink", "--base-url", base, "--ledger", str(path), "--bundle-out", str(bundle), "--all"]],
+        "permalink": [["permalink", "--base-url", base, "--bundle", str(proven)],
+                      ["permalink", "--base-url", base, str(capsule_file), "--bundle-out", str(bundle)]],
         "evidence": [["evidence", "--base-url", base, "--ledger", str(path), "--out", str(tmp_path / "evidence.md")]],
         "bundle": [["bundle", str(path), "--all", "-o", str(proven)]],
         "disclose": [["disclose", str(path), cid, "--audience", "auditor", "--reveal", f"{cid}:agent_input={inputs}",
@@ -427,7 +429,7 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
     # An evidence file checked without a witness directory is INCOMPLETE
     # (exit 2): its receipts are not checked. Never INVALID (exit 1).
     incomplete = {("verify", "--bundle", str(bundle))}
-    order = ["ledger view", "ledger show", "permalink", "bundle", "verify", "status", "evidence", "disclose"]
+    order = ["ledger view", "ledger show", "bundle", "permalink", "verify", "status", "evidence", "disclose"]
     for name in order:
         for argv in runs[name]:
             expected = 2 if tuple(argv[:3]) in incomplete else 0

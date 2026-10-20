@@ -13,14 +13,13 @@ import json
 from pathlib import Path
 
 import pytest
-from agent_action_capsule.bundle import bundle_digest, decode_fragment, verify_bundle
+from agent_action_capsule.bundle import build_unproven_bundle, bundle_digest, decode_fragment, verify_bundle
 
 from capsule_emit import seal
 from capsule_emit.cli import main as cli_main
 from capsule_emit.permalink import (
     MAX_INLINE_URL_BYTES,
     PermalinkError,
-    build_bundle,
     build_url,
     pointer_fragment,
     resolve_pointer,
@@ -41,6 +40,20 @@ def _fragment(url: str) -> str:
     return url.split("#", 1)[1]
 
 
+def _unproven(capsules: list[dict], disclosures: dict | None = None, closure_depth: int | None = None) -> dict:
+    """The bundle ``capsule-emit permalink`` builds from capsule files."""
+    return build_unproven_bundle(
+        capsules,
+        root=capsules[-1]["capsule_id"],
+        closure_depth=len(capsules) if closure_depth is None else closure_depth,
+        disclosures=disclosures,
+    )
+
+
+def _case_bundle(case: dict) -> dict:
+    return _unproven(case["capsules"], case["disclosures"], case["closure_depth"])
+
+
 # ---------------------------------------------------------------------------
 # §9 codec — cross-implementation vectors
 # ---------------------------------------------------------------------------
@@ -48,14 +61,12 @@ def _fragment(url: str) -> str:
 
 @CASES
 def test_bundle_shape_matches_the_vector(case):
-    assert build_bundle(case["capsules"], bundle=case["bundle"], disclosures=case["disclosures"]) == case[
-        "expected_bundle"
-    ]
+    assert _case_bundle(case) == case["expected_bundle"]
 
 
 @CASES
 def test_fragment_matches_the_go_reference_encoder(case):
-    url = build_url(case["capsules"], bundle=case["bundle"], disclosures=case["disclosures"], base_url=DEFAULT_BASE_URL)
+    url = build_url(case["expected_bundle"], base_url=DEFAULT_BASE_URL)
     assert url == f"{DEFAULT_BASE_URL}/bundle#{case['fragment']}"
 
 
@@ -67,9 +78,7 @@ def test_bundle_digest_matches_the_go_reference(case):
 @CASES
 def test_pointer_fragment_matches_the_go_reference_encoder(case):
     url = build_url(
-        case["capsules"],
-        bundle=case["bundle"],
-        disclosures=case["disclosures"],
+        case["expected_bundle"],
         bundle_locations=_DOC["locations"],
         max_url_bytes=1024,  # every inline vector URL is longer, every pointer URL shorter
         base_url=DEFAULT_BASE_URL,
@@ -80,7 +89,7 @@ def test_pointer_fragment_matches_the_go_reference_encoder(case):
 
 @CASES
 def test_fragment_is_unpadded_base64url(case):
-    frag = _fragment(build_url(case["capsules"], bundle=case["bundle"], disclosures=case["disclosures"], base_url=DEFAULT_BASE_URL))
+    frag = _fragment(build_url(case["expected_bundle"], base_url=DEFAULT_BASE_URL))
     assert "=" not in frag and "+" not in frag and "/" not in frag
 
 
@@ -104,23 +113,21 @@ def oversize_capsule():
     """A capsule whose disclosed input alone puts the inline URL past 2 MiB."""
     payload = {"blob": "x" * (MAX_INLINE_URL_BYTES * 3 // 4 + 1024)}
     cap = seal(payload, action="write_order", operator="example-org", developer="agent@v1", verdict="executed", anchor=False)
-    return cap.capsule, {"agent_input": payload}
+    return cap.capsule, {cap.capsule["capsule_id"]: {"agent_input": payload}}
 
 
 def test_oversize_permalink_is_refused_without_a_location(oversize_capsule):
     capsule, disclosures = oversize_capsule
     with pytest.raises(PermalinkError, match="--bundle-location"):
-        build_url([capsule], bundle=False, disclosures=disclosures, base_url=DEFAULT_BASE_URL)
+        build_url(_unproven([capsule], disclosures), base_url=DEFAULT_BASE_URL)
 
 
 def test_oversize_permalink_falls_back_to_a_pointer(oversize_capsule):
     capsule, disclosures = oversize_capsule
-    url = build_url(
-        [capsule], bundle=False, disclosures=disclosures, bundle_locations=["https://bundles.example.org/1.json"], base_url=DEFAULT_BASE_URL
-    )
+    full = _unproven([capsule], disclosures)
+    url = build_url(full, bundle_locations=["https://bundles.example.org/1.json"], base_url=DEFAULT_BASE_URL)
     assert len(url) < 1024
     pointer = decode_fragment(_fragment(url))
-    full = build_bundle([capsule], bundle=False, disclosures=disclosures)
     assert pointer == {
         "bundle_ref": {
             "digest": bundle_digest(full),
@@ -133,17 +140,17 @@ def test_oversize_permalink_falls_back_to_a_pointer(oversize_capsule):
 
 def test_inline_permalink_under_the_limit_ignores_locations():
     cap = seal({"a": 1}, action="a", operator="example-org", developer="agent@v1", verdict="executed", anchor=False)
-    url = build_url([cap.capsule], bundle=False, bundle_locations=["https://bundles.example.org/1.json"], base_url=DEFAULT_BASE_URL)
+    url = build_url(_unproven([cap.capsule]), bundle_locations=["https://bundles.example.org/1.json"], base_url=DEFAULT_BASE_URL)
     assert decode_fragment(_fragment(url))["bundle_kind"] == "evidence-bundle/v2"
 
 
 def test_resolve_pointer_rejects_a_substituted_bundle():
     a = seal({"a": 1}, action="a", operator="example-org", developer="agent@v1", verdict="executed", anchor=False)
     b = seal({"b": 2}, action="b", operator="example-org", developer="agent@v1", verdict="executed", anchor=False)
-    genuine = build_bundle([a.capsule], bundle=False)
+    genuine = _unproven([a.capsule])
     pointer = pointer_fragment(genuine, ["https://bundles.example.org/1.json"])
     with pytest.raises(PermalinkError, match="digest"):
-        resolve_pointer(pointer, build_bundle([b.capsule], bundle=False))
+        resolve_pointer(pointer, _unproven([b.capsule]))
     tampered = dict(genuine, completeness={"closure_depth": 0, "records_mode": "complete"})
     with pytest.raises(PermalinkError, match="digest"):
         resolve_pointer(pointer, tampered)
@@ -151,7 +158,7 @@ def test_resolve_pointer_rejects_a_substituted_bundle():
 
 def test_resolve_pointer_rejects_a_root_mismatch():
     a = seal({"a": 1}, action="a", operator="example-org", developer="agent@v1", verdict="executed", anchor=False)
-    genuine = build_bundle([a.capsule], bundle=False)
+    genuine = _unproven([a.capsule])
     pointer = pointer_fragment(genuine, ["https://bundles.example.org/1.json"])
     pointer["bundle_ref"]["root"] = "0" * 64
     with pytest.raises(PermalinkError, match="root"):
@@ -161,7 +168,7 @@ def test_resolve_pointer_rejects_a_root_mismatch():
 def test_pointer_needs_a_location():
     a = seal({"a": 1}, action="a", operator="example-org", developer="agent@v1", verdict="executed", anchor=False)
     with pytest.raises(PermalinkError, match="location"):
-        pointer_fragment(build_bundle([a.capsule], bundle=False), [])
+        pointer_fragment(_unproven([a.capsule]), [])
 
 
 # ---------------------------------------------------------------------------
@@ -169,31 +176,32 @@ def test_pointer_needs_a_location():
 # ---------------------------------------------------------------------------
 
 
-def _oversize_ledger(tmp_path):
-    ledger = tmp_path / "big.jsonl"
+def _oversize_capsule_file(tmp_path):
     payload = {"blob": "x" * (MAX_INLINE_URL_BYTES * 3 // 4 + 1024)}
-    seal(payload, action="write_order", operator="example-org", developer="agent@v1", verdict="executed",
-         anchor=False, ledger=ledger)
+    cap = seal(payload, action="write_order", operator="example-org", developer="agent@v1", verdict="executed",
+               anchor=False)
+    capsule_file = tmp_path / "big.json"
+    capsule_file.write_text(json.dumps(cap.capsule))
     reveal = tmp_path / "input.json"
     reveal.write_text(json.dumps(payload))
-    return ledger, reveal
+    return capsule_file, reveal
 
 
 def test_cli_oversize_without_location_exits_1_and_prints_no_url(tmp_path, capsys):
-    ledger, reveal = _oversize_ledger(tmp_path)
-    assert cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", f"agent_input={reveal}"]) == 1
+    capsule_file, reveal = _oversize_capsule_file(tmp_path)
+    assert cli_main(["permalink", "--base-url", DEFAULT_BASE_URL, str(capsule_file), "--reveal", f"agent_input={reveal}"]) == 1
     captured = capsys.readouterr()
     assert "--bundle-location" in captured.err
     assert "http" not in captured.out
 
 
 def test_cli_oversize_with_location_prints_a_pointer_matching_the_written_bundle(tmp_path, capsys):
-    ledger, reveal = _oversize_ledger(tmp_path)
+    capsule_file, reveal = _oversize_capsule_file(tmp_path)
     out_path = tmp_path / "bundle.json"
     location = "https://bundles.example.org/big.json"
     code = cli_main(
         [
-            "permalink", "--base-url", DEFAULT_BASE_URL, "--ledger", str(ledger), "--reveal", f"agent_input={reveal}",
+            "permalink", "--base-url", DEFAULT_BASE_URL, str(capsule_file), "--reveal", f"agent_input={reveal}",
             "--bundle-out", str(out_path), "--bundle-location", location,
         ]
     )
@@ -204,27 +212,3 @@ def test_cli_oversize_with_location_prints_a_pointer_matching_the_written_bundle
     assert pointer["bundle_ref"]["locations"] == [location]
     assert resolve_pointer(pointer, hosted) == hosted
     assert verify_bundle(hosted).disclosures[0].status == "disclosure_match"
-
-
-def test_converging_citations_are_walked_once():
-    """Each record cites its parent and its grandparent: without visiting each
-    record once, the closure walk's frontier doubles at every step and 60
-    records never finish."""
-    import time
-
-    from capsule_emit.permalink import _completeness
-
-    ids = [f"{i:064x}" for i in range(60)]
-    records = []
-    for i, cid in enumerate(ids):
-        record = {"capsule_id": cid}
-        if i:
-            record["chain"] = {"parent_capsule_id": ids[i - 1]}
-        if i > 1:
-            record["references"] = [{"type": "agent-action-capsule", "digest_alg": "SHA-256", "digest": ids[i - 2]}]
-        records.append(record)
-    records[0]["references"] = [{"type": "agent-action-capsule", "digest_alg": "SHA-256", "digest": "ab" * 32}]
-    start = time.monotonic()
-    completeness = _completeness(ids[-1], records)
-    assert time.monotonic() - start < 1
-    assert completeness == {"closure_depth": 60, "records_mode": "declared_incomplete", "missing": ["ab" * 32]}

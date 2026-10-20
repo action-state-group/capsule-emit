@@ -9,8 +9,11 @@ the UTF-8 JCS bytes), and the pointer form an oversize permalink falls back to:
 {"bundle_ref": {"digest": "<bundle digest>", "root": "<capsule_id>", "locations": ["<URI>", ...]}}
 ```
 
-Each case in `vectors.json` gives the input capsules, the `bundle` flag and
-`disclosures` passed to `build_url`, the expected Bundle, and three values
+Each case in `vectors.json` gives the input capsules, the `disclosures` and
+`closure_depth` the Bundle is built with (agent-action-capsule's
+`build_unproven_bundle`, the last capsule as `root`, as `capsule-emit
+permalink` builds one from capsule files), the expected Bundle that
+`build_url` then encodes, and three values
 computed by agent-action-capsule's Go reference (`../go-oracle/jcs_oracle.go`),
 not by capsule-emit: `fragment`, `bundle_digest` and `pointer_fragment`.
 `python/tests/test_permalink_bundle_codec.py` checks capsule-emit against them.
