@@ -313,7 +313,7 @@ pub enum SubstrateError {
     #[error("cannot checkpoint an empty MMR (no leaves appended yet)")]
     EmptyMmr,
     #[error("CLL log error: {0}")]
-    Log(String),
+    Log(cll::log::Error),
     #[error("the CLL state's checkpoint or MMR does not match the log's entries: {0}")]
     StateInvalid(String),
     #[error("the CLL state indexes {stored_leaves} leaves but the log has only {log_leaves}")]
@@ -370,7 +370,12 @@ from_log!(cll::mmr::MmrError, Mmr);
 from_log!(cll::node_store::NodeStoreError, NodeStore);
 from_log!(cll::store::StoreError, Store);
 from_log!(LogSignerError, Signer);
-from_log!(cll::log::Error, Log);
+
+impl<T> FromLog<T> for Result<T, cll::log::Error> {
+    fn log_err(self) -> Result<T, SubstrateError> {
+        self.map_err(SubstrateError::Log)
+    }
+}
 
 /// A signed checkpoint not yet persisted. Witness receipts may be attached
 /// to `checkpoint.witnesses` before [`CllSubstrate::commit_checkpoint`].
@@ -432,10 +437,12 @@ enum Checkpoints {
     /// `checkpoints.jsonl`, beside a durable node store.
     File(PathBuf),
     /// A CLL backend's state, which holds the nodes and the checkpoint's COSE
-    /// form together; `committed` is the state as last read or written.
+    /// form together. `committed_size` and `committed_checkpoint` are the
+    /// state's as last read or written: the compare-and-set's expectations.
     Log {
         backend: Arc<dyn CheckpointLog>,
-        committed: LogState,
+        committed_size: u64,
+        committed_checkpoint: Option<Vec<u8>>,
     },
 }
 
@@ -487,13 +494,13 @@ impl CllSubstrate {
     /// `indexed_seq`. Entries past the state are folded in memory. The JSON
     /// checkpoint record is rebuilt from the COSE and signed again by the
     /// signer the checkpoint names; Ed25519 is deterministic, so it is the
-    /// record first cut.
+    /// record first cut. Also returns the leaves the state already indexed.
     pub(crate) fn open_log(
         backend: Arc<dyn CheckpointLog>,
         log_id: &str,
         ids: &[RecordId],
         signers: &[&dyn CheckpointSigner],
-    ) -> Result<Self, SubstrateError> {
+    ) -> Result<(Self, u64), SubstrateError> {
         let state = backend.load_cll().log_err()?;
         if state.indexed_seq > ids.len() as u64 {
             return Err(SubstrateError::StateAhead {
@@ -531,15 +538,19 @@ impl CllSubstrate {
                 (Some(record), Some(cp.bytes.clone()))
             }
         };
-        Ok(Self {
-            node_store: Nodes::Memory(rebuilt),
-            checkpoints: Checkpoints::Log {
-                backend,
-                committed: state,
+        Ok((
+            Self {
+                node_store: Nodes::Memory(rebuilt),
+                checkpoints: Checkpoints::Log {
+                    backend,
+                    committed_size: state.size,
+                    committed_checkpoint: state.checkpoint.map(|c| c.bytes),
+                },
+                last_checkpoint,
+                last_checkpoint_cose,
             },
-            last_checkpoint,
-            last_checkpoint_cose,
-        })
+            state.indexed_seq,
+        ))
     }
 
     /// Records committed so far.
@@ -719,7 +730,11 @@ impl CllSubstrate {
                 },
             )
             .log_err()?,
-            Checkpoints::Log { backend, committed } => {
+            Checkpoints::Log {
+                backend,
+                committed_size,
+                committed_checkpoint,
+            } => {
                 let bytes = cose.clone().ok_or_else(|| {
                     SubstrateError::NoCose(
                         prepared_cose_error.unwrap_or_else(|| "it was not built".into()),
@@ -736,7 +751,7 @@ impl CllSubstrate {
                     indexed_seq,
                     first_pending_at: (indexed_seq > cut_leaves).then(Timestamp::now),
                     checkpoint: Some(LogCheckpointState {
-                        bytes,
+                        bytes: bytes.clone(),
                         size: checkpoint.mmr_size,
                         indexed_seq: cut_leaves,
                         peaks: peaks(checkpoint.mmr_size)
@@ -745,16 +760,14 @@ impl CllSubstrate {
                             .map(|&p| self.node_store.node(p).to_vec())
                             .collect(),
                     }),
-                    witnesses: committed.witnesses.clone(),
+                    // The compare-and-set keeps the stored witness rows.
+                    witnesses: Vec::new(),
                 };
                 backend
-                    .commit_cll(
-                        committed.size,
-                        committed.checkpoint.as_ref().map(|c| c.bytes.as_slice()),
-                        &next,
-                    )
+                    .commit_cll(*committed_size, committed_checkpoint.as_deref(), &next)
                     .log_err()?;
-                *committed = next;
+                *committed_size = size;
+                *committed_checkpoint = Some(bytes);
             }
         }
         self.last_checkpoint = Some(checkpoint.clone());

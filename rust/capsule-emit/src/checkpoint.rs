@@ -307,6 +307,7 @@ impl From<SubstrateError> for CheckpointStateError {
                 actual_root,
                 recorded_root,
             },
+            SubstrateError::Log(e) => Self::Log(e),
             SubstrateError::StateAhead {
                 stored_leaves,
                 log_leaves,
@@ -318,7 +319,6 @@ impl From<SubstrateError> for CheckpointStateError {
             other @ (SubstrateError::LeafMismatch { .. }
             | SubstrateError::CutBeyondLog { .. }
             | SubstrateError::StalePrepared { .. }
-            | SubstrateError::Log(_)
             | SubstrateError::StateInvalid(_)
             | SubstrateError::NoSigner { .. }
             | SubstrateError::NoCose(_)) => Self::Checkpoint(other.to_string()),
@@ -635,11 +635,12 @@ impl CheckpointState {
     /// Every later checkpoint is committed into the same backend, so any CLL
     /// reader (an Evidence Bundle producer) sees it.
     ///
-    /// `signers` signs: the first cuts new checkpoints, and the one whose key
-    /// signed the stored checkpoint signs its rebuilt JSON record again
-    /// (deterministic Ed25519, so the record is the one first cut). After a
-    /// key rotation pass the archived key too (`keys::rotate` keeps it); when
-    /// none matches, loading fails. Witness registration is not supported
+    /// `signers` is used only here: the one whose key signed the stored
+    /// checkpoint signs its rebuilt JSON record again (deterministic Ed25519,
+    /// so the record is the one first cut). Later cuts sign with the signer
+    /// passed to each call, as on the flat layout. After a key rotation pass
+    /// the archived key too (`keys::rotate` keeps it); when none matches,
+    /// loading fails. Witness registration is not supported
     /// here yet, so a `cfg` with `witness_urls` is refused.
     pub fn load_log(
         backend: Arc<dyn CheckpointLog>,
@@ -679,21 +680,22 @@ impl CheckpointState {
                 capsule_ids.push(hex::encode(id));
             }
         }
-        let stored_leaves = backend.load_cll()?.indexed_seq;
-        let substrate = CllSubstrate::open_log(backend.clone(), &log_id, &record_ids, signers)
-            .map_err(|e| match e {
-                SubstrateError::LeafMismatch {
-                    leaf_index,
-                    stored_leaf,
-                    expected_leaf,
-                } => CheckpointStateError::NodeStoreDivergedFromLedger {
-                    leaf_index,
-                    capsule_id: capsule_ids[leaf_index as usize].clone(),
-                    stored_leaf,
-                    expected_leaf,
+        let (substrate, stored_leaves) =
+            CllSubstrate::open_log(backend.clone(), &log_id, &record_ids, signers).map_err(
+                |e| match e {
+                    SubstrateError::LeafMismatch {
+                        leaf_index,
+                        stored_leaf,
+                        expected_leaf,
+                    } => CheckpointStateError::NodeStoreDivergedFromLedger {
+                        leaf_index,
+                        capsule_id: capsule_ids[leaf_index as usize].clone(),
+                        stored_leaf,
+                        expected_leaf,
+                    },
+                    other => other.into(),
                 },
-                other => other.into(),
-            })?;
+            )?;
         let leaf_count = capsule_ids.len() as u64;
         let last_checkpoint_leaf_count = match substrate.last_checkpoint() {
             Some(cp) => cp.leaf_count()?,
@@ -843,9 +845,12 @@ impl CheckpointState {
                 &hex::encode(&last.value),
             )?;
         }
+        // The cursor advances with each folded leaf, so a scan that fails
+        // partway leaves the state consistent and a retry resumes after the
+        // last folded entry.
         let mut added = 0u64;
         loop {
-            let page = backend.scan_entries(self.leaf_count + added, MAX_SCAN_LIMIT)?;
+            let page = backend.scan_entries(self.leaf_count, MAX_SCAN_LIMIT)?;
             if page.is_empty() {
                 break;
             }
@@ -858,13 +863,12 @@ impl CheckpointState {
                     }
                 })?;
                 self.substrate.append_leaf(&record_id)?;
-                self.leaf_index_by_id
-                    .insert(capsule_id, self.leaf_count + added);
+                self.leaf_index_by_id.insert(capsule_id, self.leaf_count);
+                self.leaf_count += 1;
+                self.note_pending(1);
                 added += 1;
             }
         }
-        self.leaf_count += added;
-        self.note_pending(added);
         Ok(added)
     }
 

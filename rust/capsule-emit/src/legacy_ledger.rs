@@ -35,7 +35,7 @@ use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use crate::ledger::{check_statement_matches, Ledger, LedgerError};
+use crate::ledger::{check_statement_matches, statement_artifact, Ledger, LedgerError};
 use cll::log::{
     AppendInput, AppendOutcome, AppendResult, Entry, EntrySource, EntryStore, Error as LogError,
     ErrorCode, Timestamp, ENTRY_BYTES, MAX_PORTABLE_INTEGER, MAX_SCAN_LIMIT,
@@ -43,14 +43,13 @@ use cll::log::{
 use serde_json::{Map, Value};
 
 use capsule_emit_artifact::{
-    check_config, decode_strict_json, is_padding, prepare, valid_id, verify, Artifact,
-    ArtifactError, Record, Result, RetentionState, Store,
+    check_config, decode_strict_json, is_padding, prepare, valid_id, verify, ArtifactError, Record,
+    Result, RetentionState, Store,
 };
-use sha2::{Digest, Sha256};
 
 /// The name of the required, unbound `signed-statements/<capsule_id>.cose`
 /// attachment.
-pub const STATEMENT: &str = "signed-statement";
+pub use crate::ledger::STATEMENT;
 
 /// What the legacy backend offers, by capability name.
 pub const CAPABILITIES: &[(&str, bool)] = &[
@@ -339,16 +338,6 @@ impl LegacyLedger {
 
 fn ledger(state: &mut State) -> &mut Ledger {
     state.ledger.as_mut().expect("with() opened the ledger")
-}
-
-fn statement_artifact(statement: Vec<u8>) -> Artifact {
-    Artifact {
-        name: STATEMENT.to_string(),
-        binding: String::new(),
-        content_sha256: hex::encode(Sha256::digest(&statement)),
-        content: Some(statement),
-        state: RetentionState::Present,
-    }
 }
 
 /// Derives entries for ledger lines not yet indexed.

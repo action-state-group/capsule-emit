@@ -41,8 +41,8 @@ The `verify_capsule` binary verifies one capsule and statement offline.
 
 `Ledger::open(dir)` keeps the flat layout. `Ledger::open_stores(log,
 artifacts)` keeps the same ledger in the two standard storage layers: a CLL
-entry log (`checkpointed_local_log::log`: memory, jsonl, sqlite or mysql)
-holding each line's `capsule_id` in order, and a
+entry log (`cll::log` from `checkpointed-local-log`: memory, jsonl, sqlite or
+mysql) holding each line's `capsule_id` in order, and a
 [`capsule-emit-artifact`](../capsule-emit-artifact) store holding each line as
 a record with its producer envelope and signed statement.
 `CheckpointState::load_log(log, log_id, cfg, signers)` keeps the checkpoints in
@@ -51,12 +51,25 @@ the same CLL backend's state, where an Evidence Bundle producer
 other method works as on the flat layout, and the same sealing sequence gives
 the same capsule IDs and checkpoint roots on both.
 
+With these dependencies (`capsule-emit-artifact` is not on crates.io yet; use
+it from this repository until it is):
+
+```toml
+capsule-emit = "0.0"
+cll = { package = "checkpointed-local-log", version = "0.3.1", features = ["sqlite"] }
+capsule-emit-artifact = { version = "0.0.1", features = ["sqlite"] }
+rusqlite = "0.40"
+```
+
 ```rust
 use std::sync::Arc;
+use capsule_emit::checkpoint::CheckpointState;
+use capsule_emit::ledger::Ledger;
+use capsule_emit_artifact::Store; // for `init`
 
 let db = "ledger.db";
-checkpointed_local_log::log::sqlite::SqliteStore::init(db, "my-log")?;
-let log = Arc::new(checkpointed_local_log::log::sqlite::SqliteStore::open(db, "my-log")?);
+cll::log::sqlite::SqliteStore::init(db, "my-log")?;
+let log = Arc::new(cll::log::sqlite::SqliteStore::open(db, "my-log")?);
 let artifacts = capsule_emit_artifact::sqlite::SqliteStore::new(
     rusqlite::Connection::open(db)?, "ledger", [node_public_key])?;
 artifacts.init()?;

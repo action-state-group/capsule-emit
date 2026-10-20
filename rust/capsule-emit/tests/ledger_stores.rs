@@ -237,6 +237,19 @@ fn flat_and_sqlite_give_the_same_ids_and_checkpoint_root() {
     assert_eq!(flat_cut.mmr_size, stored_cut.mmr_size);
     assert_eq!(stored_cut.leaf_count().unwrap(), 5);
 
+    // The CLL and artifact JSONL backends give the same history and root.
+    let jsonl_dir = dir.path().join("jsonl");
+    std::fs::create_dir(&jsonl_dir).unwrap();
+    let (journal, jsonl_artifacts) = jsonl(&jsonl_dir, true);
+    let journal_log: Log = journal.clone();
+    let mut on_jsonl = open(&journal_log, &jsonl_artifacts).unwrap();
+    assert_eq!(write_sequence(&mut on_jsonl), written);
+    assert_eq!(shape(flat.lines()), shape(on_jsonl.lines()));
+    let mut jsonl_cp = load_log(journal, &[&key()]).unwrap();
+    let jsonl_cut = jsonl_cp.reconnect(&key(), &anchor()).unwrap().unwrap();
+    assert_eq!(jsonl_cut.root, flat_cut.root);
+    assert_eq!(jsonl_cut.mmr_size, flat_cut.mmr_size);
+
     // The checkpoint is in the CLL backend's own state.
     let state = log.load_cll().unwrap();
     assert_eq!(state.indexed_seq, 5);
@@ -327,19 +340,25 @@ fn a_line_open_would_refuse_is_refused_before_anything_is_written() {
         .unwrap_err();
     assert!(matches!(err, LedgerError::StatementInvalid { .. }), "{err}");
 
-    // A key_id that is not the envelope's signer.
+    // A key_id that is not the envelope's signer, with a statement that
+    // key_id's key did sign: only the envelope check refuses it.
     let mut wrong_key = r0.clone();
     wrong_key["key_id"] = json!(hex::encode(other_key().verifying_key().to_bytes()));
     let err = ledger
-        .append(&wrong_key, &statement(&r0, &key(), CONTENT_TYPE))
+        .append(
+            &wrong_key,
+            &statement(&wrong_key, &other_key(), CONTENT_TYPE),
+        )
         .unwrap_err();
-    assert!(
-        matches!(
-            err,
-            LedgerError::Envelope { .. } | LedgerError::StatementInvalid { .. }
-        ),
-        "{err}"
-    );
+    assert!(matches!(err, LedgerError::Envelope { .. }), "{err}");
+
+    // An envelope in uppercase hex, which would read back lowercase.
+    let mut upper = r0.clone();
+    upper["signature"] = json!(r0["signature"].as_str().unwrap().to_uppercase());
+    let err = ledger
+        .append(&upper, &statement(&upper, &key(), CONTENT_TYPE))
+        .unwrap_err();
+    assert!(matches!(err, LedgerError::Envelope { .. }), "{err}");
 
     // No producer envelope at all.
     let mut unsigned = r0.clone();
@@ -376,6 +395,50 @@ fn a_line_open_would_refuse_is_refused_before_anything_is_written() {
     );
 }
 
+/// The record a store-backed ledger writes for `line`: what a crash between
+/// the record's `put` and the log's `append` leaves behind.
+fn orphan_record(line: &Value) -> capsule_emit_artifact::Record {
+    let mut object = line.as_object().unwrap().clone();
+    let signature = object.remove("signature").unwrap();
+    object.remove("key_id");
+    capsule_emit_artifact::Record {
+        capsule_id: id(line),
+        capsule: serde_json::to_vec(&Value::Object(object)).unwrap(),
+        producer_envelope: hex::decode(signature.as_str().unwrap()).unwrap(),
+        artifacts: vec![capsule_emit_artifact::Artifact {
+            name: capsule_emit::ledger::STATEMENT.to_string(),
+            binding: String::new(),
+            content: Some(statement(line, &key(), CONTENT_TYPE)),
+            state: capsule_emit_artifact::RetentionState::Present,
+            content_sha256: String::new(),
+        }],
+    }
+}
+
+#[test]
+fn a_crash_between_the_two_writes_leaves_a_record_the_retry_reuses() {
+    let (log, artifacts) = memory();
+    let log: Log = log;
+    let mut ledger = open(&log, &artifacts).unwrap();
+    let r0 = capsule(0, None, &key());
+    append(&mut ledger, &r0);
+    let r1 = capsule(1, Some(&id(&r0)), &key());
+    artifacts.put(&orphan_record(&r1)).unwrap();
+    drop(ledger);
+
+    // The record no entry names is not a line.
+    let mut reopened = open(&log, &artifacts).unwrap();
+    assert_eq!(reopened.entries(), 1);
+    assert_eq!(reopened.chain_head(), Some(id(&r0).as_str()));
+
+    // The retry's identical put is accepted, and the entry commits the line.
+    append(&mut reopened, &r1);
+    assert_eq!(entries(log.as_ref()), vec![id(&r0), id(&r1)]);
+    let again = open(&log, &artifacts).unwrap();
+    assert_eq!(again.chain_head(), Some(id(&r1).as_str()));
+    assert_eq!(again.lookup(&id(&r1)).unwrap().unwrap().capsule, r1);
+}
+
 #[test]
 fn a_line_already_in_the_log_is_refused() {
     let (log, artifacts) = memory();
@@ -393,7 +456,7 @@ fn a_line_already_in_the_log_is_refused() {
 // -- torn tail and real corruption -----------------------------------------------
 
 /// The JSONL backends: CLL's journal and the artifact store's file.
-fn jsonl(dir: &Path, provision: bool) -> (Log, Artifacts) {
+fn jsonl(dir: &Path, provision: bool) -> (Arc<cll::log::jsonl::JsonlStore>, Artifacts) {
     let journal = dir.join("log.jsonl");
     if provision {
         cll::log::jsonl::JsonlStore::init(&journal).unwrap();
@@ -422,6 +485,7 @@ fn a_torn_tail_reopens_clean_and_real_corruption_is_a_hard_error() {
     let r1 = capsule(1, Some(&id(&r0)), &key());
     {
         let (log, artifacts) = jsonl(dir.path(), true);
+        let log: Log = log;
         let mut ledger = open(&log, &artifacts).unwrap();
         append(&mut ledger, &r0);
         append(&mut ledger, &r1);
@@ -438,6 +502,7 @@ fn a_torn_tail_reopens_clean_and_real_corruption_is_a_hard_error() {
 
     // CLL init truncates its torn tail; the artifact store never indexes one.
     let (log, artifacts) = jsonl(dir.path(), true);
+    let log: Log = log;
     let mut ledger = open(&log, &artifacts).unwrap();
     assert_eq!(ledger.chain_head(), Some(id(&r1).as_str()));
     let r2 = capsule(2, Some(&id(&r1)), &key());
@@ -445,6 +510,7 @@ fn a_torn_tail_reopens_clean_and_real_corruption_is_a_hard_error() {
     drop(ledger);
     drop((log, artifacts));
     let (log, artifacts) = jsonl(dir.path(), false);
+    let log: Log = log;
     assert_eq!(open(&log, &artifacts).unwrap().entries(), 3);
     drop((log, artifacts));
 
@@ -454,6 +520,7 @@ fn a_torn_tail_reopens_clean_and_real_corruption_is_a_hard_error() {
     let text = std::fs::read_to_string(&path).unwrap();
     std::fs::write(&path, text.replace(&id(&r1), &"e".repeat(64))).unwrap();
     let (log, artifacts) = jsonl(dir.path(), false);
+    let log: Log = log;
     let err = open(&log, &artifacts).unwrap_err();
     assert!(
         matches!(err, LedgerError::MissingRecord { line: 2, .. }),
@@ -732,6 +799,163 @@ fn a_cll_state_that_does_not_match_the_log_is_refused() {
         matches!(err, CheckpointStateError::NodeStoreAheadOfLedger { .. }),
         "{err}"
     );
+}
+
+/// A padding sink that, like a writer racing the cut, appends one more record
+/// right after the padding: the cut stays on the bucket boundary and the
+/// record is folded past it.
+struct RacingPadder {
+    ledger: Arc<std::sync::Mutex<Ledger>>,
+    racing: std::sync::Mutex<Option<Value>>,
+}
+
+impl capsule_emit::checkpoint::PaddingSink for RacingPadder {
+    fn pad_to_bucket(&self, bucket: u64) -> Result<u64, String> {
+        let mut ledger = self.ledger.lock().unwrap();
+        let padded = ledger
+            .pad_to_bucket(bucket, &key(), ISSUER)
+            .map_err(|e| e.to_string())?;
+        if let Some(record) = self.racing.lock().unwrap().take() {
+            append(&mut ledger, &record);
+        }
+        Ok(padded)
+    }
+}
+
+#[test]
+fn a_checkpoint_shorter_than_the_persisted_state_reopens() {
+    let (log, artifacts) = memory();
+    let entry_log: Log = log.clone();
+    let ledger = Arc::new(std::sync::Mutex::new(open(&entry_log, &artifacts).unwrap()));
+    let r0 = capsule(0, None, &key());
+    append(&mut ledger.lock().unwrap(), &r0);
+    let r1 = capsule(1, Some(&id(&r0)), &key());
+
+    let mut state = CheckpointState::load_log(
+        log.clone(),
+        LOG_ID,
+        CheckpointCadenceConfig {
+            pad_bucket: 4,
+            ..cfg()
+        },
+        &[&key()],
+    )
+    .unwrap()
+    .0;
+    state.set_padding_sink(Box::new(RacingPadder {
+        ledger: ledger.clone(),
+        racing: std::sync::Mutex::new(Some(r1.clone())),
+    }));
+    let cut = state.reconnect(&key(), &anchor()).unwrap().unwrap();
+    assert_eq!(cut.leaf_count().unwrap(), 4);
+    let stored = log.load_cll().unwrap();
+    assert_eq!(stored.indexed_seq, 5);
+    assert_eq!(stored.checkpoint.as_ref().unwrap().indexed_seq, 4);
+
+    let mut reopened = load_log(log.clone(), &[&key()]).unwrap();
+    assert_eq!(reopened.last_checkpoint(), Some(&cut));
+    assert!(reopened.existing_coverage(&id(&r0)).unwrap().is_some());
+    assert!(reopened.existing_coverage(&id(&r1)).unwrap().is_none());
+    let next = reopened.reconnect(&key(), &anchor()).unwrap().unwrap();
+    assert_eq!(next.leaf_count().unwrap(), 5);
+    assert_eq!(next.prev_size, cut.mmr_size);
+
+    // The same five leaves on the flat layout give the same root.
+    let dir = tempfile::tempdir().unwrap();
+    let (mut flat, _) = Ledger::open(dir.path()).unwrap();
+    let stored_ledger = ledger.lock().unwrap();
+    for line in stored_ledger.lines() {
+        let value = stored_ledger.read_line(line.offset).unwrap();
+        let content_type = if line.padding {
+            PADDING_CONTENT_TYPE
+        } else {
+            CONTENT_TYPE
+        };
+        let signed = statement(&value, &key(), content_type);
+        if line.padding {
+            flat.append_padding(&value, &signed).unwrap();
+        } else {
+            flat.append(&value, &signed).unwrap();
+        }
+    }
+    drop(stored_ledger);
+    let (mut flat_cp, _) = CheckpointState::load(dir.path(), LOG_ID, cfg()).unwrap();
+    assert_eq!(
+        flat_cp.reconnect(&key(), &anchor()).unwrap().unwrap().root,
+        next.root
+    );
+}
+
+/// A CLL backend whose `scan_entries` fails once, on its `fail_on`-th call.
+struct FlakyScan {
+    inner: Arc<cll::log::memory::MemoryStore>,
+    scans: std::sync::atomic::AtomicUsize,
+    fail_on: usize,
+}
+
+impl EntrySource for FlakyScan {
+    fn scan_entries(&self, after_seq: u64, limit: usize) -> cll::log::Result<Vec<cll::log::Entry>> {
+        let n = self.scans.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if n == self.fail_on {
+            return Err(cll::log::Error::new(
+                cll::log::ErrorCode::Storage,
+                "injected scan failure",
+            ));
+        }
+        self.inner.scan_entries(after_seq, limit)
+    }
+}
+
+impl CheckpointStateStore for FlakyScan {
+    fn load_cll(&self) -> cll::log::Result<cll::log::State> {
+        self.inner.load_cll()
+    }
+
+    fn commit_cll(
+        &self,
+        expected_size: u64,
+        expected_checkpoint: Option<&[u8]>,
+        next: &cll::log::State,
+    ) -> cll::log::Result<()> {
+        self.inner
+            .commit_cll(expected_size, expected_checkpoint, next)
+    }
+}
+
+#[test]
+fn a_scan_that_fails_partway_resumes_without_folding_twice() {
+    let inner = Arc::new(cll::log::memory::MemoryStore::new());
+    // load_log's scan of the empty log is call 0; the first sync's pages are
+    // calls 1 (entries 1..=1000) and 2, which fails.
+    let flaky = Arc::new(FlakyScan {
+        inner: inner.clone(),
+        scans: std::sync::atomic::AtomicUsize::new(0),
+        fail_on: 2,
+    });
+    let mut state = load_log(flaky, &[&key()]).unwrap();
+    for i in 0..1500u32 {
+        inner
+            .append(&AppendInput {
+                value: sha2_digest(&i.to_be_bytes()),
+                appended_at: Timestamp::now(),
+            })
+            .unwrap();
+    }
+    let err = state.reconnect(&key(), &anchor()).err().unwrap();
+    assert!(matches!(err, CheckpointStateError::Log(_)), "{err}");
+    assert_eq!(state.leaf_count(), 1000);
+
+    let cut = state.reconnect(&key(), &anchor()).unwrap().unwrap();
+    assert_eq!(state.leaf_count(), 1500);
+    assert_eq!(cut.leaf_count().unwrap(), 1500);
+    // A reload checks every stored node against the entries.
+    let reloaded = load_log(inner, &[&key()]).unwrap();
+    assert_eq!(reloaded.last_checkpoint(), Some(&cut));
+}
+
+fn sha2_digest(data: &[u8]) -> Vec<u8> {
+    use sha2::Digest;
+    sha2::Sha256::digest(data).to_vec()
 }
 
 // -- an Evidence Bundle producer reads the SQLite log -----------------------------

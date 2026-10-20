@@ -66,11 +66,11 @@
 //! registered cross-party citation purposes.
 
 use crate::jcs::{compute_capsule_id, decode_record};
-use crate::legacy_ledger::STATEMENT;
 use crate::padding::{check_padding_shape, is_padding};
 use capsule_emit_artifact::{Artifact, ArtifactError, Record, RetentionState, Store};
 use cll::log::{AppendInput, AppendOutcome, EntryStore, ErrorCode, Timestamp, MAX_SCAN_LIMIT};
 use serde_json::Value;
+use sha2::Digest;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
@@ -215,6 +215,22 @@ pub struct Ledger {
     lines: Vec<LedgerLine>,
 }
 
+/// The name of the unbound artifact that holds a line's signed statement in
+/// an artifact store (store-backed ledgers and
+/// [`crate::legacy_ledger::LegacyLedger`]).
+pub const STATEMENT: &str = "signed-statement";
+
+/// A line's signed statement as the [`STATEMENT`] artifact: present, unbound.
+pub(crate) fn statement_artifact(statement: Vec<u8>) -> Artifact {
+    Artifact {
+        name: STATEMENT.to_string(),
+        binding: String::new(),
+        content_sha256: hex::encode(sha2::Sha256::digest(&statement)),
+        content: Some(statement),
+        state: RetentionState::Present,
+    }
+}
+
 /// Where a ledger keeps its lines.
 #[derive(Debug)]
 enum Storage {
@@ -339,17 +355,15 @@ fn to_record(capsule_id: &str, line: &Value, statement: &[u8]) -> Result<Record,
     if key_id != hex::encode(&verified.public_key) {
         return Err(envelope_error("key_id is not the envelope's signer"));
     }
+    // Lowercase hex, as written back on every read.
+    if signature != hex::encode(&envelope) {
+        return Err(envelope_error("signature is not lowercase hex"));
+    }
     Ok(Record {
         capsule_id: capsule_id.to_string(),
         capsule: serde_json::to_vec(&Value::Object(object))?,
         producer_envelope: envelope,
-        artifacts: vec![Artifact {
-            name: STATEMENT.to_string(),
-            binding: String::new(),
-            content: Some(statement.to_vec()),
-            state: RetentionState::Present,
-            content_sha256: String::new(),
-        }],
+        artifacts: vec![statement_artifact(statement.to_vec())],
     })
 }
 
