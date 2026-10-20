@@ -35,6 +35,14 @@ MAX_ENVELOPE = 65_535
 MAX_TOTAL = 8 * 1024 * 1024
 _MAX_JSON_DEPTH = 1000
 
+#: The ``record_type`` of a padding record (Evidence Layer -00, "What a
+#: Checkpoint Reveals"): a log leaf that is not a Capsule. A store admits it
+#: beside Capsules, so ``get`` can return one; a caller that needs a Capsule
+#: checks ``record_type``.
+PADDING_RECORD_TYPE = "padding"
+#: A stored padding record's closed member set, as AAC's padding vectors pin it.
+_PADDING_MEMBERS = frozenset({"capsule_id", "record_type", "epistemic_type", "store_nonce"})
+
 NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 ID_PATTERN = re.compile(r"[0-9a-f]{64}")
 
@@ -212,6 +220,25 @@ def _json_digest(content: bytes) -> str:
     return json_digest(decode_strict_json(content))
 
 
+def _verify_padding(capsule_id: str, padding: dict) -> None:
+    """Checks a padding record: exactly its four members, ``epistemic_type``
+    ``producer_claim``, a 64-lowercase-hex ``store_nonce``, and a
+    ``capsule_id`` that is the JSON-DIGEST of the record without
+    ``capsule_id``."""
+    from agent_action_capsule.canonical import json_digest
+
+    extra = sorted(set(padding) - _PADDING_MEMBERS)
+    if extra:
+        raise InvalidError(f"padding record carries {extra[0]!r}")
+    if padding.get("epistemic_type") != "producer_claim":
+        raise InvalidError("padding record epistemic_type")
+    if not valid_id(padding.get("store_nonce")):
+        raise InvalidError("padding record store_nonce")
+    body = {k: v for k, v in padding.items() if k != "capsule_id"}
+    if padding.get("capsule_id") != capsule_id or json_digest(body) != capsule_id:
+        raise InvalidError("padding record capsule id")
+
+
 def verify(record: Record, trusted: Sequence[bytes]) -> dict:
     """Authenticates the Capsule, authorizes its signer against caller-owned
     trusted keys, and verifies every available bound original. Returns
@@ -223,13 +250,21 @@ def verify(record: Record, trusted: Sequence[bytes]) -> dict:
     if not valid_id(record.capsule_id):
         raise InvalidError("capsule id")
     try:
-        capsule = _decode_capsule(record.capsule)
+        decoded = decode_strict_json(record.capsule)
     except _StrictJSONError as exc:
         raise InvalidError(f"capsule verification: {exc}") from exc
-    result = verify_class1(capsule)
-    if not result.ok or result.capsule_id != record.capsule_id:
-        codes = ",".join(f.code for f in result.errors)
-        raise InvalidError(f"capsule verification: {codes or 'capsule id mismatch'}")
+    if isinstance(decoded, dict) and decoded.get("record_type") == PADDING_RECORD_TYPE:
+        _verify_padding(record.capsule_id, decoded)
+        capsule = decoded
+    else:
+        try:
+            capsule = _decode_capsule(record.capsule)
+        except _StrictJSONError as exc:
+            raise InvalidError(f"capsule verification: {exc}") from exc
+        result = verify_class1(capsule)
+        if not result.ok or result.capsule_id != record.capsule_id:
+            codes = ",".join(f.code for f in result.errors)
+            raise InvalidError(f"capsule verification: {codes or 'capsule id mismatch'}")
     envelope = verify_producer_envelope(record.capsule_id, bytes(record.producer_envelope))
     if not envelope.ok or envelope.public_key is None:
         raise InvalidError("envelope: " + ",".join(f.code for f in envelope.findings))

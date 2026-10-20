@@ -227,6 +227,85 @@ fn digest_at(capsule: &Value, binding: &str) -> Result<String> {
     }
 }
 
+/// The `record_type` of a padding record (Evidence Layer -00, "What a
+/// Checkpoint Reveals"): a log leaf that is not a Capsule. A store admits it
+/// beside Capsules, so `get` can return one; a caller that needs a Capsule
+/// checks `record_type` ([`is_padding`]).
+pub const PADDING_RECORD_TYPE: &str = "padding";
+
+/// A stored padding record's closed member set, as AAC's padding vectors pin
+/// it (the local-only `signature` and `key_id` are not stored).
+const PADDING_MEMBERS: [&str; 4] = ["capsule_id", "record_type", "epistemic_type", "store_nonce"];
+
+/// Whether decoded record bytes are a padding record.
+pub fn is_padding(capsule: &Value) -> bool {
+    capsule.get("record_type").and_then(Value::as_str) == Some(PADDING_RECORD_TYPE)
+}
+
+/// AAC format 4 with `canonicalization_id: "jcs"`, Class 1, and a computed
+/// Capsule ID equal to `capsule_id`.
+fn verify_capsule(capsule_id: &str, capsule: &Value) -> Result<()> {
+    let profile_ok = capsule.get("format_version").and_then(Value::as_str) == Some("4")
+        && capsule.get("canonicalization_id").and_then(Value::as_str) == Some("jcs");
+    if !profile_ok {
+        return Err(ArtifactError::Invalid(
+            "capsule verification: only AAC format 4 with canonicalization_id \"jcs\"".into(),
+        ));
+    }
+    let class1 = agent_action_capsule::verify::verify(capsule, None);
+    if !class1.ok || class1.capsule_id.as_deref() != Some(capsule_id) {
+        let codes: Vec<&str> = class1
+            .findings
+            .iter()
+            .filter(|f| f.severity == "error")
+            .map(|f| f.code.as_str())
+            .collect();
+        return Err(ArtifactError::Invalid(format!(
+            "capsule verification: {}",
+            codes.join(",")
+        )));
+    }
+    Ok(())
+}
+
+/// A padding record: exactly its four members, `epistemic_type`
+/// `producer_claim`, a 64-lowercase-hex `store_nonce`, and a `capsule_id` that
+/// is the JSON-DIGEST of the record without `capsule_id`.
+fn verify_padding(capsule_id: &str, padding: &Value) -> Result<()> {
+    let object = padding
+        .as_object()
+        .ok_or_else(|| ArtifactError::Invalid("padding record is not an object".into()))?;
+    if let Some(extra) = object
+        .keys()
+        .find(|k| !PADDING_MEMBERS.contains(&k.as_str()))
+    {
+        return Err(ArtifactError::Invalid(format!(
+            "padding record carries {extra:?}"
+        )));
+    }
+    if object.get("epistemic_type").and_then(Value::as_str) != Some("producer_claim") {
+        return Err(ArtifactError::Invalid(
+            "padding record epistemic_type".into(),
+        ));
+    }
+    if !object
+        .get("store_nonce")
+        .and_then(Value::as_str)
+        .is_some_and(valid_id)
+    {
+        return Err(ArtifactError::Invalid("padding record store_nonce".into()));
+    }
+    let mut body = object.clone();
+    body.remove("capsule_id");
+    let computed = agent_action_capsule::canonical::json_digest(&Value::Object(body)).ok();
+    if object.get("capsule_id").and_then(Value::as_str) != Some(capsule_id)
+        || computed.as_deref() != Some(capsule_id)
+    {
+        return Err(ArtifactError::Invalid("padding record capsule id".into()));
+    }
+    Ok(())
+}
+
 /// Authenticates the Capsule, authorizes its signer against the caller's
 /// trusted keys and verifies every available bound original. It does not
 /// verify CLL inclusion, external references or business correctness.
@@ -239,25 +318,10 @@ pub fn verify(
     }
     let capsule = decode_strict_json(&record.capsule)
         .map_err(|e| ArtifactError::Invalid(format!("capsule verification: {e}")))?;
-    let profile_ok = capsule.get("format_version").and_then(Value::as_str) == Some("4")
-        && capsule.get("canonicalization_id").and_then(Value::as_str) == Some("jcs");
-    if !profile_ok {
-        return Err(ArtifactError::Invalid(
-            "capsule verification: only AAC format 4 with canonicalization_id \"jcs\"".into(),
-        ));
-    }
-    let class1 = agent_action_capsule::verify::verify(&capsule, None);
-    if !class1.ok || class1.capsule_id.as_deref() != Some(record.capsule_id.as_str()) {
-        let codes: Vec<&str> = class1
-            .findings
-            .iter()
-            .filter(|f| f.severity == "error")
-            .map(|f| f.code.as_str())
-            .collect();
-        return Err(ArtifactError::Invalid(format!(
-            "capsule verification: {}",
-            codes.join(",")
-        )));
+    if is_padding(&capsule) {
+        verify_padding(&record.capsule_id, &capsule)?;
+    } else {
+        verify_capsule(&record.capsule_id, &capsule)?;
     }
     let envelope =
         agent_action_capsule::envelope::verify(&record.capsule_id, &record.producer_envelope);

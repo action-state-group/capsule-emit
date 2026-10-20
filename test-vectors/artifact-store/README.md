@@ -25,6 +25,11 @@ and its tests fail if the copy drifts from this file.
 | `open` | `{name, namespace, trusted, expect}`: constructor validation, with `trusted` as raw hex keys (some deliberately not 32 bytes) |
 | `cases` | Operation sequences, described below |
 
+The `padding*` records are padding records
+([contract](../../docs/artifact-store.md#padding-records)) with fixed store
+nonces. Each rejected variant recomputes its own `capsule_id` and carries an
+envelope over it, so only the rule its name gives fails.
+
 Record names follow a convention: `basic` is an input, `basic.stored` is what
 `get` returns after `put basic` (with `content_sha256` filled in), and
 `basic.purged` is what `get` returns after `purge`. Other suffixes are input

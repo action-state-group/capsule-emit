@@ -19,3 +19,8 @@ no digest-only append, no transactions, one writer; `docs/legacy-ledger.md`).
 `ArtifactError::Unsupported` reports those limits. `conformance::run_limited`
 with `conformance::Limits` runs the suite for a store with limits, deriving
 the `originals` and `purge` capabilities from each case's steps.
+
+Stores admit padding records (`PADDING_RECORD_TYPE`, `is_padding`): checked by
+their closed shape instead of AAC Class 1, with a trusted envelope and only
+unbound artifacts. `LegacyLedger` stores a padding record through `put` and returns
+it from `get`.

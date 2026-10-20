@@ -168,9 +168,14 @@ def test_get_returns_capsule_bytes_and_inline_envelope(fixture_path):
         assert record.artifacts == []
     unsigned = store.get(lines[2]["capsule_id"])  # a log() entry
     assert unsigned.producer_envelope == b""
-    for index in (6, 7, 8, 9):  # stamp, disclosure, backfill, padding: log entries only
+    for index in (6, 7, 8):  # stamp, disclosure, backfill: log entries only
         with pytest.raises(ArtifactNotFoundError):
             store.get(lines[index]["capsule_id"])
+    # A padding line is a record, so get checks it; this fixture's is only
+    # capsule_id and record_type, not a padding record's shape. A real one
+    # round-trips in the shared conformance cases (padding_record).
+    with pytest.raises(InvalidError, match="padding record"):
+        store.get(lines[9]["capsule_id"])
 
 
 def test_get_authorizes_signers_only_when_trusted_keys_are_given(fixture_path):

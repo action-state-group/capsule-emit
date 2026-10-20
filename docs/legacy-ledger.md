@@ -74,8 +74,8 @@ The other leaves keep their writers, under the same writer lock:
 
 - Python: checkpoint stamps, disclosure records and witness backfills through
   `capsule_emit.ledger.append_to_ledger`;
-- Rust: padding through `LegacyLedger::append_padding` and `pad_to_bucket`,
-  which call `Ledger::append_padding`.
+- Rust: padding through `put`, `LegacyLedger::append_padding` and
+  `pad_to_bucket`, which call `Ledger::append_padding`.
 
 A new stamp or padding line is a leaf like any other, so the next checkpoint
 covers it. Rust keeps its indexed lookups (`Ledger` reads a record at its byte
@@ -125,8 +125,13 @@ public key, hex). `get` returns:
 - `producer_envelope`: the envelope bytes, or empty when the line has none
   (`log()` entries, and capsules sealed before producer envelopes).
 
-Checkpoint stamps, disclosure records, witness backfills and padding are log
-entries only. `get` reports them `not_found`.
+Checkpoint stamps, disclosure records and witness backfills are log entries
+only. `get` reports them `not_found`. A padding line is a record, in both
+languages (see the contract's [padding records](artifact-store.md#padding-records)):
+`get` checks and returns it like a capsule line, and `put` of a padding record
+appends it as a padding line (in Rust, outside the chain). A padding line
+without its producer envelope, or not in a padding record's shape, is
+`invalid`.
 
 Rust adds one attachment. Each line has a `signed-statements/<capsule_id>.cose`,
 a COSE_Sign1 whose payload is the whole capsule line. `get` returns it as the

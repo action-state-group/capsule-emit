@@ -63,9 +63,11 @@ A capsule line carries the Producer Envelope inline: ``signature`` (hex
 COSE_Sign1) and ``key_id`` (the signer's raw Ed25519 public key, hex). ``get``
 returns the line minus those two members as compact JSON, and the envelope
 bytes. Lines with neither member (``log()`` entries, capsules sealed before
-producer envelopes) come back with an empty ``producer_envelope``. Checkpoint
-stamps, disclosure records, witness backfills and padding are log entries
-only: ``get`` reports them ``not_found``.
+producer envelopes) come back with an empty ``producer_envelope``. A padding
+line (``record_type: "padding"``) is a record too, checked as the artifact
+store contract checks padding records and always with its envelope; ``put``
+appends one and ``get`` returns it. Checkpoint stamps, disclosure records and
+witness backfills are log entries only: ``get`` reports them ``not_found``.
 
 The capsule is checked with capsule-emit's own rules, which keep both
 canonicalization profiles: ``capsule_id`` is recomputed per
@@ -118,6 +120,7 @@ from cll.log.ledger import capsule_timestamp
 
 from . import ledger as _ledger
 from .artifact.record import (
+    PADDING_RECORD_TYPE,
     ConflictError,
     CorruptError,
     InvalidError,
@@ -126,6 +129,7 @@ from .artifact.record import (
     UnsupportedError,
     UntrustedSignerError,
     _StrictJSONError,
+    _verify_padding,
     check_store_config,
     decode_strict_json,
     prepare,
@@ -241,8 +245,10 @@ def _cll_state_at(values: list, cose: bytes) -> CllState:
     )
 
 
-def _is_capsule(obj: dict) -> bool:
-    return obj.get("kind") not in _ledger.NON_CAPSULE_KINDS and obj.get("record_type") != _ledger.PADDING_RECORD_TYPE
+def _is_record(obj: dict) -> bool:
+    """Whether a line is a record ``get`` returns: a capsule or a padding
+    record, not a checkpoint stamp, disclosure record or witness backfill."""
+    return obj.get("kind") not in _ledger.NON_CAPSULE_KINDS
 
 
 def _line_form(value: dict) -> str:
@@ -257,16 +263,23 @@ def _verify_capsule(capsule_id: str, capsule: dict, envelope: bytes | None, trus
     unsigned capsule."""
     if capsule.get("capsule_id") != capsule_id:
         raise InvalidError("capsule verification: carried capsule_id differs")
-    try:
-        computed = compute_capsule_id(capsule)
-    except (UnsupportedCanonicalizationError, ValueError, TypeError) as exc:
-        raise InvalidError(f"capsule verification: {exc}") from exc
-    if computed != capsule_id:
-        raise InvalidError("capsule verification: capsule id mismatch")
-    if resolve_canonicalization_id(capsule) == CANONICALIZATION_JCS:
-        result = verify_capsule(capsule)
-        if not result.ok:
-            raise InvalidError("capsule verification: " + ",".join(f.code for f in result.errors))
+    if capsule.get("record_type") == PADDING_RECORD_TYPE:
+        # A padding record, as the artifact store contract checks it; it is
+        # never written without its envelope.
+        _verify_padding(capsule_id, capsule)
+        if envelope is None:
+            raise InvalidError("envelope: a padding record carries its producer envelope")
+    else:
+        try:
+            computed = compute_capsule_id(capsule)
+        except (UnsupportedCanonicalizationError, ValueError, TypeError) as exc:
+            raise InvalidError(f"capsule verification: {exc}") from exc
+        if computed != capsule_id:
+            raise InvalidError("capsule verification: capsule id mismatch")
+        if resolve_canonicalization_id(capsule) == CANONICALIZATION_JCS:
+            result = verify_capsule(capsule)
+            if not result.ok:
+                raise InvalidError("capsule verification: " + ",".join(f.code for f in result.errors))
     if envelope is None:
         return None
     from agent_action_capsule.producer_envelope import verify_producer_envelope
@@ -384,7 +397,7 @@ class LegacyLedger:
         if len(value) != 32:
             raise LogCorruptError(f"{self._path}: line seq={seq} capsule_id is not a 32-byte hex digest")
         appended_at = _line_time(seq, obj) or previous
-        return _Line(Entry(seq, value, appended_at), offset, len(raw), _is_capsule(obj))
+        return _Line(Entry(seq, value, appended_at), offset, len(raw), _is_record(obj))
 
     def _refresh(self) -> None:
         """Index lines appended since the last call. Caller holds ``_lock``."""
@@ -596,7 +609,7 @@ class LegacyLedger:
         any other line under the same ``capsule_id`` is ``ConflictError``."""
         self._require_open()
         capsule_id = line.get("capsule_id")
-        if not valid_id(capsule_id) or not _is_capsule(line):
+        if not valid_id(capsule_id) or not _is_record(line):
             raise InvalidError("capsule id")
         text = _line_form(line)
         value = bytes.fromhex(capsule_id)

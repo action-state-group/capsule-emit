@@ -18,7 +18,7 @@ namespace is a storage scope, never a CLL log ID.
 | Field | Type | Meaning |
 |---|---|---|
 | `capsule_id` | 64 lowercase hex characters | The Capsule ID the record is stored under |
-| `capsule` | bytes | The exact sealed Capsule (AAC format 4, `canonicalization_id: "jcs"`) |
+| `capsule` | bytes | The exact sealed Capsule (AAC format 4, `canonicalization_id: "jcs"`), or a padding record (see below) |
 | `producer_envelope` | bytes | One COSE_Sign1 Producer Envelope over `capsule_id` |
 | `artifacts` | list of artifacts | The declared originals, at most one per name |
 
@@ -43,6 +43,25 @@ The supported bindings are exactly these AAC format-4 JSON-DIGEST fields:
 omitted artifact is undeclared, not evidence that it was never retained:
 `never_retained` must be declared explicitly. `purged` is created only by
 `purge`.
+
+### Padding records
+
+A padding record (Evidence Layer -00, "What a Checkpoint Reveals") is a log
+leaf that is not a Capsule: a store appends padding records so that a
+checkpoint's size falls on a bucket boundary. It is stored like a Capsule, so a
+log that keeps its records here keeps its padding here too. Its `capsule` bytes
+decode to a JSON object with `record_type: "padding"` and exactly the members
+`capsule_id`, `record_type`, `epistemic_type` and `store_nonce`, the record
+agent-action-capsule's padding vectors (`vectors/evidence-layer/padding/`)
+define; the local-only `signature` and `key_id` are not stored, as for a
+Capsule. Admission checks the decoded members and the recomputed
+`capsule_id` (Verification, step 2), not a byte form: like a Capsule, any
+strict-JSON serialization of the record is accepted. It carries a Producer Envelope like
+a Capsule and may declare only unbound artifacts, because it commits to no
+digest.
+
+`get` returns a padding record like any other record. A caller that needs a
+Capsule checks `record_type` and treats a padding record as not a Capsule.
 
 ## Operations
 
@@ -91,15 +110,26 @@ in this order:
 
 1. `capsule_id` matches `^[0-9a-f]{64}$`, else `invalid`.
 2. `capsule` decodes as strict JSON (UTF-8, no duplicate keys, no trailing
-   data), is AAC format 4 with `canonicalization_id: "jcs"`, passes AAC Class 1
-   verification, and its computed Capsule ID equals `capsule_id`. Else `invalid`.
+   data), else `invalid`. Then:
+   - When it is an object whose `record_type` is `padding`, it is a padding
+     record: it has no member besides `capsule_id`, `record_type`,
+     `epistemic_type` and `store_nonce`; `epistemic_type` is
+     `producer_claim`; `store_nonce` is 64 lowercase hex characters; and
+     `capsule_id` equals the record's `capsule_id` and the AAC JSON-DIGEST of
+     the object without `capsule_id`. Else `invalid`. The format-4 profile
+     check and AAC Class 1 do not apply, and a padding record that carries
+     `format_version` or `canonicalization_id` fails the member check.
+   - Otherwise it is AAC format 4 with `canonicalization_id: "jcs"`, passes
+     AAC Class 1 verification, and its computed Capsule ID equals
+     `capsule_id`. Else `invalid`.
 3. `producer_envelope` verifies as an AAC Producer Envelope over `capsule_id`,
    else `invalid`.
 4. The envelope's signer is one of the trusted keys, else `untrusted_signer`.
 5. For each artifact, in record order:
    - `name` matches the name pattern and is not repeated, else `invalid`.
    - A non-empty `binding` is a supported digest field whose value in the Capsule
-     is 64 lowercase hex characters, else `invalid`.
+     is 64 lowercase hex characters, else `invalid`. A padding record has no
+     digest fields, so any binding on it is `invalid`.
    - `present`: `content` is present, else `invalid`; a non-empty
      `content_sha256` equals SHA-256 of `content`, else `corrupt`; with a
      binding, the AAC JSON-DIGEST of `content` (strict JSON, then JCS, then
@@ -223,9 +253,13 @@ supports that transaction too.
 
 ## Consumers
 
-Python's `capsule_emit.disclose.disclose(..., store=...)` reads the originals
-it discloses from any `Store`, and reports a `purged`, `never_retained`,
-missing or undeclared original by state instead of dropping it (see
+A consumer that reads Capsules from a store checks `record_type`, because `get`
+can return a padding record. Python's
+`capsule_emit.disclose.disclose(..., store=...)` reads the originals it
+discloses from any `Store`, only for the Capsule IDs of the Capsules it
+discloses, so it never asks for a padding record's ID. It reports a `purged`,
+`never_retained`, missing or undeclared original by state instead of dropping
+it (see
 [checkpoint.md](checkpoint.md#disclose--bundles-conscious-sibling)).
 
 ## Built-in backends and shared formats
@@ -298,6 +332,6 @@ reports, JSONL bytes, SQL rows, StorageChecksums, purge outcomes and error
 codes must all agree. A language's backend joins it in the pull request that
 adds the backend.
 
-The vectors' README describes the file format and the optional capabilities a
-case may require (`durable`: the backend can be reopened over the same storage;
+The vectors' README describes the file format, the padding cases, and the
+optional capabilities a case may require (`durable`: the backend can be reopened over the same storage;
 `shared_backing`: several namespaces can share one storage).

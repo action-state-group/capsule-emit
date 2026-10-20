@@ -5,7 +5,12 @@
 // artifact package.
 import { createHash } from "node:crypto";
 
-import { asJsonObject, decodeStrictJson, jsonDigest } from "../aac/index.js";
+import {
+  asJsonObject,
+  decodeStrictJson,
+  isHex64,
+  jsonDigest,
+} from "../aac/index.js";
 import type { ParsedJson } from "../aac/index.js";
 import { verifyEnvelope } from "../envelope.js";
 import { decodePayload, verifyCapsule } from "../verify.js";
@@ -134,16 +139,35 @@ function digestAt(capsule: ParsedJson, field: DigestField): string {
 }
 
 /**
- * Authenticates the Capsule, authorizes its signer against caller-owned trusted
- * keys, and verifies every available bound original using emit's JCS. It does
- * not verify CLL inclusion, external references, or business correctness.
+ * The `record_type` of a padding record (Evidence Layer -00, "What a Checkpoint
+ * Reveals"): a log leaf that is not a Capsule. A store admits it beside
+ * Capsules, so `get` can return one; a caller that needs a Capsule checks
+ * `record_type`.
  */
-export async function verify(
-  record: Record,
-  trusted: readonly Uint8Array[],
-): Promise<Map<string, ArtifactVerification>> {
-  if (!ID_PATTERN.test(record.capsuleId))
-    throw new ArtifactError("invalid", "capsule id");
+export const PADDING_RECORD_TYPE = "padding";
+
+/** A stored padding record's closed member set, as AAC's padding vectors pin it. */
+const PADDING_MEMBERS = new Set([
+  "capsule_id",
+  "record_type",
+  "epistemic_type",
+  "store_nonce",
+]);
+
+/**
+ * Authenticates the stored Capsule bytes: an AAC format-4 Capsule through
+ * Class 1, or a padding record through its closed shape. Either way the
+ * computed ID must equal the record's.
+ */
+async function verifyCapsuleBytes(record: Record): Promise<void> {
+  let decoded: { [member: string]: ParsedJson } | undefined;
+  try {
+    decoded = asJsonObject(decodeStrictJson(record.capsule));
+  } catch {
+    // Not strict JSON: verifyCapsule below reports it.
+  }
+  if (decoded?.record_type === PADDING_RECORD_TYPE)
+    return verifyPadding(record.capsuleId, decoded, ownMembers(record.capsule));
   let capsuleId: string | undefined;
   try {
     capsuleId = (await verifyCapsule(record.capsule)).capsuleId;
@@ -155,6 +179,60 @@ export async function verify(
   }
   if (capsuleId !== record.capsuleId)
     throw new ArtifactError("invalid", "capsule verification");
+}
+
+/**
+ * The top-level member names of strict-JSON `capsule` bytes, `__proto__`
+ * included. AAC's strict decoder assigns members onto a plain object, where a
+ * `__proto__` member becomes the prototype or, with a primitive value, is
+ * dropped, so `Object.keys` of its result can miss it; `JSON.parse` defines
+ * every member as an own property. The bytes already passed strict decoding,
+ * so the two read the same members otherwise.
+ */
+function ownMembers(capsule: Uint8Array): string[] {
+  return Object.keys(JSON.parse(new TextDecoder().decode(capsule)) as object);
+}
+
+/**
+ * Checks a padding record: exactly its four members (`members`, read by
+ * {@link ownMembers}), `epistemic_type`
+ * `producer_claim`, a 64-lowercase-hex `store_nonce`, and a `capsule_id` that
+ * is the JSON-DIGEST of the record without `capsule_id`.
+ */
+async function verifyPadding(
+  id: string,
+  padding: { [member: string]: ParsedJson },
+  members: readonly string[],
+): Promise<void> {
+  for (const member of members)
+    if (!PADDING_MEMBERS.has(member))
+      throw new ArtifactError(
+        "invalid",
+        `padding record carries ${JSON.stringify(member)}`,
+      );
+  if (padding.epistemic_type !== "producer_claim")
+    throw new ArtifactError("invalid", "padding record epistemic_type");
+  if (!isHex64(padding.store_nonce))
+    throw new ArtifactError("invalid", "padding record store_nonce");
+  const body = Object.fromEntries(
+    Object.entries(padding).filter(([member]) => member !== "capsule_id"),
+  );
+  if (padding.capsule_id !== id || (await jsonDigest(body)) !== id)
+    throw new ArtifactError("invalid", "padding record capsule id");
+}
+
+/**
+ * Authenticates the Capsule, authorizes its signer against caller-owned trusted
+ * keys, and verifies every available bound original using emit's JCS. It does
+ * not verify CLL inclusion, external references, or business correctness.
+ */
+export async function verify(
+  record: Record,
+  trusted: readonly Uint8Array[],
+): Promise<Map<string, ArtifactVerification>> {
+  if (!ID_PATTERN.test(record.capsuleId))
+    throw new ArtifactError("invalid", "capsule id");
+  await verifyCapsuleBytes(record);
   const envelope = await verifyEnvelope(
     record.capsuleId,
     record.producerEnvelope,
