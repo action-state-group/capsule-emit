@@ -16,8 +16,9 @@ still awaiting a witness stamp.
 **Reads never write** (the read-verb family's standing rule). Unless
 ``offline=True``, the only network call this makes is a GET of a
 Transparency Service's public key (``capsule_emit.checkpoint
-.verify_receipt_offline``) to independently re-confirm a witness receipt
-the ledger *already* holds. It never registers a *new* stamp for a
+.verify_receipt_offline``) to re-check a witness receipt the ledger
+*already* holds against the key that witness serves -- not an independent
+check; the grade uses only keys the caller chose. It never registers a *new* stamp for a
 self-attested checkpoint -- that is a write (it creates a TS log entry),
 and ``push`` -- not ``status`` -- is the verb that writes checkpoints.
 

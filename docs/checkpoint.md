@@ -92,8 +92,8 @@ endpoint (or add more) with `seal(..., witness_url=...)` or
 **`witness=False` / `CAPSULE_WITNESS=off` is ONE switch that zeroes ALL
 egress, not just the checkpoint stream.** It also gates:
 
-- **`status`'s stamp-fetch** — the read-only GET that independently
-  re-confirms a witness receipt (see [Checking status](#checking-status---capsule-emit-status)
+- **`status`'s stamp-fetch** — the read-only GET that re-checks a witness
+  receipt against the key the witness serves (see [Checking status](#checking-status---capsule-emit-status)
   below). It skips this network call whenever the kill switch is set, even
   if you didn't also pass `--offline` — `status ./ledger.jsonl` on a process
   with `CAPSULE_WITNESS=off` never touches the network, full stop.
@@ -331,8 +331,10 @@ This is the CLI's read-verb family (`log`, `status`, `show`, `bundle`,
 `disclose`, `verify`): **reads never write.** Unless `--offline` is given,
 `status` makes exactly one kind of network call — a read-only GET of a
 Transparency Service's public key (`capsule_emit.checkpoint
-.verify_receipt_offline`) to independently re-confirm a witness receipt the
-ledger *already* holds for its latest checkpoint. It never re-registers a
+.verify_receipt_offline`) to re-check a witness receipt the ledger *already*
+holds for its latest checkpoint against the key that witness serves. That key
+comes from the witness itself, so the check is not independent: pass
+`--witness-directory` to check the receipt against a key you chose. It never re-registers a
 self-attested checkpoint to try to obtain a new stamp — that would create a
 new Transparency Service log entry, i.e. a write, and `push` (which forces
 a *new* checkpoint), not `status`, is where writes belong. `--offline`
