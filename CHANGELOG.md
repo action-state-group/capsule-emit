@@ -6,6 +6,22 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added: artifact stores admit padding records
+
+The artifact store contract (`docs/artifact-store.md`) admits padding records
+(Evidence Layer -00, "What a Checkpoint Reveals") beside Capsules, in Go,
+TypeScript, Python and Rust: a record whose `record_type` is `padding` is
+checked by its closed member set, its `store_nonce` and its recomputed
+`capsule_id` instead of the format-4 profile and AAC Class 1, still needs a
+trusted Producer Envelope, and may declare only unbound artifacts. `get` can
+therefore return a padding record; a caller that needs a Capsule checks
+`record_type` (`PADDING_RECORD_TYPE` in each language). The conformance
+vectors add padding cases and a derived `padding` capability; Python's legacy
+ledger declares it lacks it (`Harness.padding`). Rust's legacy ledger stores a
+padding record through `put` and returns it from `get` (it was `not_found`).
+This lets a log keep its padding leaves in the same store as its Capsules
+(capsule-emit#341).
+
 ### Fixed
 
 - `capsule-emit bundle --all`'s help, its "no range" message and the README

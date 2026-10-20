@@ -189,6 +189,7 @@ fn artifact_conformance_subset() {
     // own producer key (the vector keys are seeds 1, 2, 3), as seal() does.
     let limits = Limits {
         originals: false,
+        padding: true,
         purge: false,
         before_put: Some(Box::new(|mut record: Record| {
             let mut line: Value = serde_json::from_slice(&record.capsule).unwrap_or(json!({}));
@@ -241,6 +242,8 @@ fn artifact_conformance_subset() {
         "bare_rejections",
         "bare_untrusted_on_read",
         "malformed_ids",
+        "padding_record",
+        "padding_rejections",
     ] {
         assert!(passed.contains(&name), "{name} did not run: {outcomes:#?}");
     }
@@ -319,11 +322,16 @@ fn get_returns_the_capsule_envelope_and_statement() {
     }
     let unsigned = store.get(id(&lines[2])).unwrap();
     assert!(unsigned.producer_envelope.is_empty());
+    // A padding line is a record too: get returns it without its envelope
+    // members, with its signed statement.
     let padding = file_lines(dir.path())[3].clone();
-    assert!(matches!(
-        store.get(id(&padding)),
-        Err(ArtifactError::NotFound)
-    ));
+    let stored = store.get(id(&padding)).unwrap();
+    let body: Value = serde_json::from_slice(&stored.capsule).unwrap();
+    assert_eq!(body["record_type"], "padding");
+    assert!(body.get("signature").is_none() && body.get("key_id").is_none());
+    assert!(!stored.producer_envelope.is_empty());
+    assert_eq!(stored.artifacts.len(), 1);
+    assert_eq!(stored.artifacts[0].name, STATEMENT);
     let other = LegacyLedger::new(dir.path(), "ledger", [[1u8; 32]]).unwrap();
     assert!(matches!(
         other.get(id(&lines[0])),

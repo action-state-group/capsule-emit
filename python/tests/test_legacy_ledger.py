@@ -85,6 +85,7 @@ HARNESS = artifact_conformance.Harness(
     durable=True,
     originals=False,
     purge=False,
+    padding=False,
 )
 ARTIFACT_TESTS = artifact_conformance.tests(HARNESS)
 

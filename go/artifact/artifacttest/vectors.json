@@ -2262,6 +2262,128 @@
       "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCB3dBfUfHmFJqlGwLJXt65r6llymQYPasexf4vJJr8Jt1hADH4UFpXSjLtDkyuv+G1mIpQjdALx9ah2GpcNH3kQIJ5tr1FAqZz10Gg3SZPGRsXpiCPvnJCH3ZTlvT/NuHF5CA==",
       "artifacts": []
     },
+    "padding": {
+      "capsule_id": "0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiMGVlMzU0ZmNiNDZhMjc5NWI0ZDZiZDQ2MzczNmQ4MzJiNGI5YTI4YzllNmZiYTdjZjlhOTRiODdjODQ2MTMwYSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCAO41T8tGonlbTWvUY3NtgytLmijJ5vunz5qUuHyEYTClhAwjMAGBfv/NK5cx8tvGM944EfCSo4RGY+BxZpN+Oz6OY8hX4pr71NePlTbNFRLvQN3iU3ij8jyvmodkMaY/evAA==",
+      "artifacts": []
+    },
+    "padding.bound": {
+      "capsule_id": "b22afd379f5daf90bcf3f9e81bd11e5e4c14a7ff9ae19922d901325e0425cdd1",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiYjIyYWZkMzc5ZjVkYWY5MGJjZjNmOWU4MWJkMTFlNWU0YzE0YTdmZjlhZTE5OTIyZDkwMTMyNWUwNDI1Y2RkMSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTUifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCCyKv03n12vkLzz+egb0R5eTBSn/5rhmSLZATJeBCXN0VhAbQ3lXWOVeMDj6s0OIQOo3UiVOmSC4kC629vAvyL5RtYwpgPu85LaVn/6a4a8QDgFwgQO9OdxcJdpu18ro5BTCQ==",
+      "artifacts": [
+        {
+          "name": "payload",
+          "binding": "model_attestation.compute_attestation.agent_input_digest",
+          "content": "ewogICJxdWVzdGlvbiI6ICJ3aGVyZSBuZXh0PyIsICJuIjogMgp9",
+          "state": "present"
+        }
+      ]
+    },
+    "padding.capsule_profile": {
+      "capsule_id": "7ce184f5e741f8b0ef000a27382f722cdb01ca3db4e7136cbe671ef4ffa0f330",
+      "capsule": "eyJjYW5vbmljYWxpemF0aW9uX2lkIjoiamNzIiwiY2Fwc3VsZV9pZCI6IjdjZTE4NGY1ZTc0MWY4YjBlZjAwMGEyNzM4MmY3MjJjZGIwMWNhM2RiNGU3MTM2Y2JlNjcxZWY0ZmZhMGYzMzAiLCJlcGlzdGVtaWNfdHlwZSI6InByb2R1Y2VyX2NsYWltIiwiZm9ybWF0X3ZlcnNpb24iOiI0IiwicmVjb3JkX3R5cGUiOiJwYWRkaW5nIiwic3RvcmVfbm9uY2UiOiI2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2In0=",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCB84YT150H4sO8ACic4L3Is2wHKPbTnE2y+Zx70/6DzMFhAshWIPIYkYHc1GOLhpm1yNtXFx7nghGFKwqYzpJD+emGdMLFOaA7Y4Xxqv4q1kvM9USI6iOhs5vr5xvsAIxF/Dw==",
+      "artifacts": []
+    },
+    "padding.envelope_other_capsule": {
+      "capsule_id": "0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiMGVlMzU0ZmNiNDZhMjc5NWI0ZDZiZDQ2MzczNmQ4MzJiNGI5YTI4YzllNmZiYTdjZjlhOTRiODdjODQ2MTMwYSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCB3dBfUfHmFJqlGwLJXt65r6llymQYPasexf4vJJr8Jt1hADH4UFpXSjLtDkyuv+G1mIpQjdALx9ah2GpcNH3kQIJ5tr1FAqZz10Gg3SZPGRsXpiCPvnJCH3ZTlvT/NuHF5CA==",
+      "artifacts": []
+    },
+    "padding.epistemic_type": {
+      "capsule_id": "68cf83587181619ef0a3d7128da9c873ea8409439938d7c0c3841c333b58f96d",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiNjhjZjgzNTg3MTgxNjE5ZWYwYTNkNzEyOGRhOWM4NzNlYTg0MDk0Mzk5MzhkN2MwYzM4NDFjMzMzYjU4Zjk2ZCIsImVwaXN0ZW1pY190eXBlIjoib2JzZXJ2ZWRfZXZlbnQiLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6Ijg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODgifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCBoz4NYcYFhnvCj1xKNqchz6oQJQ5k418DDhBwzO1j5bVhAoEnf+GFZojwT7EOQv7THb9GOWwggAUdIbUOQkkU91qwXCKGLaDjlr4HGbClDNThZI9cJQew4TvIe8nlx6r6mAQ==",
+      "artifacts": []
+    },
+    "padding.extra_member": {
+      "capsule_id": "69516f14f4a7a24c287ebc3d7a44931cce1ed0c3311f8b5b693f55ffe108b0ec",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiNjk1MTZmMTRmNGE3YTI0YzI4N2ViYzNkN2E0NDkzMWNjZTFlZDBjMzMxMWY4YjViNjkzZjU1ZmZlMTA4YjBlYyIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJsaW5rcyI6W10sInJlY29yZF90eXBlIjoicGFkZGluZyIsInN0b3JlX25vbmNlIjoiNzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3NyJ9",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCBpUW8U9KeiTCh+vD16RJMczh7QwzEfi1tpP1X/4Qiw7FhAAVzfP0yNaL/7d9twOonRcpIb0KRg4cpx9B0bFOV/N1UDtZT0M1U9tFd/pXloEddRe80U+9ZKggNtRiu/ixCiBQ==",
+      "artifacts": []
+    },
+    "padding.id_mismatch": {
+      "capsule_id": "381b6c591e4b9dc984e80a9e341eafa63435a04a8054873e7cfd7b503c153ce9",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiMGVlMzU0ZmNiNDZhMjc5NWI0ZDZiZDQ2MzczNmQ4MzJiNGI5YTI4YzllNmZiYTdjZjlhOTRiODdjODQ2MTMwYSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCA4G2xZHkudyYToCp40Hq+mNDWgSoBUhz58/XtQPBU86VhAaIP17uuZqgK+l6ZJTFwKdOWXoWVWDDv7Cz7kr1kUtxvyjmoDjoKL4atP3U3M0cfAgKrV8g8j9hqz7HdimnJdBA==",
+      "artifacts": []
+    },
+    "padding.nonce_missing": {
+      "capsule_id": "b99e8209f51bd1b43796e41d1f21345acb593cd6c5cded1878862e64f51d9b22",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiYjk5ZTgyMDlmNTFiZDFiNDM3OTZlNDFkMWYyMTM0NWFjYjU5M2NkNmM1Y2RlZDE4Nzg4NjJlNjRmNTFkOWIyMiIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmcifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCC5noIJ9RvRtDeW5B0fITRay1k81sXN7Rh4hi5k9R2bIlhAMGK2+SMg1cBp15/+mX1gPVn8tVBBcfJBG8rTUJfZApEiDjFRFvznySOLyAKRUpG2CJuZfSvMoOwZ3Ejsku2ADw==",
+      "artifacts": []
+    },
+    "padding.nonce_uppercase": {
+      "capsule_id": "04e9333e9a0ca81dda1734d94e9c4b67cbdc9e3d790ca79c7976959c33eb8168",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiMDRlOTMzM2U5YTBjYTgxZGRhMTczNGQ5NGU5YzRiNjdjYmRjOWUzZDc5MGNhNzljNzk3Njk1OWMzM2ViODE2OCIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUJBQkFCQUIifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCAE6TM+mgyoHdoXNNlOnEtny9yePXkMp5x5dpWcM+uBaFhAu/XgA5jypBZHuFAg3hvDDWea2JbQgggruBm/kvGwtf8HfxO1gXsBl/418nMJKQubameFOB4MJsuCJFhZkdvDAw==",
+      "artifacts": []
+    },
+    "padding.purged": {
+      "capsule_id": "0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiMGVlMzU0ZmNiNDZhMjc5NWI0ZDZiZDQ2MzczNmQ4MzJiNGI5YTI4YzllNmZiYTdjZjlhOTRiODdjODQ2MTMwYSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCAO41T8tGonlbTWvUY3NtgytLmijJ5vunz5qUuHyEYTClhAwjMAGBfv/NK5cx8tvGM944EfCSo4RGY+BxZpN+Oz6OY8hX4pr71NePlTbNFRLvQN3iU3ij8jyvmodkMaY/evAA==",
+      "artifacts": []
+    },
+    "padding.rotated": {
+      "capsule_id": "381b6c591e4b9dc984e80a9e341eafa63435a04a8054873e7cfd7b503c153ce9",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiMzgxYjZjNTkxZTRiOWRjOTg0ZTgwYTllMzQxZWFmYTYzNDM1YTA0YTgwNTQ4NzNlN2NmZDdiNTAzYzE1M2NlOSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIE5dw6ofRdfVqNUZsNMfszLjYqRtO43ol32D1uPybOUASegWCA4G2xZHkudyYToCp40Hq+mNDWgSoBUhz58/XtQPBU86VhANdsu2CJOtFnB8OP6xS8PWQlfmH3s0mj8bf8BjD63lUmv+9C1OWedPkkaC8ezLCkeT10SdponbDtAs8Y0qVqBBw==",
+      "artifacts": []
+    },
+    "padding.stored": {
+      "capsule_id": "0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiMGVlMzU0ZmNiNDZhMjc5NWI0ZDZiZDQ2MzczNmQ4MzJiNGI5YTI4YzllNmZiYTdjZjlhOTRiODdjODQ2MTMwYSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCAO41T8tGonlbTWvUY3NtgytLmijJ5vunz5qUuHyEYTClhAwjMAGBfv/NK5cx8tvGM944EfCSo4RGY+BxZpN+Oz6OY8hX4pr71NePlTbNFRLvQN3iU3ij8jyvmodkMaY/evAA==",
+      "artifacts": []
+    },
+    "padding.untrusted": {
+      "capsule_id": "6edb2a7d72008f056611639c977d85f0ceb51225a8aeb3403fa86706563d28a6",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiNmVkYjJhN2Q3MjAwOGYwNTY2MTE2MzljOTc3ZDg1ZjBjZWI1MTIyNWE4YWViMzQwM2ZhODY3MDY1NjNkMjhhNiIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIO1JKMYo0cLG6ukDOJBZlWEpWSc6XGP5NjbBRhSshzfRASegWCBu2yp9cgCPBWYRY5yXfYXwzrUSJaius0A/qGcGVj0oplhAMbCUhs9MSFvGJ4uYVWFnhQRDM/IsiwCHwn1OqpsyGEE2QT4HM6imd+3Zv/iDwgY1bEMnXK5/fkRvRvciGJeYBw==",
+      "artifacts": []
+    },
+    "padding.with_note": {
+      "capsule_id": "5bf7148bed2e0f3e044ac72e854cf8762015d0641e1b645e7b419c13bd8878d7",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiNWJmNzE0OGJlZDJlMGYzZTA0NGFjNzJlODU0Y2Y4NzYyMDE1ZDA2NDFlMWI2NDVlN2I0MTljMTNiZDg4NzhkNyIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCBb9xSL7S4PPgRKxy6FTPh2IBXQZB4bZF57QZwTvYh411hA5VVSErbvsDx+fWSGX3wTaYSrXIvbJUK7CZccwoProRp8mg7KOAHcEWtrLuHE3ltGb/q9lXqv8sI4EPb78Mv+DA==",
+      "artifacts": [
+        {
+          "name": "private_note",
+          "content": "bm90IGEgcHJvZHVjZXItYXV0aGVudGljYXRlZCBhc3NlcnRpb24=",
+          "state": "present"
+        }
+      ]
+    },
+    "padding.with_note.purged": {
+      "capsule_id": "5bf7148bed2e0f3e044ac72e854cf8762015d0641e1b645e7b419c13bd8878d7",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiNWJmNzE0OGJlZDJlMGYzZTA0NGFjNzJlODU0Y2Y4NzYyMDE1ZDA2NDFlMWI2NDVlN2I0MTljMTNiZDg4NzhkNyIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCBb9xSL7S4PPgRKxy6FTPh2IBXQZB4bZF57QZwTvYh411hA5VVSErbvsDx+fWSGX3wTaYSrXIvbJUK7CZccwoProRp8mg7KOAHcEWtrLuHE3ltGb/q9lXqv8sI4EPb78Mv+DA==",
+      "artifacts": [
+        {
+          "name": "private_note",
+          "state": "purged",
+          "content_sha256": "813b5238828c59014697a162f49c400dd1cac1c14fecbd8950890d32b94ac72b"
+        }
+      ]
+    },
+    "padding.with_note.stored": {
+      "capsule_id": "5bf7148bed2e0f3e044ac72e854cf8762015d0641e1b645e7b419c13bd8878d7",
+      "capsule": "eyJjYXBzdWxlX2lkIjoiNWJmNzE0OGJlZDJlMGYzZTA0NGFjNzJlODU0Y2Y4NzYyMDE1ZDA2NDFlMWI2NDVlN2I0MTljMTNiZDg4NzhkNyIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIifQ==",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCBb9xSL7S4PPgRKxy6FTPh2IBXQZB4bZF57QZwTvYh411hA5VVSErbvsDx+fWSGX3wTaYSrXIvbJUK7CZccwoProRp8mg7KOAHcEWtrLuHE3ltGb/q9lXqv8sI4EPb78Mv+DA==",
+      "artifacts": [
+        {
+          "name": "private_note",
+          "content": "bm90IGEgcHJvZHVjZXItYXV0aGVudGljYXRlZCBhc3NlcnRpb24=",
+          "state": "present",
+          "content_sha256": "813b5238828c59014697a162f49c400dd1cac1c14fecbd8950890d32b94ac72b"
+        }
+      ]
+    },
     "rotated": {
       "capsule_id": "ec4af297b22b0a7d72f7279b898be7228fcb7f2338006e95b6f1f0d2d201fb5d",
       "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1yb3RhdGVkIiwiYWN0aW9uX3R5cGUiOiJmeWkiLCJhc3N1cmFuY2UiOnsiYXR0ZXN0YXRpb25fbW9kZSI6InNlbGZfYXR0ZXN0ZWQiLCJlZmZlY3RfbW9kZSI6Im5vdF9hcHBsaWNhYmxlIiwibGVkZ2VyX21vZGUiOiJzdGFuZGFsb25lIn0sImNhbm9uaWNhbGl6YXRpb25faWQiOiJqY3MiLCJjYXBzdWxlX2lkIjoiZWM0YWYyOTdiMjJiMGE3ZDcyZjcyNzliODk4YmU3MjI4ZmNiN2YyMzM4MDA2ZTk1YjZmMWYwZDJkMjAxZmI1ZCIsImRldmVsb3BlciI6ImNvbmZvcm1hbmNlLWRldmVsb3BlciIsImZvcm1hdF92ZXJzaW9uIjoiNCIsIm1vZGVsX2F0dGVzdGF0aW9uIjp7ImNvbXB1dGVfYXR0ZXN0YXRpb24iOnsiYWdlbnRfaW5wdXRfZGlnZXN0IjoiNjM5YjRlZjUyODM5MmJkMjJhZDA1NGJkMGU4NGRlMzA5NzA1ZjVhZGYxZmUzNWVlZTIwNzFmZGFiNGEwMGE0YyIsImFnZW50X291dHB1dF9kaWdlc3QiOiI4NjU1ODUwOWVjZGYyOTA5ZjhjYmYyODAyOGRiOWU0ZWVjNjFlYjMxMmNkZWI2Yzc0N2Q0MTMwNTgwNWQ3M2JhIn19LCJvcGVyYXRvciI6ImNvbmZvcm1hbmNlLW9wZXJhdG9yIiwic3BlY192ZXJzaW9uIjoiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTA1IiwidGltZXN0YW1wIjoiMjAyNi0xMC0xNVQwMDowMDowMFoifQ==",
@@ -2420,6 +2542,10 @@
     {
       "record": "empty.stored",
       "storage_checksum": "1544f5c8740c10ac5da89396ad636eb8e6c39ec03f9995c61b00cdf9e70f6edc"
+    },
+    {
+      "record": "padding.stored",
+      "storage_checksum": "a2baf34ed31bdb83e96f53a1ec94b7c26786ff981cb88ee3b8cd14dce1dec010"
     }
   ],
   "lines": [
@@ -2454,6 +2580,10 @@
     {
       "record": "rotated.stored",
       "line": "{\"capsule_id\":\"ec4af297b22b0a7d72f7279b898be7228fcb7f2338006e95b6f1f0d2d201fb5d\",\"capsule\":\"eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1yb3RhdGVkIiwiYWN0aW9uX3R5cGUiOiJmeWkiLCJhc3N1cmFuY2UiOnsiYXR0ZXN0YXRpb25fbW9kZSI6InNlbGZfYXR0ZXN0ZWQiLCJlZmZlY3RfbW9kZSI6Im5vdF9hcHBsaWNhYmxlIiwibGVkZ2VyX21vZGUiOiJzdGFuZGFsb25lIn0sImNhbm9uaWNhbGl6YXRpb25faWQiOiJqY3MiLCJjYXBzdWxlX2lkIjoiZWM0YWYyOTdiMjJiMGE3ZDcyZjcyNzliODk4YmU3MjI4ZmNiN2YyMzM4MDA2ZTk1YjZmMWYwZDJkMjAxZmI1ZCIsImRldmVsb3BlciI6ImNvbmZvcm1hbmNlLWRldmVsb3BlciIsImZvcm1hdF92ZXJzaW9uIjoiNCIsIm1vZGVsX2F0dGVzdGF0aW9uIjp7ImNvbXB1dGVfYXR0ZXN0YXRpb24iOnsiYWdlbnRfaW5wdXRfZGlnZXN0IjoiNjM5YjRlZjUyODM5MmJkMjJhZDA1NGJkMGU4NGRlMzA5NzA1ZjVhZGYxZmUzNWVlZTIwNzFmZGFiNGEwMGE0YyIsImFnZW50X291dHB1dF9kaWdlc3QiOiI4NjU1ODUwOWVjZGYyOTA5ZjhjYmYyODAyOGRiOWU0ZWVjNjFlYjMxMmNkZWI2Yzc0N2Q0MTMwNTgwNWQ3M2JhIn19LCJvcGVyYXRvciI6ImNvbmZvcm1hbmNlLW9wZXJhdG9yIiwic3BlY192ZXJzaW9uIjoiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTA1IiwidGltZXN0YW1wIjoiMjAyNi0xMC0xNVQwMDowMDowMFoifQ==\",\"producer_envelope\":\"0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIE5dw6ofRdfVqNUZsNMfszLjYqRtO43ol32D1uPybOUASegWCDsSvKXsisKfXL3J5uJi+cij8t/IzgAbpW28fDS0gH7XVhADXRJ0nH9Ap0tM+gfKyO3+OFVwAmpqtmZGL5pvnlDJ3zCgbzfRhOb3x1NdA2DblGfs7RcMb55U6fhDkVTMiHYCw==\",\"artifacts\":[{\"name\":\"payload\",\"binding\":\"model_attestation.compute_attestation.agent_input_digest\",\"content\":\"ewogICJxdWVzdGlvbiI6ICJ3aGVyZSBuZXh0PyIsICJuIjogMgp9\",\"state\":\"present\",\"content_sha256\":\"b371fc0d7975c35d130144b175b43bc0624fa373ad80366f20c932666d267962\"},{\"name\":\"agent_output\",\"binding\":\"model_attestation.compute_attestation.agent_output_digest\",\"state\":\"never_retained\"}]}"
+    },
+    {
+      "record": "padding.stored",
+      "line": "{\"capsule_id\":\"0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a\",\"capsule\":\"eyJjYXBzdWxlX2lkIjoiMGVlMzU0ZmNiNDZhMjc5NWI0ZDZiZDQ2MzczNmQ4MzJiNGI5YTI4YzllNmZiYTdjZjlhOTRiODdjODQ2MTMwYSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEifQ==\",\"producer_envelope\":\"0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCAO41T8tGonlbTWvUY3NtgytLmijJ5vunz5qUuHyEYTClhAwjMAGBfv/NK5cx8tvGM944EfCSo4RGY+BxZpN+Oz6OY8hX4pr71NePlTbNFRLvQN3iU3ij8jyvmodkMaY/evAA==\",\"artifacts\":[]}"
     }
   ],
   "open": [
@@ -3318,6 +3448,153 @@
           "op": "get",
           "id": "db4bfcaaab4da442f0780e8b9df70f5f63fe7692a33a8c6df23d6899511c4bd0",
           "expect": "not_found"
+        }
+      ]
+    },
+    {
+      "name": "padding_record",
+      "description": "A padding record is admitted by its closed shape, reads back and retries idempotently.",
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted",
+            "rotated"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "put",
+          "record": "padding",
+          "expect": "ok"
+        },
+        {
+          "op": "get",
+          "id": "0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a",
+          "expect": "ok",
+          "result": "padding.stored"
+        },
+        {
+          "op": "put",
+          "record": "padding",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "padding.rotated",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "empty",
+          "expect": "ok"
+        },
+        {
+          "op": "get",
+          "id": "0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a",
+          "expect": "ok",
+          "result": "padding.stored"
+        }
+      ]
+    },
+    {
+      "name": "padding_rejections",
+      "description": "Padding records failing their shape, id, envelope or attachment rules are rejected.",
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "put",
+          "record": "padding.untrusted",
+          "expect": "untrusted_signer"
+        },
+        {
+          "op": "put",
+          "record": "padding.capsule_profile",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "padding.extra_member",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "padding.epistemic_type",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "padding.nonce_uppercase",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "padding.nonce_missing",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "padding.id_mismatch",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "padding.envelope_other_capsule",
+          "expect": "invalid"
+        },
+        {
+          "op": "get",
+          "id": "0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a",
+          "expect": "not_found"
+        }
+      ]
+    },
+    {
+      "name": "padding_unbound_original",
+      "description": "A padding record may keep an unbound attachment, which purges like any original, but no bound one.",
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "put",
+          "record": "padding.bound",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "padding.with_note",
+          "expect": "ok"
+        },
+        {
+          "op": "get",
+          "id": "5bf7148bed2e0f3e044ac72e854cf8762015d0641e1b645e7b419c13bd8878d7",
+          "expect": "ok",
+          "result": "padding.with_note.stored"
+        },
+        {
+          "op": "purge",
+          "id": "5bf7148bed2e0f3e044ac72e854cf8762015d0641e1b645e7b419c13bd8878d7",
+          "expect": "ok"
+        },
+        {
+          "op": "get",
+          "id": "5bf7148bed2e0f3e044ac72e854cf8762015d0641e1b645e7b419c13bd8878d7",
+          "expect": "ok",
+          "result": "padding.with_note.purged"
         }
       ]
     },

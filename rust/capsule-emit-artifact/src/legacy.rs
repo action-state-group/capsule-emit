@@ -19,9 +19,11 @@
 //! [`STATEMENT`]: the line's `signed-statements/<capsule_id>.cose`, a
 //! COSE_Sign1 over the whole line, `present` with no binding. `put` must supply
 //! it, because the ledger checks it on every reload, and refuses any other
-//! original as `unsupported`. `purge` is `unsupported`. Padding lines are log
-//! entries only, written through [`LegacyLedger::append_padding`] or
-//! [`LegacyLedger::pad_to_bucket`].
+//! original as `unsupported`. `purge` is `unsupported`. A padding record
+//! (`record_type: "padding"`) is a record too: `put` appends it as a padding
+//! line, outside the chain, and `get` returns it like a capsule.
+//! [`LegacyLedger::append_padding`] and [`LegacyLedger::pad_to_bucket`] write
+//! padding lines directly.
 //!
 //! The ledger has one writer: this handle. [`Store::init`] opens (creating if
 //! needed) the ledger directory, which also runs the ledger's torn-write
@@ -42,8 +44,8 @@ use serde_json::{Map, Value};
 
 use crate::error::{ArtifactError, Result};
 use crate::record::{
-    check_config, decode_strict_json, prepare, sha256_hex, valid_id, verify, Artifact, Record,
-    RetentionState,
+    check_config, decode_strict_json, is_padding, prepare, sha256_hex, valid_id, verify, Artifact,
+    Record, RetentionState,
 };
 use crate::store::Store;
 
@@ -456,6 +458,7 @@ impl Store for LegacyLedger {
             line.insert("key_id".into(), Value::String(hex::encode(signer)));
         }
         let line = Value::Object(line);
+        let padding = is_padding(&line);
         check_statement_matches(&line, &prepared.capsule_id, &statement)
             .map_err(|e| ArtifactError::Invalid(format!("signed statement: {e}")))?;
         let text = serde_json::to_vec(&line).map_err(ArtifactError::storage)?;
@@ -463,7 +466,7 @@ impl Store for LegacyLedger {
             let value = hex::decode(&prepared.capsule_id).expect("valid_id checked");
             if let Some(&index) = state.first.get(&value) {
                 let existing = &ledger(state).lines()[index];
-                let same = !existing.padding
+                let same = existing.padding == padding
                     && self.raw_line(existing.offset)? == text
                     && ledger(state)
                         .read_statement(&prepared.capsule_id)
@@ -475,12 +478,15 @@ impl Store for LegacyLedger {
                     Err(ArtifactError::Conflict)
                 };
             }
-            ledger(state)
-                .append(&line, &statement)
-                .map_err(|e| match e {
-                    LedgerError::Io(e) => ArtifactError::storage(e),
-                    other => ArtifactError::Invalid(other.to_string()),
-                })?;
+            let appended = if padding {
+                ledger(state).append_padding(&line, &statement)
+            } else {
+                ledger(state).append(&line, &statement)
+            };
+            appended.map_err(|e| match e {
+                LedgerError::Io(e) => ArtifactError::storage(e),
+                other => ArtifactError::Invalid(other.to_string()),
+            })?;
             sync(state)
         })
     }
@@ -496,9 +502,6 @@ impl Store for LegacyLedger {
             let value = hex::decode(id).expect("valid_id checked");
             let index = *state.first.get(&value).ok_or(ArtifactError::NotFound)?;
             let line = ledger(state).lines()[index].clone();
-            if line.padding {
-                return Err(ArtifactError::NotFound);
-            }
             self.record(ledger(state), id, line.offset)
         })
     }

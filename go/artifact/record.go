@@ -92,9 +92,8 @@ func Verify(record Record, trusted []ed25519.PublicKey) (map[string]ArtifactVeri
 	if !idPattern.MatchString(record.CapsuleID) {
 		return nil, fmt.Errorf("%w: capsule id", ErrInvalid)
 	}
-	v, err := emit.VerifyCapsule(record.Capsule)
-	if err != nil || !v.OK || v.CapsuleID == nil || *v.CapsuleID != record.CapsuleID {
-		return nil, fmt.Errorf("%w: capsule verification: %v", ErrInvalid, err)
+	if err := verifyCapsuleBytes(record); err != nil {
+		return nil, err
 	}
 	e, err := emit.VerifyEnvelope(record.CapsuleID, record.ProducerEnvelope)
 	if err != nil {
@@ -158,6 +157,58 @@ func Verify(record Record, trusted []ed25519.PublicKey) (map[string]ArtifactVeri
 		results[a.Name] = check
 	}
 	return results, nil
+}
+
+// PaddingRecordType is the record_type of a padding record (Evidence Layer -00,
+// "What a Checkpoint Reveals"): a log leaf that is not a Capsule. A store admits
+// it beside Capsules, so Get can return one; a caller that needs a Capsule
+// checks record_type.
+const PaddingRecordType = "padding"
+
+// paddingMembers is the closed member set of a stored padding record, without
+// the local-only signature and key_id, as AAC's padding vectors pin it.
+var paddingMembers = map[string]bool{"capsule_id": true, "record_type": true, "epistemic_type": true, "store_nonce": true}
+
+// verifyCapsuleBytes authenticates the stored Capsule bytes: an AAC format-4
+// Capsule through Class 1, or a padding record through its closed shape. Either
+// way the computed ID must equal the record's.
+func verifyCapsuleBytes(record Record) error {
+	if decoded, err := emit.DecodePayload(record.Capsule); err == nil && decoded["record_type"] == PaddingRecordType {
+		return verifyPadding(record.CapsuleID, decoded)
+	}
+	v, err := emit.VerifyCapsule(record.Capsule)
+	if err != nil || !v.OK || v.CapsuleID == nil || *v.CapsuleID != record.CapsuleID {
+		return fmt.Errorf("%w: capsule verification: %v", ErrInvalid, err)
+	}
+	return nil
+}
+
+// verifyPadding checks a padding record: exactly its four members,
+// epistemic_type producer_claim, a 64-lowercase-hex store_nonce, and a
+// capsule_id that is the JSON-DIGEST of the record without capsule_id.
+func verifyPadding(id string, padding map[string]any) error {
+	for member := range padding {
+		if !paddingMembers[member] {
+			return fmt.Errorf("%w: padding record carries %q", ErrInvalid, member)
+		}
+	}
+	if padding["epistemic_type"] != "producer_claim" {
+		return fmt.Errorf("%w: padding record epistemic_type", ErrInvalid)
+	}
+	if nonce, ok := padding["store_nonce"].(string); !ok || !idPattern.MatchString(nonce) {
+		return fmt.Errorf("%w: padding record store_nonce", ErrInvalid)
+	}
+	body := make(map[string]any, len(padding))
+	for member, value := range padding {
+		if member != "capsule_id" {
+			body[member] = value
+		}
+	}
+	computed, err := emit.DigestJSON(body)
+	if err != nil || padding["capsule_id"] != id || computed != id {
+		return fmt.Errorf("%w: padding record capsule id", ErrInvalid)
+	}
+	return nil
 }
 
 func digestAt(capsule map[string]any, field DigestField) (string, error) {

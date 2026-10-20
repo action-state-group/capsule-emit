@@ -25,6 +25,11 @@ and its tests fail if the copy drifts from this file.
 | `open` | `{name, namespace, trusted, expect}`: constructor validation, with `trusted` as raw hex keys (some deliberately not 32 bytes) |
 | `cases` | Operation sequences, described below |
 
+The `padding*` records are padding records
+([contract](../../docs/artifact-store.md#padding-records)) with fixed store
+nonces. Each rejected variant recomputes its own `capsule_id` and carries an
+envelope over it, so only the rule its name gives fails.
+
 Record names follow a convention: `basic` is an input, `basic.stored` is what
 `get` returns after `put basic` (with `content_sha256` filled in), and
 `basic.purged` is what `get` returns after `purge`. Other suffixes are input
@@ -61,13 +66,16 @@ capabilities the backend does not declare:
 - `shared_backing`: stores with different namespaces can share one storage
   (the SQL backends; a `jsonl` file holds one namespace).
 
-Two further capabilities are derived from a case's steps rather than listed,
-so that a store with [capability limits](../../docs/artifact-store.md#capability-limits)
+Three further capabilities are derived from a case's steps rather than
+listed, so that a store with [capability limits](../../docs/artifact-store.md#capability-limits)
 can declare a subset: `originals` when the case puts a record that declares any
-artifact, and `purge` when it purges with any expected outcome other than
-`invalid`. Every built-in backend except the legacy ledgers has both. The
-Python (`Harness.originals`, `Harness.purge`) and Rust (`conformance::Limits`,
-`run_limited`) runners take them; Go and TypeScript run every case. The
+artifact, `purge` when it purges with any expected outcome other than
+`invalid`, and `padding` when it puts a padding record. Every built-in backend
+except the legacy ledgers has all three; Rust's legacy ledger has `padding`,
+Python's does not (its `ledger.jsonl` never holds padding). The Python
+(`Harness.originals`, `Harness.purge`, `Harness.padding`) and Rust
+(`conformance::Limits`, `run_limited`) runners take them; Go and TypeScript
+run every case. The
 `bare_*` cases use only `empty` and its variants, so such a store still runs
 admission, conflict, rejection and fail-closed read checks.
 

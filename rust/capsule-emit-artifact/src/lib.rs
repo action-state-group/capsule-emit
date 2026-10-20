@@ -33,8 +33,9 @@ mod store;
 
 pub use error::{ArtifactError, Result};
 pub use record::{
-    decode_record, encode_record, prepare, purged, storage_checksum, valid_id, valid_name, verify,
-    Artifact, ArtifactVerification, Record, RetentionState, AGENT_OUTPUT_DIGEST,
-    EFFECT_REQUEST_DIGEST, EFFECT_RESPONSE_DIGEST, PAYLOAD_DIGEST,
+    decode_record, encode_record, is_padding, prepare, purged, storage_checksum, valid_id,
+    valid_name, verify, Artifact, ArtifactVerification, Record, RetentionState,
+    AGENT_OUTPUT_DIGEST, EFFECT_REQUEST_DIGEST, EFFECT_RESPONSE_DIGEST, PADDING_RECORD_TYPE,
+    PAYLOAD_DIGEST,
 };
 pub use store::{Store, TxStore};

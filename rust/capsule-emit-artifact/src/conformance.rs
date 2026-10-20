@@ -22,6 +22,8 @@
 
 use std::collections::BTreeMap;
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use serde::Deserialize;
 
 use crate::error::Result;
@@ -56,6 +58,9 @@ pub struct Limits {
     /// The store keeps originals. Without it, cases that put a record
     /// declaring artifacts are skipped.
     pub originals: bool,
+    /// The store holds padding records. Without it, cases that put one are
+    /// skipped.
+    pub padding: bool,
     /// The store purges. Without it, cases that purge with any expected
     /// outcome but `invalid` are skipped.
     pub purge: bool,
@@ -70,6 +75,7 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             originals: true,
+            padding: true,
             purge: true,
             before_put: None,
             after_get: None,
@@ -336,9 +342,10 @@ fn run_case<B>(
     Ok(())
 }
 
-/// The capabilities `case` needs: its `requires` plus two derived from its
-/// steps, `originals` when it puts a record that declares artifacts and
-/// `purge` when it purges with any expected outcome but `invalid`.
+/// The capabilities `case` needs: its `requires` plus three derived from its
+/// steps, `originals` when it puts a record that declares artifacts, `purge`
+/// when it purges with any expected outcome but `invalid`, and `padding` when
+/// it puts a padding record.
 pub fn needs(v: &Vectors, case: &Case) -> Vec<String> {
     let mut required = case.requires.clone();
     // An unknown record is left to the case itself, which reports it.
@@ -354,6 +361,21 @@ pub fn needs(v: &Vectors, case: &Case) -> Vec<String> {
         .any(|s| s.op == "put" && declares_artifacts(s.record.as_deref()))
     {
         required.push("originals".into());
+    }
+    let puts_padding = |name: Option<&str>| {
+        name.and_then(|n| v.records.get(n))
+            .and_then(|r| r.get("capsule"))
+            .and_then(serde_json::Value::as_str)
+            .and_then(|b64| STANDARD.decode(b64).ok())
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .is_some_and(|capsule| crate::record::is_padding(&capsule))
+    };
+    if case
+        .steps
+        .iter()
+        .any(|s| s.op == "put" && puts_padding(s.record.as_deref()))
+    {
+        required.push("padding".into());
     }
     if case
         .steps
@@ -384,6 +406,7 @@ pub fn run_limited<B>(h: &Harness<B>, limits: &Limits) -> Vec<Outcome> {
             "durable" => !h.durable,
             "shared_backing" => !h.shared_backing,
             "originals" => !limits.originals,
+            "padding" => !limits.padding,
             "purge" => !limits.purge,
             _ => true,
         });

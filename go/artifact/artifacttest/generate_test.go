@@ -3,6 +3,7 @@ package artifacttest
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	emit "github.com/action-state-group/capsule-emit/go"
 	"github.com/action-state-group/capsule-emit/go/artifact"
 	"github.com/stretchr/testify/require"
+	"github.com/veraison/go-cose"
 )
 
 // canonicalPath is the language-neutral copy every other runner reads.
@@ -249,6 +251,33 @@ func generate(t *testing.T) []byte {
 	})
 	g.variant("basic.unknown_state", "basic", func(r *artifact.Record) { r.Artifacts[2].State = "archived" })
 
+	// Padding records (Evidence Layer -00, "What a Checkpoint Reveals"): log
+	// leaves that are not Capsules, admitted by their closed shape. Each
+	// rejected variant recomputes its own capsule_id and carries an envelope
+	// over it, so only the named rule fails.
+	g.padding("padding", "trusted", map[string]any{"store_nonce": strings.Repeat("11", 32)}, nil)
+	g.stored("padding")
+	g.padding("padding.with_note", "trusted", map[string]any{"store_nonce": strings.Repeat("22", 32)},
+		[]artifact.Artifact{{Name: "private_note", Content: content(note), State: artifact.Present}})
+	g.stored("padding.with_note")
+	g.padding("padding.rotated", "rotated", map[string]any{"store_nonce": strings.Repeat("33", 32)}, nil)
+	g.padding("padding.untrusted", "other", map[string]any{"store_nonce": strings.Repeat("44", 32)}, nil)
+	g.padding("padding.bound", "trusted", map[string]any{"store_nonce": strings.Repeat("55", 32)},
+		[]artifact.Artifact{{Name: "payload", Binding: artifact.PayloadDigest, Content: content(payload), State: artifact.Present}})
+	g.padding("padding.capsule_profile", "trusted", map[string]any{"store_nonce": strings.Repeat("66", 32),
+		"format_version": "4", "canonicalization_id": "jcs"}, nil)
+	g.padding("padding.extra_member", "trusted", map[string]any{"store_nonce": strings.Repeat("77", 32), "links": []any{}}, nil)
+	g.padding("padding.epistemic_type", "trusted", map[string]any{"store_nonce": strings.Repeat("88", 32),
+		"epistemic_type": "observed_event"}, nil)
+	g.padding("padding.nonce_uppercase", "trusted", map[string]any{"store_nonce": strings.Repeat("AB", 32)}, nil)
+	g.padding("padding.nonce_missing", "trusted", map[string]any{}, nil)
+	g.variant("padding.id_mismatch", "padding", func(r *artifact.Record) {
+		other := g.records["padding.rotated"]
+		r.CapsuleID = other.CapsuleID
+		r.ProducerEnvelope = signID(t, other.CapsuleID, g.keys["trusted"])
+	})
+	g.variant("padding.envelope_other_capsule", "padding", func(r *artifact.Record) { r.ProducerEnvelope = empty.Envelope })
+
 	// Codec-only synthetic records: opaque bytes, not a verifiable Capsule.
 	g.add("synthetic", artifact.Record{CapsuleID: strings.Repeat("a", 64), Capsule: []byte("{}"), ProducerEnvelope: []byte{0, 1, 2, 255},
 		Artifacts: []artifact.Artifact{
@@ -268,12 +297,12 @@ func generate(t *testing.T) []byte {
 	for name, key := range g.keys {
 		v.Keys[name] = hex.EncodeToString(key.Public().(ed25519.PublicKey))
 	}
-	for _, name := range []string{"synthetic.stored", "synthetic.purged", "synthetic.empty", "basic.stored", "basic.purged", "blank.stored", "empty.stored"} {
+	for _, name := range []string{"synthetic.stored", "synthetic.purged", "synthetic.empty", "basic.stored", "basic.purged", "blank.stored", "empty.stored", "padding.stored"} {
 		sum, err := g.records[name].StorageChecksum()
 		require.NoError(t, err)
 		v.Checksums = append(v.Checksums, ChecksumVector{Record: name, StorageChecksum: sum})
 	}
-	for _, name := range []string{"synthetic.stored", "synthetic.purged", "synthetic.empty", "basic.stored", "basic.purged", "blank.stored", "blank.purged", "rotated.stored"} {
+	for _, name := range []string{"synthetic.stored", "synthetic.purged", "synthetic.empty", "basic.stored", "basic.purged", "blank.stored", "blank.purged", "rotated.stored", "padding.stored"} {
 		line, err := jsonv2.Marshal(g.records[name])
 		require.NoError(t, err)
 		v.Lines = append(v.Lines, LineVector{Record: name, Line: string(line)})
@@ -291,6 +320,53 @@ func signEnvelope(t *testing.T, sealed emit.Result, identity emit.SigningIdentit
 	built := emit.BuiltPayload{CapsuleID: sealed.CapsuleID, JSON: sealed.Payload}
 	envelope, err := emit.Sign(built, identity)
 	require.NoError(t, err)
+	return envelope
+}
+
+// padding adds a padding record signed by key: the reserved members, then
+// fields (which may override them), with its capsule_id recomputed over the
+// result. Its bytes are compact JSON with sorted keys, the form a Rust ledger
+// line takes without its local-only signature and key_id.
+func (g *generator) padding(name, key string, fields map[string]any, artifacts []artifact.Artifact) {
+	body := map[string]any{"record_type": artifact.PaddingRecordType, "epistemic_type": "producer_claim"}
+	for member, value := range fields {
+		body[member] = value
+	}
+	id, err := emit.DigestJSON(body)
+	require.NoError(g.t, err)
+	body["capsule_id"] = id
+	capsule, err := jsonv2.Marshal(body, jsonv2.Deterministic(true))
+	require.NoError(g.t, err)
+	if artifacts == nil {
+		artifacts = []artifact.Artifact{}
+	}
+	g.add(name, artifact.Record{CapsuleID: id, Capsule: capsule, ProducerEnvelope: signID(g.t, id, g.keys[key]), Artifacts: artifacts})
+}
+
+// signID signs a Producer Envelope over the raw Capsule ID id: the encoding
+// emit.Sign uses, which only accepts a Capsule, so a padding record's envelope
+// is built here and checked with emit.VerifyEnvelope.
+func signID(t *testing.T, id string, key ed25519.PrivateKey) []byte {
+	public := key.Public().(ed25519.PublicKey)
+	protected := []byte{0xa3, 0x03, 0x78, byte(len(emit.ContentType))}
+	protected = append(protected, emit.ContentType...)
+	protected = append(protected, 0x04, 0x58, ed25519.PublicKeySize)
+	protected = append(protected, public...)
+	protected = append(protected, 0x01, 0x27)
+	payload, err := hex.DecodeString(id)
+	require.NoError(t, err)
+	message := cose.NewSign1Message()
+	message.Headers.RawProtected = append([]byte{0x58, byte(len(protected))}, protected...)
+	message.Headers.Protected.SetAlgorithm(cose.AlgorithmEdDSA)
+	message.Payload = payload
+	signer, err := cose.NewSigner(cose.AlgorithmEdDSA, key)
+	require.NoError(t, err)
+	require.NoError(t, message.Sign(rand.Reader, nil, signer))
+	envelope, err := message.MarshalCBOR()
+	require.NoError(t, err)
+	verified, err := emit.VerifyEnvelope(id, envelope)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(verified.PublicKey, public))
 	return envelope
 }
 
@@ -323,6 +399,7 @@ func purge(id, expect string) Step { return Step{Op: "purge", ID: &id, Expect: e
 func cases(r map[string]artifact.Record) []Case {
 	main := map[string]StoreSpec{"main": {Namespace: "conformance", Trusted: []string{"trusted"}}}
 	basic, empty, blank, effect := r["basic"].CapsuleID, r["empty"].CapsuleID, r["blank"].CapsuleID, r["effect"].CapsuleID
+	padding, paddingNote := r["padding"].CapsuleID, r["padding.with_note"].CapsuleID
 	rotated, untrusted := r["rotated"].CapsuleID, r["untrusted"].CapsuleID
 	rejections := []Step{}
 	for _, c := range []struct{ record, code string }{
@@ -401,6 +478,19 @@ func cases(r map[string]artifact.Record) []Case {
 			Steps: []Step{put("empty.untrusted_envelope", "untrusted_signer"), put("empty.envelope_other_capsule", "invalid"),
 				put("empty.wrong_id", "invalid"), put("empty.capsule_tampered", "invalid"),
 				get(empty, "not_found", ""), get(basic, "not_found", "")}},
+		{Name: "padding_record", Description: "A padding record is admitted by its closed shape, reads back and retries idempotently.",
+			Stores: map[string]StoreSpec{"main": {Namespace: "conformance", Trusted: []string{"trusted", "rotated"}}},
+			Steps: []Step{put("padding", "ok"), get(padding, "ok", "padding.stored"), put("padding", "ok"),
+				put("padding.rotated", "ok"), put("empty", "ok"), get(padding, "ok", "padding.stored")}},
+		{Name: "padding_rejections", Description: "Padding records failing their shape, id, envelope or attachment rules are rejected.", Stores: main,
+			Steps: []Step{put("padding.untrusted", "untrusted_signer"), put("padding.capsule_profile", "invalid"),
+				put("padding.extra_member", "invalid"), put("padding.epistemic_type", "invalid"),
+				put("padding.nonce_uppercase", "invalid"), put("padding.nonce_missing", "invalid"),
+				put("padding.id_mismatch", "invalid"), put("padding.envelope_other_capsule", "invalid"),
+				get(padding, "not_found", "")}},
+		{Name: "padding_unbound_original", Description: "A padding record may keep an unbound attachment, which purges like any original, but no bound one.", Stores: main,
+			Steps: []Step{put("padding.bound", "invalid"), put("padding.with_note", "ok"), get(paddingNote, "ok", "padding.with_note.stored"),
+				purge(paddingNote, "ok"), get(paddingNote, "ok", "padding.with_note.purged")}},
 		{Name: "durable_reopen", Description: "Records, purges and conflicts persist across reopening.", Requires: []string{"durable"}, Stores: main,
 			Steps: []Step{put("basic", "ok"), put("empty", "ok"), {Op: "reopen", Expect: "ok"}, get(basic, "ok", "basic.stored"),
 				put("basic.conflict_note", "conflict"), purge(basic, "ok"), {Op: "reopen", Expect: "ok"}, get(basic, "ok", "basic.purged"),
