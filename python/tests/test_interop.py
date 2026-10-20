@@ -283,18 +283,18 @@ def test_verify_store_chain_parent_exists(tmp_ledger):
 
 def test_verify_store_chain_parent_missing(tmp_path):
     ledger = tmp_path / "ledger.jsonl"
-    fake_parent_id = "b" * 64
+    parent = seal(None, action="action_a", operator="test-org", developer="agent@v1", anchor=False, ledger=ledger)
     seal(
         None,
         action="action_b",
         operator="test-org",
         developer="agent@v1",
-        confirms=fake_parent_id,
+        confirms=parent.capsule_id,
         verdict="confirmed",
         anchor=False,
         ledger=ledger,
     )
-    capsules = read_ledger(ledger)
+    capsules = [c for c in read_ledger(ledger) if c["capsule_id"] != parent.capsule_id]
     results = verify_store(capsules)
     # The confirming capsule must not be ok: parent not in store.
     error_codes = [f.code for r in results for f in r.findings if f.severity == "error"]

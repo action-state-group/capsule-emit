@@ -414,7 +414,9 @@ def test_a_legacy_resolves_record_still_closes_a_pending_item(tmp_path):
     blocked = _blocked_capsule(tmp_path)
     other = _blocked_capsule(tmp_path, action="write_invoice")
     # A record as older releases wrote it (the writer now refuses "resolves",
-    # so the old record is put in the ledger as it was left on disk).
+    # so the old record is put in the ledger as it was left on disk). It is
+    # sealed over a copy of the ledger, which holds its parent.
+    (tmp_path / "other.jsonl").write_bytes((tmp_path / "ledger.jsonl").read_bytes())
     approval = _emit_capsule(
         action="review_action",
         operator="test-org",

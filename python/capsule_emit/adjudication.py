@@ -6,7 +6,9 @@ One public helper, :func:`seal_adjudication`, and a reader, :func:`is_adjudicati
 ``seal_adjudication(half_a_capsule_id, half_b_capsule_id, verdict, ...)``
     Seals a capsule carrying:
 
-    - ``chain.parent_capsule_id`` — *half_a_capsule_id*
+    - ``chain.parent_capsule_id`` — *half_a_capsule_id*, when the ledger
+      holds it; a half from another stream is cited in ``references[]``
+      instead, with no ``chain`` (see ``capsule_emit.core``'s ``confirms``)
     - ``chain.relation`` — ``"confirms"`` (the registered non-terminal
       relation: the verdict observes the compared half and leaves its open
       state as it was, whatever the verdict). Releases before this one wrote
@@ -132,7 +134,8 @@ def seal_adjudication(
 
     Args:
         half_a_capsule_id: ``capsule_id`` of the first compared half. Becomes
-            ``chain.parent_capsule_id`` (``_emit_capsule`` requires exactly
+            ``chain.parent_capsule_id``, or a ``references[]`` citation when
+            the ledger does not hold it (``_emit_capsule`` takes exactly
             one chain target; the second half is cited inside
             ``compute_attestation.adjudication.half_b_capsule_id`` instead
             of a second chain link — no new record/chain shape).

@@ -501,7 +501,9 @@ def seal_action(
 ) -> EmitResult:  # type: ignore[name-defined]
     """Emit a capsule recording Org B's action attestation.
 
-    Chains onto the requester's capsule.  ``verdict`` reflects B's
+    Follows up the requester's capsule: ``chain`` when ``ledger`` holds it,
+    otherwise a ``references[]`` citation (``capsule_emit.core``'s
+    ``confirms``), the usual case for two organizations.  ``verdict`` reflects B's
     disposition (executed / blocked / denied / escalated).  Gate check
     results from the constraint evaluation are stored in compute_attestation.
     """
@@ -542,8 +544,10 @@ def seal_bilateral(
     """Emit a capsule recording bilateral completion (both parties confirmed).
 
     This is the completion capsule that records the BILATERAL state: both
-    parties have acknowledged each other's attestations.  The chain links to
-    the most recent prior capsule in the exchange.
+    parties have acknowledged each other's attestations.  It follows up the
+    most recent prior capsule in the exchange: ``chain`` when ``ledger`` holds
+    it, otherwise a ``references[]`` citation (``capsule_emit.core``'s
+    ``confirms``).
     """
     from capsule_emit.core import _emit_capsule
 

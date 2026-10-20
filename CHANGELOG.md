@@ -6,6 +6,27 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed (Python, breaking): `confirms=` cites another stream's capsule in `references[]`
+
+`seal(confirms=...)` (and every helper built on it: `seal_approval`,
+`seal_adjudication`, the bilateral and settlement sealers, the adapters) writes
+`chain.parent_capsule_id` only when the ledger it seals into already holds the
+target. Any other target is another stream's record, so the capsule carries no
+`chain` and cites it in `references[]` instead:
+`{"type": "agent-action-capsule", "digest_alg": "SHA-256", "digest": <capsule_id>,
+"citation_purpose": "responds_to"}`, appended to any `references=` the caller
+passed unless one already cites that digest. `relation=` is not written for such
+a target. Earlier releases wrote a cross-stream `confirms=` as a `chain` link,
+which draft-05 reserves for the producer's own same-stream parent; code that
+follows `chain.parent_capsule_id` from one organization's capsule to another's
+now finds the link in `references[]`, and `verify --store` no longer reports
+such a capsule's parent as missing. The stream is the ledger file you pass: a
+capsule in an earlier, rotated ledger (or a typo'd id) is now cited rather than
+chained, so pass the ledger that holds the parent to keep `chain`.
+`docs/chaining.md` describes cross-stream citation and no longer carries the
+"under revision" note. Go, TypeScript and Rust take `chain` and `references`
+explicitly and are unchanged.
+
 ### Added: artifact stores admit padding records
 
 The artifact store contract (`docs/artifact-store.md`) admits padding records

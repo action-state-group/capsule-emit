@@ -47,6 +47,14 @@ class Party:
         return seal_leg(member, operator=self.name, developer=f"{self.name}-agent@1", ledger=self.ledger,
                         witness=False, **kw).capsule
 
+    def hold(self, record: dict) -> None:
+        """Put another party's record in this party's ledger, so a ``prior=``
+        pointing at it is written as a ``chain`` link (``seal()`` cites a
+        record its ledger does not hold in ``references[]`` instead)."""
+        self.ledger.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.ledger, "a") as f:
+            f.write(json.dumps(record) + "\n")
+
     @property
     def key(self) -> str:
         from capsule_emit.signing import resolve_signer
@@ -302,6 +310,7 @@ def test_pending_superseded_by_settled_uses_the_head(tmp_path):
 def test_a_supersedes_link_from_another_key_is_ignored_same_values(tmp_path):
     terms, p, q, payer, _ = _two_sided(tmp_path)
     attacker = Party(tmp_path, "attacker")
+    attacker.hold(p)
     spoof = attacker.seal(_payer_leg(terms["capsule_id"]), prior=p["capsule_id"], relation="supersedes")
     report = verify_settlements([terms, p, spoof, q], wrapped_objects=[EXACT_PAYLOAD])
     assert report.settlements[0]["payment_state"] == "agreed"
@@ -315,8 +324,10 @@ def test_a_supersedes_link_from_another_key_is_ignored_same_values(tmp_path):
 
 def test_a_supersedes_link_from_another_key_is_ignored_different_values(tmp_path):
     terms, p, q, _, _ = _two_sided(tmp_path)
-    spoof = Party(tmp_path, "attacker").seal(_payer_leg(terms["capsule_id"], status="failed"),
-                                             prior=p["capsule_id"], relation="supersedes")
+    attacker = Party(tmp_path, "attacker")
+    attacker.hold(p)
+    spoof = attacker.seal(_payer_leg(terms["capsule_id"], status="failed"), prior=p["capsule_id"],
+                          relation="supersedes")
     report = verify_settlements([terms, p, spoof, q], wrapped_objects=[EXACT_PAYLOAD])
     s = report.settlements[0]
     assert (s["payment_state"], s["differs"]) == ("mismatch", ["status"])  # the genuine leg still counts

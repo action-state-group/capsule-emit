@@ -493,15 +493,12 @@ def test_confirms_nonexistent_parent(tmp_ledger):
         anchor=False,
         ledger=tmp_ledger,
     )
-    assert cap.capsule["chain"]["parent_capsule_id"] == fake_parent
-    result_no_store = verify(cap.capsule)
-    assert result_no_store.ok
-    info_codes = [f.code for f in result_no_store.findings if f.severity == "info"]
-    assert any("chain" in c for c in info_codes)
-    result_empty_store = verify(cap.capsule, store=[])
-    assert not result_empty_store.ok
-    error_codes = [f.code for f in result_empty_store.findings if f.severity == "error"]
-    assert any("chain_parent_missing" in c for c in error_codes)
+    # Not in this ledger, so another stream's capsule: cited, not chained.
+    assert "chain" not in cap.capsule
+    assert [r["digest"] for r in cap.capsule["references"]] == [fake_parent]
+    assert verify(cap.capsule).ok
+    # A store without the cited capsule is not missing a parent.
+    assert verify(cap.capsule, store=[]).ok
 
 
 def test_confirms_self_circular(tmp_ledger):
