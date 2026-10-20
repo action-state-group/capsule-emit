@@ -72,10 +72,13 @@ class MeshLedgerLog:
     Every line of ``capsules.jsonl`` is a leaf, in order, padding lines
     (``record_type: "padding"``) included; its value is the line's
     ``capsule_id``. Records are the lines that are not padding. ``get``
-    returns a record's capsule bytes without the inline ``signature`` and
-    ``key_id`` members, and the hex-decoded ``signature`` (a COSE_Sign1
-    Producer Envelope) as ``producer_envelope``, empty for an unsigned line;
-    a padding line or an unknown ID is ``not_found``.
+    checks a record as ``LegacyLedger`` does
+    (:func:`capsule_emit.legacy_ledger.checked_record`): a claimed Producer
+    Envelope needs both ``signature`` and ``key_id``, must verify over the
+    capsule ID and name ``key_id`` as its signer, else ``invalid``. It returns
+    the capsule bytes without those two members and the envelope as
+    ``producer_envelope``, empty for an unsigned line; a padding line or an
+    unknown ID is ``not_found``.
 
     ``load_cll`` reads ``checkpoints.jsonl``: the newest ``mmr_checkpoint``
     line (largest ``mmr_size``) whose own signature verifies. Its COSE
