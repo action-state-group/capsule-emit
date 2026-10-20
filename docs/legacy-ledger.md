@@ -82,6 +82,38 @@ covers it. Rust keeps its indexed lookups (`Ledger` reads a record at its byte
 offset) and its incremental checkpointing (`CheckpointState` folds only lines
 past `consumed_bytes`).
 
+### Checkpoint state (Python)
+
+`LegacyLedger.load_cll()` reads the CLL checkpoint state (`cll.log.CllState`)
+the ledger already holds. It writes nothing. The checkpoint is the newest
+checkpoint-stamp line whose `checkpoint_cose` (the hex COSE_Sign1 statement
+the witness thread stores beside the JSON checkpoint) verifies offline and
+covers no more leaves than the ledger has. A stamp whose statement does not
+verify is passed over for an older one. The MMR nodes are folded from the
+ledger's own entries up to the checkpoint's size and must rebuild its signed
+root; if they do not, the ledger is `corrupt`. A ledger with no such stamp
+(none yet, or stamps written without a COSE statement) has no checkpoint:
+`checkpoint` is `None`.
+
+`commit_cll` is `unsupported`: checkpoint stamps keep their writer,
+`capsule_emit.witness`.
+
+With `load_cll`, `scan_entries` and the artifact `get` below, the ledger is
+both inputs of agent-action-capsule's Evidence Bundle producer:
+
+```python
+from agent_action_capsule.bundle import build_evidence_bundle, proof_source_from_cll
+
+from capsule_emit.legacy_ledger import LegacyLedger
+
+ledger = LegacyLedger("ledger.jsonl")
+bundle = build_evidence_bundle(proof_source_from_cll(ledger, ledger), root=capsule_id, interval_from=1)
+```
+
+`capsule-emit bundle ledger.jsonl` does the same from the command line. A
+range that reaches a checkpoint-stamp, disclosure or backfill line is refused,
+because those leaves are not records; start the interval after the last one.
+
 ## The artifact store
 
 A capsule line carries its Producer Envelope inline: `signature` (hex
@@ -150,6 +182,7 @@ storage (identity, capsule, envelope, signer) before it refuses an original.
 | Capability | Legacy backend |
 |---|---|
 | CLL `digest-append` | No: write the capsule with `put` |
+| CLL checkpoint-state writes | No: `commit_cll` is refused (Python; `load_cll` reads the stamps) |
 | Originals | No: `put` with any declared artifact is refused (Rust: except the required `signed-statement`) |
 | Purge | No: `purge` validates the ID, then refuses. Python has no originals to purge; Rust's statement is required by the ledger's reload check |
 | Transactions | No `TxStore` extension |
