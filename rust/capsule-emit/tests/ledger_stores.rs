@@ -382,16 +382,16 @@ fn a_line_open_would_refuse_is_refused_before_anything_is_written() {
 
     // Padding takes the same checks.
     let pad = padding(1);
-    for (bad, bad_statement) in refused_padding(&pad) {
-        let err = ledger.append_padding(&bad, &bad_statement).unwrap_err();
-        assert!(
-            matches!(
-                err,
-                LedgerError::StatementInvalid { .. } | LedgerError::CapsuleIdMismatch { .. }
-            ),
-            "{err}"
-        );
-    }
+    let [(wrong, wrong_statement), (tampered, tampered_statement)] = refused_padding(&pad);
+    let err = ledger.append_padding(&wrong, &wrong_statement).unwrap_err();
+    assert!(matches!(err, LedgerError::StatementInvalid { .. }), "{err}");
+    let err = ledger
+        .append_padding(&tampered, &tampered_statement)
+        .unwrap_err();
+    assert!(
+        matches!(err, LedgerError::CapsuleIdMismatch { .. }),
+        "{err}"
+    );
 
     assert!(entries(log.as_ref()).is_empty());
     for line in [&r0, &pad] {
@@ -412,11 +412,11 @@ fn a_line_open_would_refuse_is_refused_before_anything_is_written() {
 
 /// A padding record with a statement over another padding record, and a
 /// tampered padding record whose stored id no longer recomputes.
-fn refused_padding(pad: &Value) -> Vec<(Value, Vec<u8>)> {
+fn refused_padding(pad: &Value) -> [(Value, Vec<u8>); 2] {
     let other = padding(2);
     let mut tampered = pad.clone();
     tampered["store_nonce"] = json!(hex::encode([3u8; 32]));
-    vec![
+    [
         (pad.clone(), statement(&other, &key(), PADDING_CONTENT_TYPE)),
         (
             tampered.clone(),
@@ -466,16 +466,16 @@ fn a_flat_line_open_would_refuse_is_refused_before_anything_is_written() {
     );
 
     let pad = padding(1);
-    for (bad, bad_statement) in refused_padding(&pad) {
-        let err = ledger.append_padding(&bad, &bad_statement).unwrap_err();
-        assert!(
-            matches!(
-                err,
-                LedgerError::StatementInvalid { .. } | LedgerError::CapsuleIdMismatch { .. }
-            ),
-            "{err}"
-        );
-    }
+    let [(wrong, wrong_statement), (tampered, tampered_statement)] = refused_padding(&pad);
+    let err = ledger.append_padding(&wrong, &wrong_statement).unwrap_err();
+    assert!(matches!(err, LedgerError::StatementInvalid { .. }), "{err}");
+    let err = ledger
+        .append_padding(&tampered, &tampered_statement)
+        .unwrap_err();
+    assert!(
+        matches!(err, LedgerError::CapsuleIdMismatch { .. }),
+        "{err}"
+    );
 
     assert_eq!(flat_files(dir.path()), before);
     assert_eq!(ledger.entries(), 1);
