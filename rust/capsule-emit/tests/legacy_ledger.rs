@@ -544,6 +544,11 @@ fn rejected_padding_leaves_the_ledger_reopenable() {
         store.append_padding(&padding, &good),
         Err(ArtifactError::Conflict)
     ));
+    // A bad statement is invalid even under an id the ledger holds.
+    assert!(matches!(
+        store.append_padding(&padding, b""),
+        Err(ArtifactError::Invalid(_))
+    ));
     store.close();
     let (reopened, _) = Ledger::open(dir.path()).unwrap();
     assert_eq!(reopened.entries(), 10);
