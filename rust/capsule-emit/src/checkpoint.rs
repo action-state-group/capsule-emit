@@ -1578,9 +1578,16 @@ impl RowDelivery<'_> {
     }
 
     /// Close every queued row up to `accepted` as [`WITNESS_AHEAD`].
+    /// Stops at a row that holds the witness, as the pass does, so a reopen
+    /// (which queues held rows) sees the same queue.
     fn close_ahead(&self, queue: &mut VecDeque<u64>, accepted: u64) -> bool {
         while let Some(&size) = queue.front().filter(|&&s| s <= accepted) {
             match self.backend.get_witness(self.witness_id, size) {
+                Ok(Some(row))
+                    if row.permanent && row.receipt.is_none() && !is_witness_ahead(&row) =>
+                {
+                    return true;
+                }
                 Ok(Some(row)) if row.receipt.is_none() && !row.permanent => {
                     let why = format!("{WITNESS_AHEAD}{accepted}");
                     if !self.commit(&row, None, true, Some(why)) {
@@ -4327,6 +4334,52 @@ mod tests {
         append_entry(log.as_ref(), "two");
         state.reconnect(&signer(), &anchor_unused()).unwrap();
         assert_eq!(hits(&witness), 1);
+    }
+
+    #[test]
+    fn store_closing_rows_ahead_stops_at_a_held_row() {
+        let witness = continuity_witness(None);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        set(&witness.down, true);
+        let one = append_entry(log.as_ref(), "one");
+        let a = state
+            .checkpoint_covering(&one, &signer(), &anchor_unused())
+            .unwrap()
+            .checkpoint;
+        let two = append_entry(log.as_ref(), "two");
+        let b = state
+            .checkpoint_covering(&two, &signer(), &anchor_unused())
+            .unwrap()
+            .checkpoint;
+        // Another runner held B; the witness already holds B anyway.
+        let b_row = row(log.as_ref(), &witness.url, b.mmr_size);
+        let held = WitnessState {
+            attempts: b_row.attempts + 1,
+            permanent: true,
+            last_error: Some("invalid signature".into()),
+            ..b_row
+        };
+        log.commit_witness(held.attempts - 1, &held).unwrap();
+        *witness.tip.lock().unwrap() = Some((b.mmr_size, b.root.clone()));
+        set(&witness.down, false);
+
+        // Sending A is refused as already held: A is closed, B still holds.
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert!(is_witness_ahead(&row(
+            log.as_ref(),
+            &witness.url,
+            a.mmr_size
+        )));
+        assert_eq!(row(log.as_ref(), &witness.url, b.mmr_size), held);
+        let sent = hits(&witness);
+        append_entry(log.as_ref(), "three");
+        state.reconnect(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&witness), sent, "the live pass holds at B");
+        drop(state);
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&witness), sent, "and so does a reopen");
     }
 
     #[test]
