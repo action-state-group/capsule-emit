@@ -190,20 +190,12 @@ impl LegacyLedger {
     /// Appends one padding record and its signed statement
     /// ([`Ledger::append_padding`]).
     pub fn append_padding(&self, record: &Value, statement: &[u8]) -> Result<()> {
-        // Check what the ledger's reload check will, before writing, so a
-        // rejected record leaves the ledger reopenable.
+        // Ledger::append_padding runs the reload checks before writing.
         let capsule_id = record
             .get("capsule_id")
             .and_then(Value::as_str)
             .filter(|id| valid_id(id))
             .ok_or_else(|| ArtifactError::Invalid("capsule id".into()))?;
-        let computed = crate::jcs::compute_capsule_id(record)
-            .map_err(|e| ArtifactError::Invalid(format!("capsule id: {e}")))?;
-        if computed != capsule_id {
-            return Err(ArtifactError::Invalid("capsule id mismatch".into()));
-        }
-        check_statement_matches(record, capsule_id, statement)
-            .map_err(|e| ArtifactError::Invalid(format!("signed statement: {e}")))?;
         self.with(|state| {
             if state
                 .first

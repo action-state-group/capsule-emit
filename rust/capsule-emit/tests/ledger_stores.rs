@@ -380,19 +380,117 @@ fn a_line_open_would_refuse_is_refused_before_anything_is_written() {
         "{err}"
     );
 
+    // Padding takes the same checks.
+    let pad = padding(1);
+    for (bad, bad_statement) in refused_padding(&pad) {
+        let err = ledger.append_padding(&bad, &bad_statement).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                LedgerError::StatementInvalid { .. } | LedgerError::CapsuleIdMismatch { .. }
+            ),
+            "{err}"
+        );
+    }
+
     assert!(entries(log.as_ref()).is_empty());
-    assert!(matches!(
-        artifacts.get(&id(&r0)),
-        Err(ArtifactError::NotFound)
-    ));
+    for line in [&r0, &pad] {
+        assert!(matches!(
+            artifacts.get(&id(line)),
+            Err(ArtifactError::NotFound)
+        ));
+    }
     assert!(ledger.lines().is_empty());
 
-    // The corrected line goes through, and the ledger reopens.
+    // The corrected lines go through, and the ledger reopens.
     append(&mut ledger, &r0);
-    assert_eq!(
-        open(&log, &artifacts).unwrap().chain_head(),
-        Some(id(&r0).as_str())
+    append_padding(&mut ledger, &pad);
+    let reopened = open(&log, &artifacts).unwrap();
+    assert_eq!(reopened.chain_head(), Some(id(&r0).as_str()));
+    assert_eq!(reopened.entries(), 2);
+}
+
+/// A padding record with a statement over another padding record, and a
+/// tampered padding record whose stored id no longer recomputes.
+fn refused_padding(pad: &Value) -> Vec<(Value, Vec<u8>)> {
+    let other = padding(2);
+    let mut tampered = pad.clone();
+    tampered["store_nonce"] = json!(hex::encode([3u8; 32]));
+    vec![
+        (pad.clone(), statement(&other, &key(), PADDING_CONTENT_TYPE)),
+        (
+            tampered.clone(),
+            statement(&tampered, &key(), PADDING_CONTENT_TYPE),
+        ),
+    ]
+}
+
+/// A flat ledger's files: `capsules.jsonl` and its statement file names.
+fn flat_files(dir: &Path) -> (Vec<u8>, Vec<String>) {
+    let mut statements: Vec<String> = std::fs::read_dir(dir.join("signed-statements"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    statements.sort();
+    (
+        std::fs::read(dir.join("capsules.jsonl")).unwrap(),
+        statements,
+    )
+}
+
+/// capsule-emit#352: the flat layout refuses what open would refuse before
+/// writing, as the store-backed one does.
+#[test]
+fn a_flat_line_open_would_refuse_is_refused_before_anything_is_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut ledger, _) = Ledger::open(dir.path()).unwrap();
+    let r0 = capsule(0, None, &key());
+    append(&mut ledger, &r0);
+    let before = flat_files(dir.path());
+
+    let r1 = capsule(1, Some(&id(&r0)), &key());
+    let other = capsule(9, None, &key());
+    let err = ledger
+        .append(&r1, &statement(&other, &key(), CONTENT_TYPE))
+        .unwrap_err();
+    assert!(matches!(err, LedgerError::StatementInvalid { .. }), "{err}");
+
+    let mut tampered = r1.clone();
+    tampered["action_id"] = json!("example/stores/tampered");
+    let err = ledger
+        .append(&tampered, &statement(&tampered, &key(), CONTENT_TYPE))
+        .unwrap_err();
+    assert!(
+        matches!(err, LedgerError::CapsuleIdMismatch { .. }),
+        "{err}"
     );
+
+    let pad = padding(1);
+    for (bad, bad_statement) in refused_padding(&pad) {
+        let err = ledger.append_padding(&bad, &bad_statement).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                LedgerError::StatementInvalid { .. } | LedgerError::CapsuleIdMismatch { .. }
+            ),
+            "{err}"
+        );
+    }
+
+    assert_eq!(flat_files(dir.path()), before);
+    assert_eq!(ledger.entries(), 1);
+    assert_eq!(ledger.chain_head(), Some(id(&r0).as_str()));
+    drop(ledger);
+
+    // The ledger still opens, and the corrected lines go through.
+    let (mut ledger, report) = Ledger::open(dir.path()).unwrap();
+    assert_eq!(report.valid_entries, 1);
+    append(&mut ledger, &r1);
+    append_padding(&mut ledger, &pad);
+    drop(ledger);
+    let (reopened, report) = Ledger::open(dir.path()).unwrap();
+    assert_eq!(report.valid_entries, 3);
+    assert_eq!(reopened.chain_head(), Some(id(&r1).as_str()));
 }
 
 /// The record a store-backed ledger writes for `line`: what a crash between

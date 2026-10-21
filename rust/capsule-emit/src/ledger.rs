@@ -407,14 +407,7 @@ impl Replay {
             .ok_or(LedgerError::MissingCapsuleId { line: line_no })?
             .to_string();
 
-        let recomputed = compute_capsule_id(&parsed)?;
-        if recomputed != stored_id {
-            return Err(LedgerError::CapsuleIdMismatch {
-                line: line_no,
-                stored: stored_id,
-                recomputed,
-            });
-        }
+        check_capsule_id(line_no, &parsed, &stored_id)?;
 
         let padding = is_padding(&parsed);
         if padding {
@@ -439,13 +432,7 @@ impl Replay {
         // Existence is not enough: a garbage/swapped statement must not
         // reload clean (see `Ledger::open`).
         let statement_bytes = statement(&stored_id)?;
-        check_statement_matches(&parsed, &stored_id, &statement_bytes).map_err(|detail| {
-            LedgerError::StatementInvalid {
-                line: line_no,
-                capsule_id: stored_id.clone(),
-                detail,
-            }
-        })?;
+        check_statement(line_no, &parsed, &stored_id, &statement_bytes)?;
 
         self.report.valid_entries += 1;
         self.lines
@@ -474,6 +461,37 @@ impl Replay {
             self.report,
         )
     }
+}
+
+/// Line `line`'s `capsule_id` (`stored`) recomputes from `record`. Run on
+/// every line at open and on every append before it writes.
+fn check_capsule_id(line: usize, record: &Value, stored: &str) -> Result<(), LedgerError> {
+    let recomputed = compute_capsule_id(record)?;
+    if recomputed != stored {
+        return Err(LedgerError::CapsuleIdMismatch {
+            line,
+            stored: stored.to_string(),
+            recomputed,
+        });
+    }
+    Ok(())
+}
+
+/// Line `line`'s signed statement matches `record` ([`check_statement_matches`]).
+/// Run on every line at open and on every append before it writes.
+fn check_statement(
+    line: usize,
+    record: &Value,
+    capsule_id: &str,
+    statement: &[u8],
+) -> Result<(), LedgerError> {
+    check_statement_matches(record, capsule_id, statement).map_err(|detail| {
+        LedgerError::StatementInvalid {
+            line,
+            capsule_id: capsule_id.to_string(),
+            detail,
+        }
+    })
 }
 
 /// The error for a missing or purged statement attachment.
@@ -815,7 +833,8 @@ impl Ledger {
     /// written and fsync'd BEFORE the jsonl line, so a crash between the two
     /// leaves at worst an unindexed orphan `.cose` file -- never a jsonl
     /// entry pointing at a receipt that doesn't exist. Refuses to write if
-    /// `capsule.chain.parent_capsule_id` doesn't match the current head.
+    /// `capsule.chain.parent_capsule_id` doesn't match the current head, or
+    /// if the line fails a check [`Self::open`] would run on it.
     pub fn append(&mut self, capsule: &Value, signed_statement: &[u8]) -> Result<(), LedgerError> {
         if is_padding(capsule) {
             return Err(LedgerError::PaddingMisrouted(
@@ -857,6 +876,11 @@ impl Ledger {
         record: &Value,
         signed_statement: &[u8],
     ) -> Result<u64, LedgerError> {
+        // The line checks open runs, before anything is written on either
+        // layout: a refused line must leave the ledger reopenable.
+        let line_no = self.entries as usize + 1;
+        check_capsule_id(line_no, record, capsule_id)?;
+        check_statement(line_no, record, capsule_id, signed_statement)?;
         let offset = match &mut self.storage {
             Storage::Flat {
                 capsules_path,
@@ -875,27 +899,7 @@ impl Ledger {
                 append_handle.sync_all()?;
                 offset
             }
-            Storage::Stores(stores) => {
-                // Everything open_stores will check, before anything is
-                // written: a refused line must leave both stores reopenable.
-                let line_no = self.entries as usize + 1;
-                let recomputed = compute_capsule_id(record)?;
-                if recomputed != capsule_id {
-                    return Err(LedgerError::CapsuleIdMismatch {
-                        line: line_no,
-                        stored: capsule_id.to_string(),
-                        recomputed,
-                    });
-                }
-                check_statement_matches(record, capsule_id, signed_statement).map_err(
-                    |detail| LedgerError::StatementInvalid {
-                        line: line_no,
-                        capsule_id: capsule_id.to_string(),
-                        detail,
-                    },
-                )?;
-                stores.write(capsule_id, record, signed_statement)?
-            }
+            Storage::Stores(stores) => stores.write(capsule_id, record, signed_statement)?,
         };
         self.entries += 1;
         self.lines.push(LedgerLine::new(capsule_id, offset, record));

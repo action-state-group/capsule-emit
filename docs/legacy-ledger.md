@@ -141,6 +141,13 @@ because the ledger checks it on every reload, and `put` checks it the same way
 before writing. A Rust capsule must also extend the ledger's chain: `put` of a
 capsule whose `chain.parent_capsule_id` is not the current head is `invalid`.
 
+Rust's `LegacyLedger` sits above `Ledger`, whose rules it keeps: every
+`Ledger::append` and `Ledger::append_padding` recomputes the line's
+`capsule_id` and checks its signed statement before writing, on the flat
+layout and the store-backed one alike, so a refused line leaves the ledger
+reopenable. A Rust ledger outside this legacy format is
+`Ledger::open_stores`, over a CLL entry log and an artifact store.
+
 ### Verification
 
 Legacy capsules are checked with capsule-emit's own rules. In Python, which
