@@ -41,10 +41,12 @@ python examples/aauth-capsule-interop/demo.py
 AAC_ANCHOR_URL=off python examples/aauth-capsule-interop/demo.py
 ```
 
-Then verify the sealed capsules from the ledger:
+Each org seals into its own ledger. Then verify the sealed capsules from both
+ledgers (the demo prints their paths):
 
 ```bash
-agent-action-capsule verify --store /tmp/aauth_capsule_interop_ledger.jsonl
+agent-action-capsule verify --store <planner ledger>
+agent-action-capsule verify --store <dj ledger>
 ```
 
 Tests:

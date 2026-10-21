@@ -333,7 +333,9 @@ def _verify_ledger(ledger: Path) -> bool:
 
 def main() -> int:
     tmpdir = Path(tempfile.mkdtemp())
-    arc1_ledger = tmpdir / "arc1_authorized.jsonl"
+    # Each organization seals into its own ledger (its own stream).
+    arc1_planner_ledger = tmpdir / "arc1_authorized_planner.jsonl"
+    arc1_dj_ledger = tmpdir / "arc1_authorized_dj.jsonl"
     arc2_ledger = tmpdir / "arc2_blocked.jsonl"
     arc3_ledger = tmpdir / "arc3_ghost.jsonl"
 
@@ -348,7 +350,8 @@ def main() -> int:
     # =========================================================================
     _banner("Arc 1 — Authorized (simple story)")
     print("  CAN grant → Planner seals (may) → DJ seals (did) → verify")
-    print(f"  Ledger: {arc1_ledger}")
+    print(f"  Ledgers: {arc1_planner_ledger} (Org A)")
+    print(f"           {arc1_dj_ledger} (Org B)")
 
     print("\n[step 1] Compute shared action digest")
     subject_digest = json_digest(ACTION)
@@ -360,7 +363,7 @@ def main() -> int:
     _ok(f"mock grant_jti: {grant_jti}")
 
     print("\n[step 3] Planner (Org A) seals request — the 'may'")
-    cap_a = seal_planner(ACTION, subject_digest, grant_jti, arc1_ledger, should_anchor, anchor_endpoint)
+    cap_a = seal_planner(ACTION, subject_digest, grant_jti, arc1_planner_ledger, should_anchor, anchor_endpoint)
     _ok(f"planner capsule_id:     {cap_a['capsule_id'][:20]}...")
     _ok(f"verdict:                {cap_a['disposition']['verdict_class']}")
     _ok(f"disposition.authority:  {cap_a['disposition']['authority']}")
@@ -373,7 +376,7 @@ def main() -> int:
         "set_duration_min": ACTION["set_duration_min"],
         "booking_ref": f"DJ-{uuid.uuid4().hex[:8].upper()}",
     }
-    cap_b = seal_dj(ACTION, subject_digest, cap_a["capsule_id"], outcome, arc1_ledger, should_anchor, anchor_endpoint)
+    cap_b = seal_dj(ACTION, subject_digest, cap_a["capsule_id"], outcome, arc1_dj_ledger, should_anchor, anchor_endpoint)
     _ok(f"dj capsule_id:          {cap_b['capsule_id'][:20]}...")
     _ok(f"verdict:                {cap_b['disposition']['verdict_class']}")
     _ok(f"effect.status:          {cap_b['effect']['status']}")
@@ -391,7 +394,7 @@ def main() -> int:
         return 1
 
     print("\n[step 6] Class-1 verify — both capsules")
-    if not _verify_ledger(arc1_ledger):
+    if not (_verify_ledger(arc1_planner_ledger) & _verify_ledger(arc1_dj_ledger)):
         _warn("Arc 1 verification FAILED")
         return 1
     _ok("Arc 1 complete: both-seal, shared digest, bilateral verifiable")
@@ -513,7 +516,8 @@ def main() -> int:
     # Summary
     # =========================================================================
     _banner("Summary — all three arcs")
-    print(f"  Arc 1 — Authorized   : {arc1_ledger}")
+    print(f"  Arc 1 — Authorized   : {arc1_planner_ledger}")
+    print(f"                         {arc1_dj_ledger}")
     print(f"  Arc 2 — Blocked      : {arc2_ledger}")
     print(f"  Arc 3 — Ghost        : {arc3_ledger}")
     print()

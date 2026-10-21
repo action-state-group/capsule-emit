@@ -40,9 +40,15 @@ from demo import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+# Each organization seals into its own ledger (its own stream).
 @pytest.fixture
-def ledger(tmp_path: Path) -> Path:
-    return tmp_path / "test_ledger.jsonl"
+def planner_ledger(tmp_path: Path) -> Path:
+    return tmp_path / "planner_ledger.jsonl"
+
+
+@pytest.fixture
+def dj_ledger(tmp_path: Path) -> Path:
+    return tmp_path / "dj_ledger.jsonl"
 
 
 @pytest.fixture
@@ -56,15 +62,15 @@ def grant_jti() -> str:
 
 
 @pytest.fixture
-def planner_capsule(subject_digest: str, grant_jti: str, ledger: Path) -> dict:
+def planner_capsule(subject_digest: str, grant_jti: str, planner_ledger: Path) -> dict:
     return seal_planner(
         ACTION, subject_digest, grant_jti,
-        ledger=ledger, should_anchor=False, anchor_endpoint=None,
+        ledger=planner_ledger, should_anchor=False, anchor_endpoint=None,
     )
 
 
 @pytest.fixture
-def dj_capsule(subject_digest: str, planner_capsule: dict, ledger: Path) -> dict:
+def dj_capsule(subject_digest: str, planner_capsule: dict, dj_ledger: Path) -> dict:
     outcome = {
         "accepted": True,
         "slot_confirmed": f"{ACTION['date']} @ {ACTION['venue']}",
@@ -73,7 +79,7 @@ def dj_capsule(subject_digest: str, planner_capsule: dict, ledger: Path) -> dict
     }
     return seal_dj(
         ACTION, subject_digest, planner_capsule["capsule_id"], outcome,
-        ledger=ledger, should_anchor=False, anchor_endpoint=None,
+        ledger=dj_ledger, should_anchor=False, anchor_endpoint=None,
     )
 
 
@@ -215,21 +221,13 @@ class TestMutualReference:
 
 
 class TestLedger:
-    def test_ledger_has_two_capsules(
-        self, planner_capsule: dict, dj_capsule: dict, ledger: Path
+    def test_each_org_ledger_holds_only_its_capsule(
+        self, planner_capsule: dict, dj_capsule: dict,
+        planner_ledger: Path, dj_ledger: Path,
     ) -> None:
         from capsule_emit import read_ledger
-        records = read_ledger(ledger)
-        assert len(records) == 2
-
-    def test_ledger_capsule_ids_match(
-        self, planner_capsule: dict, dj_capsule: dict, ledger: Path
-    ) -> None:
-        from capsule_emit import read_ledger
-        records = read_ledger(ledger)
-        stored_ids = {r["capsule_id"] for r in records}
-        assert planner_capsule["capsule_id"] in stored_ids
-        assert dj_capsule["capsule_id"] in stored_ids
+        assert [r["capsule_id"] for r in read_ledger(planner_ledger)] == [planner_capsule["capsule_id"]]
+        assert [r["capsule_id"] for r in read_ledger(dj_ledger)] == [dj_capsule["capsule_id"]]
 
 
 class TestDispositionVocab:
@@ -240,7 +238,7 @@ class TestDispositionVocab:
         "executed", "blocked", "denied", "timeout",
         "errored", "deferred", "expired", "escalated",
     ])
-    def test_verdict_class_accepted(self, verdict: str, ledger: Path) -> None:
+    def test_verdict_class_accepted(self, verdict: str, dj_ledger: Path) -> None:
         """All mutual vocab values can be used without raising InvariantError."""
         from agent_action_capsule.contracts import (
             NEVER_DISPATCH_VERDICT_CLASSES,
@@ -281,13 +279,13 @@ def grant_with_terms() -> dict:
 
 
 @pytest.fixture
-def blocked_capsule(grant_with_terms: dict, ledger: Path) -> dict:
+def blocked_capsule(grant_with_terms: dict, dj_ledger: Path) -> dict:
     subject_digest = json_digest(ACTION_OVER_LIMIT)
     return seal_dj_blocked(
         action=ACTION_OVER_LIMIT,
         subject_digest=subject_digest,
         grant=grant_with_terms,
-        ledger=ledger,
+        ledger=dj_ledger,
         should_anchor=False,
         anchor_endpoint=None,
     )
@@ -325,11 +323,11 @@ class TestOutOfGrantBlocked:
         assert authority.count(".") < 2, "authority must not be a JWT body"
 
     def test_blocked_capsule_verifies_ok(
-        self, blocked_capsule: dict, ledger: Path
+        self, blocked_capsule: dict, dj_ledger: Path
     ) -> None:
         """A blocked capsule is a valid sealed record — verify returns ok=True."""
         from capsule_emit import read_ledger
-        records = read_ledger(ledger)
+        records = read_ledger(dj_ledger)
         blocked = next(
             (r for r in records if r["capsule_id"] == blocked_capsule["capsule_id"]),
             None,
