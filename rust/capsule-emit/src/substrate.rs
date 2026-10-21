@@ -34,7 +34,7 @@ use cll::checkpoint::{
 };
 use cll::log::{
     CheckpointState as LogCheckpointState, CheckpointStateStore, EntrySource, State as LogState,
-    Timestamp,
+    Timestamp, WitnessState, WitnessStateStore,
 };
 use cll::mmr::{
     add_leaf, consistency_proof, inclusion_proof, leaf_count as mmr_leaf_count, leaf_hash,
@@ -50,13 +50,20 @@ use std::sync::Arc;
 /// Byte length of a record id (a `capsule_id`, a SHA-256 digest).
 pub(crate) const RECORD_ID_LEN: usize = 32;
 
-/// A CLL backend's entry log and checkpoint state: what a store-backed
-/// [`crate::checkpoint::CheckpointState`] folds leaves from and persists its
-/// MMR and checkpoints into (`CheckpointState::load_log`). Every CLL backend
-/// (memory, jsonl, sqlite, mysql) is one.
-pub trait CheckpointLog: EntrySource + CheckpointStateStore + Send + Sync {}
+/// A CLL backend's entry log, checkpoint state and witness rows: what a
+/// store-backed [`crate::checkpoint::CheckpointState`] folds leaves from,
+/// persists its MMR and checkpoints into, and keeps witness delivery in
+/// (`CheckpointState::load_log`). Every CLL backend (memory, jsonl, sqlite,
+/// mysql) is one.
+pub trait CheckpointLog:
+    EntrySource + CheckpointStateStore + WitnessStateStore + Send + Sync
+{
+}
 
-impl<T: EntrySource + CheckpointStateStore + Send + Sync + ?Sized> CheckpointLog for T {}
+impl<T: EntrySource + CheckpointStateStore + WitnessStateStore + Send + Sync + ?Sized> CheckpointLog
+    for T
+{
+}
 
 /// A record id as the substrate commits it.
 pub(crate) type RecordId = [u8; RECORD_ID_LEN];
@@ -439,10 +446,13 @@ enum Checkpoints {
     /// A CLL backend's state, which holds the nodes and the checkpoint's COSE
     /// form together. `committed_size` and `committed_checkpoint` are the
     /// state's as last read or written: the compare-and-set's expectations.
+    /// Each committed checkpoint gets one witness row per `witness_ids`
+    /// entry, in the same commit.
     Log {
         backend: Arc<dyn CheckpointLog>,
         committed_size: u64,
         committed_checkpoint: Option<Vec<u8>>,
+        witness_ids: Vec<String>,
     },
 }
 
@@ -494,13 +504,17 @@ impl CllSubstrate {
     /// `indexed_seq`. Entries past the state are folded in memory. The JSON
     /// checkpoint record is rebuilt from the COSE and signed again by the
     /// signer the checkpoint names; Ed25519 is deterministic, so it is the
-    /// record first cut. Also returns the leaves the state already indexed.
+    /// record first cut. Also returns the leaves the state already indexed
+    /// and the witness rows it holds. Every checkpoint committed from now on
+    /// gets a witness row (CLL's `WitnessState`) for each of `witness_ids`,
+    /// carrying its COSE bytes.
     pub(crate) fn open_log(
         backend: Arc<dyn CheckpointLog>,
         log_id: &str,
         ids: &[RecordId],
         signers: &[&dyn CheckpointSigner],
-    ) -> Result<(Self, u64), SubstrateError> {
+        witness_ids: Vec<String>,
+    ) -> Result<(Self, u64, Vec<WitnessState>), SubstrateError> {
         let state = backend.load_cll().log_err()?;
         if state.indexed_seq > ids.len() as u64 {
             return Err(SubstrateError::StateAhead {
@@ -545,11 +559,13 @@ impl CllSubstrate {
                     backend,
                     committed_size: state.size,
                     committed_checkpoint: state.checkpoint.map(|c| c.bytes),
+                    witness_ids,
                 },
                 last_checkpoint,
                 last_checkpoint_cose,
             },
             state.indexed_seq,
+            state.witnesses,
         ))
     }
 
@@ -734,6 +750,7 @@ impl CllSubstrate {
                 backend,
                 committed_size,
                 committed_checkpoint,
+                witness_ids,
             } => {
                 let bytes = cose.clone().ok_or_else(|| {
                     SubstrateError::NoCose(
@@ -760,8 +777,22 @@ impl CllSubstrate {
                             .map(|&p| self.node_store.node(p).to_vec())
                             .collect(),
                     }),
-                    // The compare-and-set keeps the stored witness rows.
-                    witnesses: Vec::new(),
+                    // The compare-and-set keeps the stored witness rows and
+                    // adds these: this cut's COSE survives only in its rows,
+                    // since the state keeps only the latest checkpoint.
+                    witnesses: witness_ids
+                        .iter()
+                        .map(|witness_id| WitnessState {
+                            witness_id: witness_id.clone(),
+                            checkpoint_size: checkpoint.mmr_size,
+                            checkpoint: bytes.clone(),
+                            attempts: 0,
+                            next_attempt_at: Timestamp::now(),
+                            receipt: None,
+                            permanent: false,
+                            last_error: None,
+                        })
+                        .collect(),
                 };
                 backend
                     .commit_cll(*committed_size, committed_checkpoint.as_deref(), &next)

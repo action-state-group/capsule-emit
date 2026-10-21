@@ -22,7 +22,8 @@ use capsule_emit::ledger::{Ledger, LedgerError, LedgerLine};
 use capsule_emit::padding::{padding_record_with_nonce, PADDING_CONTENT_TYPE};
 use capsule_emit_artifact::{ArtifactError, Store};
 use cll::log::{
-    AppendInput, CheckpointStateStore, EntrySource, EntryStore, Timestamp, MAX_SCAN_LIMIT,
+    AppendInput, CheckpointStateStore, EntrySource, EntryStore, Timestamp, WitnessStateStore,
+    MAX_SCAN_LIMIT,
 };
 use ed25519_dalek::SigningKey;
 use serde_json::{json, Map, Value};
@@ -802,16 +803,27 @@ fn a_rotated_key_needs_the_archived_signer() {
 }
 
 #[test]
-fn witness_urls_are_refused() {
-    let (log, _) = memory();
+fn a_cut_gets_a_witness_row_per_configured_witness() {
+    let (log, artifacts) = memory();
+    let entry_log: Log = log.clone();
+    let mut ledger = open(&entry_log, &artifacts).unwrap();
+    write_sequence(&mut ledger);
+    // Nothing listens on either: the rows stay undelivered.
+    let urls = ["http://127.0.0.1:1", "http://127.0.0.1:2/base"];
     let cfg = CheckpointCadenceConfig {
-        witness_urls: vec!["http://127.0.0.1:1".into()],
+        witness_urls: urls.iter().map(|u| u.to_string()).collect(),
         ..CheckpointCadenceConfig::default()
     };
-    let err = CheckpointState::load_log(log, LOG_ID, cfg, &[&key()])
-        .err()
-        .unwrap();
-    assert!(err.to_string().contains("witness"), "{err}");
+    let (mut state, _) = CheckpointState::load_log(log.clone(), LOG_ID, cfg, &[&key()]).unwrap();
+    let cut = state.reconnect(&key(), &anchor()).unwrap().unwrap();
+    assert!(cut.witnesses.is_empty());
+    let cose = log.load_cll().unwrap().checkpoint.unwrap().bytes;
+    for url in urls {
+        let row = log.get_witness(url, cut.mmr_size).unwrap().unwrap();
+        assert_eq!(row.checkpoint, cose);
+        assert_eq!(row.attempts, 1, "the clock cut was offered once");
+        assert!(row.receipt.is_none() && !row.permanent);
+    }
 }
 
 /// A fresh memory log holding `source`'s entries, with `state` committed as
@@ -1017,6 +1029,32 @@ impl CheckpointStateStore for FlakyScan {
     ) -> cll::log::Result<()> {
         self.inner
             .commit_cll(expected_size, expected_checkpoint, next)
+    }
+}
+
+impl WitnessStateStore for FlakyScan {
+    fn pending_witnesses(
+        &self,
+        now: Timestamp,
+        limit: usize,
+    ) -> cll::log::Result<Vec<cll::log::WitnessState>> {
+        self.inner.pending_witnesses(now, limit)
+    }
+
+    fn get_witness(
+        &self,
+        witness_id: &str,
+        checkpoint_size: u64,
+    ) -> cll::log::Result<Option<cll::log::WitnessState>> {
+        self.inner.get_witness(witness_id, checkpoint_size)
+    }
+
+    fn commit_witness(
+        &self,
+        expected_attempts: u32,
+        next: &cll::log::WitnessState,
+    ) -> cll::log::Result<()> {
+        self.inner.commit_witness(expected_attempts, next)
     }
 }
 

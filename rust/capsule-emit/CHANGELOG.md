@@ -28,8 +28,19 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   checkpoint's COSE against the MMR at its size, and signs the JSON checkpoint
   record again with the signer whose key cut it (pass archived keys after a
   rotation). The same entries give the same root as `CheckpointState::load`.
-  A `cfg` with `witness_urls` is refused for now. New `SubstrateError`
-  variants and `CheckpointStateError::Log`.
+  New `SubstrateError` variants and `CheckpointStateError::Log`.
+- **Witnesses on checkpoints in a CLL backend** (#346): `load_log` accepts
+  `witness_urls`. Each cut gets one CLL witness row per URL (the URL is the
+  `witness_id`) in the commit that persists it. The clock legs deliver each
+  witness's rows in chain order, so a witness is sent a checkpoint only after
+  it accepted the one before. The receipts are kept in the rows, and each one
+  reads back with the value the witness issued. A receipt a CLL row cannot
+  store holds that witness. `last_checkpoint().witnesses` lists receipts in
+  `witness_urls` order and only for configured witnesses, where the flat
+  layout uses arrival order. The flat layout's 409 handling is kept, with
+  catch-up read from the rows. A URL that is not a CLL identifier, or one
+  configured twice, is refused. `checkpoint::CheckpointLog` now also requires
+  `cll::log::WitnessStateStore`, which every CLL backend implements.
 - **`legacy_ledger`** (moved): `LegacyLedger`, the `capsules.jsonl` ledger as
   an artifact store and a CLL entry log, moved here from
   `capsule_emit_artifact::legacy` (feature `legacy`), because this crate now
