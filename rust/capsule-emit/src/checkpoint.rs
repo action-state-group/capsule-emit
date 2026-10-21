@@ -1268,8 +1268,10 @@ fn row_checkpoint(row: &WitnessState) -> Option<cll::checkpoint::DecodedCheckpoi
 }
 
 /// `witness_id`'s undelivered cuts, in chain order: its rows past the last
-/// one closed (with a receipt, or as [`WITNESS_AHEAD`]). Sizes grow along
-/// the chain, so size order is chain order.
+/// one closed (with a receipt, or as [`WITNESS_AHEAD`]), plus any row that
+/// holds it (permanent for another reason) wherever it is, so a hold set
+/// during catch-up survives a restart. Sizes grow along the chain, so size
+/// order is chain order.
 fn undelivered(rows: &[WitnessState], witness_id: &str) -> VecDeque<u64> {
     let own = || rows.iter().filter(|row| row.witness_id == witness_id);
     let closed = own()
@@ -1277,9 +1279,11 @@ fn undelivered(rows: &[WitnessState], witness_id: &str) -> VecDeque<u64> {
         .map(|row| row.checkpoint_size)
         .max()
         .unwrap_or(0);
+    let holds =
+        |row: &WitnessState| row.permanent && row.receipt.is_none() && !is_witness_ahead(row);
     let mut sizes: Vec<u64> = own()
+        .filter(|row| row.checkpoint_size > closed || holds(row))
         .map(|row| row.checkpoint_size)
-        .filter(|&size| size > closed)
         .collect();
     sizes.sort_unstable();
     sizes.into()
@@ -4024,6 +4028,186 @@ mod tests {
             c.witnesses,
             vec![issued_for(&witness, &witness.url, c.mmr_size)]
         );
+    }
+
+    /// A CLL backend whose `commit_witness` fails while `fail` is set.
+    struct FailingCommits {
+        inner: MemoryLog,
+        fail: std::sync::atomic::AtomicBool,
+    }
+
+    impl cll::log::EntrySource for FailingCommits {
+        fn scan_entries(
+            &self,
+            after_seq: u64,
+            limit: usize,
+        ) -> cll::log::Result<Vec<cll::log::Entry>> {
+            self.inner.scan_entries(after_seq, limit)
+        }
+    }
+
+    impl CheckpointStateStore for FailingCommits {
+        fn load_cll(&self) -> cll::log::Result<cll::log::State> {
+            self.inner.load_cll()
+        }
+
+        fn commit_cll(
+            &self,
+            expected_size: u64,
+            expected_checkpoint: Option<&[u8]>,
+            next: &cll::log::State,
+        ) -> cll::log::Result<()> {
+            self.inner
+                .commit_cll(expected_size, expected_checkpoint, next)
+        }
+    }
+
+    impl WitnessStateStore for FailingCommits {
+        fn pending_witnesses(
+            &self,
+            now: Timestamp,
+            limit: usize,
+        ) -> cll::log::Result<Vec<WitnessState>> {
+            self.inner.pending_witnesses(now, limit)
+        }
+
+        fn get_witness(&self, id: &str, size: u64) -> cll::log::Result<Option<WitnessState>> {
+            self.inner.get_witness(id, size)
+        }
+
+        fn commit_witness(&self, expected: u32, next: &WitnessState) -> cll::log::Result<()> {
+            if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(cll::log::Error::new(
+                    cll::log::ErrorCode::Storage,
+                    "injected commit failure",
+                ));
+            }
+            self.inner.commit_witness(expected, next)
+        }
+    }
+
+    #[test]
+    fn store_a_failed_row_commit_stops_the_pass_and_the_next_pass_rereads_the_row() {
+        let witness = continuity_witness(None);
+        let inner = memory_log();
+        let log = std::sync::Arc::new(FailingCommits {
+            inner: inner.clone(),
+            fail: std::sync::atomic::AtomicBool::new(true),
+        });
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        // A is accepted, but its receipt cannot be recorded: the row stays
+        // open and queued, and B (a push cut) is not sent past it.
+        append_entry(inner.as_ref(), "one");
+        let a = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        assert!(a.witnesses.is_empty());
+        let two = append_entry(inner.as_ref(), "two");
+        let b = state
+            .checkpoint_covering(&two, &signer(), &anchor_unused())
+            .unwrap();
+        let b = b.checkpoint.mmr_size;
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(*witness.accepted.lock().unwrap(), vec![a.mmr_size]);
+        let open = row(inner.as_ref(), &witness.url, a.mmr_size);
+        assert!(open.receipt.is_none() && !open.permanent);
+        assert_eq!(row(inner.as_ref(), &witness.url, b).attempts, 0);
+
+        // Another runner records A's receipt meanwhile: the next pass reads
+        // it, pops A without resending it, and sends B.
+        let sent = hits(&witness);
+        let issued = issued_for(&witness, &witness.url, a.mmr_size);
+        inner
+            .commit_witness(
+                open.attempts,
+                &WitnessState {
+                    attempts: open.attempts + 1,
+                    receipt: Some(WitnessReceiptState {
+                        bytes: {
+                            use base64::Engine;
+                            base64::engine::general_purpose::STANDARD
+                                .decode(&issued.receipt_b64)
+                                .unwrap()
+                        },
+                        entry_hash: Some(issued.entry_hash.clone()),
+                        entry_hash_scheme: Some("legacy".into()),
+                        leaf_index: Some(0),
+                        tree_size: Some(1),
+                    }),
+                    ..open
+                },
+            )
+            .unwrap();
+        log.fail.store(false, std::sync::atomic::Ordering::SeqCst);
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&witness), sent + 1, "only B was sent");
+        assert_eq!(*witness.accepted.lock().unwrap(), vec![a.mmr_size, b]);
+        assert!(row(inner.as_ref(), &witness.url, b).receipt.is_some());
+    }
+
+    #[test]
+    fn store_a_row_closed_during_catch_up_holds_the_witness_across_reopen() {
+        let witness = continuity_witness(None);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        append_entry(log.as_ref(), "one");
+        let a = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        // B and C: push cuts. C's row gets a receipt from elsewhere, so after
+        // a reopen B is open but behind a closed row, and not queued.
+        let two = append_entry(log.as_ref(), "two");
+        let b = state
+            .checkpoint_covering(&two, &signer(), &anchor_unused())
+            .unwrap()
+            .checkpoint
+            .mmr_size;
+        let three = append_entry(log.as_ref(), "three");
+        let c = state
+            .checkpoint_covering(&three, &signer(), &anchor_unused())
+            .unwrap()
+            .checkpoint
+            .mmr_size;
+        let c_row = row(log.as_ref(), &witness.url, c);
+        log.commit_witness(
+            c_row.attempts,
+            &WitnessState {
+                attempts: c_row.attempts + 1,
+                receipt: Some(WitnessReceiptState {
+                    bytes: b"elsewhere".to_vec(),
+                    ..WitnessReceiptState::default()
+                }),
+                ..c_row
+            },
+        )
+        .unwrap();
+        drop(state);
+        let mut state = load_store(log.clone(), &[&witness.url]);
+
+        // D: the witness is still at A, so catch-up sends B, whose receipt
+        // cannot be stored. B is closed and holds the witness: D is not sent.
+        set(&witness.garble_receipt, true);
+        append_entry(log.as_ref(), "four");
+        let d = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        assert_eq!(*witness.accepted.lock().unwrap(), vec![a.mmr_size, b]);
+        let held = row(log.as_ref(), &witness.url, b);
+        assert!(held.permanent && !is_witness_ahead(&held));
+        let sent = hits(&witness);
+        set(&witness.garble_receipt, false);
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&witness), sent, "the held row stops the next pass");
+        drop(state);
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&witness), sent, "and the next process's");
+        assert!(row(log.as_ref(), &witness.url, d.mmr_size)
+            .receipt
+            .is_none());
     }
 
     #[test]

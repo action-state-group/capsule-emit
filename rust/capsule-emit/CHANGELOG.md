@@ -33,8 +33,11 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   `witness_urls`. Each cut gets one CLL witness row per URL (the URL is the
   `witness_id`) in the commit that persists it. The clock legs deliver each
   witness's rows in chain order, so a witness is sent a checkpoint only after
-  it accepted the one before. The receipts are kept in the rows and read back
-  as the same `CheckpointWitness` values the flat layout records. The flat
+  it accepted the one before. The receipts are kept in the rows, and each one
+  reads back with the value the witness issued. A receipt a CLL row cannot
+  store holds that witness. `last_checkpoint().witnesses` lists receipts in
+  `witness_urls` order and only for configured witnesses, where the flat
+  layout uses arrival order. The flat
   layout's 409 handling is kept, with catch-up read from the rows. A URL that
   is not a CLL identifier, or one configured twice, is refused.
   `checkpoint::CheckpointLog` now also requires `cll::log::WitnessStateStore`,

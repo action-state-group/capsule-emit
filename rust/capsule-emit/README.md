@@ -85,14 +85,20 @@ the artifact store trusts; never purge a ledger record (its signed statement
 goes with it, and reopening then fails); and one `Ledger` writes a log while
 one `CheckpointState` checkpoints it.
 
-Witnesses work on `load_log` as on the flat layout. Each checkpoint gets a
+`load_log` registers checkpoints with witnesses too. Each checkpoint gets a
 witness row per URL in `cfg.witness_urls` in the CLL backend, written with the
-checkpoint. The clock legs (`tick`, `reconnect`, `checkpoint_on_shutdown`)
-send each witness its checkpoints in order, and the receipts are kept in those
-rows. There is no `checkpoints.jsonl` or `witness-backfill.jsonl` on this
-layout. A witness URL is used as the row's key, so it must be 1 to 191 bytes
-of `[A-Za-z0-9._:/-]`. On SQLite the cost of each checkpoint still grows with
-the log's history
+checkpoint. The clock legs (`tick`, `reconnect`, `checkpoint_on_shutdown`) and
+`retry_pending_witnesses` send each witness its checkpoints in order, and the
+receipts are kept in those rows. There is no `checkpoints.jsonl` or
+`witness-backfill.jsonl` on this layout. A witness URL is used as the row's
+key, so it must be 1 to 191 bytes of `[A-Za-z0-9._:/-]`. A witnessed log
+moving from the flat layout must seed the CLL state with its last checkpoint
+or start a new log id; otherwise its witnesses refuse the first checkpoint.
+Each receipt reads back with the value the witness issued, and a receipt
+that a CLL row cannot store holds that witness. `last_checkpoint().witnesses`
+lists receipts in `witness_urls` order and only for configured witnesses,
+where the flat layout uses arrival order. On SQLite the cost of each
+checkpoint still grows with the log's history
 ([checkpointed-local-log#92](https://github.com/action-state-group/checkpointed-local-log/issues/92)).
 
 Anything a deployment adds beyond the core capsule members goes in
