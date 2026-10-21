@@ -37,8 +37,8 @@ pub use crate::substrate::{
     verify_inclusion, CheckpointLog, CheckpointRecord, CheckpointSignError, CheckpointSigner,
     CheckpointWitness, InclusionProof, OpenReport, SubstrateError,
 };
-use cll::log::MAX_SCAN_LIMIT;
-use std::collections::HashMap;
+use cll::log::{Timestamp, WitnessReceiptState, WitnessState, MAX_REASON_BYTES, MAX_SCAN_LIMIT};
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -476,8 +476,18 @@ enum Source {
         last_line_start: u64,
     },
     /// A CLL backend's entry log, read incrementally by seq; the substrate
-    /// keeps the MMR and checkpoints in the same backend's state.
-    Log(Arc<dyn CheckpointLog>),
+    /// keeps the MMR and checkpoints in the same backend's state, and every
+    /// cut's witness delivery in its witness rows.
+    Log {
+        backend: Arc<dyn CheckpointLog>,
+        /// Per configured witness, in `witness_urls` order: the sizes of its
+        /// cuts not yet delivered, in chain order. Only the front is ever
+        /// sent, so a cut reaches a witness only after its predecessor did.
+        witness_queues: Vec<(String, VecDeque<u64>)>,
+        /// Every witness with rows in this log or configured now, where a
+        /// cut's COSE can be read back from.
+        row_witness_ids: Vec<String>,
+    },
 }
 
 /// Divergence guard: verify the
@@ -640,20 +650,34 @@ impl CheckpointState {
     /// so the record is the one first cut). Later cuts sign with the signer
     /// passed to each call, as on the flat layout. After a key rotation pass
     /// the archived key too (`keys::rotate` keeps it); when none matches,
-    /// loading fails. Witness registration is not supported
-    /// here yet, so a `cfg` with `witness_urls` is refused.
+    /// loading fails.
+    ///
+    /// **Witnesses.** Each URL in `cfg.witness_urls` is a CLL `witness_id`,
+    /// verbatim, so it must be a valid CLL identifier (`[A-Za-z0-9._:/-]`, at
+    /// most 191 bytes); one that is not is refused, naming it. Every cut gets
+    /// a witness row per URL in the commit that persists it, and the clock
+    /// legs deliver the rows to each witness in chain order (see
+    /// [`Self::retry_pending_witnesses`]). The receipts live in those rows,
+    /// never in a file.
     pub fn load_log(
         backend: Arc<dyn CheckpointLog>,
         log_id: impl Into<String>,
         cfg: CheckpointCadenceConfig,
         signers: &[&dyn CheckpointSigner],
     ) -> Result<(Self, LoadReport), CheckpointStateError> {
-        if !cfg.witness_urls.is_empty() {
-            return Err(CheckpointStateError::Checkpoint(
-                "witness registration is not supported on a checkpoint state kept in a CLL \
-                 backend yet; configure no witness_urls"
-                    .into(),
-            ));
+        for (i, url) in cfg.witness_urls.iter().enumerate() {
+            // Two rows with one key would make every cut's commit fail.
+            if cfg.witness_urls[..i].contains(url) {
+                return Err(CheckpointStateError::Checkpoint(format!(
+                    "witness URL {url:?} is configured twice"
+                )));
+            }
+            if cll::log::validate_identifier(url).is_err() {
+                return Err(CheckpointStateError::Checkpoint(format!(
+                    "witness URL {url:?} cannot key a CLL witness row: a witness_id is 1 to 191 \
+                     bytes of [A-Za-z0-9._:/-]"
+                )));
+            }
         }
         if signers.is_empty() {
             return Err(CheckpointStateError::Signer(
@@ -680,30 +704,49 @@ impl CheckpointState {
                 capsule_ids.push(hex::encode(id));
             }
         }
-        let (substrate, stored_leaves) =
-            CllSubstrate::open_log(backend.clone(), &log_id, &record_ids, signers).map_err(
-                |e| match e {
-                    SubstrateError::LeafMismatch {
-                        leaf_index,
-                        stored_leaf,
-                        expected_leaf,
-                    } => CheckpointStateError::NodeStoreDivergedFromLedger {
-                        leaf_index,
-                        capsule_id: capsule_ids[leaf_index as usize].clone(),
-                        stored_leaf,
-                        expected_leaf,
-                    },
-                    other => other.into(),
-                },
-            )?;
+        let (substrate, stored_leaves, rows) = CllSubstrate::open_log(
+            backend.clone(),
+            &log_id,
+            &record_ids,
+            signers,
+            cfg.witness_urls.clone(),
+        )
+        .map_err(|e| match e {
+            SubstrateError::LeafMismatch {
+                leaf_index,
+                stored_leaf,
+                expected_leaf,
+            } => CheckpointStateError::NodeStoreDivergedFromLedger {
+                leaf_index,
+                capsule_id: capsule_ids[leaf_index as usize].clone(),
+                stored_leaf,
+                expected_leaf,
+            },
+            other => other.into(),
+        })?;
         let leaf_count = capsule_ids.len() as u64;
         let last_checkpoint_leaf_count = match substrate.last_checkpoint() {
             Some(cp) => cp.leaf_count()?,
             None => 0,
         };
         let entries_since_checkpoint = leaf_count.saturating_sub(last_checkpoint_leaf_count);
-        let state = Self {
-            source: Source::Log(backend),
+        let witness_queues = cfg
+            .witness_urls
+            .iter()
+            .map(|url| (url.clone(), undelivered(&rows, url)))
+            .collect();
+        let mut row_witness_ids = cfg.witness_urls.clone();
+        for row in &rows {
+            if !row_witness_ids.contains(&row.witness_id) {
+                row_witness_ids.push(row.witness_id.clone());
+            }
+        }
+        let mut state = Self {
+            source: Source::Log {
+                backend,
+                witness_queues,
+                row_witness_ids,
+            },
             substrate,
             leaf_count,
             leaf_index_by_id: capsule_ids
@@ -719,6 +762,7 @@ impl CheckpointState {
             witness_deferred: false,
             padding: None,
         };
+        state.refresh_latest_witnesses();
         let report = LoadReport {
             node_store: None,
             leaves_indexed_this_load: leaf_count - stored_leaves,
@@ -778,7 +822,7 @@ impl CheckpointState {
     /// does the full prefix check). Only newline-terminated lines are
     /// folded: a line still being written is picked up by a later call.
     fn sync(&mut self) -> Result<u64, CheckpointStateError> {
-        if let Source::Log(backend) = &self.source {
+        if let Source::Log { backend, .. } = &self.source {
             let backend = backend.clone();
             return self.sync_log(backend.as_ref());
         }
@@ -875,7 +919,7 @@ impl CheckpointState {
     fn ahead_of_ledger(&self) -> CheckpointStateError {
         let path = match &self.source {
             Source::Flat { capsules_path, .. } => capsules_path.display().to_string(),
-            Source::Log(_) => LOG_SOURCE.to_string(),
+            Source::Log { .. } => LOG_SOURCE.to_string(),
         };
         CheckpointStateError::NodeStoreAheadOfLedger {
             path,
@@ -1015,7 +1059,9 @@ impl CheckpointState {
         if due_for_checkpoint(&self.cfg, self.entries_since_checkpoint, seconds_since) {
             return Ok(Some(self.checkpoint_now(signer, anchor, true)?));
         }
-        self.offer_deferred_to_witnesses();
+        if matches!(self.source, Source::Flat { .. }) {
+            self.offer_deferred_to_witnesses();
+        }
         self.retry_pending_witnesses(anchor);
         Ok(None)
     }
@@ -1095,7 +1141,10 @@ impl CheckpointState {
             );
         }
 
-        if register {
+        // On the store path the cut's witness rows are written with it, and
+        // delivered after it (below); the flat path registers first, so the
+        // receipts go into the checkpoint's own line.
+        if register && matches!(self.source, Source::Flat { .. }) {
             let ts_urls = self.cfg.witness_urls.clone();
             let cose = prepared.cose().map(<[u8]>::to_vec);
             let still_pending = register_with(
@@ -1115,18 +1164,30 @@ impl CheckpointState {
         if self.entries_since_checkpoint == 0 {
             self.pending_since = None;
         }
+        if let Source::Log { witness_queues, .. } = &mut self.source {
+            for (_, queue) in witness_queues.iter_mut() {
+                queue.push_back(cp.mmr_size);
+            }
+            if register {
+                self.deliver_witness_rows();
+                return Ok(self
+                    .substrate
+                    .last_checkpoint()
+                    .cloned()
+                    .expect("a checkpoint was just committed"));
+            }
+        }
         Ok(cp)
     }
 
     /// `checkpoints.jsonl`, next to `capsules.jsonl`. Witness registration
     /// reads it to recognize this log's own checkpoints. A state kept in a CLL
-    /// backend has no such file and registers with no witness (`load_log`
-    /// refuses `witness_urls`), so it gets an empty path no registration
-    /// reads.
+    /// backend has no such file and delivers from its witness rows instead,
+    /// so it gets an empty path nothing reads.
     fn checkpoints_path(&self) -> PathBuf {
         match &self.source {
             Source::Flat { capsules_path, .. } => capsules_path.with_file_name("checkpoints.jsonl"),
-            Source::Log(_) => PathBuf::new(),
+            Source::Log { .. } => PathBuf::new(),
         }
     }
 
@@ -1140,7 +1201,16 @@ impl CheckpointState {
     /// reached through its own client, so a registration never goes to a
     /// witness other than the one it is filed under. The parameter is kept
     /// so callers do not change.
+    ///
+    /// On a state kept in a CLL backend ([`Self::load_log`]) this is one
+    /// delivery pass over the witness rows instead: each witness is sent its
+    /// oldest undelivered cut, then the next, stopping at its first failure,
+    /// so a witness only ever sees a cut whose predecessor it accepted. The
+    /// result is whether any receipt was recorded.
     pub fn retry_pending_witnesses(&mut self, _anchor: &AnchorClient) -> bool {
+        if matches!(self.source, Source::Log { .. }) {
+            return self.deliver_witness_rows();
+        }
         if self.pending_witness_urls.is_empty() {
             return false;
         }
@@ -1174,6 +1244,489 @@ impl CheckpointState {
             *witnesses = cp.witnesses;
         }
         added
+    }
+}
+
+/// The `last_error` prefix of a witness row this state closed because the
+/// witness already holds a later (or the same) checkpoint of this log's own
+/// chain: closed without a receipt, and, unlike any other permanent row, it
+/// releases the witness's next cut.
+const WITNESS_AHEAD: &str = "witness-ahead: accepted size ";
+
+/// Whether `row` was closed as [`WITNESS_AHEAD`].
+fn is_witness_ahead(row: &WitnessState) -> bool {
+    row.permanent
+        && row
+            .last_error
+            .as_deref()
+            .is_some_and(|e| e.starts_with(WITNESS_AHEAD))
+}
+
+/// The checkpoint a witness row carries, decoded from its COSE bytes.
+fn row_checkpoint(row: &WitnessState) -> Option<cll::checkpoint::DecodedCheckpointCose> {
+    cll::checkpoint::verify_checkpoint_cose_offline(&row.checkpoint).decoded
+}
+
+/// `witness_id`'s undelivered cuts, in chain order: its rows past the last
+/// one closed (with a receipt, or as [`WITNESS_AHEAD`]). Sizes grow along
+/// the chain, so size order is chain order.
+fn undelivered(rows: &[WitnessState], witness_id: &str) -> VecDeque<u64> {
+    let own = || rows.iter().filter(|row| row.witness_id == witness_id);
+    let closed = own()
+        .filter(|row| row.receipt.is_some() || is_witness_ahead(row))
+        .map(|row| row.checkpoint_size)
+        .max()
+        .unwrap_or(0);
+    let mut sizes: Vec<u64> = own()
+        .map(|row| row.checkpoint_size)
+        .filter(|&size| size > closed)
+        .collect();
+    sizes.sort_unstable();
+    sizes.into()
+}
+
+/// `why`, cut to what a witness row's `last_error` holds.
+fn row_error(why: &str) -> String {
+    let mut end = why.len().min(MAX_REASON_BYTES);
+    while !why.is_char_boundary(end) {
+        end -= 1;
+    }
+    why[..end].to_string()
+}
+
+/// `resp` as a witness row's receipt. Kept as the witness returned it, like
+/// the flat path's inline receipt: one whose `entry_hash` is not bound to the
+/// row's checkpoint (see [`WITNESS_BACKFILL_FILE`]) is kept with a warning.
+/// An error means a CLL row cannot hold it: `receipt_b64` that is not
+/// canonical standard base64 (the strict decoder accepts nothing else, so a
+/// stored receipt reads back byte for byte), an empty or oversized receipt,
+/// an `entry_hash` that is not 64 lowercase hex digits, or a position CLL
+/// refuses.
+fn receipt_for(
+    row: &WitnessState,
+    resp: &crate::anchor::CheckpointWitnessResponse,
+) -> Result<WitnessReceiptState, String> {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+    let hash = &resp.entry_hash;
+    if hash.len() != 64 || !hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(format!(
+            "its entry_hash {hash:?} is not 64 lowercase hex digits"
+        ));
+    }
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let bytes = b64
+        .decode(&resp.receipt_b64)
+        .map_err(|e| format!("its receipt_b64 is not base64: {e}"))?;
+    if bytes.is_empty() {
+        return Err("its receipt is empty".into());
+    }
+    if bytes.len() > cll::log::MAX_WITNESS_RESPONSE_BYTES {
+        return Err(format!(
+            "its receipt is {} bytes, over CLL's {}",
+            bytes.len(),
+            cll::log::MAX_WITNESS_RESPONSE_BYTES
+        ));
+    }
+    for (name, position) in [
+        ("leaf_index", resp.leaf_index),
+        ("tree_size", resp.tree_size),
+    ] {
+        if position < 0 || position.unsigned_abs() > cll::log::MAX_PORTABLE_INTEGER {
+            return Err(format!("its {name} {position} is out of CLL's range"));
+        }
+    }
+    let size = row.checkpoint_size;
+    let bound = row_checkpoint(row).and_then(|cp| {
+        let digest = hex::decode(cp.to_checkpoint_record().digest()).ok()?;
+        Some(hex::encode(Sha256::digest(digest)))
+    });
+    if bound.as_deref() != Some(hash.as_str()) {
+        eprintln!(
+            "[checkpoint] the receipt from {} for size {size} has an entry_hash not bound to \
+             that checkpoint; it is kept as returned",
+            row.witness_id
+        );
+    }
+    Ok(WitnessReceiptState {
+        bytes,
+        entry_hash: Some(hash.clone()),
+        entry_hash_scheme: Some("legacy".into()),
+        leaf_index: Some(resp.leaf_index),
+        tree_size: Some(resp.tree_size),
+    })
+}
+
+/// A row's receipt as the checkpoint record's witness entry: the same value
+/// the flat path records for that response.
+fn witness_from_row(row: &WitnessState) -> Option<CheckpointWitness> {
+    use base64::Engine;
+    let receipt = row.receipt.as_ref()?;
+    Some(CheckpointWitness {
+        ts_url: row.witness_id.clone(),
+        entry_hash: receipt.entry_hash.clone().unwrap_or_default(),
+        receipt_b64: base64::engine::general_purpose::STANDARD.encode(&receipt.bytes),
+        leaf_index: receipt.leaf_index.unwrap_or_default(),
+        tree_size: receipt.tree_size.unwrap_or_default(),
+        is_stub: false,
+    })
+}
+
+/// Delivers one witness's rows (see [`CheckpointState::retry_pending_witnesses`]).
+struct RowDelivery<'a> {
+    backend: &'a dyn CheckpointLog,
+    witness_id: &'a str,
+    client: AnchorClient,
+    cadence_seconds: u64,
+    /// The latest checkpoint, which a 409 may name.
+    latest: Option<&'a CheckpointRecord>,
+    /// Every witness with rows in this log, configured or not: a cut's COSE
+    /// is the same in each one's row, so a cut this witness has no row for
+    /// (it was not configured then) is read from another's. Only configured
+    /// witnesses are ever sent anything.
+    all_witness_ids: &'a [String],
+}
+
+impl RowDelivery<'_> {
+    /// Send the front of `queue`, then the next, until one fails. Returns
+    /// whether any receipt was recorded.
+    fn run(&self, queue: &mut VecDeque<u64>) -> bool {
+        let id = self.witness_id;
+        let mut recorded = false;
+        let mut caught_up = false;
+        while let Some(&size) = queue.front() {
+            let row = match self.backend.get_witness(id, size) {
+                Ok(Some(row)) => row,
+                Ok(None) => {
+                    eprintln!("[checkpoint] no witness row for {id} at size {size}; skipping it");
+                    queue.pop_front();
+                    continue;
+                }
+                Err(err) => {
+                    eprintln!(
+                        "[checkpoint] reading the witness row for {id} at size {size}: {err}"
+                    );
+                    return recorded;
+                }
+            };
+            if row.receipt.is_some() || is_witness_ahead(&row) {
+                queue.pop_front();
+                continue;
+            }
+            if row.permanent {
+                eprintln!(
+                    "[checkpoint] witness {id} is stuck at size {size} ({}); holding its later \
+                     checkpoints",
+                    row.last_error.as_deref().unwrap_or("permanent")
+                );
+                return recorded;
+            }
+            match self.client.post_checkpoint_cose(&row.checkpoint) {
+                Ok(resp) => match receipt_for(&row, &resp) {
+                    Ok(receipt) => {
+                        if !self.commit(&row, Some(receipt), false, None) {
+                            return recorded;
+                        }
+                        queue.pop_front();
+                        recorded = true;
+                    }
+                    Err(why) => {
+                        // The witness has accepted the checkpoint, so a retry
+                        // would only be refused as already held: close the
+                        // row and hold the witness, visibly.
+                        let why = format!("the witness's receipt cannot be stored: {why}");
+                        eprintln!("[checkpoint] {id} at size {size}: {why}; holding the witness");
+                        self.commit(&row, None, true, Some(row_error(&why)));
+                        return recorded;
+                    }
+                },
+                Err(err) => match continuity_refusal(&err) {
+                    Some((accepted, root)) if accepted >= size => {
+                        if !self.holds(accepted, &root) {
+                            self.fail(
+                                &row,
+                                &format!(
+                                    "{id} holds a checkpoint at size {accepted} with root {root}, \
+                                     which this log does not hold (a fork, or a log restarted \
+                                     under a reused log id: a node that lost its local state \
+                                     must start a new log id)"
+                                ),
+                            );
+                            return recorded;
+                        }
+                        eprintln!(
+                            "[checkpoint] {id} already accepted this log's checkpoint at size \
+                             {accepted}, at or past {size}; closing its rows up to there"
+                        );
+                        if !self.close_ahead(queue, accepted) {
+                            return recorded;
+                        }
+                    }
+                    Some((accepted, root)) if !caught_up => {
+                        caught_up = true;
+                        match self.catch_up(&row, accepted, &root, queue) {
+                            Ok(sent) => eprintln!(
+                                "[checkpoint] caught {id} up from size {accepted} with {sent} \
+                                 earlier checkpoint(s); resending size {size}"
+                            ),
+                            Err(why) => {
+                                self.fail(
+                                    &row,
+                                    &format!("could not catch {id} up from size {accepted}: {why}"),
+                                );
+                                return recorded;
+                            }
+                        }
+                    }
+                    _ => {
+                        self.fail(&row, &err.to_string());
+                        return recorded;
+                    }
+                },
+            }
+        }
+        recorded
+    }
+
+    /// Replace `row` with one more attempt. False (logged) when the row
+    /// moved under this state: the pass stops for this witness.
+    fn commit(
+        &self,
+        row: &WitnessState,
+        receipt: Option<WitnessReceiptState>,
+        permanent: bool,
+        last_error: Option<String>,
+    ) -> bool {
+        let next_attempt_at = if receipt.is_none() && !permanent {
+            Timestamp::from_unix_millis(
+                Timestamp::now()
+                    .unix_millis()
+                    .saturating_add((self.cadence_seconds as i64).saturating_mul(1000)),
+            )
+        } else {
+            row.next_attempt_at
+        };
+        let next = WitnessState {
+            attempts: row.attempts.saturating_add(1),
+            next_attempt_at,
+            receipt,
+            permanent,
+            last_error,
+            ..row.clone()
+        };
+        match self.backend.commit_witness(row.attempts, &next) {
+            Ok(()) => true,
+            Err(err) => {
+                eprintln!(
+                    "[checkpoint] could not record delivery to {} at size {}: {err}",
+                    self.witness_id, row.checkpoint_size
+                );
+                false
+            }
+        }
+    }
+
+    /// A failed attempt: logged and recorded on the row, which stays due.
+    fn fail(&self, row: &WitnessState, why: &str) {
+        eprintln!(
+            "[checkpoint] checkpoint registration with {} at size {} failed (staying \
+             self-checkpointed, retrying later): {why}",
+            self.witness_id, row.checkpoint_size
+        );
+        self.commit(row, None, false, Some(row_error(why)));
+    }
+
+    /// This witness's row at `size`, and the cut's COSE bytes from it or,
+    /// when it has none, from any other witness's row at that size.
+    fn cut_at(&self, size: u64) -> Result<(Option<WitnessState>, Option<Vec<u8>>), String> {
+        let own = self
+            .backend
+            .get_witness(self.witness_id, size)
+            .map_err(|e| e.to_string())?;
+        if let Some(row) = &own {
+            return Ok((own.clone(), Some(row.checkpoint.clone())));
+        }
+        for other in self.all_witness_ids {
+            if let Some(row) = self
+                .backend
+                .get_witness(other, size)
+                .map_err(|e| e.to_string())?
+            {
+                return Ok((None, Some(row.checkpoint)));
+            }
+        }
+        Ok((None, None))
+    }
+
+    /// Whether `(size, root)` is one of this log's cuts: the latest
+    /// checkpoint, or the one a witness row at `size` carries.
+    fn holds(&self, size: u64, root: &str) -> bool {
+        if self
+            .latest
+            .is_some_and(|cp| cp.mmr_size == size && cp.root == root)
+        {
+            return true;
+        }
+        matches!(
+            self.cut_at(size),
+            Ok((_, Some(cose))) if decoded_root(&cose).as_deref() == Some(root)
+        )
+    }
+
+    /// Close every queued row up to `accepted` as [`WITNESS_AHEAD`].
+    fn close_ahead(&self, queue: &mut VecDeque<u64>, accepted: u64) -> bool {
+        while let Some(&size) = queue.front().filter(|&&s| s <= accepted) {
+            match self.backend.get_witness(self.witness_id, size) {
+                Ok(Some(row)) if row.receipt.is_none() && !row.permanent => {
+                    let why = format!("{WITNESS_AHEAD}{accepted}");
+                    if !self.commit(&row, None, true, Some(why)) {
+                        return false;
+                    }
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    eprintln!(
+                        "[checkpoint] reading the witness row for {} at size {size}: {err}",
+                        self.witness_id
+                    );
+                    return false;
+                }
+            }
+            queue.pop_front();
+        }
+        true
+    }
+
+    /// Send the witness every cut after `(accepted, root)` and before `row`'s,
+    /// in order, read from the witness rows; record each receipt on this
+    /// witness's own row where that row is still open (a closed row keeps
+    /// its state). Returns how many were sent.
+    fn catch_up(
+        &self,
+        row: &WitnessState,
+        accepted: u64,
+        root: &str,
+        queue: &mut VecDeque<u64>,
+    ) -> Result<usize, String> {
+        let not_held = || {
+            format!(
+                "the witness accepted a checkpoint at size {accepted} with root {root}, which \
+                 this log does not hold (a fork, or a log restarted under a reused log id: a \
+                 node that lost its local state must start a new log id)"
+            )
+        };
+        let mut between = Vec::new();
+        let mut size = row_checkpoint(row)
+            .ok_or("the row holds no readable checkpoint")?
+            .prev_size;
+        loop {
+            if size < accepted || size == 0 {
+                return Err(not_held());
+            }
+            let (own, cose) = self.cut_at(size)?;
+            let cose = cose.ok_or_else(not_held)?;
+            let cp = cll::checkpoint::verify_checkpoint_cose_offline(&cose)
+                .decoded
+                .ok_or_else(not_held)?;
+            if size == accepted {
+                if cp.root != root {
+                    return Err(not_held());
+                }
+                break;
+            }
+            between.push((size, cose, own));
+            size = cp.prev_size;
+        }
+        let mut sent = 0;
+        for (size, cose, own) in between.iter().rev() {
+            let resp = self
+                .client
+                .post_checkpoint_cose(cose)
+                .map_err(|e| format!("sending size {size}: {e}"))?;
+            sent += 1;
+            let Some(own) = own.as_ref().filter(|r| r.receipt.is_none() && !r.permanent) else {
+                continue;
+            };
+            // As in `run`: a receipt a row cannot hold closes the row, and a
+            // row that moved under this state stops the pass.
+            match receipt_for(own, &resp) {
+                Ok(receipt) => {
+                    if !self.commit(own, Some(receipt), false, None) {
+                        return Err(format!("could not record the receipt for size {size}"));
+                    }
+                }
+                Err(why) => {
+                    // The closed row now holds the witness: it goes back to
+                    // the front of the queue, ahead of the cut being sent.
+                    let why = format!("the witness's receipt cannot be stored: {why}");
+                    self.commit(own, None, true, Some(row_error(&why)));
+                    if !queue.contains(size) {
+                        queue.push_front(*size);
+                    }
+                    return Err(format!("size {size}: {why}"));
+                }
+            }
+        }
+        Ok(sent)
+    }
+}
+
+/// The root a checkpoint's COSE bytes state.
+fn decoded_root(cose: &[u8]) -> Option<String> {
+    cll::checkpoint::verify_checkpoint_cose_offline(cose)
+        .decoded
+        .map(|cp| cp.root)
+}
+
+impl CheckpointState {
+    /// One delivery pass over every configured witness's rows (store path).
+    fn deliver_witness_rows(&mut self) -> bool {
+        let Source::Log {
+            backend,
+            witness_queues,
+            row_witness_ids,
+        } = &mut self.source
+        else {
+            return false;
+        };
+        let latest = self.substrate.last_checkpoint();
+        let mut recorded = false;
+        for (witness_id, queue) in witness_queues.iter_mut() {
+            let delivery = RowDelivery {
+                backend: backend.as_ref(),
+                witness_id,
+                client: client_for(witness_id),
+                cadence_seconds: self.cfg.cadence_seconds,
+                latest,
+                all_witness_ids: row_witness_ids,
+            };
+            recorded |= delivery.run(queue);
+        }
+        self.refresh_latest_witnesses();
+        recorded
+    }
+
+    /// Rebuild the latest checkpoint's witnesses from its rows that hold a
+    /// receipt, in `witness_urls` order (store path).
+    fn refresh_latest_witnesses(&mut self) {
+        let Source::Log { backend, .. } = &self.source else {
+            return;
+        };
+        let Some(size) = self.substrate.last_checkpoint().map(|cp| cp.mmr_size) else {
+            return;
+        };
+        let mut witnesses = Vec::new();
+        for url in &self.cfg.witness_urls {
+            match backend.get_witness(url, size) {
+                Ok(row) => witnesses.extend(row.as_ref().and_then(witness_from_row)),
+                Err(err) => eprintln!(
+                    "[checkpoint] reading the witness row for {url} at size {size}: {err}"
+                ),
+            }
+        }
+        if let Some(current) = self.substrate.last_checkpoint_witnesses_mut() {
+            *current = witnesses;
+        }
     }
 }
 
@@ -2230,6 +2783,20 @@ mod tests {
         /// The witness's own key: every receipt it issues is a COSE_Sign1
         /// over the checkpoint's entry hash, signed with it.
         key: ed25519_dalek::VerifyingKey,
+        /// While set, every request gets a 503 and changes nothing: the
+        /// witness is down.
+        down: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        /// While set, a checkpoint that chains is accepted but the reply is
+        /// a 503: the response is lost on the way back.
+        lose_response: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        /// While set, an accepted checkpoint's receipt comes back as text
+        /// that is not base64.
+        garble_receipt: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        /// The checkpoint it last accepted; a test may set it back (a witness
+        /// restored from an older backup).
+        tip: std::sync::Arc<std::sync::Mutex<Option<(u64, String)>>>,
+        /// `(mmr_size, entry_hash, receipt_b64)` of every receipt it issued.
+        issued: std::sync::Arc<std::sync::Mutex<Vec<(u64, String, String)>>>,
     }
 
     /// Whether a filed receipt was issued by the witness holding `key`: it
@@ -2260,8 +2827,17 @@ mod tests {
         let signing = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
         let key = signing.verifying_key();
         let issuer = url.clone();
+        let down = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let is_down = down.clone();
+        let lose_response = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let is_lost = lose_response.clone();
+        let issued = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let issuing = issued.clone();
+        let garble_receipt = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let is_garbled = garble_receipt.clone();
+        let tip = std::sync::Arc::new(std::sync::Mutex::new(tip));
+        let shared_tip = tip.clone();
         std::thread::spawn(move || {
-            let mut tip = tip;
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else { return };
                 let mut buf = Vec::new();
@@ -2286,13 +2862,21 @@ mod tests {
                 };
                 let Some(body) = body else { continue };
                 counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if is_down.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    );
+                    continue;
+                }
                 let decoded = verify_checkpoint_cose_offline(&body).decoded.unwrap();
-                let chains = match &tip {
+                let mut tip = shared_tip.lock().unwrap();
+                let chains = match &*tip {
                     None => true,
                     Some((size, root)) => decoded.prev_size == *size && decoded.prev_root == *root,
                 };
                 let (status, payload) = if chains {
-                    tip = Some((decoded.mmr_size, decoded.root.clone()));
+                    *tip = Some((decoded.mmr_size, decoded.root.clone()));
                     seen.lock().unwrap().push(decoded.mmr_size);
                     // What a real witness returns: bound to this checkpoint.
                     let entry_hash = {
@@ -2315,6 +2899,23 @@ mod tests {
                         );
                         base64::engine::general_purpose::STANDARD.encode(signed)
                     };
+                    if is_lost.load(std::sync::atomic::Ordering::SeqCst) {
+                        let _ = write!(
+                            stream,
+                            "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        );
+                        continue;
+                    }
+                    let receipt = if is_garbled.load(std::sync::atomic::Ordering::SeqCst) {
+                        "not base64!".to_string()
+                    } else {
+                        receipt
+                    };
+                    issuing.lock().unwrap().push((
+                        decoded.mmr_size,
+                        entry_hash.clone(),
+                        receipt.clone(),
+                    ));
                     (
                         "200 OK",
                         json!({"receipt_b64": receipt, "entry_hash": entry_hash,
@@ -2342,6 +2943,11 @@ mod tests {
             accepted,
             hits,
             key,
+            down,
+            lose_response,
+            garble_receipt,
+            tip,
+            issued,
         }
     }
 
@@ -2870,5 +3476,701 @@ mod tests {
             continuity_refusal(&AnchorError::Transport("down".into())),
             None
         );
+    }
+
+    // -- witnesses on a state kept in a CLL backend (`load_log`) --------------
+
+    use cll::log::{CheckpointStateStore, EntryStore, WitnessStateStore};
+
+    type MemoryLog = std::sync::Arc<cll::log::memory::MemoryStore>;
+
+    fn memory_log() -> MemoryLog {
+        std::sync::Arc::new(cll::log::memory::MemoryStore::new())
+    }
+
+    /// Append one entry to `log`, as a store-backed ledger does; returns its
+    /// capsule_id.
+    fn append_entry(log: &dyn EntryStore, seed: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let value = Sha256::digest(seed.as_bytes()).to_vec();
+        log.append(&cll::log::AppendInput {
+            value: value.clone(),
+            appended_at: Timestamp::now(),
+        })
+        .unwrap();
+        hex::encode(value)
+    }
+
+    fn witnessed_by(urls: &[&str]) -> CheckpointCadenceConfig {
+        CheckpointCadenceConfig {
+            cadence_entries: 100,
+            cadence_seconds: 300,
+            witness_urls: urls.iter().map(|u| u.to_string()).collect(),
+            pad_bucket: 0,
+        }
+    }
+
+    fn load_store(log: std::sync::Arc<dyn CheckpointLog>, urls: &[&str]) -> CheckpointState {
+        CheckpointState::load_log(log, "test-log", witnessed_by(urls), &[&signer()])
+            .unwrap()
+            .0
+    }
+
+    fn row(log: &dyn WitnessStateStore, url: &str, size: u64) -> WitnessState {
+        log.get_witness(url, size).unwrap().expect("a witness row")
+    }
+
+    /// The `CheckpointWitness` the flat path records for the receipt
+    /// `witness` issued for the checkpoint at `size`, filed under `url`.
+    fn issued_for(witness: &ContinuityWitness, url: &str, size: u64) -> CheckpointWitness {
+        let issued = witness.issued.lock().unwrap();
+        let (_, entry_hash, receipt_b64) = issued
+            .iter()
+            .find(|(s, _, _)| *s == size)
+            .unwrap_or_else(|| panic!("no receipt issued for size {size}"));
+        CheckpointWitness {
+            ts_url: url.to_string(),
+            entry_hash: entry_hash.clone(),
+            receipt_b64: receipt_b64.clone(),
+            leaf_index: 0,
+            tree_size: 1,
+            is_stub: false,
+        }
+    }
+
+    fn hits(witness: &ContinuityWitness) -> usize {
+        witness.hits.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn set(flag: &std::sync::atomic::AtomicBool, on: bool) {
+        flag.store(on, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    #[test]
+    fn store_a_clock_cut_registers_with_each_witness_and_keeps_the_receipts() {
+        let a = continuity_witness(None);
+        let b = continuity_witness(None);
+        let unconfigured = continuity_witness(None);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&a.url, &b.url]);
+        append_entry(log.as_ref(), "one");
+        let cp = state
+            .reconnect(&signer(), &AnchorClient::new(&unconfigured.url))
+            .unwrap()
+            .unwrap();
+
+        // The cut and its rows went in together; each witness got it once.
+        assert_eq!(*a.accepted.lock().unwrap(), vec![cp.mmr_size]);
+        assert_eq!(*b.accepted.lock().unwrap(), vec![cp.mmr_size]);
+        assert_eq!(hits(&unconfigured), 0);
+        // The returned record carries the receipts, as on the flat path,
+        // each filed under the witness that issued it.
+        assert_eq!(
+            cp.witnesses,
+            vec![
+                issued_for(&a, &a.url, cp.mmr_size),
+                issued_for(&b, &b.url, cp.mmr_size)
+            ]
+        );
+        assert!(issued_by(&cp.witnesses[0], &a.key));
+        assert!(issued_by(&cp.witnesses[1], &b.key));
+        for url in [&a.url, &b.url] {
+            let r = row(log.as_ref(), url, cp.mmr_size);
+            assert_eq!(r.attempts, 1);
+            assert_eq!(
+                r.checkpoint,
+                state.substrate.last_checkpoint_cose().unwrap()
+            );
+            let receipt = r.receipt.unwrap();
+            assert_eq!(receipt.entry_hash_scheme.as_deref(), Some("legacy"));
+            assert_eq!(receipt.entry_hash, Some(bound_entry_hash(&cp).unwrap()));
+        }
+        // Nothing is left to deliver: the next tick sends nothing.
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!((hits(&a), hits(&b)), (1, 1));
+        assert_eq!(state.last_checkpoint().unwrap(), &cp);
+    }
+
+    fn anchor_unused() -> AnchorClient {
+        AnchorClient::new("http://127.0.0.1:1")
+    }
+
+    #[test]
+    fn store_an_outage_is_backfilled_in_chain_order_and_survives_reopen() {
+        let witness = continuity_witness(None);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        set(&witness.down, true);
+
+        // A: a clock cut during the outage. B, C: push cuts, never sent on
+        // the serving path.
+        append_entry(log.as_ref(), "one");
+        let a = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        assert!(a.witnesses.is_empty());
+        let two = append_entry(log.as_ref(), "two");
+        let b = state
+            .checkpoint_covering(&two, &signer(), &anchor_unused())
+            .unwrap();
+        let three = append_entry(log.as_ref(), "three");
+        let c = state
+            .checkpoint_covering(&three, &signer(), &anchor_unused())
+            .unwrap();
+        let sizes = [a.mmr_size, b.checkpoint.mmr_size, c.checkpoint.mmr_size];
+        assert_eq!(hits(&witness), 1, "only the clock cut was sent");
+
+        // A tick while it is still down retries only the oldest cut: the
+        // later ones wait behind it.
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&witness), 2);
+        let first = row(log.as_ref(), &witness.url, sizes[0]);
+        assert_eq!(first.attempts, 2);
+        assert!(first.last_error.unwrap().contains("503"));
+        for size in &sizes[1..] {
+            assert_eq!(row(log.as_ref(), &witness.url, *size).attempts, 0);
+        }
+
+        // A restart mid-outage resumes from the oldest undelivered cut.
+        drop(state);
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        set(&witness.down, false);
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(*witness.accepted.lock().unwrap(), sizes.to_vec());
+        for size in sizes {
+            let got = witness_from_row(&row(log.as_ref(), &witness.url, size)).unwrap();
+            assert_eq!(got, issued_for(&witness, &witness.url, size));
+        }
+        assert_eq!(
+            state.last_checkpoint().unwrap().witnesses,
+            vec![issued_for(&witness, &witness.url, sizes[2])]
+        );
+
+        // Reopened after delivery: the receipt reads back, nothing is resent.
+        drop(state);
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        assert_eq!(
+            state.last_checkpoint().unwrap().witnesses,
+            vec![issued_for(&witness, &witness.url, sizes[2])]
+        );
+        let before = hits(&witness);
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&witness), before);
+    }
+
+    /// Every checkpoint's receipts, read back after a restart: on the flat
+    /// layout from `checkpoints.jsonl` plus its backfills.
+    fn flat_receipts(dir: &Path) -> Vec<(u64, Vec<CheckpointWitness>)> {
+        let path = dir.join("checkpoints.jsonl");
+        let backfills = read_witness_backfills(&path);
+        cll::store::read_checkpoints(&path)
+            .unwrap()
+            .into_iter()
+            .map(|line| {
+                let record: CheckpointRecord =
+                    serde_json::from_value(serde_json::to_value(&line.record).unwrap()).unwrap();
+                (record.mmr_size, effective_witnesses(&record, &backfills))
+            })
+            .collect()
+    }
+
+    /// The same, on the store path: from the witness rows.
+    fn store_receipts(
+        log: &dyn WitnessStateStore,
+        url: &str,
+        sizes: &[u64],
+    ) -> Vec<(u64, Vec<CheckpointWitness>)> {
+        sizes
+            .iter()
+            .map(|&size| {
+                let got = log
+                    .get_witness(url, size)
+                    .unwrap()
+                    .and_then(|r| witness_from_row(&r));
+                (size, got.into_iter().collect())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn store_and_flat_read_back_the_same_receipts() {
+        // One sequence on both layouts: a clock cut, two push cuts during an
+        // outage, then the tick that backfills them.
+        fn run(
+            witness: &ContinuityWitness,
+            mut state: CheckpointState,
+            mut append: impl FnMut(&str) -> String,
+        ) -> (Vec<u64>, Vec<CheckpointWitness>) {
+            let anchor = anchor_unused();
+            append("one");
+            let a = state.reconnect(&signer(), &anchor).unwrap().unwrap();
+            set(&witness.down, true);
+            let two = append("two");
+            let b = state.checkpoint_covering(&two, &signer(), &anchor).unwrap();
+            let three = append("three");
+            let c = state
+                .checkpoint_covering(&three, &signer(), &anchor)
+                .unwrap();
+            state.tick(&signer(), &anchor).unwrap();
+            set(&witness.down, false);
+            state.tick(&signer(), &anchor).unwrap();
+            (
+                vec![a.mmr_size, b.checkpoint.mmr_size, c.checkpoint.mmr_size],
+                state.last_checkpoint().unwrap().witnesses.clone(),
+            )
+        }
+
+        let flat_witness = continuity_witness(None);
+        let dir = tempfile::tempdir().unwrap();
+        let flat = CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&flat_witness.url))
+            .unwrap()
+            .0;
+        let (flat_sizes, flat_live) =
+            run(&flat_witness, flat, |seed| write_capsule(dir.path(), seed));
+
+        let store_witness = continuity_witness(None);
+        let db_dir = tempfile::tempdir().unwrap();
+        let db = db_dir.path().join("ledger.db");
+        cll::log::sqlite::SqliteStore::init(&db, "test-log").unwrap();
+        let log =
+            std::sync::Arc::new(cll::log::sqlite::SqliteStore::open(&db, "test-log").unwrap());
+        let store = load_store(log.clone(), &[&store_witness.url]);
+        let (store_sizes, store_live) = run(&store_witness, store, |seed| {
+            append_entry(log.as_ref(), seed)
+        });
+
+        assert_eq!(flat_sizes, store_sizes);
+        // Each layout reads back, for every checkpoint, exactly the receipt
+        // its witness issued: the same CheckpointWitness value.
+        let expected = |w: &ContinuityWitness| -> Vec<(u64, Vec<CheckpointWitness>)> {
+            flat_sizes
+                .iter()
+                .map(|&size| (size, vec![issued_for(w, &w.url, size)]))
+                .collect()
+        };
+        assert_eq!(flat_receipts(dir.path()), expected(&flat_witness));
+        assert_eq!(
+            store_receipts(log.as_ref(), &store_witness.url, &store_sizes),
+            expected(&store_witness)
+        );
+        assert_eq!(
+            flat_live,
+            vec![issued_for(&flat_witness, &flat_witness.url, flat_sizes[2])]
+        );
+        assert_eq!(
+            store_live,
+            vec![issued_for(
+                &store_witness,
+                &store_witness.url,
+                store_sizes[2]
+            )]
+        );
+        // And after a restart, the latest checkpoint's list too.
+        let flat = CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&flat_witness.url))
+            .unwrap()
+            .0;
+        assert_eq!(flat.last_checkpoint().unwrap().witnesses, flat_live);
+        let store = load_store(log.clone(), &[&store_witness.url]);
+        assert_eq!(store.last_checkpoint().unwrap().witnesses, store_live);
+    }
+
+    #[test]
+    fn store_a_witness_that_already_holds_a_cut_is_closed_ahead_and_the_next_is_sent() {
+        let witness = continuity_witness(None);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        // The witness accepts A but its reply is lost.
+        set(&witness.lose_response, true);
+        append_entry(log.as_ref(), "one");
+        let a = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        assert!(a.witnesses.is_empty());
+        set(&witness.lose_response, false);
+
+        // The resend is refused as already held: A is closed, not retried.
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        let closed = row(log.as_ref(), &witness.url, a.mmr_size);
+        assert!(is_witness_ahead(&closed), "{closed:?}");
+        assert!(closed.receipt.is_none());
+        assert_eq!(closed.attempts, 2);
+        let sent = hits(&witness);
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&witness), sent, "a closed row is not resent");
+
+        // B chains from A, which the witness holds: accepted.
+        append_entry(log.as_ref(), "two");
+        let b = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            *witness.accepted.lock().unwrap(),
+            vec![a.mmr_size, b.mmr_size]
+        );
+        assert_eq!(
+            b.witnesses,
+            vec![issued_for(&witness, &witness.url, b.mmr_size)]
+        );
+        // A reopen does not queue the closed row again.
+        drop(state);
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        let sent = hits(&witness);
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&witness), sent);
+    }
+
+    #[test]
+    fn store_a_witness_on_another_history_stays_held_and_retried() {
+        let witness = continuity_witness(Some((1_000, "cd".repeat(32))));
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        append_entry(log.as_ref(), "one");
+        let a = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        let held = row(log.as_ref(), &witness.url, a.mmr_size);
+        assert!(!held.permanent && held.receipt.is_none());
+        assert_eq!(held.attempts, 2);
+        assert!(held.last_error.unwrap().contains("new log id"));
+        assert!(witness.accepted.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn store_a_held_witness_never_holds_another() {
+        let down = continuity_witness(None);
+        let healthy = continuity_witness(None);
+        set(&down.down, true);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&down.url, &healthy.url]);
+        let mut sizes = Vec::new();
+        for seed in ["one", "two", "three"] {
+            let id = append_entry(log.as_ref(), seed);
+            sizes.push(
+                state
+                    .checkpoint_covering(&id, &signer(), &anchor_unused())
+                    .unwrap()
+                    .checkpoint
+                    .mmr_size,
+            );
+        }
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(*healthy.accepted.lock().unwrap(), sizes);
+        assert_eq!(
+            hits(&down),
+            1,
+            "the down witness was sent its oldest cut only"
+        );
+        assert_eq!(
+            state.last_checkpoint().unwrap().witnesses,
+            vec![issued_for(&healthy, &healthy.url, sizes[2])]
+        );
+    }
+
+    #[test]
+    fn store_a_permanent_row_from_another_runner_holds_only_its_witness() {
+        let stuck = continuity_witness(None);
+        let other = continuity_witness(None);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&stuck.url, &other.url]);
+        let one = append_entry(log.as_ref(), "one");
+        let a = state
+            .checkpoint_covering(&one, &signer(), &anchor_unused())
+            .unwrap();
+        let size = a.checkpoint.mmr_size;
+        let r = row(log.as_ref(), &stuck.url, size);
+        log.commit_witness(
+            r.attempts,
+            &WitnessState {
+                attempts: r.attempts + 1,
+                permanent: true,
+                last_error: Some("invalid signature".into()),
+                ..r
+            },
+        )
+        .unwrap();
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&stuck), 0);
+        assert_eq!(*other.accepted.lock().unwrap(), vec![size]);
+        // Its later cuts are held too, never sent past the stuck one.
+        append_entry(log.as_ref(), "two");
+        state.reconnect(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&stuck), 0);
+        assert_eq!(other.accepted.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn store_a_re_added_witness_is_caught_up_from_another_witnesss_rows() {
+        let w1 = continuity_witness(None);
+        let w2 = continuity_witness(None);
+        let log = memory_log();
+        // A: both witnesses.
+        let mut state = load_store(log.clone(), &[&w1.url, &w2.url]);
+        append_entry(log.as_ref(), "one");
+        let a = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        // B: w2 is not configured, so it has no row at B.
+        drop(state);
+        let mut state = load_store(log.clone(), &[&w1.url]);
+        append_entry(log.as_ref(), "two");
+        let b = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        // C: w2 is back; C chains from B, which w2 never saw.
+        drop(state);
+        let mut state = load_store(log.clone(), &[&w1.url, &w2.url]);
+        append_entry(log.as_ref(), "three");
+        let c = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            *w2.accepted.lock().unwrap(),
+            vec![a.mmr_size, b.mmr_size, c.mmr_size],
+            "B was read from w1's row and sent before C"
+        );
+        assert!(log.get_witness(&w2.url, b.mmr_size).unwrap().is_none());
+        assert_eq!(
+            c.witnesses,
+            vec![
+                issued_for(&w1, &w1.url, c.mmr_size),
+                issued_for(&w2, &w2.url, c.mmr_size)
+            ]
+        );
+    }
+
+    #[test]
+    fn store_catch_up_reads_a_cut_from_a_witness_no_longer_configured() {
+        let w1 = continuity_witness(None);
+        let w2 = continuity_witness(None);
+        let log = memory_log();
+        // A: both. B: only w1. C: only w2, so B is only in w1's row and w1
+        // is not configured when w2 needs it.
+        let mut state = load_store(log.clone(), &[&w1.url, &w2.url]);
+        append_entry(log.as_ref(), "one");
+        let a = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        drop(state);
+        let mut state = load_store(log.clone(), &[&w1.url]);
+        append_entry(log.as_ref(), "two");
+        let b = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        drop(state);
+        let w1_hits = hits(&w1);
+        let mut state = load_store(log.clone(), &[&w2.url]);
+        append_entry(log.as_ref(), "three");
+        let c = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            *w2.accepted.lock().unwrap(),
+            vec![a.mmr_size, b.mmr_size, c.mmr_size]
+        );
+        assert_eq!(
+            hits(&w1),
+            w1_hits,
+            "an unconfigured witness is never sent anything"
+        );
+    }
+
+    #[test]
+    fn store_catch_up_leaves_a_closed_row_as_it_is() {
+        let witness = continuity_witness(None);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        append_entry(log.as_ref(), "one");
+        let a = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        // B is accepted but its reply is lost, so B's row is closed ahead.
+        set(&witness.lose_response, true);
+        append_entry(log.as_ref(), "two");
+        let b = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        set(&witness.lose_response, false);
+        state.tick(&signer(), &anchor_unused()).unwrap();
+        let closed = row(log.as_ref(), &witness.url, b.mmr_size);
+        assert!(is_witness_ahead(&closed));
+        // The witness is restored to A. C chains from B: catch-up resends B
+        // from its closed row, then C.
+        *witness.tip.lock().unwrap() = Some((a.mmr_size, a.root.clone()));
+        append_entry(log.as_ref(), "three");
+        let c = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            *witness.accepted.lock().unwrap(),
+            vec![a.mmr_size, b.mmr_size, b.mmr_size, c.mmr_size]
+        );
+        assert_eq!(row(log.as_ref(), &witness.url, b.mmr_size), closed);
+        assert_eq!(
+            c.witnesses,
+            vec![issued_for(&witness, &witness.url, c.mmr_size)]
+        );
+    }
+
+    #[test]
+    fn store_a_cut_chained_from_a_checkpoint_without_rows_is_accepted() {
+        // A migrated node: the CLL state starts from a checkpoint the
+        // witness already holds (here A, cut with no witness configured).
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[]);
+        append_entry(log.as_ref(), "one");
+        let a = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        assert!(log.load_cll().unwrap().witnesses.is_empty());
+        let witness = continuity_witness(Some((a.mmr_size, a.root.clone())));
+
+        drop(state);
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        append_entry(log.as_ref(), "two");
+        let b = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        assert_eq!(*witness.accepted.lock().unwrap(), vec![b.mmr_size]);
+        assert_eq!(b.witnesses.len(), 1);
+    }
+
+    #[test]
+    fn store_a_receipt_is_kept_as_returned_unless_a_row_cannot_hold_it() {
+        let row_for = |receipt_b64: &str, entry_hash: &str| {
+            let resp = crate::anchor::CheckpointWitnessResponse {
+                receipt_b64: receipt_b64.into(),
+                entry_hash: entry_hash.into(),
+                leaf_index: 0,
+                tree_size: 1,
+            };
+            let r = WitnessState {
+                witness_id: "w".into(),
+                checkpoint_size: 1,
+                checkpoint: vec![1],
+                attempts: 0,
+                next_attempt_at: Timestamp::now(),
+                receipt: None,
+                permanent: false,
+                last_error: None,
+            };
+            receipt_for(&r, &resp)
+        };
+        let hash = "ab".repeat(32);
+        assert!(
+            row_for("c3R1Yg==", &hash).is_ok(),
+            "unbound is kept, as inline"
+        );
+        assert!(row_for("not base64!", &hash)
+            .unwrap_err()
+            .contains("base64"));
+        assert!(row_for("", &hash).unwrap_err().contains("empty"));
+        {
+            use base64::Engine;
+            let huge = base64::engine::general_purpose::STANDARD.encode(vec![
+                0u8;
+                cll::log::MAX_WITNESS_RESPONSE_BYTES
+                    + 1
+            ]);
+            assert!(row_for(&huge, &hash).unwrap_err().contains("over CLL"));
+        }
+        assert!(
+            row_for("YQ", &hash).unwrap_err().contains("base64"),
+            "unpadded"
+        );
+        let resp = |leaf_index: i64| {
+            let r = WitnessState {
+                witness_id: "w".into(),
+                checkpoint_size: 1,
+                checkpoint: vec![1],
+                attempts: 0,
+                next_attempt_at: Timestamp::now(),
+                receipt: None,
+                permanent: false,
+                last_error: None,
+            };
+            receipt_for(
+                &r,
+                &crate::anchor::CheckpointWitnessResponse {
+                    receipt_b64: "c3R1Yg==".into(),
+                    entry_hash: hash.clone(),
+                    leaf_index,
+                    tree_size: 1,
+                },
+            )
+        };
+        assert!(resp(-1).unwrap_err().contains("leaf_index"));
+        assert!(resp(i64::MAX).unwrap_err().contains("out of CLL's range"));
+        assert!(row_for("c3R1Yg==", &"AB".repeat(32))
+            .unwrap_err()
+            .contains("lowercase hex"));
+    }
+
+    #[test]
+    fn store_a_receipt_a_row_cannot_hold_closes_the_row_and_holds_the_witness() {
+        let witness = continuity_witness(None);
+        set(&witness.garble_receipt, true);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&witness.url]);
+        append_entry(log.as_ref(), "one");
+        let a = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        assert!(a.witnesses.is_empty());
+        let closed = row(log.as_ref(), &witness.url, a.mmr_size);
+        assert!(closed.permanent && closed.receipt.is_none());
+        assert!(!is_witness_ahead(&closed));
+        assert!(closed.last_error.unwrap().contains("not base64"));
+        // The witness is held: neither this row nor a later cut is sent.
+        set(&witness.garble_receipt, false);
+        append_entry(log.as_ref(), "two");
+        state.reconnect(&signer(), &anchor_unused()).unwrap();
+        assert_eq!(hits(&witness), 1);
+    }
+
+    #[test]
+    fn store_a_witness_url_that_cannot_key_a_row_is_refused_by_name() {
+        let url = "https://witness.example/?log=1";
+        let err =
+            CheckpointState::load_log(memory_log(), "test-log", witnessed_by(&[url]), &[&signer()])
+                .err()
+                .unwrap();
+        assert!(err.to_string().contains(url), "{err}");
+        let twice = "https://witness.example";
+        let err = CheckpointState::load_log(
+            memory_log(),
+            "test-log",
+            witnessed_by(&[twice, "https://other.example", twice]),
+            &[&signer()],
+        )
+        .err()
+        .unwrap();
+        assert!(err.to_string().contains("configured twice"), "{err}");
+    }
+
+    #[test]
+    fn store_last_error_is_cut_on_a_char_boundary() {
+        let long = "é".repeat(MAX_REASON_BYTES);
+        let cut = row_error(&long);
+        assert!(cut.len() <= MAX_REASON_BYTES);
+        assert!(long.starts_with(&cut));
+        assert_eq!(row_error("short"), "short");
     }
 }
