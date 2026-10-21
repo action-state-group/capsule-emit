@@ -20,7 +20,7 @@ Run (offline — no anchor submission):
     AAC_ANCHOR_URL=off python examples/aauth-capsule-interop/demo.py
 
 After running, verify:
-    agent-action-capsule verify --store /tmp/aauth_capsule_interop_ledger.jsonl
+    agent-action-capsule verify --store <each ledger path the demo prints>
 
 Reputation leg: omitted (not required for the compose story).
 """
@@ -34,7 +34,7 @@ from pathlib import Path
 
 from agent_action_capsule.anchor import anchor as _anchor
 from agent_action_capsule.canonical import json_digest
-from agent_action_capsule.contracts import Disposition, EffectRecord
+from agent_action_capsule.contracts import Disposition, EffectRecord, ReferenceEntry
 
 from capsule_emit import read_ledger
 from capsule_emit.builder import build_capsule as _aac_emit
@@ -241,7 +241,9 @@ def seal_dj(
 ) -> dict:
     """DJ Agent (Org B) seals its side of the bilateral attestation.
 
-    Chains onto the Planner's capsule_id. Uses the SAME subject_digest so a
+    Cites the Planner's capsule_id in references[] (responds_to): the
+    Planner's capsule is in Org A's stream, so Org B does not chain to it.
+    Uses the SAME subject_digest so a
     third party can confirm both parties attested over the same action.
     effect.status='confirmed' with response_digest binds the outcome.
     """
@@ -269,8 +271,16 @@ def seal_dj(
             "role": "recipient",
         },
         effect=effect,
-        prior_capsule_id=planner_capsule_id,
-        chain_relation="confirms",
+        # Org A's capsule is in another organization's stream, so it is cited
+        # in references[], not chained to (docs/chaining.md, "Across agents").
+        references=(
+            ReferenceEntry(
+                type="agent-action-capsule",
+                digest_alg="SHA-256",
+                digest=planner_capsule_id,
+                citation_purpose="responds_to",
+            ),
+        ),
         disposition=dispo,
     )
     append_to_ledger(capsule, ledger)
@@ -340,7 +350,7 @@ def seal_dj_blocked(
 # ---------------------------------------------------------------------------
 
 def verify_ledger(ledger: Path) -> bool:
-    """Run Class-1 verify on both capsules. Return True if all ok."""
+    """Run Class-1 verify on every capsule in one org's ledger. Return True if all ok."""
     records = read_ledger(ledger)
     all_ok = True
     for r, vr in zip(records, verify_store_signed(records)):
@@ -367,11 +377,15 @@ def verify_ledger(ledger: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    ledger = Path(tempfile.mkdtemp()) / "aauth_capsule_interop_ledger.jsonl"
+    # Each organization seals into its own ledger (its own stream).
+    tmpdir = Path(tempfile.mkdtemp())
+    planner_ledger = tmpdir / "aauth_planner_ledger.jsonl"
+    dj_ledger = tmpdir / "aauth_dj_ledger.jsonl"
     should_anchor, anchor_endpoint = _resolve_anchor()
 
     _banner("AAuth + Capsule bilateral interop demo")
-    print(f"  Ledger:  {ledger}")
+    print(f"  Ledgers: {planner_ledger} (Org A)")
+    print(f"           {dj_ledger} (Org B)")
     print(f"  Anchor:  {'off (AAC_ANCHOR_URL=off)' if not should_anchor else anchor_endpoint or 'default (anchor.agentactioncapsule.org)'}")
     print("  AAuth:   STUB — grant JTI simulated (real bind point documented in README)")
 
@@ -394,25 +408,27 @@ def main() -> int:
 
     # ── Step 3: Planner Agent seals (Org A) ───────────────────────────────────
     print("\n[step 3] Planner Agent (Org A) seals — the did (requester side)")
-    cap_a = seal_planner(ACTION, subject_digest, grant_jti, ledger, should_anchor, anchor_endpoint)
+    cap_a = seal_planner(ACTION, subject_digest, grant_jti, planner_ledger, should_anchor, anchor_endpoint)
     _ok(f"planner capsule_id:  {cap_a['capsule_id'][:20]}...")
     _ok(f"disposition.verdict: {cap_a['disposition']['verdict_class']}")
     _ok(f"disposition.authority (AAuth grant ref): {cap_a['disposition']['authority']}")
     _ok(f"effect.status: {cap_a['effect']['status']}")
 
     # ── Step 4: DJ Agent seals (Org B) ────────────────────────────────────────
-    print("\n[step 4] DJ Agent (Org B) seals — the did (recipient side, confirms)")
+    print("\n[step 4] DJ Agent (Org B) seals — the did (recipient side, responds_to)")
     outcome = {
         "accepted": True,
         "slot_confirmed": f"{ACTION['date']} @ {ACTION['venue']}",
         "set_duration_min": ACTION["set_duration_min"],
         "booking_ref": f"DJ-{uuid.uuid4().hex[:8].upper()}",
     }
-    cap_b = seal_dj(ACTION, subject_digest, cap_a["capsule_id"], outcome, ledger, should_anchor, anchor_endpoint)
+    cap_b = seal_dj(ACTION, subject_digest, cap_a["capsule_id"], outcome, dj_ledger, should_anchor, anchor_endpoint)
     _ok(f"dj capsule_id:       {cap_b['capsule_id'][:20]}...")
     _ok(f"disposition.verdict: {cap_b['disposition']['verdict_class']}")
     _ok(f"effect.status:       {cap_b['effect']['status']}")
-    _ok(f"chain.parent:        {cap_b['chain']['parent_capsule_id'][:20]}...")
+    cite = cap_b["references"][0]
+    _ok(f"references[0]:       {cite['citation_purpose']} → {cite['digest'][:20]}...")
+    _ok(f"chain:               {cap_b.get('chain') or 'none (Org B cites, never chains to, Org A)'}")
 
     # ── Step 5: Shared digest check ────────────────────────────────────────────
     print("\n[step 5] Both capsules attest over the SAME subject_digest")
@@ -426,7 +442,7 @@ def main() -> int:
 
     # ── Step 6: Verify ────────────────────────────────────────────────────────
     print("\n[step 6] Verify — agent-action-capsule Class-1 verify (both orgs)")
-    all_ok = verify_ledger(ledger)
+    all_ok = verify_ledger(planner_ledger) & verify_ledger(dj_ledger)
 
     if all_ok:
         _ok("All capsules VALID — bilateral interop verified (digest + signature).")
@@ -442,7 +458,7 @@ def main() -> int:
         action=ACTION_OVER_LIMIT,
         subject_digest=subject_digest_over,
         grant=grant_with_terms,
-        ledger=ledger,
+        ledger=dj_ledger,
         should_anchor=should_anchor,
         anchor_endpoint=anchor_endpoint,
     )
@@ -452,7 +468,7 @@ def main() -> int:
     print(f"  gate_checks        : {blocked_gate_checks}")
     print(f"  grant ref (jti)    : {capsule_blocked['disposition']['authority']}")
 
-    ok_blocked = verify_ledger(ledger)
+    ok_blocked = verify_ledger(dj_ledger)
     print(f"  ledger verify      : ok={ok_blocked}")
 
     print(
@@ -472,7 +488,8 @@ def main() -> int:
     print(f"    Shared subject_digest: {subject_digest}")
     print()
     print("  Third-party verify:")
-    print(f"    agent-action-capsule verify --store {ledger}")
+    print(f"    agent-action-capsule verify --store {planner_ledger}")
+    print(f"    agent-action-capsule verify --store {dj_ledger}")
     print()
     print("  Reputation leg: OMITTED (not required for the compose story).")
     print()

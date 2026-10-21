@@ -43,7 +43,7 @@ from pathlib import Path
 
 from agent_action_capsule.anchor import anchor as _anchor
 from agent_action_capsule.canonical import json_digest
-from agent_action_capsule.contracts import Disposition, EffectRecord
+from agent_action_capsule.contracts import Disposition, EffectRecord, ReferenceEntry
 
 from capsule_emit import read_ledger
 from capsule_emit.bilateral import seal_ghost
@@ -240,8 +240,16 @@ def seal_dj(
             "role": "recipient",
         },
         effect=effect,
-        prior_capsule_id=planner_capsule_id,
-        chain_relation="confirms",
+        # Org A's capsule is in another organization's stream, so it is cited
+        # in references[], not chained to (docs/chaining.md, "Across agents").
+        references=(
+            ReferenceEntry(
+                type="agent-action-capsule",
+                digest_alg="SHA-256",
+                digest=planner_capsule_id,
+                citation_purpose="responds_to",
+            ),
+        ),
         disposition=dispo,
     )
     append_to_ledger(capsule, ledger)
@@ -325,7 +333,9 @@ def _verify_ledger(ledger: Path) -> bool:
 
 def main() -> int:
     tmpdir = Path(tempfile.mkdtemp())
-    arc1_ledger = tmpdir / "arc1_authorized.jsonl"
+    # Each organization seals into its own ledger (its own stream).
+    arc1_planner_ledger = tmpdir / "arc1_authorized_planner.jsonl"
+    arc1_dj_ledger = tmpdir / "arc1_authorized_dj.jsonl"
     arc2_ledger = tmpdir / "arc2_blocked.jsonl"
     arc3_ledger = tmpdir / "arc3_ghost.jsonl"
 
@@ -340,7 +350,8 @@ def main() -> int:
     # =========================================================================
     _banner("Arc 1 — Authorized (simple story)")
     print("  CAN grant → Planner seals (may) → DJ seals (did) → verify")
-    print(f"  Ledger: {arc1_ledger}")
+    print(f"  Ledgers: {arc1_planner_ledger} (Org A)")
+    print(f"           {arc1_dj_ledger} (Org B)")
 
     print("\n[step 1] Compute shared action digest")
     subject_digest = json_digest(ACTION)
@@ -352,24 +363,26 @@ def main() -> int:
     _ok(f"mock grant_jti: {grant_jti}")
 
     print("\n[step 3] Planner (Org A) seals request — the 'may'")
-    cap_a = seal_planner(ACTION, subject_digest, grant_jti, arc1_ledger, should_anchor, anchor_endpoint)
+    cap_a = seal_planner(ACTION, subject_digest, grant_jti, arc1_planner_ledger, should_anchor, anchor_endpoint)
     _ok(f"planner capsule_id:     {cap_a['capsule_id'][:20]}...")
     _ok(f"verdict:                {cap_a['disposition']['verdict_class']}")
     _ok(f"disposition.authority:  {cap_a['disposition']['authority']}")
     _ok(f"effect.status:          {cap_a['effect']['status']}")
 
-    print("\n[step 4] DJ (Org B) seals — the 'did' (confirms)")
+    print("\n[step 4] DJ (Org B) seals — the 'did' (responds_to Planner's capsule)")
     outcome = {
         "accepted": True,
         "slot_confirmed": f"{ACTION['date']} @ {ACTION['venue']}",
         "set_duration_min": ACTION["set_duration_min"],
         "booking_ref": f"DJ-{uuid.uuid4().hex[:8].upper()}",
     }
-    cap_b = seal_dj(ACTION, subject_digest, cap_a["capsule_id"], outcome, arc1_ledger, should_anchor, anchor_endpoint)
+    cap_b = seal_dj(ACTION, subject_digest, cap_a["capsule_id"], outcome, arc1_dj_ledger, should_anchor, anchor_endpoint)
     _ok(f"dj capsule_id:          {cap_b['capsule_id'][:20]}...")
     _ok(f"verdict:                {cap_b['disposition']['verdict_class']}")
     _ok(f"effect.status:          {cap_b['effect']['status']}")
-    _ok(f"chain.parent:           {cap_b['chain']['parent_capsule_id'][:20]}...")
+    cite = cap_b["references"][0]
+    _ok(f"references[0]:          {cite['citation_purpose']} → {cite['digest'][:20]}...")
+    _ok(f"chain:                  {cap_b.get('chain') or 'none (Org B cites, never chains to, Org A)'}")
 
     print("\n[step 5] Shared digest — both orgs attest over the same action")
     sd_a = cap_a["model_attestation"]["compute_attestation"]["subject_digest"]
@@ -381,7 +394,7 @@ def main() -> int:
         return 1
 
     print("\n[step 6] Class-1 verify — both capsules")
-    if not _verify_ledger(arc1_ledger):
+    if not (_verify_ledger(arc1_planner_ledger) & _verify_ledger(arc1_dj_ledger)):
         _warn("Arc 1 verification FAILED")
         return 1
     _ok("Arc 1 complete: both-seal, shared digest, bilateral verifiable")
@@ -503,7 +516,8 @@ def main() -> int:
     # Summary
     # =========================================================================
     _banner("Summary — all three arcs")
-    print(f"  Arc 1 — Authorized   : {arc1_ledger}")
+    print(f"  Arc 1 — Authorized   : {arc1_planner_ledger}")
+    print(f"                         {arc1_dj_ledger}")
     print(f"  Arc 2 — Blocked      : {arc2_ledger}")
     print(f"  Arc 3 — Ghost        : {arc3_ledger}")
     print()

@@ -146,7 +146,7 @@ print(f"human_disposed      : {approval_ca.get('human_disposed')}")
 
 assert approval_capsule["disposition"]["verdict_class"] == "executed"
 assert approval_capsule["disposition"]["decision"] == "approve"
-assert approval_capsule["chain"]["relation"] == "resolves"
+assert approval_capsule["chain"]["relation"] == "supersedes"
 assert approval_capsule["chain"]["parent_capsule_id"] == blocked_id
 assert approval_ca["human_disposed"] is True
 assert approval_ca["approver_id"] == "alice@org.example"
