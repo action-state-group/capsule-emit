@@ -7,7 +7,7 @@ Exercises:
   - shared subject_digest: both capsules attest over the same action digest
   - disposition.authority: the AAuth grant reference is recorded on Planner's capsule
   - verify: agent-action-capsule Class-1 verify passes ok=True for both
-  - chain: DJ's capsule correctly chains to Planner's
+  - references: DJ's capsule cites Planner's (responds_to) and has no chain
   - no network required: runs fully offline (anchor=False)
 
 Run:
@@ -170,14 +170,22 @@ class TestDJSeal:
         assert vr.ok, f"dj capsule failed verify: {[f.detail for f in vr.findings]}"
 
 
-class TestMutualChain:
-    def test_dj_chains_to_planner(
+class TestMutualReference:
+    def test_dj_cites_planner(
         self, planner_capsule: dict, dj_capsule: dict
     ) -> None:
-        assert dj_capsule["chain"]["parent_capsule_id"] == planner_capsule["capsule_id"]
+        assert dj_capsule["references"] == [
+            {
+                "type": "agent-action-capsule",
+                "digest_alg": "SHA-256",
+                "digest": planner_capsule["capsule_id"],
+                "citation_purpose": "responds_to",
+            }
+        ]
 
-    def test_chain_relation_is_confirms(self, dj_capsule: dict) -> None:
-        assert dj_capsule["chain"]["relation"] == "confirms"
+    def test_dj_has_no_cross_org_chain(self, dj_capsule: dict) -> None:
+        """chain is only a same-stream parent; Planner's capsule is Org A's."""
+        assert "chain" not in dj_capsule
 
     def test_same_subject_digest_both_orgs(
         self, planner_capsule: dict, dj_capsule: dict, subject_digest: str

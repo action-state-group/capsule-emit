@@ -20,6 +20,10 @@ depend on any particular anchor operator.
    `subject_digest = SHA-256(JCS(action))`. Each capsule is bound to that one
    action and sealed (content-addressed) by its own org, so the two records are
    joined by the digest without either side being able to rewrite the other's.
+   The DJ's capsule also cites the planner's capsule in `references[]` with
+   `citation_purpose: "responds_to"`, and carries no `chain`: `chain` links a
+   producer's own records, and the planner's capsule is in Org A's stream (see
+   [chaining](../../docs/chaining.md)).
 3. **Anchor → verify.** Each capsule is anchored (digest-only) to a transparency
    log, then `agent-action-capsule verify` confirms inclusion. A relying party
    that trusts neither the planner nor the DJ can check the shared action

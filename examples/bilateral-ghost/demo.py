@@ -43,7 +43,7 @@ from pathlib import Path
 
 from agent_action_capsule.anchor import anchor as _anchor
 from agent_action_capsule.canonical import json_digest
-from agent_action_capsule.contracts import Disposition, EffectRecord
+from agent_action_capsule.contracts import Disposition, EffectRecord, ReferenceEntry
 
 from capsule_emit import read_ledger
 from capsule_emit.bilateral import seal_ghost
@@ -240,8 +240,16 @@ def seal_dj(
             "role": "recipient",
         },
         effect=effect,
-        prior_capsule_id=planner_capsule_id,
-        chain_relation="confirms",
+        # Org A's capsule is in another organization's stream, so it is cited
+        # in references[], not chained to (docs/chaining.md, "Across agents").
+        references=(
+            ReferenceEntry(
+                type="agent-action-capsule",
+                digest_alg="SHA-256",
+                digest=planner_capsule_id,
+                citation_purpose="responds_to",
+            ),
+        ),
         disposition=dispo,
     )
     append_to_ledger(capsule, ledger)
@@ -358,7 +366,7 @@ def main() -> int:
     _ok(f"disposition.authority:  {cap_a['disposition']['authority']}")
     _ok(f"effect.status:          {cap_a['effect']['status']}")
 
-    print("\n[step 4] DJ (Org B) seals — the 'did' (confirms)")
+    print("\n[step 4] DJ (Org B) seals — the 'did' (responds_to Planner's capsule)")
     outcome = {
         "accepted": True,
         "slot_confirmed": f"{ACTION['date']} @ {ACTION['venue']}",
@@ -369,7 +377,9 @@ def main() -> int:
     _ok(f"dj capsule_id:          {cap_b['capsule_id'][:20]}...")
     _ok(f"verdict:                {cap_b['disposition']['verdict_class']}")
     _ok(f"effect.status:          {cap_b['effect']['status']}")
-    _ok(f"chain.parent:           {cap_b['chain']['parent_capsule_id'][:20]}...")
+    cite = cap_b["references"][0]
+    _ok(f"references[0]:          {cite['citation_purpose']} → {cite['digest'][:20]}...")
+    _ok(f"chain:                  {cap_b.get('chain') or 'none (Org B cites, never chains to, Org A)'}")
 
     print("\n[step 5] Shared digest — both orgs attest over the same action")
     sd_a = cap_a["model_attestation"]["compute_attestation"]["subject_digest"]

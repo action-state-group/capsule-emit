@@ -34,7 +34,7 @@ from pathlib import Path
 
 from agent_action_capsule.anchor import anchor as _anchor
 from agent_action_capsule.canonical import json_digest
-from agent_action_capsule.contracts import Disposition, EffectRecord
+from agent_action_capsule.contracts import Disposition, EffectRecord, ReferenceEntry
 
 from capsule_emit import read_ledger
 from capsule_emit.builder import build_capsule as _aac_emit
@@ -241,7 +241,9 @@ def seal_dj(
 ) -> dict:
     """DJ Agent (Org B) seals its side of the bilateral attestation.
 
-    Chains onto the Planner's capsule_id. Uses the SAME subject_digest so a
+    Cites the Planner's capsule_id in references[] (responds_to): the
+    Planner's capsule is in Org A's stream, so Org B does not chain to it.
+    Uses the SAME subject_digest so a
     third party can confirm both parties attested over the same action.
     effect.status='confirmed' with response_digest binds the outcome.
     """
@@ -269,8 +271,16 @@ def seal_dj(
             "role": "recipient",
         },
         effect=effect,
-        prior_capsule_id=planner_capsule_id,
-        chain_relation="confirms",
+        # Org A's capsule is in another organization's stream, so it is cited
+        # in references[], not chained to (docs/chaining.md, "Across agents").
+        references=(
+            ReferenceEntry(
+                type="agent-action-capsule",
+                digest_alg="SHA-256",
+                digest=planner_capsule_id,
+                citation_purpose="responds_to",
+            ),
+        ),
         disposition=dispo,
     )
     append_to_ledger(capsule, ledger)
@@ -401,7 +411,7 @@ def main() -> int:
     _ok(f"effect.status: {cap_a['effect']['status']}")
 
     # ── Step 4: DJ Agent seals (Org B) ────────────────────────────────────────
-    print("\n[step 4] DJ Agent (Org B) seals — the did (recipient side, confirms)")
+    print("\n[step 4] DJ Agent (Org B) seals — the did (recipient side, responds_to)")
     outcome = {
         "accepted": True,
         "slot_confirmed": f"{ACTION['date']} @ {ACTION['venue']}",
@@ -412,7 +422,9 @@ def main() -> int:
     _ok(f"dj capsule_id:       {cap_b['capsule_id'][:20]}...")
     _ok(f"disposition.verdict: {cap_b['disposition']['verdict_class']}")
     _ok(f"effect.status:       {cap_b['effect']['status']}")
-    _ok(f"chain.parent:        {cap_b['chain']['parent_capsule_id'][:20]}...")
+    cite = cap_b["references"][0]
+    _ok(f"references[0]:       {cite['citation_purpose']} → {cite['digest'][:20]}...")
+    _ok(f"chain:               {cap_b.get('chain') or 'none (Org B cites, never chains to, Org A)'}")
 
     # ── Step 5: Shared digest check ────────────────────────────────────────────
     print("\n[step 5] Both capsules attest over the SAME subject_digest")

@@ -33,6 +33,10 @@ SHA-256(JCS(action))`. A third party trusting neither org can confirm:
   reference (opaque identifier only — never the token body)
 - Both capsules carry the same `subject_digest` — neither party can swap in a
   different action after the fact
+- The DJ's capsule cites the Planner's capsule in `references[]` with
+  `citation_purpose: "responds_to"`. It carries no `chain`: `chain` links a
+  producer's own records, and the Planner's capsule is in Org A's stream (see
+  [chaining](../../docs/chaining.md))
 
 ### Arc 2 — Out-of-grant BLOCKED
 
