@@ -40,7 +40,7 @@ from capsule_emit import seal  # noqa: E402
 
 OPERATOR = "action-state-group"
 DEVELOPER = "startup-lifecycle-example@v1"
-LEDGER_PATH = Path(tempfile.mkdtemp()) / "startup_lifecycle_ledger.jsonl"
+LEDGER_PATH = Path(tempfile.mkdtemp()) / "startup-lifecycle-ledger"
 
 
 def main() -> None:

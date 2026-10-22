@@ -47,6 +47,7 @@ import threading
 
 os.environ.setdefault("CAPSULE_WITNESS", "off")  # zero egress for the demo; see docs "Network behavior"
 
+from capsule_emit.ledger import read_ledger_entries
 from capsule_emit.signing import verify_store_signed
 
 
@@ -168,10 +169,10 @@ def run(ledger: pathlib.Path, anchor_url: str, cache_dir: pathlib.Path) -> None:
 def main() -> int:
     anchor_url, srv = start_stub_ts()
     with tempfile.TemporaryDirectory() as td:
-        ledger = pathlib.Path(td) / "ledger.jsonl"
+        ledger = pathlib.Path(td) / "capsule-ledger"
         run(ledger, anchor_url, pathlib.Path(td) / "agno-cache")
 
-        caps = [json.loads(line) for line in ledger.read_text().splitlines()]
+        caps = read_ledger_entries(ledger)
         print(f"sealed {len(caps)} capsules:")
         ok = True
         for cap, v in zip(caps, verify_store_signed(caps)):

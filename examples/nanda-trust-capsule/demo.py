@@ -13,9 +13,10 @@ Usage:
     python demo.py --ticks 1000       # shorter run (~5s vs 30s)
     python demo.py --compare          # side-by-side vs agent_receipts baseline
 
-The capsule ledger is written to `capsule_ledger.jsonl` in the working directory.
+The capsule ledger is written to the directory `nanda-trust-ledger/` in the working directory.
 After the run, verify it independently:
-    agent-action-capsule verify --store capsule_ledger.jsonl
+    agent-action-capsule verify --store nanda-trust-ledger
+(agent-action-capsule later than 0.11.0; with 0.11.0 use `capsule-emit verify --store`.)
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -30,9 +32,11 @@ from pathlib import Path
 from nest_core.runner import ScenarioRunner
 from nest_core.scenario import ScenarioConfig
 
+from capsule_emit.ledger import read_ledger_entries
+
 _SCENARIO_YAML = Path(__file__).parent / "scenarios" / "receipt_reputation_capsule.yaml"
 _TRACE_DIR = Path(__file__).parent / "traces"
-_CAPSULE_LEDGER = Path("capsule_ledger.jsonl")
+_CAPSULE_LEDGER = Path("nanda-trust-ledger")
 
 
 def _score_table(trace_path: Path) -> dict[str, tuple[float, str]]:
@@ -80,7 +84,7 @@ def _print_summary(scores: dict[str, tuple[float, str]], ledger_path: Path, labe
     print(f"  receipt_reputation validator: {'PASS ✅' if validator_pass else 'FAIL ❌'}")
 
     if ledger_path.exists():
-        capsule_count = sum(1 for ln in ledger_path.read_text().splitlines() if ln.strip())
+        capsule_count = len(read_ledger_entries(ledger_path))
         print(f"  Capsule ledger:    {capsule_count} capsules → {ledger_path}")
     print()
 
@@ -125,7 +129,7 @@ def main() -> int:
     if args.anchor:
         os.environ.setdefault("AAC_ANCHOR", "1")
 
-    _CAPSULE_LEDGER.unlink(missing_ok=True)
+    shutil.rmtree(_CAPSULE_LEDGER, ignore_errors=True)
 
     print("Running receipt_reputation_capsule scenario (trust: capsule_emit) …")
     trace = asyncio.run(_run(_SCENARIO_YAML, ticks=args.ticks))

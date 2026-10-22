@@ -329,7 +329,9 @@ def checked_record(capsule_id: str, obj: dict, trusted: list | None = None) -> R
 
 class LegacyLedger:
     """A ``ledger.jsonl`` file as a CLL ``EntryStore`` and an artifact
-    ``Store``, with the capability limits in ``CAPABILITIES``.
+    ``Store``, with the capability limits in ``CAPABILITIES``. ``path``
+    defaults to the ledger ``seal()`` writes, resolved when it is constructed
+    (``capsule_emit.ledger_layout.resolve_ledger``).
 
     ``trusted`` (raw 32-byte Ed25519 public keys) turns on signer
     authorization; ``None`` accepts any signer whose envelope verifies.
@@ -346,7 +348,7 @@ class LegacyLedger:
 
     def __init__(
         self,
-        path: str | os.PathLike = "ledger.jsonl",
+        path: str | os.PathLike | None = None,
         namespace: str = DEFAULT_NAMESPACE,
         trusted: list | None = None,
         *,
@@ -360,12 +362,17 @@ class LegacyLedger:
         else:
             self._trusted = check_store_config(namespace, trusted)
         # A directory is a ledger store (a managed LedgerStore, or an empty
-        # directory that becomes one); anything else is a flat file. A store
+        # directory that becomes one), and so is a path that does not exist
+        # and whose name has no '.'; anything else is a flat file. A store
         # is addressed by its canonical path, so every spelling shares one
         # lock; a flat file keeps the spelling it was given.
         self._store: _store.StoreLines | None = None
-        if Path(path).is_dir():
-            if not _store.is_store_path(path):
+        if path is None:  # the default ledger, as seal() resolves it now
+            from .ledger_layout import resolve_ledger
+
+            path = resolve_ledger(None).path
+        if Path(path).is_dir() or _store.is_store_target(path):
+            if Path(path).is_dir() and not _store.is_store_path(path):
                 raise _store.LedgerLayoutError(
                     f"{path} is a directory that is neither a ledger store nor empty"
                 )
@@ -629,14 +636,21 @@ class LegacyLedger:
         self._require_open()
         if self._store is not None:
             if not (self._path / _store.MANIFEST_FILENAME).is_file():
+                self._path.parent.mkdir(parents=True, exist_ok=True)
                 with _ledger._append_lock, _ledger._writer_lock(self._path, wait=self._wait, timeout=self._timeout):
                     if not (self._path / _store.MANIFEST_FILENAME).is_file():
                         _store.create_store(self._path)
             return
+        _refuse_new_flat_file(self._path)
         self._path.touch(exist_ok=True)
 
     def put(self, record: Record) -> None:
-        self.put_entry(record)
+        from .ledger_layout import FlatLedgerWriteRefused
+
+        try:
+            self.put_entry(record)
+        except FlatLedgerWriteRefused as exc:  # the flat ledger's window has closed
+            raise UnsupportedError(str(exc)) from exc
 
     def put_entry(self, record: Record) -> AppendResult:
         """``put``, returning the capsule's log entry and whether this call
@@ -665,15 +679,23 @@ class LegacyLedger:
             line["key_id"] = key_id
         return self.append_line(line)
 
-    def append_any(self, line: dict, *, wait: bool | None = None, timeout: float | None = None) -> AppendResult:
+    def append_any(
+        self,
+        line: dict,
+        *,
+        wait: bool | None = None,
+        timeout: float | None = None,
+        precheck: Any = None,
+        chosen: str = "argument",
+    ) -> AppendResult:
         """Write any ledger line, bookkeeping included (checkpoint stamps,
         witness backfills, disclosure records): ``append_line`` without its
         record check. ``capsule_emit.ledger.append_to_ledger`` calls it, so an
         identical line is ``idempotent`` and a different line under the same
         ``capsule_id`` is refused, for every kind of line."""
-        return self._write(line, require_record=False, wait=wait, timeout=timeout)
+        return self._write(line, require_record=False, wait=wait, timeout=timeout, precheck=precheck, chosen=chosen)
 
-    def append_line(self, line: dict) -> AppendResult:
+    def append_line(self, line: dict, *, precheck: Any = None) -> AppendResult:
         """Write one capsule line (with any inline ``signature``/``key_id``)
         unless its ``capsule_id`` is already in the ledger. ``put`` calls it
         after verification; ``seal()`` and ``log()`` call it directly, because
@@ -681,10 +703,17 @@ class LegacyLedger:
         envelope, which the ledger has always accepted (``get`` then reports
         that line ``invalid``). An existing identical line is ``idempotent``;
         any other line under the same ``capsule_id`` is ``ConflictError``."""
-        return self._write(line, require_record=True)
+        return self._write(line, require_record=True, precheck=precheck)
 
     def _write(
-        self, line: dict, *, require_record: bool, wait: bool | None = None, timeout: float | None = None
+        self,
+        line: dict,
+        *,
+        require_record: bool,
+        wait: bool | None = None,
+        timeout: float | None = None,
+        precheck: Any = None,
+        chosen: str = "argument",
     ) -> AppendResult:
         self._require_open()
         capsule_id = line.get("capsule_id")
@@ -692,6 +721,33 @@ class LegacyLedger:
             raise InvalidError("capsule id")
         text = _line_form(line)
         value = bytes.fromhex(capsule_id)
+        # A new record to a flat ledger, by any entry point, is under the
+        # deprecation window (bookkeeping never stops): warned before the
+        # locks, and from the window's end refused under them, only for a
+        # line not already stored (a resend stays idempotent).
+        windowed = self._store is None and line.get("kind") not in _ledger.NON_CAPSULE_KINDS
+        if windowed and self._path.exists():
+            from .ledger_layout import flat_writes_stopped, warn_new_flat_record
+
+            if not flat_writes_stopped() and not self._holds(value):
+                # Before the write locks, so a warning raised as an error
+                # writes nothing and a warnings hook may write a ledger; not
+                # for a line already stored, which stays idempotent.
+                warn_new_flat_record(self._path, chosen)
+        if self._store is not None:
+            self._path.parent.mkdir(parents=True, exist_ok=True)  # the lock sits beside the store
+        return self._write_locked(line, text, value, require_record, wait, timeout, precheck, windowed)
+
+    def _holds(self, value: bytes) -> bool:
+        """Whether a line under this capsule id is already stored (read
+        without the write locks)."""
+        with self._lock, _as_artifact_errors():
+            self._refresh()
+            return self._find(value) is not None
+
+    def _write_locked(self, line, text, value, require_record, wait, timeout, precheck, windowed) -> AppendResult:
+        """``_write`` under the ledger's locks; ``windowed`` lines are refused
+        here from the end of the flat ledger's window."""
         lock = _ledger._writer_lock(
             self._path,
             wait=self._wait if wait is None else wait,
@@ -699,6 +755,8 @@ class LegacyLedger:
         )
         with _ledger._append_lock, lock, self._lock, _as_artifact_errors():
             self._require_open()
+            if precheck is not None:
+                precheck()  # may raise, writing nothing (ledger_layout.DefaultMoved)
             if self._store is not None:
                 # A crashed append may have left this very line written but
                 # unindexed: recover first, so "already present" also means
@@ -713,6 +771,11 @@ class LegacyLedger:
             if self._store is not None:
                 _store.append_line(self._path, text)
             else:
+                _refuse_new_flat_file(self._path)
+                if windowed:
+                    from .ledger_layout import refuse_if_stopped
+
+                    refuse_if_stopped(self._path)
                 _ledger._write_line(self._path, text)
             self._refresh()
             written = self._find(value)
@@ -748,6 +811,20 @@ class LegacyLedger:
         raise UnsupportedError("the legacy ledger keeps no originals to purge")
 
 
+def _refuse_new_flat_file(path: Path) -> None:
+    """No new flat ledger is created (capsule-emit#358): writing to a flat
+    path that does not exist yet raises ``FlatLedgerWriteRefused``."""
+    from . import ledger_layout as _layout
+
+    if not path.exists() and not _layout._allow_new_flat:
+        from .ledger_migrate import suggested_store
+
+        raise _layout.FlatLedgerWriteRefused(
+            f"{path} does not exist, and capsule-emit no longer creates flat ledgers. "
+            f'Use a ledger directory instead, for example "{suggested_store(path)}".'
+        )
+
+
 _shared_lock = threading.Lock()
 _shared: dict[str, LegacyLedger] = {}
 
@@ -755,7 +832,7 @@ _shared: dict[str, LegacyLedger] = {}
 def shared(path: str | os.PathLike) -> LegacyLedger:
     """The process-wide ``LegacyLedger`` for ``path``, so ``seal()`` and the
     checkpoint index reuse one incremental index per ledger file."""
-    key = os.fspath(_store.store_root(path)) if Path(path).is_dir() else os.path.abspath(os.fspath(path))
+    key = os.fspath(_store.store_root(path)) if _store.is_store_target(path) else os.path.abspath(os.fspath(path))
     with _shared_lock:
         store = _shared.get(key)
         if store is None or store._closed:

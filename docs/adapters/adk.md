@@ -42,7 +42,7 @@ an outside party a reference to check those ids against.
    and still matches its checkpoint. What an outside party can check the key
    holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
-3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>`
    recomputes every digest and checks every producer signature it
    finds — no account, no service, no network. It runs the format's reference
    payload verifier plus the producer-envelope check; a record carrying no
@@ -414,7 +414,7 @@ bounded by `max_pending` like the pairing map, not by `max_long_running`.
 
 ## Verify
 
-`capsule-emit verify --store <ledger>.jsonl` runs the format's reference payload
+`capsule-emit verify --store <ledger>` runs the format's reference payload
 verifier (every `capsule_id` recomputed from its canonical content) plus the
 producer-envelope check (a COSE_Sign1 signature over that id under the key the
 record names), offline. A green result means each record is internally

@@ -151,7 +151,7 @@ confirming the work. That stage runs on prose; capsules give it records.
 
 ```bash
 python examples/goose-capsule/contribution_demo.py            # offline
-capsule-emit evidence --ledger ledger.jsonl --issue <ready-issue-url>
+capsule-emit evidence --ledger ./capsule-ledger --issue <ready-issue-url>
 ```
 
 The builder is fail-closed: every capsule is re-verified locally at generation
@@ -181,8 +181,8 @@ extensions:
 ```
 
 That's the whole install — a few lines of config, no changes to how you talk to Goose. Every
-time Goose calls `submit_order` or `get_price`, the call is sealed into `ledger.jsonl` next to
-`server.py` (override with `CAPSULE_LEDGER`).
+time Goose calls `submit_order` or `get_price`, the call is sealed into the ledger directory
+`capsule-ledger/` in the directory Goose starts `server.py` from (override with `CAPSULE_LEDGER`).
 
 ## What gets recorded
 
@@ -195,7 +195,7 @@ SHA-256 digests are committed into the capsule.
 Verify the local ledger any time:
 
 ```bash
-agent-action-capsule verify --store ledger.jsonl
+agent-action-capsule verify --store ./capsule-ledger
 ```
 
 This re-derives every `capsule_id` from its contents and confirms it matches — a single flipped

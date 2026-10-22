@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import uuid
 from pathlib import Path
 from unittest import mock
@@ -33,7 +34,7 @@ OUT = Path(__file__).resolve().parents[1]
 
 #: Fixed test seed -- public test material, never a production signing key.
 _KEY_PATH = OUT / "_seed.signing_key.pem"
-_LEDGER_PATH = OUT / "_seed.ledger.jsonl"
+_LEDGER_PATH = OUT / "_seed-ledger"  # a ledger store directory, removed after the run
 
 _FIXED_TIMESTAMP = "2026-08-27T00:00:00Z"
 #: One fixed uuid4 per _emit_capsule call this script makes, in call order:
@@ -77,8 +78,7 @@ def _write_case(case_dir: Path, spec_version: str) -> None:
     base_emit_module = importlib.import_module("capsule_emit.builder")
     core_module = importlib.import_module("capsule_emit.core")
 
-    if _LEDGER_PATH.exists():
-        _LEDGER_PATH.unlink()
+    shutil.rmtree(_LEDGER_PATH, ignore_errors=True)
     _LEDGER_PATH.with_name(_LEDGER_PATH.name + ".lock").unlink(missing_ok=True)
     signer = _fixed_signer()
 
@@ -185,7 +185,7 @@ def main() -> None:
     (OUT / "vectors.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     _KEY_PATH.unlink(missing_ok=True)
-    _LEDGER_PATH.unlink(missing_ok=True)
+    shutil.rmtree(_LEDGER_PATH, ignore_errors=True)
     _LEDGER_PATH.with_name(_LEDGER_PATH.name + ".lock").unlink(missing_ok=True)
 
 

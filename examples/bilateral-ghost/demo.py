@@ -31,7 +31,7 @@ Run (online — anchors to https://anchor.agentactioncapsule.org):
     python examples/bilateral-ghost/demo.py
 
 After running, verify Arc 3:
-    agent-action-capsule verify --store /tmp/bilateral_ghost_arc3.jsonl
+    agent-action-capsule verify --store /tmp/.../arc3-ghost
 """
 from __future__ import annotations
 
@@ -334,10 +334,10 @@ def _verify_ledger(ledger: Path) -> bool:
 def main() -> int:
     tmpdir = Path(tempfile.mkdtemp())
     # Each organization seals into its own ledger (its own stream).
-    arc1_planner_ledger = tmpdir / "arc1_authorized_planner.jsonl"
-    arc1_dj_ledger = tmpdir / "arc1_authorized_dj.jsonl"
-    arc2_ledger = tmpdir / "arc2_blocked.jsonl"
-    arc3_ledger = tmpdir / "arc3_ghost.jsonl"
+    arc1_planner_ledger = tmpdir / "arc1-authorized-planner"
+    arc1_dj_ledger = tmpdir / "arc1-authorized-dj"
+    arc2_ledger = tmpdir / "arc2-blocked"
+    arc3_ledger = tmpdir / "arc3-ghost"
 
     should_anchor, anchor_endpoint = _resolve_anchor()
 

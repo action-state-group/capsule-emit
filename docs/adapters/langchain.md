@@ -29,7 +29,7 @@ trace. A capsule is content-addressed and independently checkable, so it can.
    and still matches its checkpoint. What an outside party can check the key
    holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
-3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>`
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. A record carrying no signature at all is not failed by default — `capsule-emit verify` counts such
    records in a one-line summary after the tally, and, from 0.8.3, `--require-signature`
@@ -136,7 +136,7 @@ record 3: action_id='get_weather/...'     effect={'status': 'confirmed', ...} pa
 record 4: action_id='chain_completed/...' effect=None (root-run fyi capsule)
 ```
 
-`capsule-emit verify --store ledger.jsonl --require-signature` → `4/4 VALID`.
+`capsule-emit verify --store ./capsule-ledger --require-signature` → `4/4 VALID`.
 
 **Two tool calls in one turn (parallel `ToolNode`).** A turn where the model
 calls `get_weather` and `get_population` together: `ToolNode`'s default
@@ -249,15 +249,16 @@ wiring it to a model.
     `operator` and `developer` are required and are stamped on every capsule.
 
     ```python
-    import json, os, tempfile
+    import os, tempfile
 
     os.environ.setdefault("CAPSULE_WITNESS", "off")  # see Network behavior
 
     from langchain_core.tools import tool
+    from capsule_emit import read_ledger
     from capsule_emit.adapters.langchain_listener import LangChainCapsuleListener
     from capsule_emit.verification import verify_capsule
 
-    ledger_path = os.path.join(tempfile.mkdtemp(), "ledger.jsonl")
+    ledger_path = os.path.join(tempfile.mkdtemp(), "capsule-ledger")
 
     listener = LangChainCapsuleListener(
         operator="acme-corp",             # tenant/org identifier
@@ -292,7 +293,7 @@ wiring it to a model.
   </Step>
   <Step title="Read the ledger">
     ```python
-    records = [json.loads(line) for line in open(ledger_path)]
+    records = read_ledger(ledger_path)
 
     for record in records:
         chain = record.get("chain")

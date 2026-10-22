@@ -161,7 +161,7 @@ pip install capsule-anchor
 python -m uvicorn capsule_anchor.app:create_app --factory
 
 # register with more than one witness at once
-python -c "from capsule_emit import witness; witness.push('ledger.jsonl', ts_url=['https://witness.agentactioncapsule.org', 'https://your-witness.example'])"
+python -c "from capsule_emit import witness; witness.push('out/capsule-ledger', ts_url=['https://witness.agentactioncapsule.org', 'https://your-witness.example'])"
 ```
 
 A single witness is a **single-witness** trust tier: it upgrades the

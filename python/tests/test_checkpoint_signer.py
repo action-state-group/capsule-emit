@@ -259,7 +259,7 @@ for i in range(2):
 
 def test_checkpoint_signed_in_one_process_verifies_in_another(tmp_path, stub_ts):
     ts_url, received = stub_ts
-    ledger_path = tmp_path / "ledger.jsonl"
+    ledger_path = tmp_path / "capsule-ledger"
 
     script = _SUBPROCESS_SEAL_SCRIPT.format(repo_root=_REPO_ROOT)
     env = dict(os.environ, CAPSULE_WITNESS_CADENCE_ENTRIES="2")

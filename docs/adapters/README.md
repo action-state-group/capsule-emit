@@ -40,7 +40,7 @@ Emitter(
     operator="acme-co",        # accountable tenant
     developer="my-agent@v1",   # agent identity + version
     anchor=False,              # legacy per-capsule anchor — off by default since 0.5.0
-    ledger="ledger.jsonl",     # local append-only trail
+    ledger="capsule-ledger",   # local append-only trail
 )
 ```
 

@@ -324,7 +324,7 @@ def seal_eval_log(
     *,
     operator: str,
     developer: str,
-    ledger: str = "ledger.jsonl",
+    ledger: str | None = None,
     core: InspectAIListenerCore | None = None,
     **core_kwargs: Any,
 ) -> dict[str, list]:

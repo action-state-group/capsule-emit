@@ -34,7 +34,7 @@ Start here if you want to know exactly what a valid capsule is, or verify in you
 own pipeline.
 
 - The reference verifier: `pip install agent-action-capsule` →
-  `agent-action-capsule verify --store ./ledger.jsonl`.
+  `agent-action-capsule verify --store ./capsule-ledger`.
 - The Internet-Draft (the wire format, field by field):
   [`draft-mih-scitt-agent-action-capsule`](https://datatracker.ietf.org/doc/draft-mih-scitt-agent-action-capsule/)
   — see also `spec/REGISTRY.md` for reserved members.

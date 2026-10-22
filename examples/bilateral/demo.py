@@ -15,7 +15,7 @@ Four moves:
 After the handshake reaches BilateralState.BILATERAL, each org has emitted
 a capsule.  A third party trusting neither org can run:
 
-    agent-action-capsule verify --store /tmp/bilateral_demo.jsonl
+    agent-action-capsule verify --store <the ledger path the demo prints>
 
 Run:
     python3 examples/bilateral/demo.py
@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     no_anchor = "--no-anchor" in (argv or sys.argv[1:])
     anchor = not no_anchor
 
-    ledger = os.path.join(tempfile.mkdtemp(prefix="bilateral-demo-"), "ledger.jsonl")
+    ledger = os.path.join(tempfile.mkdtemp(prefix="bilateral-demo-"), "capsule-ledger")
     hs = BilateralHandshake(verify_fn=_verify_fn)
 
     _banner("Bilateral attestation demo — Org A ↔ Org B")

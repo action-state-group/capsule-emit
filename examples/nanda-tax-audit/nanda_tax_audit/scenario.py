@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -35,9 +36,10 @@ from nest_core.sim.agent import AgentContext, StateMachineAgent
 from nest_core.types import AgentId
 
 import capsule_emit
+from capsule_emit.ledger import read_ledger_entries
 
 # Ledger written by biz_capsule (read by auditor for verification)
-CAPSULE_LEDGER = Path("tax_audit_capsule_ledger.jsonl")
+CAPSULE_LEDGER = Path("tax-audit-capsule-ledger")
 
 # Cheat parameters
 CHEAT_FRACTION = 0.30          # fraction of real amount that gets under-reported
@@ -58,18 +60,8 @@ def _digest(value: Any) -> str:
 
 
 def _load_capsule_ledger() -> list[dict]:
-    if not CAPSULE_LEDGER.exists():
-        return []
-    capsules = []
-    for line in CAPSULE_LEDGER.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            capsules.append(json.loads(line))
-        except json.JSONDecodeError:
-            pass
-    return capsules
+    # A missing ledger reads as empty; corrupt lines are skipped.
+    return read_ledger_entries(CAPSULE_LEDGER)
 
 
 def _find_capsule(capsule_id: str) -> dict | None:
@@ -179,7 +171,7 @@ class BizCapsuleAgent(StateMachineAgent):
         self._anchor = anchor
 
     async def on_start(self, ctx: AgentContext) -> None:
-        CAPSULE_LEDGER.unlink(missing_ok=True)
+        shutil.rmtree(CAPSULE_LEDGER, ignore_errors=True)
         await ctx.schedule(1.0, b"tick:")
 
     async def on_message(self, ctx: AgentContext, sender: AgentId, payload: bytes) -> None:
@@ -402,7 +394,7 @@ class AuditorAgent(StateMachineAgent):
             developer=str(self._id),
             agent_output={"biz_capsule_fine": cap_fine, "biz_control_fine": ctrl_fine},
             anchor=self._anchor,
-            ledger="tax_audit_auditor_reasoning.jsonl",
+            ledger="tax-audit-auditor-reasoning",
         )
 
         # Broadcast summary lines for trace visibility

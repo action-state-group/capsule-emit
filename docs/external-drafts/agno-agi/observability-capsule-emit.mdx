@@ -48,12 +48,12 @@ Two verification layers, deliberately distinct:
       ```python
       result = agent.run("...")
       ```
-      Each tool call now produces sealed records in the local ledger (`ledger.jsonl` by default), with digests anchored to the configured SCITT transparency service.
+      Each tool call now produces sealed records in the local ledger (the directory `./capsule-ledger/` by default), with digests anchored to the configured SCITT transparency service.
     </Step>
     <Step title="Check the evidence">
       ```shell
       pip install agent-action-capsule
-      agent-action-capsule verify --store ./ledger.jsonl
+      agent-action-capsule verify --store ./capsule-ledger
       ```
       `verify --store` re-checks structure, content addressing, and chain links across the ledger — offline, no service and no credentials.
     </Step>

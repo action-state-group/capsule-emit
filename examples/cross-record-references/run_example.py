@@ -29,7 +29,7 @@ from capsule_emit import ReferenceEntry, did, seal, who  # noqa: E402
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        ledger = Path(tmp) / "ledger.jsonl"
+        ledger = Path(tmp) / "capsule-ledger"
 
         # --- 1. Plain seal with references= -----------------------------------
         # Seal an action and cite an external capsule by its content address.

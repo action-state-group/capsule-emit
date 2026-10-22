@@ -111,7 +111,7 @@ def main():
     print("=" * 60)
 
     with tempfile.TemporaryDirectory() as tmp:
-        ledger = Path(tmp) / "agentgateway-capsules.jsonl"
+        ledger = Path(tmp) / "agentgateway-capsules"
         port = _free_port()
 
         # ── Start in-process gRPC server ──────────────────────────────────────

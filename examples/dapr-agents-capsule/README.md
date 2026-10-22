@@ -35,7 +35,7 @@ Chain Navigation table, produced with an earlier `capsule-emit permalink`. Build
 from the run's ledger with:
 
 ```bash
-capsule-emit evidence --ledger <ledger.jsonl produced by this run> \
+capsule-emit evidence --ledger <the ledger directory this run produced> \
     --base-url https://verify.agentactioncapsule.org
 ```
 

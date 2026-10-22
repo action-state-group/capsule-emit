@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -30,8 +31,10 @@ from nest_core.runner import ScenarioRunner
 from nest_core.scenario import ScenarioConfig
 from nest_core.scenarios import register_scenario
 
+from capsule_emit.ledger import read_ledger_entries
+
 _SCENARIO_YAML = Path(__file__).parent.parent / "scenarios" / "tax_audit.yaml"
-_AUDITOR_LEDGER = Path("tax_audit_auditor_reasoning.jsonl")
+_AUDITOR_LEDGER = Path("tax-audit-auditor-reasoning")
 
 
 # ---------------------------------------------------------------------------
@@ -93,8 +96,8 @@ def scenario_trace():
     config.output.trace = str(trace_path)
 
     # Clean up any stale ledgers before running
-    CAPSULE_LEDGER.unlink(missing_ok=True)
-    _AUDITOR_LEDGER.unlink(missing_ok=True)
+    shutil.rmtree(CAPSULE_LEDGER, ignore_errors=True)
+    shutil.rmtree(_AUDITOR_LEDGER, ignore_errors=True)
 
     asyncio.run(ScenarioRunner(config).run())
     return trace_path
@@ -200,13 +203,10 @@ def test_biz_capsule_cheat_rate_declines(scenario_trace) -> None:
 def test_capsule_ledger_has_capsules(scenario_trace) -> None:
     """biz_capsule emits at least one capsule per run."""
     assert CAPSULE_LEDGER.exists(), "biz_capsule ledger not created"
-    capsules = [
-        ln for ln in CAPSULE_LEDGER.read_text().splitlines() if ln.strip()
-    ]
+    capsules = read_ledger_entries(CAPSULE_LEDGER)
     assert len(capsules) > 0, "biz_capsule ledger is empty"
-    # Each line must be valid JSON with capsule_id
-    for line in capsules[:5]:
-        cap = json.loads(line)
+    # Each entry must carry a capsule_id
+    for cap in capsules[:5]:
         assert "capsule_id" in cap
         assert "model_attestation" in cap
 
@@ -214,10 +214,9 @@ def test_capsule_ledger_has_capsules(scenario_trace) -> None:
 def test_auditor_reasoning_capsules_emitted(scenario_trace) -> None:
     """Auditor emits one reasoning capsule per audit cycle."""
     assert _AUDITOR_LEDGER.exists(), "Auditor reasoning ledger not created"
-    lines = [ln for ln in _AUDITOR_LEDGER.read_text().splitlines() if ln.strip()]
+    lines = read_ledger_entries(_AUDITOR_LEDGER)
     assert len(lines) > 0, "Auditor reasoning ledger is empty"
-    for line in lines[:3]:
-        cap = json.loads(line)
+    for cap in lines[:3]:
         assert cap.get("action_type") in ("decide", "execute")
         ca = cap.get("model_attestation", {}).get("compute_attestation", {})
         assert "agent_input_digest" in ca
@@ -229,8 +228,7 @@ def test_capsule_digest_detects_tampering() -> None:
 
     import capsule_emit
 
-    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
-        ledger_path = Path(f.name)
+    ledger_path = Path(tempfile.mkdtemp()) / "capsule-ledger"
 
     real_amount = 1000
     capsule_emit.seal(
@@ -242,7 +240,7 @@ def test_capsule_digest_detects_tampering() -> None:
         ledger=str(ledger_path),
     )
 
-    cap = json.loads(ledger_path.read_text().splitlines()[0])
+    cap = read_ledger_entries(ledger_path)[0]
     tampered_amount = int(real_amount * (1 - CHEAT_FRACTION))
 
     assert capsule_emit.verify_input_digest(cap, {"tick": 1, "amount": real_amount}), \

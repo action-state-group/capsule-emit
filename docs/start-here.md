@@ -101,22 +101,24 @@ You never rewrite anything to add these — they're the same `seal()` surface, r
 
 ## 7. Read & verify
 
-View your ledger:
+With no ledger chosen, `seal()` writes the ledger directory `./capsule-ledger/`, with its signing key beside it as `capsule-ledger.signing_key.pem`. Pass `ledger="some-dir"` or set `CAPSULE_LEDGER` to choose another one. View it:
 
 ```bash
-capsule-emit ledger view ./ledger.jsonl
+capsule-emit ledger view ./capsule-ledger
 ```
 
 Anyone can verify a capsule (or a whole ledger) independently, from the bytes alone — no keys, no network, no clock — with the separate spec package:
 
 ```bash
 pip install agent-action-capsule
-agent-action-capsule verify --store ./ledger.jsonl
+agent-action-capsule verify --store ./capsule-ledger
 ```
 
-The verifier is independent of `capsule-emit` on purpose: *any* tool can produce a capsule; *any* party can verify one.
+The verifier is independent of `capsule-emit` on purpose: *any* tool can produce a capsule; *any* party can verify one. Reading a ledger directory needs an `agent-action-capsule` release later than 0.11.0. With 0.11.0, `capsule-emit verify --store ./capsule-ledger` checks the same directory.
 
-`capsule-emit verify --store ./ledger.jsonl` runs that same check plus the producer signature `agent-action-capsule verify` deliberately leaves to the substrate layer (`draft-mih-scitt-agent-action-capsule` §6, Class 1 verification): each record is `VALID` only if its `capsule_id` recomputes from the carried content AND, when a `signature`/`key_id` envelope is present, that envelope verifies. A record with no envelope at all (e.g. a `capsule_emit.surface.log()` entry, which is never signed) still counts `VALID` by default, with a one-line summary — `N record(s) carry no producer signature (producer_signature_unclaimed)` — printed after the tally so the gap stays visible instead of silent. For a ledger whose producer always signs, pass `--require-signature` to make that same condition fail closed (`INVALID`, exit 1) instead of warning.
+`capsule-emit verify --store ./capsule-ledger` runs that same check plus the producer signature `agent-action-capsule verify` deliberately leaves to the substrate layer (`draft-mih-scitt-agent-action-capsule` §6, Class 1 verification): each record is `VALID` only if its `capsule_id` recomputes from the carried content AND, when a `signature`/`key_id` envelope is present, that envelope verifies. A record with no envelope at all (e.g. a `capsule_emit.surface.log()` entry, which is never signed) still counts `VALID` by default, with a one-line summary — `N record(s) carry no producer signature (producer_signature_unclaimed)` — printed after the tally so the gap stays visible instead of silent. For a ledger whose producer always signs, pass `--require-signature` to make that same condition fail closed (`INVALID`, exit 1) instead of warning.
+
+**Already have a `ledger.jsonl`?** It keeps being read: `ledger view`, `verify --store` and every other reader still take it. While `./capsule-ledger/` does not exist, `seal()` keeps appending to an existing `./ledger.jsonl`, with a `LedgerDeprecationWarning`; from capsule-emit 0.15.0 new records to it are refused. Move it once with `capsule-emit ledger import ledger.jsonl capsule-ledger`, which leaves the file unchanged and copies the producer key; the default then uses the new directory. A ledger that repeats a `capsule_id` (repeated hold lines, which earlier releases wrote) cannot be imported, because a ledger directory holds each id once and dropping a line would break the old checkpoints. Keep that file for reading and verifying, and seal new records to a new directory. Its history is then in two places: the old file for earlier records, the new directory for later ones. The refusal prints a `cp` command that keeps the producer key; run it before the first seal to the new directory. `capsule-emit ledger export --jsonl capsule-ledger -o copy.jsonl` writes the lines back out as plain JSON lines.
 
 ---
 

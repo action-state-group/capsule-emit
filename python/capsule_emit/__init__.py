@@ -49,8 +49,10 @@ cryptographically signed, always, by a persisted producer key (see
 *which* key signs (``signer=``/``signing_key_path=``). The ONE way to append
 unsigned is the distinct ``log()`` verb — see ``capsule_emit.surface.log``
 and ``capsule_emit.signing.verify_capsule_signature_tristate``.
-Ledger is written to
-``ledger.jsonl`` by default. All of the above are configurable.
+The ledger is a ledger
+store directory, ``./capsule-ledger/``, by default (an existing ``./ledger.jsonl``
+is still written during its deprecation window; see
+``capsule_emit.ledger_layout``). All of the above are configurable.
 """
 from typing import Any, NoReturn
 

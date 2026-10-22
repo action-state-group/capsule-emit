@@ -46,7 +46,7 @@ an outside party a reference to check those ids against.
    and still matches its checkpoint. What an outside party can check the key
    holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
-3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>`
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. It runs the format's reference
    payload verifier plus the producer-envelope check; a record carrying no
@@ -211,7 +211,7 @@ pip install "capsule-emit[agentgateway]"
 
 ```sh
 # Env vars for your deployment
-export CAPSULE_LEDGER=/var/log/capsules.jsonl
+export CAPSULE_LEDGER=/var/log/capsule-ledger
 export CAPSULE_OPERATOR=acme-co
 export CAPSULE_DEVELOPER=agentgateway-agent@v1
 
@@ -256,20 +256,20 @@ Every `tools/call` routed through agentgateway now seals a planned capsule and a
 ## Verify a session
 
 ```sh
-capsule-emit verify --store /var/log/capsules.jsonl
+capsule-emit verify --store /var/log/capsule-ledger
 ```
 
 Or inspect the last 10 capsules:
 
 ```sh
-capsule-emit ledger --store /var/log/capsules.jsonl --limit 10
+capsule-emit ledger --store /var/log/capsule-ledger --limit 10
 ```
 
 ## Environment variables
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CAPSULE_LEDGER` | `ledger.jsonl` | Path to JSONL ledger file |
+| `CAPSULE_LEDGER` | `./capsule-ledger/` | Ledger path: a ledger store directory, or an existing flat ledger file |
 | `CAPSULE_OPERATOR` | `agentgateway-user` | Tenant / org identifier stamped on every capsule |
 | `CAPSULE_DEVELOPER` | `agentgateway-agent@v1` | Agent name + version |
 | `CAPSULE_PORT` | `50051` | gRPC server port |

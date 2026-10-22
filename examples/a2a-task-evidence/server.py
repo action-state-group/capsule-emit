@@ -257,7 +257,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8090")))
-    ap.add_argument("--ledger", default=os.environ.get("LEDGER_PATH") or str(Path(tempfile.mkdtemp()) / "ledger.jsonl"))
+    ap.add_argument("--ledger", default=os.environ.get("LEDGER_PATH") or str(Path(tempfile.mkdtemp()) / "capsule-ledger"))
     ap.add_argument("--ts-url", default=os.environ["TS_URL"])
     ap.add_argument("--public-url", default=os.environ.get("A2A_PUBLIC_URL"))
     args = ap.parse_args()

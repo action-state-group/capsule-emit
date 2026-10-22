@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ..ledger import append_to_ledger, read_ledger
+from ..ledger_layout import check_new_flat_record, resolve_ledger
 from ..verification import verify_capsule
 from .action import Action
 from .aggregate import active_exposure_minor
@@ -92,17 +93,28 @@ class HoldEngine:
     def __init__(
         self,
         *,
-        ledger_path: str | os.PathLike,
+        ledger_path: str | os.PathLike | None = None,
         cap_minor: dict[str, int] | None = None,
         tolerance_minor: dict[str, int] | None = None,
         engine_available: Callable[[], bool] = lambda: True,
         scope_locks: ScopeLocks | None = None,
     ) -> None:
-        self._ledger_path = ledger_path
+        # Resolved once, as seal() resolves its ledger (None is the default
+        # ledger); every read and write uses the resolved path. Hold capsules
+        # are new records, so on a flat ledger each write is checked against
+        # the deprecation window (by the ledger's own write path).
+        self._resolution = resolve_ledger(ledger_path)
+        self._ledger_path = self._resolution.path
         self._cap_minor = cap_minor or {}
         self._tolerance_minor = tolerance_minor or {}
         self._engine_available = engine_available
         self._scope_locks = scope_locks or ScopeLocks()
+
+    def _append(self, capsule: dict) -> None:
+        if self._resolution.layout == "flat":
+            # Checked here first so the warning names how this ledger was chosen.
+            check_new_flat_record(self._ledger_path, self._resolution.chosen)
+        append_to_ledger(capsule, self._ledger_path)
 
     # -- atomic evaluate-and-reserve --------------------------------------
 
@@ -137,7 +149,7 @@ class HoldEngine:
         capsule = build_hold_reserve_capsule(
             action=action, reserved_amount_minor=requested, aggregate_before_minor=current, cap_minor=cap,
         )
-        append_to_ledger(capsule, self._ledger_path)
+        self._append(capsule)
         return HoldDecision(
             outcome=ALLOW, capsule=capsule, reason="reserved", hold_status=HoldStatus.ACTIVE,
             aggregate_minor=current + requested,
@@ -150,7 +162,7 @@ class HoldEngine:
             action=action, outcome=DENY, reason_code=reason_code, reason=reason,
             aggregate_before_minor=aggregate_before_minor,
         )
-        append_to_ledger(capsule, self._ledger_path)
+        self._append(capsule)
         return HoldDecision(outcome=DENY, capsule=capsule, reason=reason, reason_code=reason_code)
 
     # -- hold status (earliest chained terminal record wins) -------------
@@ -230,7 +242,7 @@ class HoldEngine:
                 action=attempt_action, reserve_capsule_id=reserve_capsule_id,
                 reserved_amount_minor=reserved_amount, reason=reason,
             )
-            append_to_ledger(capsule, self._ledger_path)
+            self._append(capsule)
             new_status = HoldStatus.RELEASED if verb == "release" else HoldStatus.EXPIRED
             return HoldDecision(outcome=ALLOW, capsule=capsule, reason=f"hold {verb}d", hold_status=new_status)
 
@@ -261,7 +273,7 @@ class HoldEngine:
             action=attempt_action, outcome=DENY, reason_code=reason_code, reason=reason_text,
             chain_parent=chain_parent, chain_relation=CONFIRMS,
         )
-        append_to_ledger(capsule, self._ledger_path)
+        self._append(capsule)
         return HoldDecision(outcome=DENY, capsule=capsule, reason=reason_text, reason_code=reason_code, hold_status=status)
 
     # -- reconcile ----------------------------------------------------------
@@ -317,7 +329,7 @@ class HoldEngine:
                     execution_capsule_id=execution_capsule_id, reserved_amount_minor=reserved_amount,
                     executed_amount_minor=executed_amount_minor, tolerance_minor=tolerance,
                 )
-                append_to_ledger(capsule, self._ledger_path)
+                self._append(capsule)
                 return HoldDecision(
                     outcome=ALLOW, capsule=capsule, reason="reconciled", hold_status=HoldStatus.RECONCILED,
                 )
@@ -330,7 +342,7 @@ class HoldEngine:
                 action=attempt_action, outcome=DENY, reason_code=OVER_TOLERANCE, reason=reason,
                 chain_parent=reserve_capsule_id, chain_relation=CONFIRMS,
             )
-            append_to_ledger(capsule, self._ledger_path)
+            self._append(capsule)
             return HoldDecision(
                 outcome=DENY, capsule=capsule,
                 reason="over-tolerance conversion; routed as a limit event, aggregate not silently adjusted",

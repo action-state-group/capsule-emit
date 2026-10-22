@@ -1,6 +1,6 @@
 # Concurrency — one log, one writer
 
-Two processes writing to the same `ledger.jsonl` at once is not a crash bug —
+Two processes writing to the same ledger at once is not a crash bug —
 it produces exactly the inconsistent-history artifact this whole design
 treats as an attack. A torn or interleaved log manufactures fork evidence:
 your own checkpoint/witness stream would refuse it later, so the failure
@@ -22,7 +22,7 @@ turn it off.
   `capsule_emit.ledger.LedgerLockedError` that names the holder:
 
   ```
-  ledger /path/to/ledger.jsonl is locked by another writer (pid 8421 on
+  ledger /path/to/capsule-ledger is locked by another writer (pid 8421 on
   my-host (writer since 2026-08-24T18:02:11Z)). capsule-emit enforces one
   writer per log -- a torn log manufactures fork evidence, so a second
   writer is never allowed to interleave silently. Route writes through the
@@ -38,7 +38,7 @@ raises `LedgerLockedError`.
 
 ## If you hit this error
 
-You have two writer processes racing the same ledger file. Both are honest
+You have two writer processes racing the same ledger. Both are honest
 shapes — pick one:
 
 1. **Route writes through one writer.** Give each writer process its own

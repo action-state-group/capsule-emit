@@ -139,7 +139,7 @@ def test_slot_form_mints_a_fresh_capsule_for_a_raw_payload(tmp_path, monkeypatch
     members = action.capsule["model_attestation"]["compute_attestation"]["composed_members"]
     assert len(members) == 2
 
-    ledger_records = capsule_emit.read_ledger("ledger.jsonl")
+    ledger_records = capsule_emit.read_ledger("capsule-ledger")
     # Three ledger entries: the two freshly-minted members, plus the composition.
     assert len(ledger_records) == 3
     who_member_id = next(m["digest"] for m in members if m["slot"] == "who")
@@ -156,12 +156,12 @@ def test_slot_form_can_wrapping_a_received_capsule_is_byte_identical_to_standalo
     mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
     mandate = received(mandate_jws, type="machine-mandate", anchor=False)
 
-    ledger_path = tmp_path / "ledger.jsonl"
-    lines_after_receive = ledger_path.read_text().splitlines()
+    ledger_path = tmp_path / "capsule-ledger"
+    lines_after_receive = capsule_emit.ledger.read_ledger_entries(ledger_path)
 
     action = seal(can(mandate), did({"vendor": "Frobozz"}), anchor=False)
 
-    lines_after_compose = ledger_path.read_text().splitlines()
+    lines_after_compose = capsule_emit.ledger.read_ledger_entries(ledger_path)
     # Exactly one new entry (the composition) — can(mandate) did not re-append it.
     assert len(lines_after_compose) == len(lines_after_receive) + 2  # did() member + composition
 
@@ -245,13 +245,13 @@ def test_seal_nested_received_is_byte_identical_and_does_not_double_append(tmp_p
     mandate_jws = b'{"iss": "acme-mandates", "sub": "po-agent@v1"}'
     effect = received(mandate_jws, type="machine-mandate", anchor=False)
 
-    ledger_path = tmp_path / "ledger.jsonl"
-    lines_before = ledger_path.read_text().splitlines()
+    ledger_path = tmp_path / "capsule-ledger"
+    lines_before = capsule_emit.ledger.read_ledger_entries(ledger_path)
 
     wrapped = seal(effect)
     assert wrapped is effect  # byte-identical: literally the same capsule
 
-    lines_after = ledger_path.read_text().splitlines()
+    lines_after = capsule_emit.ledger.read_ledger_entries(ledger_path)
     assert lines_after == lines_before  # seal() did not append a second entry
 
     result = verify(wrapped.capsule)

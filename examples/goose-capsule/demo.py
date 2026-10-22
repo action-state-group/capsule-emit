@@ -43,14 +43,14 @@ What Goose does (the same path as this demo):
     po-agent MCP server (examples/goose-capsule/server.py)
       @server.tool()      ← MCP layer (Goose connects via stdio)
       @emitter.tool()     ← capsule-emit seals here
-      → ledger.jsonl += { capsule_id, action_id, … }
+      → capsule-ledger/ += { capsule_id, action_id, … }
       ↑  tool_result
 
 Connect the real Goose extension (no LLM required for sealing):
     1. pip install "capsule-emit[mcp]" mcp
     2. Add to ~/.config/goose/config.yaml (see server.py header)
     3. goose run -t "call submit_order with vendor=Frobozz, amount=1240.19, po_number=PO-7777"
-    4. agent-action-capsule verify --store ledger.jsonl
+    4. agent-action-capsule verify --store capsule-ledger
 
 Set AAC_ANCHOR_URL / AAC_VERIFY_URL to override the default endpoints.
 """
@@ -215,7 +215,7 @@ def _bundle_permalink(records: list[dict]) -> str:
 # ── 1. Build the emitter (same config used in server.py) ──────────────────
 
 with tempfile.TemporaryDirectory() as _tmp:
-    ledger = Path(_tmp) / "goose-capsules.jsonl"
+    ledger = Path(_tmp) / "goose-capsules"
 
     # anchor=False on the emitter: we submit synchronously below (when live)
     # so there is no race between a background fire-and-forget thread and

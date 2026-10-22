@@ -66,7 +66,7 @@ jobs:
           /tmp/cleanroom/bin/python - <<'PY'
           import os, tempfile
           from capsule_emit import seal          # imports agent_action_capsule.media_types at seal-time
-          led = os.environ["LEDGER"] = tempfile.mktemp(suffix=".jsonl")
+          led = os.environ["LEDGER"] = os.path.join(tempfile.mkdtemp(), "ledger")  # a ledger store directory
           seal({"vendor": "Frobozz", "total": "1240.19"}, action="write_order", operator="acme", developer="a@1", ledger=led)
           seal({"status": "ok"}, action="confirm", operator="acme", developer="a@1", ledger=led)
           print("seal() OK ->", led)
@@ -76,7 +76,10 @@ jobs:
       - name: from-nothing smoke — verify --store must PASS (guards the capsule_id interop mismatch)
         run: |
           LED=$(cat /tmp/led_path)
-          OUT=$(/tmp/cleanroom/bin/agent-action-capsule verify --store "$LED" 2>&1); echo "$OUT"
+          # agent-action-capsule 0.11.0 reads flat ledgers only: verify the
+          # store's lines, exported unchanged.
+          /tmp/cleanroom/bin/capsule-emit ledger export --jsonl "$LED" -o "$LED.jsonl"
+          OUT=$(/tmp/cleanroom/bin/agent-action-capsule verify --store "$LED.jsonl" 2>&1); echo "$OUT"
           echo "$OUT" | grep -q "capsule_id_mismatch" && { echo "::error::capsule_id_mismatch on a fresh install"; exit 1; }
           echo "$OUT" | grep -qE "ok: False"          && { echo "::error::a capsule failed verification on a fresh install"; exit 1; }
           echo "clean-room OK: fresh PyPI install can seal() and verify --store"
@@ -92,6 +95,8 @@ jobs:
           whl=$(ls dist/*.whl)
           /tmp/cleanroom/bin/pip install "${whl}[otel]"
           /tmp/cleanroom/bin/python - <<'PY'
+          import os
+          import pathlib
           import tempfile
 
           from opentelemetry.sdk.trace import TracerProvider
@@ -100,7 +105,7 @@ jobs:
           from capsule_emit import read_ledger
           from capsule_emit.otel import CapsuleOTelSpanExporter
 
-          ledger = tempfile.mktemp(suffix=".jsonl")
+          ledger = os.path.join(tempfile.mkdtemp(), "ledger")  # a ledger store directory
           exporter = CapsuleOTelSpanExporter(operator="acme", developer="dogfood@v1", ledger=ledger)
           provider = TracerProvider()
           provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -114,7 +119,7 @@ jobs:
 
           entries = list(read_ledger(ledger))
           assert len(entries) == 1, f"expected exactly one sealed capsule, got {entries!r}"
-          raw = open(ledger, "rb").read()
+          raw = b"".join(p.read_bytes() for p in pathlib.Path(ledger).rglob("*") if p.is_file())
           assert b"must never reach the ledger" not in raw, "never-enters content leaked into the ledger"
           print("OTel dogfood OK -> sealed", entries[0]["capsule_id"])
           PY

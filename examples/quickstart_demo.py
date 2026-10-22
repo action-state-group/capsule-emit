@@ -16,7 +16,7 @@ from pathlib import Path
 from capsule_emit import ledger_view, load_manifest, seal
 from capsule_emit.verification import verify_capsule as verify
 
-LEDGER_PATH = Path(tempfile.mkdtemp()) / "ledger.jsonl"
+LEDGER_PATH = Path(tempfile.mkdtemp()) / "capsule-ledger"
 
 
 def main() -> int:

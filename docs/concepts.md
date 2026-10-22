@@ -54,9 +54,9 @@ non-default opt-in as of 0.5.0 (`seal(..., anchor=True)`). *Why this is what tur
 "my word" into proof anyone can check: [why anchoring makes it trustworthy](why-anchoring.md).*
 
 ### Ledger
-Your local running file of capsules — the trail of everything sealed so far. View it
+Your local running record of capsules (the directory `./capsule-ledger/` by default) — the trail of everything sealed so far. View it
 as a table or pull it as JSON.
-→ `capsule-emit ledger view ledger.jsonl`
+→ `capsule-emit ledger view ./capsule-ledger`
 
 ---
 

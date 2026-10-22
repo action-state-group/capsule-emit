@@ -163,7 +163,7 @@ def generate(
 
     with tempfile.TemporaryDirectory() as temporary:
         temp_root = Path(temporary)
-        ledger = temp_root / "ledger.jsonl"
+        ledger = temp_root / "ledger"
         signer = _signer(temp_root / "signing-key.pem", spec["seed_hex"])
         emitted = _emit_records(spec, ledger, signer, spec_version)
 

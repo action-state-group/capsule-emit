@@ -27,7 +27,6 @@ Run:
 """
 from __future__ import annotations
 
-import json
 import os
 import pathlib
 import subprocess
@@ -41,6 +40,7 @@ from google.adk.tools import FunctionTool  # noqa: E402
 from google.genai import types  # noqa: E402
 
 from capsule_emit.adapters.adk import ADKCapsuleEmitter  # noqa: E402
+from capsule_emit.ledger import read_ledger_entries
 from capsule_emit.signing import verify_store_signed  # noqa: E402
 
 
@@ -128,10 +128,10 @@ def run(ledger: pathlib.Path) -> None:
 
 def main() -> int:
     with tempfile.TemporaryDirectory() as td:
-        ledger = pathlib.Path(td) / "ledger.jsonl"
+        ledger = pathlib.Path(td) / "capsule-ledger"
         run(ledger)
 
-        caps = [json.loads(line) for line in ledger.read_text().splitlines()]
+        caps = read_ledger_entries(ledger)
         print(f"\nsealed {len(caps)} capsules:")
         results = verify_store_signed(caps)
         ok = True

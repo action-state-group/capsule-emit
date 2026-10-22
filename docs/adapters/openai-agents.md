@@ -43,7 +43,7 @@ an outside party a reference to check those ids against.
    and still matches its checkpoint. What an outside party can check the key
    holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
-3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>`
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. It runs the format's reference
    payload verifier plus the producer-envelope check; a record carrying no

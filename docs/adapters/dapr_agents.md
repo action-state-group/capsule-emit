@@ -41,7 +41,7 @@ an outside party a reference to check those ids against.
    and still matches its checkpoint. What an outside party can check the key
    holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
-3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>`
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. It runs the format's reference
    payload verifier plus the producer-envelope check; a record carrying no
@@ -65,7 +65,7 @@ import os, pathlib, subprocess, sys, tempfile
 os.environ.setdefault("CAPSULE_WITNESS", "off")  # zero egress for the proof
 from capsule_emit.adapters.dapr_agents import DaprAgentsCapsuleEmitter
 
-ledger = pathlib.Path(tempfile.mkdtemp()) / "ledger.jsonl"
+ledger = pathlib.Path(tempfile.mkdtemp()) / "capsule-ledger"
 emitter = DaprAgentsCapsuleEmitter(
     operator="acme-co", developer="invoice-agent@v1",
     agent_name="invoice-checker", app_id="invoice-app",

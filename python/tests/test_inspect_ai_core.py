@@ -32,7 +32,7 @@ def test_core_seals_with_inspect_ai_import_blocked(tmp_path):
         "from capsule_emit.adapters.inspect_ai import InspectAIListenerCore\n"
         "from capsule_emit.verification import verify_capsule\n"
         "core = InspectAIListenerCore(operator='o', developer='d', "
-        "ledger='ledger.jsonl', anchor=False)\n"
+        "ledger='capsule-ledger', anchor=False)\n"
         "r = core.seal_model_call(sample_id='s1', epoch=1, call_index=0, "
         "model_name='mockllm/model', request={'messages': []}, "
         "response={'content': 'x'})\n"
@@ -283,7 +283,7 @@ def test_sandbox_process_cannot_sign_as_the_harness(tmp_path):
 
     harness_dir = tmp_path / "harness"
     harness_dir.mkdir()
-    harness_ledger = harness_dir / "ledger.jsonl"
+    harness_ledger = harness_dir / "capsule-ledger"
     core = InspectAIListenerCore(
         operator="evaluator-org", developer="inspect-eval@v1",
         ledger=harness_ledger, anchor=False,
@@ -304,7 +304,7 @@ def test_sandbox_process_cannot_sign_as_the_harness(tmp_path):
     script = (
         "from capsule_emit.adapters.inspect_ai import InspectAIListenerCore\n"
         "core = InspectAIListenerCore(operator='attacker', developer='attacker', "
-        "ledger='forged.jsonl', anchor=False)\n"
+        "ledger='forged', anchor=False)\n"
         "r = core.seal_tool_call(sample_id='s1', epoch=1, call_index=0, "
         "tool_name='bash', tool_call_id='call-1', arguments={'cmd': 'echo REAL'}, "
         "result='SPOOFTEST')\n"

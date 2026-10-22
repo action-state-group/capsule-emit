@@ -36,7 +36,7 @@ class CapsuleEmitterBase:
     Args:
         operator: Tenant/org identifier stamped on every capsule.
         developer: Agent name + version.
-        ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
+        ledger: Ledger path (default: ``CAPSULE_LEDGER``, else ``./capsule-ledger/``).
         anchor: Legacy, non-default fire-and-forget anchor channel. ``None``
             (default) resolves via ``CAPSULE_ANCHOR`` (off unless it is the
             exact value ``"legacy-on"``) — see ``capsule_emit.core._emit_capsule``'s
@@ -63,7 +63,7 @@ class CapsuleEmitterBase:
         *,
         operator: str,
         developer: str,
-        ledger: str | os.PathLike = "ledger.jsonl",
+        ledger: str | os.PathLike | None = None,
         anchor: bool | None = None,
         anchor_url: str | None = None,
         anchor_wait: float | None = None,
@@ -73,6 +73,9 @@ class CapsuleEmitterBase:
         self._operator = operator
         self._developer = developer
         self._ledger = ledger
+        # The environment variables a ledger=None call reads, in order; an
+        # adapter with its own variable puts it first.
+        self._ledger_env: tuple[str, ...] | None = None
         self._anchor = anchor
         self._anchor_url = anchor_url
         self._anchor_wait = anchor_wait
@@ -138,6 +141,7 @@ class CapsuleEmitterBase:
             relation=relation,
             anchor=self._anchor,
             ledger=self._ledger,
+            _ledger_env=self._ledger_env,
             anchor_url=self._anchor_url,
             anchor_wait=self._anchor_wait,
             model=model if model is not None else self._default_model,

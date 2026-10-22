@@ -14,6 +14,8 @@ from nest_plugins_reference.trust.agent_receipts import (
     sign_receipt,
 )
 
+from capsule_emit.ledger import read_ledger_entries
+
 
 def _seed(agent: AgentId) -> bytes:
     import hashlib
@@ -51,7 +53,7 @@ def _make_receipt(issuer: AgentId, counterparty: AgentId, category: str = "purch
 
 @pytest.fixture
 def tmp_ledger(tmp_path: Path) -> Path:
-    return tmp_path / "ledger.jsonl"
+    return tmp_path / "capsule-ledger"
 
 
 @pytest.mark.asyncio
@@ -82,7 +84,7 @@ async def test_corroborated_receipt_emits_capsule(tmp_ledger: Path):
     assert rep.score > 0.0
     assert rep.sample_count == 1
     assert tmp_ledger.exists()
-    capsules = [json.loads(ln) for ln in tmp_ledger.read_text().splitlines() if ln.strip()]
+    capsules = read_ledger_entries(tmp_ledger)
     assert len(capsules) == 1
     assert capsules[0]["action_id"].startswith("purchase/")
 
@@ -98,7 +100,7 @@ async def test_invalid_signature_uses_fallback(tmp_ledger: Path):
     rep = await t.score(a)
     assert rep.score == 1.0
     # No capsule emitted for invalid receipt
-    assert not tmp_ledger.exists() or tmp_ledger.stat().st_size == 0
+    assert read_ledger_entries(tmp_ledger) == []
 
 
 @pytest.mark.asyncio

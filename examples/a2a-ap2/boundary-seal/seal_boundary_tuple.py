@@ -101,7 +101,7 @@ def main() -> int:
 
     from capsule_emit import seal
 
-    ledger = Path(tempfile.mkdtemp(prefix="a2a-boundary-")) / "ledger.jsonl"
+    ledger = Path(tempfile.mkdtemp(prefix="a2a-boundary-")) / "capsule-ledger"
 
     # NOTE: anchor=False here on purpose. Step 4 anchors + resolves the
     # capsule_id in a SINGLE POST /v1/digest. Submitting the same new

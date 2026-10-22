@@ -54,6 +54,7 @@ __all__ = [
     "create_store",
     "is_marked",
     "is_store_path",
+    "is_store_target",
     "read_entries",
     "reconcile",
     "store_root",
@@ -104,6 +105,15 @@ def is_store_path(path: str | os.PathLike) -> bool:
     if not p.is_dir():
         return False
     return (p / MANIFEST_FILENAME).is_file() or not any(p.iterdir())
+
+
+def is_store_target(path: str | os.PathLike) -> bool:
+    """Whether ``path`` is, or would become, a ledger store: a store or empty
+    directory, or a path that does not exist and whose name has no ``.``."""
+    p = Path(path)
+    if p.exists():
+        return is_store_path(p)
+    return "." not in Path(os.path.normpath(os.fspath(p))).name
 
 
 def is_marked(path: str | os.PathLike) -> bool:

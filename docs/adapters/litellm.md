@@ -41,7 +41,7 @@ an outside party a reference to check those ids against.
    and still matches its checkpoint. What an outside party can check the key
    holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
-3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>`
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. It runs the format's reference
    payload verifier plus the producer-envelope check; a record carrying no
@@ -172,7 +172,7 @@ litellm_settings:
 ```bash
 export CAPSULE_EMIT_OPERATOR=acme-co
 export CAPSULE_EMIT_DEVELOPER=support-gateway@v1
-export CAPSULE_EMIT_LEDGER=/var/lib/capsule/ledger.jsonl
+export CAPSULE_EMIT_LEDGER=/var/lib/capsule/capsule-ledger
 litellm --config config.yaml
 ```
 
@@ -224,7 +224,7 @@ comes from the environment:
 |---|---|
 | `CAPSULE_EMIT_OPERATOR` | **required** — tenant/org stamped on every capsule |
 | `CAPSULE_EMIT_DEVELOPER` | **required** — agent name + version |
-| `CAPSULE_EMIT_LEDGER` | ledger path (default `ledger.jsonl`) |
+| `CAPSULE_EMIT_LEDGER` | ledger path (default `CAPSULE_LEDGER`, else `./capsule-ledger/`) |
 | `CAPSULE_EMIT_LITELLM_REQUEST_RECORD` | `0` to drop the chain parent |
 | `CAPSULE_EMIT_LITELLM_FAILURE_PAYLOAD` | `1` to opt into un-redacted failure prompts |
 | `CAPSULE_EMIT_LITELLM_MAX_PAYLOAD_CHARS` | payload bound (default `20000`) |

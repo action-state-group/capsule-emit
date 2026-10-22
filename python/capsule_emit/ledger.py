@@ -246,7 +246,7 @@ def _writer_lock(path: Path, *, wait: bool = False, timeout: float | None = None
 
 def append_to_ledger(
     capsule: dict,
-    path: str | os.PathLike = "ledger.jsonl",
+    path: str | os.PathLike | None = None,
     *,
     wait: bool = False,
     timeout: float | None = None,
@@ -280,14 +280,37 @@ def append_to_ledger(
 
     from cll.log import CllError
 
+    from . import ledger_layout as _layout
     from .artifact.record import ArtifactError, ConflictError
     from .ledger_store import LedgerConflictError, LedgerWriteError
     from .legacy_ledger import shared
 
     if not isinstance(capsule, dict):
-        raise LedgerWriteError(f"{path}: a ledger line is a JSON object, not {type(capsule).__name__}")
+        raise LedgerWriteError(f"a ledger line is a JSON object, not {type(capsule).__name__}")
     try:
-        return shared(path).append_any(capsule, wait=wait, timeout=timeout).entry.seq
+        if path is not None:
+            return shared(path).append_any(capsule, wait=wait, timeout=timeout).entry.seq
+        # The default, as seal() resolves it: when it fell back to
+        # ./ledger.jsonl and an import published ./capsule-ledger/ while this
+        # call waited for the lock, the line goes to the store instead.
+        for attempt in (1, 2):
+            resolution = _layout.resolve_ledger(None)
+            path = resolution.path
+
+            def precheck(resolution=resolution):
+                if _layout.default_moved(resolution):
+                    raise _layout.DefaultMoved()
+
+            try:
+                return (
+                    shared(path)
+                    .append_any(capsule, wait=wait, timeout=timeout, precheck=precheck, chosen=resolution.chosen)
+                    .entry.seq
+                )
+            except _layout.DefaultMoved:
+                if attempt == 2:  # pragma: no cover - a second import between two attempts
+                    raise
+        raise AssertionError("unreachable")  # pragma: no cover
     except ConflictError as exc:
         raise LedgerConflictError(
             f"{path} already holds a different line under capsule_id {capsule.get('capsule_id')}"

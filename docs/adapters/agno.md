@@ -38,7 +38,7 @@ an outside party a reference to check those ids against.
    and still matches its checkpoint. What an outside party can check the key
    holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
-3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>`
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. It runs the format's reference
    payload verifier plus the producer-envelope check; a record carrying no
@@ -260,7 +260,7 @@ from capsule_emit import read_ledger
 from capsule_emit.adapters.agno_listener import AgnoCapsuleListener
 from agent_action_capsule.producer_envelope import verify_producer_envelope
 
-ledger = os.path.join(tempfile.mkdtemp(), "ledger.jsonl")
+ledger = os.path.join(tempfile.mkdtemp(), "capsule-ledger")
 listener = AgnoCapsuleListener(operator="acme-co", developer="my-agent@v1", ledger=ledger, anchor=False)
 # the framework-free core takes any callable as the continuation — one planned + one confirmed record
 listener.core.wrap_call("get_price", lambda **kw: {"sku": kw["sku"], "px": "12.00"}, {"sku": "SKU-9"})

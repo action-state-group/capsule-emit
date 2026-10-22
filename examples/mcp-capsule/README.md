@@ -72,7 +72,7 @@ Latest capsule:
   ✓ verify(capsule).ok — tamper any byte and this fails
 
 CLI verify (offline — from the ledger bytes, no network needed):
-  $ agent-action-capsule verify --store /tmp/…/mcp_capsule_ledger.jsonl
+  $ agent-action-capsule verify --store /tmp/…/mcp-capsule-ledger
   VALID  PO-2026-0047 …
   VALID  PO-2026-0048 …
   VALID  PO-2026-0049 …
@@ -209,7 +209,7 @@ proceeds normally. The record layer never crashes the tool.
 **Offline — from the ledger bytes, no network needed:**
 
 ```bash
-agent-action-capsule verify --store ./ledger.jsonl
+agent-action-capsule verify --store ./capsule-ledger
 ```
 
 Exit 0 = all capsules verify. Tamper one byte of any capsule and this fails.
@@ -280,7 +280,7 @@ testing.
 
 | | |
 |---|---|
-| Constructor | `MCPCapsuleEmitter(operator, developer, ledger="ledger.jsonl", anchor=None, anchor_url=None, model=None, action_type=None, host_provenance=False, seal_reads=True, emit_manifest_artifact=True, manifest_artifact_dir=None)` |
+| Constructor | `MCPCapsuleEmitter(operator, developer, ledger=None, anchor=None, anchor_url=None, model=None, action_type=None, host_provenance=False, seal_reads=True, emit_manifest_artifact=True, manifest_artifact_dir=None)` |
 | Decorator | `@emitter.tool(action=None, *, effect_type=None, verdict="executed", action_type=None, model=None)` |
 | Direct emit | `emitter.emit_capsule(action, tool_input, tool_output, *, verdict, effect, ...)` |
 | Toolset digest | `emitter.capture_toolset(tools)` — see [`docs/extensions/mcp-toolset-digest.md`](../../docs/extensions/mcp-toolset-digest.md) |

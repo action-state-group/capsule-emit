@@ -446,7 +446,7 @@ def main() -> None:
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        ledger = Path(tmpdir) / "ledger.jsonl"
+        ledger = Path(tmpdir) / "capsule-ledger"
         if args.partial:
             _section("Partial-reachability scenario (anchor-B intentionally down)")
             run_partial_demo(ledger)

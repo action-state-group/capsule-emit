@@ -63,8 +63,8 @@ def test_markdown_structure(tmp_path):
     assert f"Implements: {ISSUE}" in md
     assert "| 1 | `run_repro` | fyi |" in md
     assert "| 2 | `run_tests` | decide |" in md
-    assert "agent-action-capsule verify --store ledger.jsonl" in md
-    assert "capsule-emit verify --store ledger.jsonl" in md
+    assert "agent-action-capsule verify --store capsule-ledger" in md
+    assert "capsule-emit verify --store capsule-ledger" in md
     assert "verify.example/bundle#" in md
     assert "this link carries no log proof" in md
     # short capsule_ids from the real ledger appear in the table

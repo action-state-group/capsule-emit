@@ -21,7 +21,7 @@ from capsule_emit.adapters.crewai import CrewAICapsuleEmitter
 emitter = CrewAICapsuleEmitter(
     operator="your-org",
     developer="your-agent@v1",
-    ledger="crew-capsules.jsonl",   # optional; default: ledger.jsonl
+    ledger="crew-capsules",   # optional; default: ./capsule-ledger/
 )
 
 # Wrap a plain callable tool — use the return value
@@ -39,7 +39,7 @@ written to the signed ledger, which is checkpointed and witnessed once
 where your ledger stands:
 
 ```bash
-capsule-emit status crew-capsules.jsonl
+capsule-emit status crew-capsules
 ```
 
 ## Legacy per-capsule anchor (off by default)

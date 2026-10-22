@@ -290,7 +290,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
     Args:
         operator: Accountable tenant / org identifier.
         developer: Agent name + version string.
-        ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
+        ledger: Ledger path (default: ``CAPSULE_LEDGER``, else ``./capsule-ledger/``).
         anchor: Legacy, non-default fire-and-forget anchor channel. ``None``
             (default) resolves via ``CAPSULE_ANCHOR`` (off unless it is the
             exact value ``"legacy-on"``) — see
@@ -345,7 +345,7 @@ class MCPCapsuleEmitter(CapsuleEmitterBase):
         *,
         operator: str,
         developer: str,
-        ledger: str | os.PathLike = "ledger.jsonl",
+        ledger: str | os.PathLike | None = None,
         anchor: bool | None = None,
         anchor_url: str | None = None,
         anchor_wait: float | None = None,

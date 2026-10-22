@@ -41,7 +41,7 @@ calls, verify capsules, and inspect the ledger.  Add to
         args: ["-m", "capsule_emit.server"]
         timeout: 30
         envs:
-          CAPSULE_LEDGER: "/tmp/goose-capsules.jsonl"
+          CAPSULE_LEDGER: "/tmp/goose-capsule-ledger"
           CAPSULE_OPERATOR: "my-org"
           CAPSULE_DEVELOPER: "goose-agent@v1"
           CAPSULE_ANCHOR: "true"
@@ -53,7 +53,8 @@ Or with uvx (requires capsule-emit[mcp] installed):
 
 Environment variables
 ---------------------
-    CAPSULE_LEDGER    Path to JSONL ledger (default: ledger.jsonl)
+    CAPSULE_LEDGER    Ledger path: a ledger store directory, or an existing flat
+                      ledger file (default: ./capsule-ledger/)
     CAPSULE_OPERATOR  Tenant / org identifier stamped on every capsule
     CAPSULE_DEVELOPER Agent name + version
     CAPSULE_ANCHOR    "true" to fire-and-forget anchor each capsule (sends only
@@ -73,6 +74,8 @@ except ImportError:  # mcp < 2
     from mcp.server.fastmcp import FastMCP
 
 from capsule_emit import read_ledger, seal
+from capsule_emit.ledger_layout import DEFAULT_STORE, LEDGER_ENV, resolve_ledger
+from capsule_emit.ledger_store import LedgerLayoutError
 
 try:
     from .verification import verify_capsule as _aac_verify
@@ -81,7 +84,18 @@ try:
 except ImportError:
     _VERIFY_OK = False
 
-_LEDGER = os.environ.get("CAPSULE_LEDGER", "ledger.jsonl")
+# None: seal() and the readers resolve CAPSULE_LEDGER, else the default.
+_LEDGER: str | None = None
+
+
+def _ledger_to_read(ledger: str | None) -> str:
+    """The ledger a read tool reads. Reading never refuses what only writing
+    refuses, such as a new ``.jsonl`` path: a path that cannot be written to
+    is read as it is."""
+    try:
+        return str(resolve_ledger(ledger).path)
+    except LedgerLayoutError:
+        return str(ledger or os.environ.get(LEDGER_ENV) or DEFAULT_STORE)
 _OPERATOR = os.environ.get("CAPSULE_OPERATOR", "goose-user")
 _DEVELOPER = os.environ.get("CAPSULE_DEVELOPER", "goose-agent@v1")
 _ANCHOR = os.environ.get("CAPSULE_ANCHOR", "false").lower() not in ("0", "false", "no")
@@ -103,7 +117,7 @@ def capsule_record(
     tool_output: str,
     operator: str = _OPERATOR,
     developer: str = _DEVELOPER,
-    ledger: str = _LEDGER,
+    ledger: str | None = _LEDGER,
 ) -> str:
     """Seal a tool call as a verifiable Agent Action Capsule.
 
@@ -113,7 +127,7 @@ def capsule_record(
         tool_output: JSON-encoded output dict (will be digest-committed).
         operator: Tenant / org identifier (default: CAPSULE_OPERATOR env).
         developer: Agent name + version (default: CAPSULE_DEVELOPER env).
-        ledger: Path to the JSONL ledger file.
+        ledger: Ledger path (default: CAPSULE_LEDGER, else ./capsule-ledger/).
     """
     try:
         inp = json.loads(tool_input) if isinstance(tool_input, str) else tool_input
@@ -143,7 +157,7 @@ def capsule_record(
 
 
 @mcp.tool()
-def capsule_verify(capsule_id: str, ledger: str = _LEDGER) -> str:
+def capsule_verify(capsule_id: str, ledger: str | None = _LEDGER) -> str:
     """Verify an Agent Action Capsule by ID (full or prefix, minimum 8 hex chars).
 
     Looks up the capsule in the ledger and returns ok=True/False plus any
@@ -152,7 +166,7 @@ def capsule_verify(capsule_id: str, ledger: str = _LEDGER) -> str:
     Args:
         capsule_id: Full or prefix capsule ID (minimum 8 hex chars required
             to avoid ambiguous prefix matches across large ledgers).
-        ledger: Path to the JSONL ledger file.
+        ledger: Ledger path (default: CAPSULE_LEDGER, else ./capsule-ledger/).
     """
     if not _VERIFY_OK:
         return "error: agent-action-capsule not installed; pip install agent-action-capsule"
@@ -161,6 +175,7 @@ def capsule_verify(capsule_id: str, ledger: str = _LEDGER) -> str:
             f"error: capsule_id prefix too short ({len(capsule_id)} chars); "
             "provide at least 8 hex characters to avoid ambiguous matches"
         )
+    ledger = _ledger_to_read(ledger)
     records = read_ledger(ledger)
     match = next(
         (r for r in records if r.get("capsule_id", "").startswith(capsule_id)),
@@ -179,13 +194,14 @@ def capsule_verify(capsule_id: str, ledger: str = _LEDGER) -> str:
 
 
 @mcp.tool()
-def capsule_ledger(ledger: str = _LEDGER, limit: int = 20) -> str:
+def capsule_ledger(ledger: str | None = _LEDGER, limit: int = 20) -> str:
     """Summarise the Agent Action Capsule ledger (most recent rows first).
 
     Args:
-        ledger: Path to the JSONL ledger file.
+        ledger: Ledger path (default: CAPSULE_LEDGER, else ./capsule-ledger/).
         limit: Maximum number of rows to return (default 20, minimum 1).
     """
+    ledger = _ledger_to_read(ledger)
     records = read_ledger(ledger)
     if not records:
         return f"empty ledger: {ledger}"

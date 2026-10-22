@@ -25,6 +25,7 @@ or equivalently:
 """
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from agent_action_capsule.contracts import (
@@ -36,12 +37,16 @@ from agent_action_capsule.contracts import (
 from capsule_emit import seal
 from capsule_emit.builder import build_capsule as base_emit
 from capsule_emit.ledger import append_to_ledger
+from capsule_emit.ledger_migrate import export_to_file
 
 # ---------------------------------------------------------------------------
 # Resolve paths — works both from repo root and from this file's directory.
 # ---------------------------------------------------------------------------
 HERE = Path(__file__).parent.resolve()
 LEDGER = HERE / "sample_ledger.jsonl"
+# capsule-emit no longer creates flat ledgers: the run seals into a fresh
+# ledger store directory and the committed sample is exported from it.
+STORE = Path(tempfile.mkdtemp(prefix="amaury-receipt-pack-")) / "sample-ledger"
 
 # ---------------------------------------------------------------------------
 # Reset ledger on each run
@@ -73,7 +78,7 @@ cap1 = seal(
     verdict="executed",
     effect={"type": "purchase_order", "status": "dispatched"},
     anchor=False,
-    ledger=LEDGER,
+    ledger=STORE,
 )
 print(f"  capsule_id: {cap1.capsule_id}")
 print(f"  anchored:   {cap1.anchored}  (anchor=False — no network call)\n")
@@ -116,7 +121,7 @@ _raw_c2 = base_emit(
     disposition=_c2_disp,
     constraints=(_c2_constraint,),
 )
-append_to_ledger(_raw_c2, LEDGER)
+append_to_ledger(_raw_c2, STORE)
 cap2_id = _raw_c2["capsule_id"]
 print(f"  capsule_id: {cap2_id}")
 print("  verdict:    blocked (transfer_limit_eur_check: fail)\n")
@@ -168,7 +173,7 @@ _raw_c3 = base_emit(
     disposition=_c3_disp,
     constraints=_c3_constraints,
 )
-append_to_ledger(_raw_c3, LEDGER)
+append_to_ledger(_raw_c3, STORE)
 cap3_id = _raw_c3["capsule_id"]
 print(f"  capsule_id: {cap3_id}")
 print("  verdict:    executed (value_grounded: pass, invoice_reconciles: pass)\n")
@@ -194,7 +199,7 @@ cap4 = seal(
     confirms=cap1.capsule_id,
     relation="confirms",
     anchor=False,
-    ledger=LEDGER,
+    ledger=STORE,
 )
 print(f"  capsule_id:  {cap4.capsule_id}")
 print(f"  chained to:  {cap1.capsule_id}")
@@ -219,6 +224,7 @@ print(f"  [2] transfer_funds    : {cap2_id}")
 print(f"  [3] generate_report   : {cap3_id}")
 print(f"  [4] confirm_purchase  : {cap4.capsule_id}")
 
+export_to_file(STORE, LEDGER)
 print(f"\nLedger written to: {LEDGER}")
 print("\nVerify with:")
 print(f"  capsule-emit verify --store {LEDGER}")

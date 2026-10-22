@@ -21,7 +21,7 @@ from langchain_core.runnables import RunnableConfig
 emitter = LangChainCapsuleEmitter(
     operator="your-org",
     developer="your-agent@v1",
-    ledger="graph-capsules.jsonl",   # optional; default: ledger.jsonl
+    ledger="graph-capsules",   # optional; default: ./capsule-ledger/
 )
 
 # Inside a node, pass the emitter as a callback on tool.invoke()
@@ -38,7 +38,7 @@ digest-committed and written to the signed ledger, which is checkpointed and
 witnessed once `CAPSULE_WITNESS_URL` names a witness. Check where your ledger stands:
 
 ```bash
-capsule-emit status graph-capsules.jsonl
+capsule-emit status graph-capsules
 ```
 
 ## LangGraph note

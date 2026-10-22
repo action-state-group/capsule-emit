@@ -187,7 +187,7 @@ class BoundarySealExecutor(AgentExecutor):
             }
         }
 
-        ledger = Path(tempfile.mkdtemp(prefix="a2a-serve-")) / "ledger.jsonl"
+        ledger = Path(tempfile.mkdtemp(prefix="a2a-serve-")) / "capsule-ledger"
         # Seal WITHOUT the fire-and-forget anchor; we anchor+resolve in a
         # single POST below so the capsule_id is submitted exactly once.
         result = seal(

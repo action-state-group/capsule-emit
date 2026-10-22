@@ -248,7 +248,7 @@ def test_subprocess_exit_lands_when_ts_is_slow_but_reachable(stub_ts, tmp_path):
     reachable TS to actually receive it — the fix for the exact race filed in
     capsule-emit#43 (real signing-ceremony repro)."""
     base_url, received = stub_ts
-    ledger_path = str(tmp_path / "ledger.jsonl")
+    ledger_path = str(tmp_path / "capsule-ledger")
 
     proc = _run_subprocess_emit(anchor_url=base_url, ledger_path=ledger_path)
 
@@ -265,7 +265,7 @@ def test_subprocess_exit_lands_when_ts_is_slow_but_reachable(stub_ts, tmp_path):
 def test_subprocess_exit_warns_when_endpoint_is_unreachable(tmp_path):
     """When the submission genuinely cannot land (dead endpoint), the process
     must not exit silently claiming success — it must warn."""
-    ledger_path = str(tmp_path / "ledger.jsonl")
+    ledger_path = str(tmp_path / "capsule-ledger")
 
     proc = _run_subprocess_emit(anchor_url=_UNREACHABLE, ledger_path=ledger_path)
 

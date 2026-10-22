@@ -6,12 +6,13 @@
 #
 # With this swap, every interaction the agents already report via
 # `ctx.plugins.get("trust").report(...)` is sealed to a capsule ledger
-# (capsule_ledger.jsonl in the working directory) — zero agent-code changes.
+# (the directory nanda-trust-ledger/ in the working directory) — zero agent-code changes.
 # The `receipt_reputation` adversarial validator still PASSES because
 # CapsuleEmitTrust applies the same collusion-ring severance as agent_receipts.
 #
 # After `nest run`, verify the ledger independently:
-#   agent-action-capsule verify --store capsule_ledger.jsonl
+#   agent-action-capsule verify --store nanda-trust-ledger
+# (agent-action-capsule later than 0.11.0; with 0.11.0 use `capsule-emit verify --store`.)
 name: receipt_reputation_capsule
 description: "receipt_reputation scenario with trust: capsule_emit (anchored ledger)"
 

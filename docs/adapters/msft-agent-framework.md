@@ -42,7 +42,7 @@ an outside party a reference to check those ids against.
    and still matches its checkpoint. What an outside party can check the key
    holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
-3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>`
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. It runs the format's reference
    payload verifier plus the producer-envelope check; a record carrying no
@@ -218,7 +218,6 @@ a scripted transport — no API key, no network.
 
 ```python
 import asyncio
-import json
 import os
 import tempfile
 from pathlib import Path
@@ -236,6 +235,7 @@ from agent_framework import (
     Message,
 )
 
+from capsule_emit import read_ledger
 from capsule_emit.adapters.msft_agent_framework import capsule_middleware
 from capsule_emit.verification import verify_capsule
 
@@ -294,10 +294,10 @@ async def main(ledger):
 
 
 with tempfile.TemporaryDirectory() as td:
-    ledger = Path(td) / "ledger.jsonl"
+    ledger = Path(td) / "capsule-ledger"
     asyncio.run(main(ledger))
 
-    capsules = [json.loads(line) for line in ledger.read_text().splitlines()]
+    capsules = read_ledger(ledger)
     for capsule in capsules:
         result = verify_capsule(capsule)
         parent = capsule.get("chain", {}).get("parent_capsule_id")

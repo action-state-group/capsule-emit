@@ -41,7 +41,7 @@ You add one `seal()` call at each consequential action, and you get a **witnesse
   seal()  →  capsule        the unit: one action, sealed (content-addressed)
      │  appends + witnesses
      ▼
-  ledger.jsonl              what you keep: a witnessed, verifiable TRAIL  ← start here
+  capsule-ledger/           what you keep: a witnessed, verifiable TRAIL  ← start here
      │  link related capsules
      ▼
   chain (confirms)          approved → executed → confirmed; HITL; disclosure

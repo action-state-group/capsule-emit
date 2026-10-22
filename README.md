@@ -66,7 +66,7 @@ A capsule records the action **and its outcome**, with a *confirmed-effect bindi
 
 ## Where you start, and where it goes
 
-**Start here.** Call `seal()` at each consequential action. You get a **verifiable ledger** of what your agent did — each capsule appended locally to `ledger.jsonl` — and, once you name a witness, checkpoints of it held outside your environment. That's the whole starting point. Everything below is optional depth you grow into — no rewrite.
+**Start here.** Call `seal()` at each consequential action. You get a **verifiable ledger** of what your agent did — each capsule appended locally to the ledger directory `./capsule-ledger/` — and, once you name a witness, checkpoints of it held outside your environment. That's the whole starting point. Everything below is optional depth you grow into — no rewrite.
 
 **The verb surface.** One authorship axis, one thing they all return (a `Capsule`, appended to the log) — which one you call just says who authored the content:
 
@@ -126,7 +126,7 @@ Until 0.5.0, your capsule log was like a git repo you never pushed: internally c
 **0.5.0 pushes.** Anchoring (above) is per-**capsule**; checkpointing is per-**stream**. `seal()` also folds every capsule into a per-ledger [Merkle Mountain Range](docs/checkpoint.md) and — every ~100 records (`capsule_emit.witness.DEFAULT_CADENCE_ENTRIES`) — builds a signed **checkpoint** and registers it with the witness(es) you name: a summary of the whole stream so far (its size, a root hash, a timestamp), sent to an independent witness's `/checkpoints` route so it can verify the checkpoint's own signature before counter-signing. Async, same as the anchor; your payloads never leave.
 
 - **Off is one flag, honored everywhere:** `seal(payload, witness=False)` for one call, `CAPSULE_WITNESS=off` for every call — no code change. With no witness named, nothing is sent at all.
-- **Your log is still your file.** The witness only ever sees the checkpoint (never your capsule content, never a per-record digest); walking away from it loses no history — `ledger.jsonl` is complete on its own, the witness just lets someone else confirm you didn't rewrite it after the fact.
+- **Your log is still your file.** The witness only ever sees the checkpoint (never your capsule content, never a per-record digest); walking away from it loses no history — `./capsule-ledger/` is complete on its own, the witness just lets someone else confirm you didn't rewrite it after the fact.
 - **Force a checkpoint on demand.** `push()` builds and registers a checkpoint right now, without waiting for the cadence — useful before a process exits or at a natural audit boundary.
 - **Any witness works, and more than one is stronger.** There is no default: name the one(s) you use with `CAPSULE_WITNESS_URL` / `seal(payload, witness_url=...)`. A free public one runs at `witness.agentactioncapsule.org` (a separate, live witness service, `POST /checkpoints`), and any conforming Transparency Service works the same way; and you can register with several at once (a list, or comma-separated) for a stronger, equivocation-resistant tier. The first checkpoint of a process prints one line to stderr — once — naming exactly what's sent, where, and how to turn it off.
 
@@ -138,10 +138,14 @@ The verifier ships in the spec package — check any capsule (or a whole ledger)
 
 ```bash
 pip install agent-action-capsule
-agent-action-capsule verify --store ./ledger.jsonl
+agent-action-capsule verify --store ./capsule-ledger
 ```
 
-Tamper with one byte and verification fails. The verifier is independent of `capsule-emit` on purpose — *any* tool can produce a capsule; *any* party can verify one. (Every `seal()` also appends to a local JSONL ledger — view it with `capsule-emit ledger view ./ledger.jsonl`.)
+Reading a ledger directory needs an agent-action-capsule release later than 0.11.0. With 0.11.0, `capsule-emit verify --store ./capsule-ledger` checks the same directory.
+
+Tamper with one byte and verification fails. The verifier is independent of `capsule-emit` on purpose — *any* tool can produce a capsule; *any* party can verify one. (Every `seal()` also appends to the local ledger directory `./capsule-ledger/`. View it with `capsule-emit ledger view ./capsule-ledger`; `capsule-emit verify --store ./capsule-ledger` also checks producer signatures.)
+
+**Already have a `ledger.jsonl`?** It keeps being read: every reader and verifier still takes it. New records to it still work but warn, and stop in capsule-emit 0.15.0. Move it with `capsule-emit ledger import ledger.jsonl capsule-ledger`; the default then uses the new directory. A ledger that repeats a `capsule_id` (repeated hold lines from earlier releases) cannot be imported: keep it for reading and seal new records to a new directory. Its history is then in two places: the old file for earlier records, the new directory for later ones.
 
 ## Framework adapters
 
@@ -214,7 +218,7 @@ Each of these is a module you can import; none is needed for `seal()`.
 |---|---|---|
 | Two-party records | `bilateral.py`, `settlement.py`, `reconciliation.py`, `period.py` | the bilateral attestation protocol's reference implementation (`draft-mih-agent-bilateral-attestation-00`; see [docs/bilateral-reconciliation.md](docs/bilateral-reconciliation.md)); settlement records, where two parties each record the same payment; reconciling two independently sealed halves of one exchange; and `--period week|month` as sugar over a time window |
 | Record patterns | `approval.py`, `adjudication.py` | a human approval sealed and chained to the capsule it unblocks; a verdict capsule for a twin comparison (which of two answers an independent recompute matched) |
-| Evidence files | `evidence_bundle.py`, `evidence_file.py`, `evidence_request.py`, `verification_comment.py` | the proof sources agent-action-capsule's Evidence Bundle producer reads (`MeshLedgerLog` for a mesh ledger directory; `LegacyLedger` serves `ledger.jsonl`), behind `capsule-emit bundle`; check an Evidence Bundle (`evidence-bundle/v2`) from any producer; answer an evidence request (artifact, signed refusal, or recorded absence; deprecated pre-00 profile, use `agent_action_capsule.evidence_request`); and the verification comment built from a ledger |
+| Evidence files | `evidence_bundle.py`, `evidence_file.py`, `evidence_request.py`, `verification_comment.py` | the proof sources agent-action-capsule's Evidence Bundle producer reads (`MeshLedgerLog` for a mesh ledger directory; `LegacyLedger` serves `./capsule-ledger/` and a flat `ledger.jsonl`), behind `capsule-emit bundle`; check an Evidence Bundle (`evidence-bundle/v2`) from any producer; answer an evidence request (artifact, signed refusal, or recorded absence; deprecated pre-00 profile, use `agent_action_capsule.evidence_request`); and the verification comment built from a ledger |
 | Handing records over | `record_proof.py`, `disclose.py`, `disclosure.py`, `chain_segment.py`, `permalink.py`, `viewer.py` | one record's standalone proof anyone can verify; the recorded act of disclosing content to an audience, and its Disclosure Envelope; a run of the chain as history; the demo permalink for a finished bundle; and the terminal table `ledger view` draws |
 | Witnessing | `witness.py`, `witness_bindings.py`, `witness_directory.py`, `checkpoint/` | the default-on checkpoint and witness wiring behind `seal()`; how one checkpoint reaches more than one kind of transparency service, and the plurality policy applied to the receipts; [`witnesses.json`](witnesses.json), the public witness directory, with its validator; and `checkpoint/`, a compatibility re-export of the checkpointed-local-log library |
 | Artifact store | `artifact/` | optional storage for exact sealed Capsules, their Producer Envelopes and originals, with retention and purge, on `jsonl`, `memory`, `sqlite` (standard library) or `mysql` (the `mysql` extra, PyMySQL). The files and rows open in the Go, TypeScript and Rust stores, under the shared [artifact store contract](docs/artifact-store.md); `artifact.conformance.run` checks any store, including your own. `legacy_ledger.py` puts the flat `ledger.jsonl` behind the same interface and the CLL entry log, with no originals and no purge ([docs/legacy-ledger.md](docs/legacy-ledger.md)) |
