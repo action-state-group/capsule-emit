@@ -291,7 +291,7 @@ def main() -> int:
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    ledger_path = out_dir / "ledger.jsonl"
+    ledger_path = out_dir / "capsule-ledger"
 
     print("=== Inspect sealed-log demo ===")
 

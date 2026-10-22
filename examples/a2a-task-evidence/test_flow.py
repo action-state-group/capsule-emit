@@ -59,7 +59,7 @@ def running_flow(tmp_path):
     """Starts a local TS double + the reference A2A server, runs the client
     flow once, and yields (endpoint, ledger_path, ts) for tests that want to
     drive additional requests against the same server."""
-    ledger_path = str(tmp_path / "ledger.jsonl")
+    ledger_path = str(tmp_path / "capsule-ledger")
     ts = start_local_ts()
     app = build_app(ledger_path=ledger_path, ts_url=ts.url)
     srv = _ServerThread(app, "127.0.0.1", 0)
@@ -235,7 +235,7 @@ def test_unsupported_extension_request_is_observable():
     """§7: an extension-unaware/non-activating server must not silently
     upgrade a plain SendMessage into an evidenced one -- verifies the
     reference server's own honesty when the requirement is absent."""
-    ledger_path = tempfile.mkdtemp() + "/ledger.jsonl"
+    ledger_path = tempfile.mkdtemp() + "/capsule-ledger"
     ts = start_local_ts()
     app = build_app(ledger_path=ledger_path, ts_url=ts.url)
     srv = _ServerThread(app, "127.0.0.1", 0)

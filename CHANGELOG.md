@@ -6,6 +6,39 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed (Python, breaking): the default ledger is a ledger store directory; flat ledger.jsonl writing is deprecated
+
+With no ledger chosen, `seal()`, `log()`, `received()`, `push()`, the adapters,
+the otel processor, the MCP server and agentgateway now write the ledger store
+directory `./capsule-ledger/` (checkpointed-local-log's managed `LedgerStore`;
+see `docs/legacy-ledger.md`), with its signing key beside it as
+`capsule-ledger.signing_key.pem`. `agent-action-capsule verify --store
+./capsule-ledger` verifies it (agent-action-capsule#372; needs the release that
+carries it, and capsule-emit's `agent-action-capsule` floor will name it).
+
+Choosing a ledger (`capsule_emit.ledger_layout`): `ledger=` when given, else
+`CAPSULE_LEDGER` (which `seal()` now reads too), else the default. A directory
+is a store; an existing regular file is a flat ledger; a name that does not
+exist becomes a store when it has no `.`, and is refused otherwise.
+
+- **An existing `./ledger.jsonl` keeps working for now.** With no ledger chosen
+  and no `./capsule-ledger/`, `seal()` keeps appending to an existing
+  `./ledger.jsonl`. New records to any flat ledger emit
+  `LedgerDeprecationWarning` (a `FutureWarning`, shown by default) once per
+  process per path, naming the command that moves it:
+  `capsule-emit ledger import ledger.jsonl ./capsule-ledger`.
+- **From capsule-emit 0.15.0, new records to a flat ledger are refused**
+  (`FlatLedgerWriteRefused`, with the same import command). Checkpoint stamps,
+  witness backfills and disclosure records on an existing flat ledger never
+  stop, so `push()` and `disclose` keep working, and reading a flat ledger
+  never ends.
+- **No new flat ledger is created.** A `ledger=` or `CAPSULE_LEDGER` path ending
+  in `.jsonl` that does not exist is refused, naming a store to use instead. A
+  caller that passed a fresh `.jsonl` path per run must switch to a directory.
+- An import that publishes `./capsule-ledger/` while a `seal()` waits on the old
+  default's lock does not lose that record: the call runs again against the new
+  default.
+
 ### Added (Python): `capsule-emit ledger import` and `ledger export --jsonl`
 
 `capsule-emit ledger import LEDGER.jsonl DIR` copies a flat ledger into a new

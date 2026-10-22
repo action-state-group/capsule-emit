@@ -314,7 +314,7 @@ def test_single_default_emit_never_imports_checkpoint_subpackage(tmp_path):
         "'a single below-cadence emit() call imported capsule_emit.checkpoint -- '"
         "'non-streaming cost regression')\n"
         "print('OK')\n"
-    ).format(_WORKTREE_ROOT, str(tmp_path / "ledger.jsonl"))
+    ).format(_WORKTREE_ROOT, str(tmp_path / "capsule-ledger"))
     result = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True,
@@ -339,7 +339,7 @@ def test_many_emits_below_cadence_still_never_import_checkpoint(tmp_path):
         "assert 'capsule_emit.checkpoint' not in sys.modules, ("
         "'20 calls under the default cadence (100) imported capsule_emit.checkpoint')\n"
         "print('OK')\n"
-    ).format(_WORKTREE_ROOT, str(tmp_path / "ledger.jsonl"))
+    ).format(_WORKTREE_ROOT, str(tmp_path / "capsule-ledger"))
     result = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True,
@@ -377,7 +377,7 @@ def test_crossing_cadence_does_import_checkpoint_subpackage(tmp_path, stub_ts):
         "'crossing the cadence threshold never imported capsule_emit.checkpoint at all -- "
         "the default wiring is not actually running')\n"
         "print('OK')\n"
-    ).format(_WORKTREE_ROOT, str(tmp_path / "ledger.jsonl"), ts_url)
+    ).format(_WORKTREE_ROOT, str(tmp_path / "capsule-ledger"), ts_url)
     result = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True,

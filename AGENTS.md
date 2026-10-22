@@ -15,7 +15,8 @@ authorized?" has a checkable answer, not just your word.
 
 `capsule.capsule_id` is the content address; `capsule.signature` is a
 self-attested Ed25519 signature (always present, no opt-out). Every call also
-appends to a local JSONL ledger. Checkpoints of that ledger (digests only, never
+appends to the local ledger directory `./capsule-ledger/` (choose another with
+`ledger=` or `CAPSULE_LEDGER`). Checkpoints of that ledger (digests only, never
 capsule content) are sent to a witness once you name one with `witness_url=` or
 `CAPSULE_WITNESS_URL`; with none named, no checkpoint leaves the machine.
 (`witness=False` / `CAPSULE_WITNESS=off` stops all network traffic, the legacy

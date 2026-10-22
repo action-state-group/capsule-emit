@@ -41,7 +41,7 @@ server.  The capsule commits INPUT and OUTPUT by SHA-256 digest (canonical
 JSON); raw values stay local.
 
 Verify bytes offline:
-    capsule-emit verify --store ledger.jsonl
+    capsule-emit verify --store <the ledger directory it prints>
 
 Verify inclusion on the public log (after anchoring):
     agent-action-capsule verify --transparent statement.cose ...
@@ -75,7 +75,7 @@ def _tristate(result) -> str:
         return "UNSIGNED(warning)"
     return "VALID"
 
-LEDGER_PATH = Path(tempfile.mkdtemp()) / "mcp_capsule_ledger.jsonl"
+LEDGER_PATH = Path(tempfile.mkdtemp()) / "mcp-capsule-ledger"
 # capsule-emit has no default anchor endpoint, so the demo names the public
 # log itself (AAC_ANCHOR_URL overrides it).
 ANCHOR_URL = os.environ.get("AAC_ANCHOR_URL") or "https://anchor.agentactioncapsule.org/v1/digest"

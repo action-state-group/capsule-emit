@@ -49,14 +49,14 @@ references to records outside your stream (draft-05, *Cross-record references*).
 
 `confirms=` picks the right one for you. If the ledger you seal into already holds
 the target, the link goes in `chain`, as above. Any other target goes in
-`references[]`, including a capsule of yours in another ledger file (a rotated or
+`references[]`, including a capsule of yours in another ledger (a rotated or
 per-session one): seal into the ledger that holds the parent to keep `chain`.
 
 ```python
 # the buyer's agent sealed `order` into the buyer's ledger and sent you its capsule
 ack = seal({"po_id": "PO-7781"}, action="accept_po", operator="supplier-co",
-           developer="intake-agent@v2", ledger="supplier-ledger.jsonl",
-           confirms=order_capsule_id)         # not in supplier-ledger.jsonl
+           developer="intake-agent@v2", ledger="supplier-ledger",
+           confirms=order_capsule_id)         # not in supplier-ledger
 ```
 
 ```jsonc
@@ -140,7 +140,7 @@ To check a link, you need **both** capsules (or at least the parent's id and byt
 the chain links it can see:
 
 ```bash
-agent-action-capsule verify --store ./ledger.jsonl
+agent-action-capsule verify --store ./capsule-ledger
 ```
 
 The verifier recomputes each `capsule_id` and confirms a child's `parent_capsule_id`

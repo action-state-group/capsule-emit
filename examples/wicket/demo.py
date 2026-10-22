@@ -44,7 +44,7 @@ _tmpdir = tempfile.mkdtemp(prefix="wicket-demo-")
 emitter = MCPCapsuleEmitter(
     operator="acme-co",
     developer="po-agent@v1",
-    ledger=os.path.join(_tmpdir, "ledger.jsonl"),
+    ledger=os.path.join(_tmpdir, "capsule-ledger"),
     anchor=False,
 )
 
@@ -114,7 +114,7 @@ def on_block(action: str, gate_result) -> None:
 emitter2 = MCPCapsuleEmitter(
     operator="acme-co",
     developer="po-agent@v1",
-    ledger=os.path.join(_tmpdir, "ledger2.jsonl"),
+    ledger=os.path.join(_tmpdir, "capsule-ledger-2"),
     anchor=False,
 )
 
@@ -162,7 +162,7 @@ print("=" * 60)
 mcp_emitter = MCPCapsuleEmitter(
     operator="acme-co",
     developer="po-agent@v1",
-    ledger=os.path.join(_tmpdir, "ledger_mcp.jsonl"),
+    ledger=os.path.join(_tmpdir, "capsule-ledger-mcp"),
     anchor=False,
 )
 
@@ -193,7 +193,7 @@ print("=" * 60)
 mcp_block_emitter = MCPCapsuleEmitter(
     operator="acme-co",
     developer="po-agent@v1",
-    ledger=os.path.join(_tmpdir, "ledger_mcp_block.jsonl"),
+    ledger=os.path.join(_tmpdir, "capsule-ledger-mcp-block"),
     anchor=False,
 )
 
@@ -225,7 +225,7 @@ print("=" * 60)
 err_emitter = MCPCapsuleEmitter(
     operator="acme-co",
     developer="po-agent@v1",
-    ledger=os.path.join(_tmpdir, "ledger_err.jsonl"),
+    ledger=os.path.join(_tmpdir, "capsule-ledger-err"),
     anchor=False,
 )
 

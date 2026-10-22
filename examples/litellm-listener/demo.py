@@ -55,6 +55,7 @@ os.environ.setdefault("CAPSULE_WITNESS", "off")  # zero egress for the demo; see
 
 os.environ.setdefault("LITELLM_LOG", "ERROR")
 
+from capsule_emit.ledger import read_ledger_entries
 from capsule_emit.signing import verify_store_signed  # noqa: E402
 
 
@@ -227,7 +228,7 @@ def main() -> int:
 
     anchor_url, srv = start_stub_ts()
     with tempfile.TemporaryDirectory() as td:
-        ledger = pathlib.Path(td) / "ledger.jsonl"
+        ledger = pathlib.Path(td) / "capsule-ledger"
         config_path = pathlib.Path(td) / "config.yaml"
         config_path.write_text(
             "litellm_settings:\n"
@@ -241,7 +242,7 @@ def main() -> int:
 
         drive(ledger, config_path)
 
-        caps = [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
+        caps = read_ledger_entries(ledger)
         print(f"sealed {len(caps)} capsules:")
         ok = True
         digests = {}
@@ -264,7 +265,9 @@ def main() -> int:
 
         # the redaction claim, shown rather than asserted: the raw prompt never
         # appears in the ledger, and call 2's request digest is not call 1's.
-        raw_present = SECRET_PROMPT in ledger.read_text()
+        # every file of the ledger directory: segments and indexes alike
+        blob = "".join(f.read_text(errors="replace") for f in ledger.rglob("*") if f.is_file())
+        raw_present = SECRET_PROMPT in blob
         print(f"\nraw prompt text present anywhere in the ledger: {raw_present}")
         print(f"distinct request digests: {len(digests)} (each call commits to its own preimage)")
 

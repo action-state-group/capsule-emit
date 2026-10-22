@@ -149,7 +149,7 @@ def test_default_key_is_persisted_across_process_restarts(tmp_path, monkeypatch)
     # Simulate a fresh process: a brand-new LocalKeypairSigner instance
     # pointed at the same default key path must load the identical key,
     # not generate a new one.
-    key_path = tmp_path / "ledger.jsonl.signing_key.pem"
+    key_path = tmp_path / "capsule-ledger.signing_key.pem"
     assert key_path.exists()
     reloaded = LocalKeypairSigner(key_path)
     assert reloaded.key_id == first.key_id
@@ -161,7 +161,7 @@ def test_default_key_is_persisted_across_process_restarts(tmp_path, monkeypatch)
 def test_default_key_file_has_restrictive_permissions(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     seal({"n": 1}, anchor=False, witness=False)
-    key_path = tmp_path / "ledger.jsonl.signing_key.pem"
+    key_path = tmp_path / "capsule-ledger.signing_key.pem"
     mode = stat.S_IMODE(os.stat(key_path).st_mode)
     assert mode == 0o600
 

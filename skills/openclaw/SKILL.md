@@ -140,7 +140,7 @@ Optional environment variables:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `AAC_ANCHOR_URL` | unset (no default) | Transparency log for the legacy anchor channel; it is used only with an explicit anchor opt-in and an endpoint |
-| `CAPSULE_LEDGER` | `capsule_ledger.jsonl` | Path to the local JSONL ledger |
+| `CAPSULE_LEDGER` | `capsule-ledger` | Path to the local ledger: a ledger store directory, or an existing flat ledger file |
 | `CAPSULE_SEAL_PORT` | `8042` | Port the server listens on |
 
 Set `AAC_ANCHOR_URL=off` to run without anchoring.
@@ -169,7 +169,7 @@ Seal one capsule.  Call at MAY and again at DID.
 | `verdict` | string | | `"executed"` (MAY) · `"confirmed"` (DID) · `"blocked"` (refusal).  Default `"executed"`. |
 | `effect_status` | string | | `"dispatched"` (MAY) · `"confirmed"` (DID) · `"planned"` (refusal/blocked).  Default `"dispatched"`. |
 | `confirms` | string | | `capsule_id` of the prior MAY capsule.  Required for DID capsules. |
-| `ledger` | string | | Path to JSONL ledger.  Default `capsule_ledger.jsonl`. |
+| `ledger` | string | | Path to the ledger (a ledger store directory, or an existing flat ledger file).  Default `capsule-ledger`. |
 | `reveal` | bool | | When `true`, echo raw `input`/`output` in the response for immediate disclosure. |
 
 **Response (JSON):**
@@ -286,7 +286,7 @@ lists the reasons.
 
 ## GET /ledger
 
-Optional.  Returns recent entries from the local JSONL ledger.
+Optional.  Returns recent entries from the local ledger.
 
 ```bash
 curl -s "http://localhost:8042/ledger?limit=5" | jq .
@@ -351,7 +351,7 @@ refusal = capsule_emit.seal(
 )
 ```
 
-Both paths (HTTP server and direct library) write to the same JSONL ledger and
+Both paths (HTTP server and direct library) write to the same ledger and
 anchor to the same transparency log.  Use whichever fits the agent's runtime.
 
 ---
@@ -439,7 +439,7 @@ setup:
       background: true
       wait_for: "http://localhost:8042/health"
       env:
-        CAPSULE_LEDGER: "traces/capsule_ledger.jsonl"
+        CAPSULE_LEDGER: "traces/capsule-ledger"
 ```
 
 ---
@@ -541,7 +541,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Any
 
-_LEDGER = os.environ.get("CAPSULE_LEDGER", "capsule_ledger.jsonl")
+_LEDGER = os.environ.get("CAPSULE_LEDGER", "capsule-ledger")
 _NO_ANCHOR = os.environ.get("AAC_ANCHOR_URL", "").lower() == "off"
 
 app = FastAPI(title="capsule-seal", version="0.1.0")

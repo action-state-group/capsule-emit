@@ -95,7 +95,7 @@ egress, not just the checkpoint stream.** It also gates:
 - **`status`'s stamp-fetch** — the read-only GET that re-checks a witness
   receipt against the key the witness serves (see [Checking status](#checking-status---capsule-emit-status)
   below). It skips this network call whenever the kill switch is set, even
-  if you didn't also pass `--offline` — `status ./ledger.jsonl` on a process
+  if you didn't also pass `--offline` — `status ./capsule-ledger` on a process
   with `CAPSULE_WITNESS=off` never touches the network, full stop.
 - **The legacy anchor channel** — even if it was explicitly re-enabled via
   `anchor=True` / `CAPSULE_ANCHOR=legacy-on` (see
@@ -300,10 +300,10 @@ entries are indexed as leaves too.
 ## Checking status — `capsule-emit status`
 
 ```bash
-capsule-emit status ./ledger.jsonl              # renders text, re-checks the latest witness receipt
-capsule-emit status ./ledger.jsonl --offline    # local-only, no network call
-capsule-emit status ./ledger.jsonl --json       # machine-readable
-capsule-emit status ./ledger.jsonl --verbose    # text, plus the checkpoint detail
+capsule-emit status ./capsule-ledger              # renders text, re-checks the latest witness receipt
+capsule-emit status ./capsule-ledger --offline    # local-only, no network call
+capsule-emit status ./capsule-ledger --json       # machine-readable
+capsule-emit status ./capsule-ledger --verbose    # text, plus the checkpoint detail
 ```
 
 The default text view speaks in receipts: how many are sealed, how many a
@@ -457,7 +457,7 @@ the shape the public API defines:
 ```python
 from capsule_emit.record_proof import record_proof, verify_record_proof
 
-b = record_proof("ledger.jsonl", capsule_id)   # or an unambiguous >=8-char prefix
+b = record_proof("capsule-ledger", capsule_id)   # or an unambiguous >=8-char prefix
 ok, errors = verify_record_proof(b)            # pure, offline, never raises
 ```
 
@@ -585,7 +585,7 @@ merely asserted, not proven (same anti-REWRITE-not-anti-FORK honesty as
 ```python
 from capsule_emit.checkpoint.cose_wire import verify_checkpoint_cose_offline
 
-b = bundle("ledger.jsonl", capsule_id)
+b = bundle("capsule-ledger", capsule_id)
 if b.checkpoint_cose is not None:
     result = verify_checkpoint_cose_offline(b.checkpoint_cose)   # no capsule-emit trust needed
     assert result.ok, result.errors
@@ -603,7 +603,7 @@ never fatal.
 **bundle plus content** to a named audience:
 
 ```bash
-capsule-emit disclose ledger.jsonl <id|range> --audience auditor \
+capsule-emit disclose capsule-ledger <id|range> --audience auditor \
   --reveal <id>:agent_input=input.json --reveal <id>:agent_output=output.json
 ```
 
@@ -611,7 +611,7 @@ capsule-emit disclose ledger.jsonl <id|range> --audience auditor \
 from capsule_emit.disclose import disclose, verify_disclosure
 
 d = disclose(
-    "ledger.jsonl", capsule_id, audience="auditor",
+    "capsule-ledger", capsule_id, audience="auditor",
     reveal={capsule_id: {"agent_input": payload_in, "agent_output": payload_out}},
 )
 ok, errors = verify_disclosure(d)   # pure, offline, never raises
@@ -649,7 +649,7 @@ its own database keeps passing `reveal`. When both are given, a field in
 from capsule_emit.artifact.sqlite import SqliteArtifactStore
 
 store = SqliteArtifactStore(conn, "originals", [producer_public_key])
-d = disclose("ledger.jsonl", f"{first}..{last}", audience="auditor", store=store)
+d = disclose("capsule-ledger", f"{first}..{last}", audience="auditor", store=store)
 ```
 
 A committed field the store cannot supply is reported by its state, never
@@ -662,7 +662,7 @@ and lists the rest in the signed completeness statement as
 absent when nothing is unavailable, so a store-backed disclosure has the same
 envelopes and completeness statement as passing the same originals through
 `reveal`. Any other store error (`corrupt`, `untrusted_signer`, ...) fails the
-disclosure. The legacy `ledger.jsonl` keeps no originals, so passing a
+disclosure. The ledger itself keeps no originals, whether it is `./capsule-ledger/` or a flat `ledger.jsonl`, so passing a
 `LegacyLedger` as `store` is refused; see
 [legacy-ledger.md](legacy-ledger.md#disclosing-originals). With a store,
 `payloads="selected"` discloses every original the store holds for the

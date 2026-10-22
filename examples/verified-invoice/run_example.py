@@ -27,6 +27,7 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ from invoice_checks import (  # noqa: E402
     value_grounded,
 )
 
-LEDGER = _HERE / "invoice_ledger.jsonl"
+LEDGER = Path(tempfile.mkdtemp(prefix="verified-invoice-")) / "invoice-ledger"
 MANIFEST = _HERE / "manifest.md"
 
 # ---------------------------------------------------------------------------

@@ -518,6 +518,9 @@ def push(
     """
     import os
 
+    from . import ledger_layout as _layout
     from . import witness as _witness
 
-    return _witness.push(os.fspath(ledger), ts_url=ts_url, witness=witness)
+    # push() writes only checkpoint stamps, which never warn or stop.
+    path = _layout.resolve_ledger(ledger).path
+    return _witness.push(os.fspath(path), ts_url=ts_url, witness=witness)

@@ -37,7 +37,7 @@ an outside party a reference to check those ids against.
    and still matches its checkpoint. What an outside party can check the key
    holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
-3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>`
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. It runs the format's reference
    payload verifier plus the producer-envelope check; a record carrying no
@@ -280,10 +280,10 @@ All existing tools get sealed with two extra lines (5 + 6).
 ## Verify after a Goose session
 
 ```bash
-capsule-emit verify --store ledger.jsonl
+capsule-emit verify --store ./capsule-ledger
 ```
 
-Pass an absolute `ledger=` to the emitter: the default `ledger.jsonl` lands in
+Pass an absolute `ledger=` to the emitter: the default `./capsule-ledger/` lands in
 whatever directory Goose spawned the extension from.
 
 ## Connect real Goose (step-by-step)
@@ -303,7 +303,7 @@ ANTHROPIC_API_KEY=<key> goose run \
   -t "call submit_order with vendor=Frobozz, amount=1240.19, po_number=PO-7777"
 
 # 4. Verify the capsule offline
-capsule-emit verify --store ledger.jsonl
+capsule-emit verify --store ./capsule-ledger
 ```
 
 Goose v1.39.0 (aarch64-apple-darwin) installs as a prebuilt binary — no Rust
@@ -317,9 +317,9 @@ rules require explaining "how the issue's verification plan was carried out."
 When the implementer is an agent sealing its work with this adapter, that explanation can carry the records alongside the prose:
 
 ```bash
-# during In progress: the agent's tool calls seal into ledger.jsonl as usual
+# during In progress: the agent's tool calls seal into ./capsule-ledger as usual
 # at Verification:
-capsule-emit evidence --ledger ledger.jsonl --issue <ready-issue-url> --out comment.md
+capsule-emit evidence --ledger ./capsule-ledger --issue <ready-issue-url> --out comment.md
 ```
 
 The output is a markdown comment for the PR/issue: per-step sealed records

@@ -379,8 +379,8 @@ def verify_ledger(ledger: Path) -> bool:
 def main() -> int:
     # Each organization seals into its own ledger (its own stream).
     tmpdir = Path(tempfile.mkdtemp())
-    planner_ledger = tmpdir / "aauth_planner_ledger.jsonl"
-    dj_ledger = tmpdir / "aauth_dj_ledger.jsonl"
+    planner_ledger = tmpdir / "aauth-planner-ledger"
+    dj_ledger = tmpdir / "aauth-dj-ledger"
     should_anchor, anchor_endpoint = _resolve_anchor()
 
     _banner("AAuth + Capsule bilateral interop demo")

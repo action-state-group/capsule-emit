@@ -4,7 +4,7 @@ scope, layered on top of ``capsule_emit``'s own emit/ledger primitives.
 
     from capsule_emit.holds import Action, HoldEngine
 
-    engine = HoldEngine(ledger_path="ledger.jsonl", cap_minor={"money.transfer": 10_000_000})
+    engine = HoldEngine(ledger_path="capsule-ledger", cap_minor={"money.transfer": 10_000_000})
     decision = engine.evaluate_and_reserve(
         Action(verb="transfer_funds", operator="acme-co", developer="po-agent@v1",
                action_class="money.transfer", amount_minor=500_000)

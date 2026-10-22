@@ -18,11 +18,10 @@ Run (real Stripe):
     STRIPE_API_KEY=sk_test_... DRY_RUN=0 python examples/a2a-ap2/run_example.py
 
 After running, verify the ledger:
-    agent-action-capsule verify --store /tmp/a2a_ap2_ledger.jsonl
+    agent-action-capsule verify --store <the ledger directory it prints>
 """
 from __future__ import annotations
 
-import json
 import sys
 import tempfile
 from decimal import Decimal
@@ -40,13 +39,14 @@ from a2a_sandbox import (  # noqa: E402
 )
 
 from capsule_emit import seal  # noqa: E402
+from capsule_emit.ledger import read_ledger_entries  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 OPERATOR = "action-state-group"
 DEVELOPER = "ap2-payment-agent@v1"
-LEDGER_PATH = Path(tempfile.mkdtemp()) / "a2a_ap2_ledger.jsonl"
+LEDGER_PATH = Path(tempfile.mkdtemp()) / "a2a-ap2-ledger"
 SPEND_LIMIT = Decimal("1000.00")   # per-mandate ceiling enforced by this agent
 
 _SEP = "─" * 70
@@ -207,8 +207,7 @@ def verify_ledger() -> None:
     _banner("Verification — agent-action-capsule verify (Class-1)")
     from capsule_emit.verification import verify_store
 
-    with open(LEDGER_PATH) as f:
-        capsules = [json.loads(line) for line in f if line.strip()]
+    capsules = read_ledger_entries(LEDGER_PATH)
 
     results = verify_store(capsules)
     all_ok = True

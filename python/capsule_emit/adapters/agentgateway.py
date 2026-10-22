@@ -98,7 +98,8 @@ record can be joined to the gateway's own access log.
 
 Environment variables::
 
-    CAPSULE_LEDGER          Path to JSONL ledger file (default: ledger.jsonl)
+    CAPSULE_LEDGER          Ledger path: a ledger store directory or an existing flat
+                            ledger file (default: ./capsule-ledger/)
     CAPSULE_OPERATOR        Tenant / org identifier stamped on every capsule
     CAPSULE_DEVELOPER       Agent name + version
     CAPSULE_PORT            gRPC server port (default: 50051)
@@ -141,7 +142,8 @@ from .agentgateway_audit import (
 
 _log = logging.getLogger(__name__)
 
-_LEDGER = os.environ.get("CAPSULE_LEDGER", "ledger.jsonl")
+# None: seal() resolves CAPSULE_LEDGER, else the default (./capsule-ledger/).
+_LEDGER: str | None = None
 _OPERATOR = os.environ.get("CAPSULE_OPERATOR", "agentgateway-user")
 _DEVELOPER = os.environ.get("CAPSULE_DEVELOPER", "agentgateway-agent@v1")
 _PORT = int(os.environ.get("CAPSULE_PORT", "50051"))
@@ -248,7 +250,7 @@ class CapsuleEmitServicer:
         self,
         operator: str = _OPERATOR,
         developer: str = _DEVELOPER,
-        ledger: str = _LEDGER,
+        ledger: str | None = _LEDGER,
         anchor: bool = False,
         audit_keys: dict[str, object] | None = None,
         pending_ttl: float = _PENDING_TTL,
@@ -456,7 +458,7 @@ def serve(
     port: int = _PORT,
     operator: str = _OPERATOR,
     developer: str = _DEVELOPER,
-    ledger: str = _LEDGER,
+    ledger: str | None = _LEDGER,
     anchor: bool = False,
     workers: int = 4,
     audit_keys: dict[str, object] | None = None,

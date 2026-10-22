@@ -59,6 +59,7 @@ from capsule_emit.adapters.nemo_guardrails import (
     NeMoGuardrailsCapsuleRecorder,
     register_capsule_log_adapter,
 )
+from capsule_emit.ledger import read_ledger_entries
 from capsule_emit.signing import verify_store_signed
 
 
@@ -228,10 +229,10 @@ async def run(ledger: pathlib.Path, anchor_url: str) -> None:
 def main() -> int:
     anchor_url, srv = start_stub_ts()
     with tempfile.TemporaryDirectory() as td:
-        ledger = pathlib.Path(td) / "ledger.jsonl"
+        ledger = pathlib.Path(td) / "capsule-ledger"
         asyncio.run(run(ledger, anchor_url))
 
-        caps = [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
+        caps = read_ledger_entries(ledger)
         print(f"[step 5] Ledger: {len(caps)} capsule(s) sealed")
         ok = True
         for cap, v in zip(caps, verify_store_signed(caps)):
@@ -253,7 +254,8 @@ def main() -> int:
         print()
 
         # Privacy check, asserted rather than claimed: the raw prompts never land.
-        blob = ledger.read_text()
+        # every file of the ledger directory: segments and indexes alike
+        blob = "".join(f.read_text(errors="replace") for f in ledger.rglob("*") if f.is_file())
         leaked = [s for s in ("please do something forbidden", "hello there", "forbidden again") if s in blob]
         print(f"[step 6] raw user messages in ledger: {leaked or 'none (digest-only)'}")
 

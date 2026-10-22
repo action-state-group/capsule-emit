@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -35,9 +36,11 @@ from nest_core.runner import ScenarioRunner
 from nest_core.scenario import ScenarioConfig
 from nest_core.scenarios import register_scenario
 
+from capsule_emit.ledger import read_ledger_entries
+
 _SCENARIO_YAML = Path(__file__).parent / "scenarios" / "tax_audit.yaml"
 _TRACE_PATH = Path(__file__).parent / "traces" / "tax_audit.jsonl"
-_AUDITOR_LEDGER = Path("tax_audit_auditor_reasoning.jsonl")
+_AUDITOR_LEDGER = Path("tax-audit-auditor-reasoning")
 
 
 def _parse_trace(trace_path: Path) -> dict:
@@ -218,10 +221,10 @@ def _print_report(data: dict, capsule_ledger: Path, auditor_ledger: Path) -> Non
 
     print()
     if capsule_ledger.exists():
-        n = sum(1 for ln in capsule_ledger.read_text().splitlines() if ln.strip())
+        n = len(read_ledger_entries(capsule_ledger))
         print(f"  biz_capsule ledger:   {n} capsules → {capsule_ledger}")
     if auditor_ledger.exists():
-        n = sum(1 for ln in auditor_ledger.read_text().splitlines() if ln.strip())
+        n = len(read_ledger_entries(auditor_ledger))
         print(f"  Auditor reasoning:    {n} capsules → {auditor_ledger}")
     print()
 
@@ -255,8 +258,8 @@ def _verify_ledger(ledger_path: Path, label: str) -> bool:
 
 async def _run(ticks: int | None) -> Path:
     _TRACE_PATH.parent.mkdir(exist_ok=True)
-    CAPSULE_LEDGER.unlink(missing_ok=True)
-    _AUDITOR_LEDGER.unlink(missing_ok=True)
+    shutil.rmtree(CAPSULE_LEDGER, ignore_errors=True)
+    shutil.rmtree(_AUDITOR_LEDGER, ignore_errors=True)
 
     # Register the custom scenario factory
     register_scenario("tax_audit", tax_audit_factory)

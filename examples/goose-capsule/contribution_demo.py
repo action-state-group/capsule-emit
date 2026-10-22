@@ -77,7 +77,7 @@ def _section(title: str) -> None:
 
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
-        ledger = Path(tmp) / "contribution-ledger.jsonl"
+        ledger = Path(tmp) / "contribution-ledger"
 
         emitter = MCPCapsuleEmitter(
             operator="example-org",

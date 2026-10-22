@@ -91,7 +91,8 @@ class CapsuleEmitTrust:
     Args:
         anchor: Whether to anchor capsules to the public log (default False —
             deterministic replay; set True for the live-anchor money-shot pass).
-        ledger: Path for the capsule ledger JSONL file.
+        ledger: Path for the capsule ledger: a ledger store directory, or an
+            existing flat ledger file.
 
     Example::
 
@@ -106,7 +107,7 @@ class CapsuleEmitTrust:
         identity: Any = None,
         *,
         anchor: bool = False,
-        ledger: str | Path = "capsule_ledger.jsonl",
+        ledger: str | Path = "capsule-ledger",
     ) -> None:
         self._identity = identity
         self._anchor = anchor

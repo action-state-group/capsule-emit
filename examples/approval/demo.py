@@ -42,7 +42,7 @@ def _tristate(result) -> str:
 # ---------------------------------------------------------------------------
 
 _tmpdir = tempfile.mkdtemp(prefix="approval-demo-")
-_ledger = os.path.join(_tmpdir, "ledger.jsonl")
+_ledger = os.path.join(_tmpdir, "capsule-ledger")
 
 emitter = MCPCapsuleEmitter(
     operator="acme-co",

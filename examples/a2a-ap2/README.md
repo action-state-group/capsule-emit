@@ -76,7 +76,7 @@ A2A Task state
 
 ```bash
 # Verify the ledger from a run
-agent-action-capsule verify --store /path/to/a2a_ap2_ledger.jsonl
+agent-action-capsule verify --store /path/to/a2a-ap2-ledger
 
 # Verify a single capsule_id against the live anchor
 curl https://anchor.agentactioncapsule.org/v1/inclusion/<capsule_id>

@@ -55,6 +55,7 @@ import tempfile
 import threading
 import warnings
 
+from capsule_emit.ledger import read_ledger_entries
 from capsule_emit.signing import verify_store_signed
 
 
@@ -239,10 +240,10 @@ def _marker(compute: dict) -> str:
 def main() -> int:
     anchor_url, srv = start_stub_ts()
     with tempfile.TemporaryDirectory() as td:
-        ledger = pathlib.Path(td) / "ledger.jsonl"
+        ledger = pathlib.Path(td) / "capsule-ledger"
         run(ledger, anchor_url)
 
-        caps = [json.loads(line) for line in ledger.read_text().splitlines()]
+        caps = read_ledger_entries(ledger)
         print(f"sealed {len(caps)} capsules:")
         ok = True
         for cap, v in zip(caps, verify_store_signed(caps)):

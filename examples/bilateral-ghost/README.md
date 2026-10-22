@@ -16,7 +16,7 @@ python examples/bilateral-ghost/demo.py
 After running, verify any arc:
 
 ```bash
-agent-action-capsule verify --store /tmp/.../arc3_ghost.jsonl
+agent-action-capsule verify --store /tmp/.../arc3-ghost
 ```
 
 ## The three arcs

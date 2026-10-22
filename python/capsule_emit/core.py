@@ -93,7 +93,10 @@ from .spec_version import SPEC_VERSION
 
 __all__ = ["_emit_capsule", "_emit_log_entry", "EmitResult", "LogEntry", "ReferenceEntry"]
 
-_DEFAULT_LEDGER = "ledger.jsonl"
+#: ``ledger=None`` means "resolve it": ``CAPSULE_LEDGER``, else the default
+#: (``capsule_emit.ledger_layout``). Kept as a name so callers that pass the
+#: module's default keep working.
+_DEFAULT_LEDGER = None
 
 AnchorStatus = Literal["confirmed", "submitted", "failed", "skipped"]
 
@@ -545,7 +548,35 @@ class LogEntry:
         return f"LogEntry(capsule_id={self.capsule_id!r}) #logged @ leaf {self.seq}"
 
 
-def _emit_capsule(
+def _emit_capsule(*args: Any, ledger: str | os.PathLike | None = None, **kwargs: Any) -> EmitResult:
+    """:func:`_emit_capsule_at` against the ledger ``ledger`` resolves to
+    (``capsule_emit.ledger_layout.resolve_ledger``)."""
+    return _with_resolved_ledger(_emit_capsule_at, ledger, args, kwargs)
+
+
+def _with_resolved_ledger(fn: Any, ledger: Any, args: tuple, kwargs: dict) -> Any:
+    """Resolve ``ledger`` and call ``fn`` against it. A new record to a flat
+    ledger is checked against the deprecation window first. When the default
+    fell back to ``./ledger.jsonl`` and an import published
+    ``./capsule-ledger/`` while this call waited for the flat file's lock, the
+    append writes nothing and the whole call runs once more against the new
+    default, so its chain, ``confirms``, signer and witnessing all follow the
+    store."""
+    from . import ledger_layout as _layout
+
+    for attempt in (1, 2):
+        resolution = _layout.resolve_ledger(ledger)
+        if resolution.layout == "flat":
+            _layout.check_new_flat_record(resolution.path, resolution.chosen)
+        try:
+            return fn(*args, ledger=resolution.path, _resolution=resolution, **kwargs)
+        except _layout.DefaultMoved:
+            if attempt == 2:  # pragma: no cover - a second import between two attempts
+                raise
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def _emit_capsule_at(
     action: str,
     operator: str = "",
     developer: str = "",
@@ -559,7 +590,8 @@ def _emit_capsule(
     confirms: str | None = None,
     relation: str | None = "confirms",
     anchor: bool | None = None,
-    ledger: str | os.PathLike = _DEFAULT_LEDGER,
+    ledger: str | os.PathLike,
+    _resolution: Any = None,
     anchor_url: str | None = None,
     anchor_wait: float | None = None,
     witness: bool | None = None,
@@ -625,7 +657,9 @@ def _emit_capsule(
             first-run notice (see ``_print_first_run_disclosure_once``)
             prints to stderr before this process's first anchor or witness
             network attempt, naming the endpoint(s) and how to disable them.
-        ledger: Path to the JSONL ledger file (default: ``ledger.jsonl``).
+        ledger: The ledger: a ledger store directory or an existing flat ledger
+            file (default: ``CAPSULE_LEDGER``, else ``./capsule-ledger/``; see
+            ``capsule_emit.ledger_layout``).
         anchor_url: The anchor endpoint for the legacy anchor channel (else
             reads ``AAC_ANCHOR_URL`` env var). There is no default: an
             opted-in anchor with no endpoint is skipped.
@@ -912,7 +946,7 @@ def _emit_capsule(
         signer_obj, capsule["capsule_id"]
     )
 
-    seq = _append_capsule(capsule, ledger)
+    seq = _append_capsule(capsule, ledger, _resolution)
 
     # the witness kill switch (``witness=False`` / ``CAPSULE_WITNESS=off``)
     # is the ONE switch that zeroes all egress -- including the legacy anchor
@@ -1043,24 +1077,40 @@ def _cite_foreign(
     return (*references, cite)
 
 
-def _append_capsule(capsule: dict[str, Any], ledger: str | os.PathLike) -> int:
+def _append_capsule(capsule: dict[str, Any], ledger: str | os.PathLike, resolution: Any = None) -> int:
     """Write ``capsule`` through the legacy ledger backend (the append path
     its artifact ``put`` uses) and return its sequence position. A
     ``capsule_id`` the ledger already holds is not written again: an
     identical line returns the existing position, and a different one raises
-    ``capsule_emit.artifact.ConflictError``."""
+    ``capsule_emit.artifact.ConflictError``. When the default fell back to
+    ``./ledger.jsonl``, the default is checked again under the file's lock
+    (``ledger_layout.DefaultMoved`` if it moved)."""
+    from . import ledger_layout as _layout
     from .legacy_ledger import shared
 
-    return shared(ledger).append_line(capsule).entry.seq
+    precheck = None
+    if resolution is not None and resolution.default_flat:
+
+        def precheck() -> None:
+            if _layout.default_moved(resolution):
+                raise _layout.DefaultMoved()
+
+    return shared(ledger).append_line(capsule, precheck=precheck).entry.seq
 
 
-def _emit_log_entry(
+def _emit_log_entry(*args: Any, ledger: str | os.PathLike | None = None, **kwargs: Any) -> Any:
+    """:func:`_emit_log_entry_at` against the ledger ``ledger`` resolves to."""
+    return _with_resolved_ledger(_emit_log_entry_at, ledger, args, kwargs)
+
+
+def _emit_log_entry_at(
     action: str,
     operator: str = "",
     developer: str = "",
     *,
     log_digest: str,
-    ledger: str | os.PathLike = _DEFAULT_LEDGER,
+    ledger: str | os.PathLike,
+    _resolution: Any = None,
     witness: bool | None = None,
     witness_url: str | list[str] | None = None,
     require_witness: bool = False,
@@ -1127,7 +1177,7 @@ def _emit_log_entry(
     # Deliberately NO signature / key_id keys -- see LogEntry's docstring
     # and verify_capsule_signature_tristate's UNCLAIMED state.
 
-    seq = _append_capsule(entry, ledger)
+    seq = _append_capsule(entry, ledger, _resolution)
 
     # The checkpoint/witness layer needs a real Signer regardless -- it
     # signs the COVERING CHECKPOINT, never this entry's own content (see

@@ -39,6 +39,7 @@ from __future__ import annotations
 import itertools
 import os
 import pathlib
+import tempfile
 
 # Witnessing off: no network, no checkpoint stamp entries — a pure capsule
 # stream. Set before importing capsule_emit so the first-run notice never
@@ -51,6 +52,9 @@ HERE = pathlib.Path(__file__).resolve().parent
 # fixture signatures byte-reproducible. key_id is derived from it.
 _SIGNING_SEED = bytes.fromhex("00" * 31 + "2a")
 _KEY_PATH = HERE / ".fixture-signing-key.pem"
+
+# Where the run's ledger stores live while it seals (set by main()).
+_WORK = pathlib.Path(".")
 
 # A fixed instant per run so timestamps don't drift between regenerations.
 _BASE_TS = "2026-08-25T15:04:05Z"
@@ -100,10 +104,22 @@ def _pin_determinism() -> None:
 
 
 def _fresh_ledger(path: pathlib.Path) -> str:
+    """A new, empty ledger store directory to seal into. capsule-emit no
+    longer creates flat ledgers, so the run seals into a store under
+    ``_WORK`` and :func:`_export` writes the committed ``ledger.jsonl``."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        path.unlink()
-    return str(path)
+    store = _WORK / path.parent.name
+    store.mkdir(parents=True)
+    return str(store)
+
+
+def _export(store: str, target: pathlib.Path) -> pathlib.Path:
+    """Write the store's lines to the committed flat ``target`` (the
+    tutorial reads flat ledgers, which capsule-emit reads forever)."""
+    from capsule_emit.ledger_migrate import export_to_file
+
+    export_to_file(store, target)
+    return target
 
 
 def build_refund_support_ledger() -> pathlib.Path:
@@ -238,7 +254,7 @@ def build_refund_support_ledger() -> pathlib.Path:
 
     # touch to keep the linter from complaining about intentionally-unused ids
     _ = (look_up_a, look_up_b)
-    return pathlib.Path(ledger)
+    return _export(ledger, out_dir / "ledger.jsonl")
 
 
 def build_incident_investigation_ledger() -> pathlib.Path:
@@ -344,7 +360,7 @@ def build_incident_investigation_ledger() -> pathlib.Path:
         **common,
     )
 
-    return pathlib.Path(ledger)
+    return _export(ledger, out_dir / "ledger.jsonl")
 
 
 # --------------------------------------------------------------------------
@@ -482,10 +498,13 @@ def _cleanup_lock_files() -> None:
 
 
 def main() -> None:
+    global _WORK
     _write_fixed_key()
     _pin_determinism()
-    a = build_refund_support_ledger()
-    b = build_incident_investigation_ledger()
+    with tempfile.TemporaryDirectory() as work:
+        _WORK = pathlib.Path(work)
+        a = build_refund_support_ledger()
+        b = build_incident_investigation_ledger()
     _write_held_runs()
     # Clean up the fixture key — it is not a deliverable, and regeneration
     # re-derives it from the fixed seed.

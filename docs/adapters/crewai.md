@@ -32,7 +32,7 @@ can.
    and still matches its checkpoint. What an outside party can check the key
    holder against is an accepted external checkpoint — see
    [Network behavior](#network-behavior).
-3. **You re-check it offline.** `capsule-emit verify --store <ledger>.jsonl`
+3. **You re-check it offline.** `capsule-emit verify --store <ledger>`
    recomputes every digest and outcome link and checks every producer signature it
    finds — no account, no service, no network. A record carrying no signature at all is not failed by default — `capsule-emit verify` counts such
    records in a one-line summary after the tally, and, from 0.8.3, `--require-signature`

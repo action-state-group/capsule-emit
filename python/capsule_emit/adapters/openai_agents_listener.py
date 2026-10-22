@@ -142,6 +142,7 @@ import warnings
 from collections import OrderedDict
 from typing import Any
 
+from ..ledger_layout import resolve_ledger
 from ._base import CapsuleEmitterBase
 
 __all__ = [
@@ -487,7 +488,7 @@ class OpenAIAgentsCapsuleProcessor(_TracingProcessorBase):  # type: ignore[misc,
     SPAN_TYPE = "function"
 
     def __init__(self, **core_kw: Any) -> None:
-        _warn_on_duplicate_ledger(core_kw.get("ledger", "ledger.jsonl"))
+        _warn_on_duplicate_ledger(core_kw.get("ledger") or resolve_ledger(None).path)
         self.core = OpenAIAgentsListenerCore(**core_kw)
 
     # -- TracingProcessor interface ---------------------------------------
@@ -612,7 +613,7 @@ class OpenAIAgentsCapsuleHooks(_RunHooksBase):  # type: ignore[misc, valid-type]
     """
 
     def __init__(self, **core_kw: Any) -> None:
-        _warn_on_duplicate_ledger(core_kw.get("ledger", "ledger.jsonl"))
+        _warn_on_duplicate_ledger(core_kw.get("ledger") or resolve_ledger(None).path)
         self.core = OpenAIAgentsListenerCore(**core_kw)
 
     async def on_tool_start(self, context: Any, agent: Any, tool: Any) -> None:

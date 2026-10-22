@@ -115,7 +115,7 @@ async def _main_async(ledger_path: str, ts_url: str, ts_pubkey_pem: bytes, port:
 
 
 def main() -> None:
-    ledger_path = str(Path(tempfile.mkdtemp(prefix="a2a-task-evidence-")) / "ledger.jsonl")
+    ledger_path = str(Path(tempfile.mkdtemp(prefix="a2a-task-evidence-")) / "capsule-ledger")
     ts = start_local_ts()
     try:
         vector = asyncio.run(_main_async(ledger_path, ts.url, ts.public_key_pem, port=8099))

@@ -42,6 +42,7 @@ import tempfile
 import threading
 from datetime import datetime, timezone
 
+from capsule_emit.ledger import read_ledger_entries
 from capsule_emit.signing import verify_store_signed
 
 
@@ -194,7 +195,7 @@ def run(ledger: pathlib.Path, anchor_url: str) -> None:
 
 
 def verify_ledger(ledger: pathlib.Path) -> bool:
-    rows = [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
+    rows = read_ledger_entries(ledger)
     caps = [row["capsule"] if "capsule" in row else row for row in rows]
     print(f"{'action':34} {'effect':10} {'verdict':9} {'chained':8} {'verify_store_signed()'}")
     print("-" * 75)
@@ -214,7 +215,7 @@ def main() -> int:
     anchor_url, srv = start_stub_ts()
     print(f"stub SCITT TS: {anchor_url} (hermetic, in-process)")
     with tempfile.TemporaryDirectory() as tmp:
-        ledger = pathlib.Path(tmp) / "ledger.jsonl"
+        ledger = pathlib.Path(tmp) / "capsule-ledger"
         run(ledger, anchor_url)
         ok = verify_ledger(ledger)
     srv.shutdown()

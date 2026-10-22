@@ -537,7 +537,7 @@ def _cmd_evidence(args: argparse.Namespace) -> int:
             print(f"evidence: {args.bundle_file}: {exc}", file=sys.stderr)
             return 1
 
-    ledger_name = Path(args.ledger).name if args.ledger else "ledger.jsonl"
+    ledger_name = Path(args.ledger).name if args.ledger else "capsule-ledger"
     try:
         markdown = build_verification_comment(
             capsules,

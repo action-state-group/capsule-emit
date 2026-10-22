@@ -246,7 +246,7 @@ def _writer_lock(path: Path, *, wait: bool = False, timeout: float | None = None
 
 def append_to_ledger(
     capsule: dict,
-    path: str | os.PathLike = "ledger.jsonl",
+    path: str | os.PathLike | None = None,
     *,
     wait: bool = False,
     timeout: float | None = None,
@@ -284,6 +284,10 @@ def append_to_ledger(
     from .ledger_store import LedgerConflictError, LedgerWriteError
     from .legacy_ledger import shared
 
+    if path is None:
+        from .ledger_layout import resolve_ledger
+
+        path = resolve_ledger(None).path
     if not isinstance(capsule, dict):
         raise LedgerWriteError(f"{path}: a ledger line is a JSON object, not {type(capsule).__name__}")
     try:

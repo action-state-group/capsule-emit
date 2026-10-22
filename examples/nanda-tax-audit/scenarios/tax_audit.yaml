@@ -11,8 +11,8 @@
 #   register_scenario("tax_audit", tax_audit_factory)
 #
 # After `nest run` (or demo.py), verify the capsule ledger:
-#   agent-action-capsule verify --store tax_audit_capsule_ledger.jsonl
-#   agent-action-capsule verify --store tax_audit_auditor_reasoning.jsonl
+#   agent-action-capsule verify --store tax-audit-capsule-ledger
+#   agent-action-capsule verify --store tax-audit-auditor-reasoning
 name: tax_audit
 description: "Cook the books, get caught: biz_control (mutable) vs biz_capsule (anchored)"
 

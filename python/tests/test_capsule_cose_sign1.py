@@ -127,7 +127,7 @@ def test_content_collision_within_one_producer_is_idempotent_not_dropped(tmp_pat
     # same capsule_id, same envelope (Ed25519 is deterministic, RFC 8032).
     from capsule_emit.signing import resolve_signer, sign_producer_envelope
 
-    signer = resolve_signer(str(tmp_path / "ledger.jsonl"))
+    signer = resolve_signer(str(tmp_path / "capsule-ledger"))
     envelope_hex, key_id = sign_producer_envelope(signer, base["capsule_id"])
     assert envelope_hex == base["signature"]
     assert key_id == base["key_id"]

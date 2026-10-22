@@ -329,9 +329,9 @@ def _default_key_path(ledger_path: str | os.PathLike) -> Path:
     its canonical path (``ledger_store.store_root``), so ``capsule-ledger/``
     and ``capsule-ledger`` share one key beside the directory, never inside
     it."""
-    if Path(ledger_path).is_dir():
-        from .ledger_store import store_root
+    from .ledger_store import is_store_target, store_root
 
+    if is_store_target(ledger_path):
         return Path(os.fspath(store_root(ledger_path)) + ".signing_key.pem")
     return Path(os.fspath(ledger_path) + ".signing_key.pem")
 
@@ -368,7 +368,9 @@ def resolve_signer(
         cached = _cache.get(cache_key)
         if cached is not None:
             return cached
-    store_key = key_path is None and not os.environ.get(SIGNING_KEY_PATH_ENV_VAR) and Path(ledger_path).is_dir()
+    from .ledger_store import is_store_target
+
+    store_key = key_path is None and not os.environ.get(SIGNING_KEY_PATH_ENV_VAR) and is_store_target(ledger_path)
     with contextlib.ExitStack() as stack:
         if store_key and not resolved_path.exists():
             # A store's default key is created only under the store's writer

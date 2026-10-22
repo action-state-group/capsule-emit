@@ -199,6 +199,7 @@ def test_suggested_store_for_the_default_ledger_and_collisions(tmp_path, monkeyp
 def test_the_suggested_store_is_accepted_by_import(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for name in ("ledger.jsonl", "audit.log", ".hidden.jsonl"):
+        (tmp_path / name).touch()  # existing flat ledgers: no new flat file is created
         _seal(tmp_path / name)
         target = ledger_migrate.suggested_store(name)
         assert not target.startswith("-")

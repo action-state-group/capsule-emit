@@ -42,7 +42,7 @@ except ImportError as exc:
 # Config
 # ---------------------------------------------------------------------------
 
-_DEFAULT_LEDGER = os.environ.get("CAPSULE_LEDGER", "capsule_ledger.jsonl")
+_DEFAULT_LEDGER = os.environ.get("CAPSULE_LEDGER", "capsule-ledger")
 
 # ---------------------------------------------------------------------------
 # App
@@ -89,7 +89,7 @@ class SealRequest(BaseModel):
     """capsule_id of the prior MAY capsule.  Required for DID capsules."""
 
     ledger: str = _DEFAULT_LEDGER
-    """Path to the JSONL ledger file (default: capsule_ledger.jsonl)."""
+    """Path to the ledger: a ledger store directory, or an existing flat ledger file (default: capsule-ledger)."""
 
     reveal: bool = False
     """When True, echo raw input/output back in the response alongside the

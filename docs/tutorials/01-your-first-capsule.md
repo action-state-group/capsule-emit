@@ -61,13 +61,13 @@ That's it. You sealed an action.
 ## 3. See your witnessed ledger
 
 Here's the part that matters: that `seal()` didn't just make one record — it
-**appended to your ledger**. Every `seal()` adds a line to `ledger.jsonl`, building
+**appended to your ledger**. Every `seal()` adds a line to the ledger directory `./capsule-ledger/`, building
 the running, witnessed trail of everything your agent does. Look at it:
 
 ```console
-$ capsule-emit ledger view ./ledger.jsonl
+$ capsule-emit ledger view ./capsule-ledger
 
-capsule ledger: ./ledger.jsonl  (1 record(s))
+capsule ledger: ./capsule-ledger  (1 record(s))
 
   capsule_id      actor                                       verdict       effect                chain    verify
 -----------------------------------------------------------------------------------------------------------------
@@ -117,10 +117,10 @@ Anyone can verify your whole ledger from the bytes alone — no keys, no account
 
 ```console
 $ pip install agent-action-capsule
-$ agent-action-capsule verify --store ./ledger.jsonl
+$ agent-action-capsule verify --store ./capsule-ledger
 ```
 
-Edit one character in `ledger.jsonl` and run it again — verification fails. That's
+Edit one character of a record in `capsule-ledger/segments/seg-000001.jsonl` and run it again — verification fails. That's
 the point: the record is trustworthy to someone who didn't write it. *Why* a public
 witness (not just your own file) is what makes that true for an outsider:
 [why anchoring makes it trustworthy](../why-anchoring.md).

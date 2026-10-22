@@ -168,7 +168,7 @@ def run_demo() -> dict:
     log_pem = _log_pubkey_pem()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        ledger = pathlib.Path(tmpdir) / "demo_ledger.jsonl"
+        ledger = pathlib.Path(tmpdir) / "demo-ledger"
 
         # anchor=False: we submit synchronously below so there is no race
         # between the background daemon thread and the process exiting.

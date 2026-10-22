@@ -43,12 +43,12 @@ from demo import (
 # Each organization seals into its own ledger (its own stream).
 @pytest.fixture
 def planner_ledger(tmp_path: Path) -> Path:
-    return tmp_path / "planner_ledger.jsonl"
+    return tmp_path / "planner-ledger"
 
 
 @pytest.fixture
 def dj_ledger(tmp_path: Path) -> Path:
-    return tmp_path / "dj_ledger.jsonl"
+    return tmp_path / "dj-ledger"
 
 
 @pytest.fixture

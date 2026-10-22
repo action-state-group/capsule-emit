@@ -124,7 +124,7 @@ def build_verification_comment(
     title: str = "Verification evidence",
     base_url: str | None = None,
     viewer_link: bool = True,
-    ledger_name: str = "ledger.jsonl",
+    ledger_name: str = "capsule-ledger",
 ) -> str:
     """Build the Verification-stage markdown comment from verified capsules.
 

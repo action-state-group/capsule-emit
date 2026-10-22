@@ -69,7 +69,8 @@ def load_capsules(
         capsules = read_ledger(ledger_path)
     elif from_run:
         run_dir = Path(from_run)
-        ledger_candidate = run_dir / "ledger.jsonl"
+        store_candidate = run_dir / "capsule-ledger"
+        ledger_candidate = store_candidate if store_candidate.is_dir() else run_dir / "ledger.jsonl"
         if ledger_candidate.exists():
             from .ledger import read_ledger
 
@@ -78,7 +79,7 @@ def load_capsules(
             json_files = sorted(run_dir.glob("*.json"))
             if not json_files:
                 raise PermalinkError(
-                    f"--from-run {from_run}: no ledger.jsonl and no *.json capsule files found"
+                    f"--from-run {from_run}: no capsule-ledger/, no ledger.jsonl and no *.json capsule files found"
                 )
             capsules = [_load_json_file(p) for p in json_files]
     else:
