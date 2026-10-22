@@ -699,3 +699,30 @@ def test_scan_flags_survive_a_wal_checkpoint_between_copies_and_a_late_append(tm
             assert [(r.capsule_id, r.consequential) for r in scan.scan()] == [(_cid("history"), False)]
     finally:
         writer.close()
+
+
+def test_a_recreated_store_that_reuses_a_segments_inode_is_read_afresh(store_dir, monkeypatch):
+    """Linux reuses a deleted file's inode number at once: the reader must not
+    take a recreated segment for the old one grown (Python CI, capsule-emit#360)."""
+    import shutil
+
+    append_to_ledger({"capsule_id": _cid("old")}, store_dir)
+    reader = LegacyLedger(store_dir)
+    assert [e.value.hex() for e in reader.entries()] == [_cid("old")]
+    pinned = dict(reader._store._identity)
+    shutil.rmtree(store_dir)
+    store_dir.mkdir()
+    for name in ("new1", "new2"):
+        append_to_ledger({"capsule_id": _cid(name), "padding": "x" * 300}, store_dir)
+    reader._store._identity.update(pinned)  # as if the inode were reused
+    real_stat = Path.stat
+
+    def same_inode(self, *args, **kwargs):
+        st = real_stat(self, *args, **kwargs)
+        if self.name in pinned:
+            dev, ino = pinned[self.name]
+            return os.stat_result((st.st_mode, ino, dev, *tuple(st)[3:]))
+        return st
+
+    monkeypatch.setattr(Path, "stat", same_inode)
+    assert [e.value.hex() for e in reader.entries()] == [_cid("new1"), _cid("new2")]

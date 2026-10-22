@@ -172,6 +172,10 @@ class StoreLines:
         self._segments: list[str] = []
         self._consumed: dict[str, int] = {}
         self._identity: dict[str, tuple[int, int]] = {}
+        # The last line read from each segment (its offset and bytes): a
+        # recreated store can reuse a segment's name and inode, but not its
+        # bytes at that offset.
+        self._tail: dict[str, tuple[int, bytes]] = {}
         self._skipped: list[StoreLine] = []
 
     @property
@@ -197,8 +201,16 @@ class StoreLines:
         names = [s.name for s in segments]
 
         def changed(name: str) -> bool:
-            st = (self._root / "segments" / name).stat()
-            return st.st_size < self._consumed[name] or (st.st_dev, st.st_ino) != self._identity[name]
+            path = self._root / "segments" / name
+            st = path.stat()
+            if st.st_size < self._consumed[name] or (st.st_dev, st.st_ino) != self._identity[name]:
+                return True
+            if name not in self._tail:
+                return False
+            at, raw = self._tail[name]
+            with open(path, "rb") as fh:
+                fh.seek(at)
+                return fh.read(len(raw)) != raw
 
         # A store deleted and recreated under the reader reuses segment names:
         # a segment that is another file (or shorter) restarts the read.
@@ -227,6 +239,7 @@ class StoreLines:
             offset = self._consumed[name]
             for raw in data[:complete].split(b"\n")[:-1]:
                 line = StoreLine(name, offset, raw)
+                self._tail[name] = (offset, raw + b"\n")
                 offset += len(raw) + 1
                 if not raw.strip():
                     continue
