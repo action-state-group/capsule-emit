@@ -42,7 +42,7 @@ from capsule_emit.verification import verify_capsule as verify
 
 def _load_store(path: str) -> list:
     """The Capsules agent-action-capsule's verify --store reads from path (from
-    0.12.0 its loader returns them with the lines it counted instead)."""
+    0.12.0 its loader returns a _Store, whose .capsules these are)."""
     return _load_store_result(path).capsules
 
 
@@ -361,7 +361,9 @@ def test_neutral_capsule_id_recomputes_after_stripping_local_fields(tmp_ledger):
 def test_load_store_reads_a_ledger_directory(tmp_path):
     store = tmp_path / "capsule-ledger"
     results = _emit_n(3, store)
-    caps = _load_store(str(store))
+    loaded = _load_store_result(str(store))
+    assert loaded.problems == []  # verify --store fails on any problem
+    caps = loaded.capsules
     assert [c["capsule_id"] for c in caps] == [r.capsule["capsule_id"] for r in results]
     for cap in caps:
         assert verify(cap).ok

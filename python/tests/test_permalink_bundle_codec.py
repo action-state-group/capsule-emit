@@ -36,7 +36,6 @@ _DOC = json.loads(
 CASES = pytest.mark.parametrize("case", _DOC["cases"], ids=[c["id"] for c in _DOC["cases"]])
 
 
-
 @pytest.fixture(autouse=True)
 def _own_directory(tmp_path, monkeypatch):
     # seal() with no ledger writes the default ledger in the working
