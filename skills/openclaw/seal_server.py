@@ -24,6 +24,7 @@ CAPSULE_ANCHOR=legacy-on -- see capsule_emit.core's "Single egress" note.
 """
 from __future__ import annotations
 
+import json
 import os
 import warnings
 from typing import Any
@@ -53,9 +54,21 @@ _DEFAULT_LEDGER = os.environ.get("CAPSULE_LEDGER", "capsule-ledger")
 # writes there while the old file is still beside it.
 _OLD_DEFAULT_LEDGER = "capsule_ledger.jsonl"
 _split_warned: set[str] = set()
+_settled: bool | None = None  # _history_splits() once the new ledger exists
 
 
 def _first_id(path: str) -> str | None:
+    """The first capsule_id in a ledger, reading a flat file only up to it."""
+    if os.path.isfile(path):
+        with open(path, "rb") as fh:
+            for raw in fh:
+                try:
+                    entry = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(entry, dict) and entry.get("capsule_id"):
+                    return entry["capsule_id"]
+        return None
     for entry in read_ledger_entries(path):
         if entry.get("capsule_id"):
             return entry["capsule_id"]
@@ -65,13 +78,20 @@ def _first_id(path: str) -> str | None:
 def _history_splits() -> bool:
     """The default ledger is a ledger directory, and the old flat default
     beside it holds records the directory does not start with (it was not
-    imported)."""
+    imported). Once the directory exists the answer cannot change, so it is
+    worked out once; until then only the old file's first line is read."""
+    global _settled
+    if _settled is not None:
+        return _settled
     if "CAPSULE_LEDGER" in os.environ or not os.path.isfile(_OLD_DEFAULT_LEDGER):
         return False
     old_first = _first_id(_OLD_DEFAULT_LEDGER)
     if old_first is None:
         return False
-    return not os.path.exists(_DEFAULT_LEDGER) or _first_id(_DEFAULT_LEDGER) != old_first
+    if not os.path.exists(_DEFAULT_LEDGER):
+        return True
+    _settled = _first_id(_DEFAULT_LEDGER) != old_first
+    return _settled
 
 
 def _warn_if_history_splits(*, at_startup: bool = False) -> None:

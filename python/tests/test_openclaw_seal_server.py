@@ -80,3 +80,15 @@ def test_an_empty_old_ledger_is_not_history(tmp_path):
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         _load()
+
+
+def test_the_split_check_is_worked_out_once_the_new_ledger_exists(tmp_path, monkeypatch):
+    _seal(tmp_path / "capsule_ledger.jsonl")
+    ledger_migrate.import_ledger(tmp_path / "capsule_ledger.jsonl", tmp_path / "capsule-ledger")
+    server = _load()
+    calls = []
+    real = server._first_id
+    monkeypatch.setattr(server, "_first_id", lambda path: calls.append(path) or real(path))
+    for _ in range(3):
+        server._warn_if_history_splits()
+    assert calls == []  # startup already worked it out; requests never reread a ledger

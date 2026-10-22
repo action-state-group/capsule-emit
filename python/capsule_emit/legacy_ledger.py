@@ -678,13 +678,15 @@ class LegacyLedger:
             line["key_id"] = key_id
         return self.append_line(line)
 
-    def append_any(self, line: dict, *, wait: bool | None = None, timeout: float | None = None) -> AppendResult:
+    def append_any(
+        self, line: dict, *, wait: bool | None = None, timeout: float | None = None, precheck: Any = None
+    ) -> AppendResult:
         """Write any ledger line, bookkeeping included (checkpoint stamps,
         witness backfills, disclosure records): ``append_line`` without its
         record check. ``capsule_emit.ledger.append_to_ledger`` calls it, so an
         identical line is ``idempotent`` and a different line under the same
         ``capsule_id`` is refused, for every kind of line."""
-        return self._write(line, require_record=False, wait=wait, timeout=timeout)
+        return self._write(line, require_record=False, wait=wait, timeout=timeout, precheck=precheck)
 
     def append_line(self, line: dict, *, precheck: Any = None) -> AppendResult:
         """Write one capsule line (with any inline ``signature``/``key_id``)
@@ -711,6 +713,14 @@ class LegacyLedger:
             raise InvalidError("capsule id")
         text = _line_form(line)
         value = bytes.fromhex(capsule_id)
+        if self._store is None and self._path.exists() and line.get("kind") not in _ledger.NON_CAPSULE_KINDS:
+            # A record to a flat ledger, by any entry point: the deprecation
+            # window applies (bookkeeping never stops). Checked before the
+            # locks are taken, so a warnings hook that writes a ledger cannot
+            # deadlock on them.
+            from .ledger_layout import check_new_flat_record
+
+            check_new_flat_record(self._path)
         lock = _ledger._writer_lock(
             self._path,
             wait=self._wait if wait is None else wait,
@@ -735,12 +745,6 @@ class LegacyLedger:
                 _store.append_line(self._path, text)
             else:
                 _refuse_new_flat_file(self._path)
-                if line.get("kind") not in _ledger.NON_CAPSULE_KINDS:
-                    # A new record to a flat ledger, by any entry point: the
-                    # deprecation window applies (bookkeeping never stops).
-                    from .ledger_layout import check_new_flat_record
-
-                    check_new_flat_record(self._path)
                 _ledger._write_line(self._path, text)
             self._refresh()
             written = self._find(value)

@@ -500,3 +500,85 @@ def test_the_tutorial_fixtures_regenerate_over_the_committed_ones(tmp_path):
     assert run.returncode == 0, run.stderr
     for case in ("refund-support-agent", "incident-investigation-agent"):
         assert read_ledger_entries(copy / case / "ledger.jsonl")
+
+
+def test_no_example_deletes_the_default_ledger():
+    """An example that clears its ledger before a run must own that ledger:
+    ./capsule-ledger/ is now every application's default (Codex round 2)."""
+    import ast
+    from pathlib import Path
+
+    examples = Path(__file__).resolve().parents[2] / "examples"
+    offenders = []
+    for script in examples.rglob("*.py"):
+        tree = ast.parse(script.read_text(encoding="utf-8"))
+        default_names = {
+            target.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+            and any(isinstance(c, ast.Constant) and c.value in (ledger_layout.DEFAULT_STORE, "./" + ledger_layout.DEFAULT_STORE) for c in ast.walk(node.value))
+        }
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", "")) in ("rmtree", "unlink", "remove"):
+                args = [*node.args, getattr(node.func, "value", None)]
+                for arg in args:
+                    if (isinstance(arg, ast.Name) and arg.id in default_names) or (
+                        isinstance(arg, ast.Constant) and arg.value == ledger_layout.DEFAULT_STORE
+                    ):
+                        offenders.append(f"{script.relative_to(examples)}:{node.lineno}")
+    assert offenders == []
+
+
+def test_a_default_append_that_waited_while_an_import_published_the_store_goes_to_the_store(tmp_path, monkeypatch):
+    from capsule_emit import ledger as _ledger
+    from capsule_emit.ledger import append_to_ledger
+
+    (tmp_path / "ledger.jsonl").touch()
+    _seal()
+    line = _seal(ledger=tmp_path / "scratch").capsule
+    done = []
+    with _ledger._append_lock:  # another write in this process holds the lock
+        waiting = threading.Thread(target=lambda: done.append(append_to_ledger(line)))
+        waiting.start()
+        waiting.join(0.5)
+        assert waiting.is_alive()
+        ledger_migrate.import_ledger(tmp_path / "ledger.jsonl", tmp_path / "capsule-ledger")
+    waiting.join(10)
+    assert done
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 1
+    assert [c["capsule_id"] for c in read_ledger(tmp_path / "capsule-ledger")][-1] == line["capsule_id"]
+
+
+def test_a_warnings_hook_that_writes_a_ledger_does_not_deadlock(tmp_path, monkeypatch):
+    from capsule_emit.ledger import append_to_ledger
+
+    flat = tmp_path / "ledger.jsonl"
+    flat.touch()
+    line = _seal(ledger=tmp_path / "scratch").capsule
+    recorded = []
+
+    def record_the_warning(message, category, filename, lineno, file=None, line_=None):
+        recorded.append(append_to_ledger(_seal(ledger=tmp_path / "warnings-log").capsule, tmp_path / "warnings-log"))
+
+    monkeypatch.setattr(warnings, "showwarning", record_the_warning)
+    finished = []
+    worker = threading.Thread(target=lambda: finished.append(append_to_ledger(line, flat)))
+    with warnings.catch_warnings():
+        warnings.simplefilter("always", LedgerDeprecationWarning)
+        warnings.showwarning = record_the_warning
+        worker.start()
+        worker.join(10)
+    assert not worker.is_alive()
+    assert finished and recorded
+
+
+def test_holds_name_the_variable_that_chose_their_flat_ledger(tmp_path, monkeypatch):
+    from capsule_emit.holds import Action, HoldEngine
+
+    (tmp_path / "audit.jsonl").touch()
+    monkeypatch.setenv("CAPSULE_LEDGER", str(tmp_path / "audit.jsonl"))
+    action = Action(verb="money.transfer", operator="acme", developer="d", amount_minor=10, currency="USD")
+    with pytest.warns(LedgerDeprecationWarning, match="then set CAPSULE_LEDGER="):
+        HoldEngine(cap_minor={"money.transfer": 100}).evaluate_and_reserve(action)

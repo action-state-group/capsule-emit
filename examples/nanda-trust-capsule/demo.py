@@ -13,9 +13,9 @@ Usage:
     python demo.py --ticks 1000       # shorter run (~5s vs 30s)
     python demo.py --compare          # side-by-side vs agent_receipts baseline
 
-The capsule ledger is written to the directory `capsule-ledger/` in the working directory.
+The capsule ledger is written to the directory `nanda-trust-ledger/` in the working directory.
 After the run, verify it independently:
-    agent-action-capsule verify --store capsule-ledger
+    agent-action-capsule verify --store nanda-trust-ledger
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from capsule_emit.ledger import read_ledger_entries
 
 _SCENARIO_YAML = Path(__file__).parent / "scenarios" / "receipt_reputation_capsule.yaml"
 _TRACE_DIR = Path(__file__).parent / "traces"
-_CAPSULE_LEDGER = Path("capsule-ledger")
+_CAPSULE_LEDGER = Path("nanda-trust-ledger")
 
 
 def _score_table(trace_path: Path) -> dict[str, tuple[float, str]]:

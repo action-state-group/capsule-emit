@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ..ledger import append_to_ledger, read_ledger
-from ..ledger_layout import resolve_ledger
+from ..ledger_layout import check_new_flat_record, resolve_ledger
 from ..verification import verify_capsule
 from .action import Action
 from .aggregate import active_exposure_minor
@@ -103,13 +103,17 @@ class HoldEngine:
         # ledger); every read and write uses the resolved path. Hold capsules
         # are new records, so on a flat ledger each write is checked against
         # the deprecation window (by the ledger's own write path).
-        self._ledger_path = resolve_ledger(ledger_path).path
+        self._resolution = resolve_ledger(ledger_path)
+        self._ledger_path = self._resolution.path
         self._cap_minor = cap_minor or {}
         self._tolerance_minor = tolerance_minor or {}
         self._engine_available = engine_available
         self._scope_locks = scope_locks or ScopeLocks()
 
     def _append(self, capsule: dict) -> None:
+        if self._resolution.layout == "flat":
+            # Checked here first so the warning names how this ledger was chosen.
+            check_new_flat_record(self._ledger_path, self._resolution.chosen)
         append_to_ledger(capsule, self._ledger_path)
 
     # -- atomic evaluate-and-reserve --------------------------------------

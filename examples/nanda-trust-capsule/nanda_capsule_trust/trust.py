@@ -107,7 +107,7 @@ class CapsuleEmitTrust:
         identity: Any = None,
         *,
         anchor: bool = False,
-        ledger: str | Path = "capsule-ledger",
+        ledger: str | Path = "nanda-trust-ledger",
     ) -> None:
         self._identity = identity
         self._anchor = anchor
