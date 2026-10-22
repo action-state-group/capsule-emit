@@ -35,7 +35,7 @@ classifiers = [
 # cll.ledger.segments directly -- segment rotation/archival (list_segments,
 # mount_segment/unmount_segment, SegmentManifest) shipped in 0.2.0.
 dependencies = [
-    "agent-action-capsule[anchor,envelope]>=0.11.0",  # 0.11.0: the Evidence Bundle producer (build_evidence_bundle, proof_source_from_cll)
+    "agent-action-capsule[anchor,envelope]>=0.12.0",  # 0.11.0: the Evidence Bundle producer (build_evidence_bundle, proof_source_from_cll); 0.12.0: verify --store reads a ledger directory (agent-action-capsule#372)
     "cryptography>=42.0",
     # 0.4.0: range/inclusion proofs for verify --bundle; 0.4.1: scan compares instants (--period).
     # 0.5: no default witness and no built-in witness key (verification trusts only the caller's keys).

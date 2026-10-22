@@ -76,10 +76,7 @@ jobs:
       - name: from-nothing smoke — verify --store must PASS (guards the capsule_id interop mismatch)
         run: |
           LED=$(cat /tmp/led_path)
-          # agent-action-capsule 0.11.0 reads flat ledgers only: verify the
-          # store's lines, exported unchanged.
-          /tmp/cleanroom/bin/capsule-emit ledger export --jsonl "$LED" -o "$LED.jsonl"
-          OUT=$(/tmp/cleanroom/bin/agent-action-capsule verify --store "$LED.jsonl" 2>&1); echo "$OUT"
+          OUT=$(/tmp/cleanroom/bin/agent-action-capsule verify --store "$LED" 2>&1); echo "$OUT"
           echo "$OUT" | grep -q "capsule_id_mismatch" && { echo "::error::capsule_id_mismatch on a fresh install"; exit 1; }
           echo "$OUT" | grep -qE "ok: False"          && { echo "::error::a capsule failed verification on a fresh install"; exit 1; }
           echo "clean-room OK: fresh PyPI install can seal() and verify --store"

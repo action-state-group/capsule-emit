@@ -12,7 +12,6 @@
 #
 # After `nest run`, verify the ledger independently:
 #   agent-action-capsule verify --store nanda-trust-ledger
-# (agent-action-capsule later than 0.11.0; with 0.11.0 use `capsule-emit verify --store`.)
 name: receipt_reputation_capsule
 description: "receipt_reputation scenario with trust: capsule_emit (anchored ledger)"
 
