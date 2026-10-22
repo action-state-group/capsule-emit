@@ -348,22 +348,22 @@ def resolve_signer(
         if cached is not None:
             return cached
     store_key = key_path is None and not os.environ.get(SIGNING_KEY_PATH_ENV_VAR) and Path(ledger_path).is_dir()
-    lock = contextlib.nullcontext()
-    if store_key and not resolved_path.exists():
-        # A store's default key is created only under the store's writer lock
-        # (and rechecked inside it, by LocalKeypairSigner), so it never races
-        # an import copying the old ledger's key into place. The flock is
-        # taken before _cache_lock, so waiting for it never blocks signer
-        # resolution for other ledgers.
-        from . import ledger as _ledger
-        from .ledger_store import store_root
+    with contextlib.ExitStack() as stack:
+        if store_key and not resolved_path.exists():
+            # A store's default key is created only under the store's writer
+            # lock (and rechecked inside it, by LocalKeypairSigner), so it
+            # never races an import copying the old ledger's key into place.
+            # _append_lock first, the order every append takes, so a thread in
+            # this process appending meanwhile waits instead of meeting our
+            # flock; both before _cache_lock, so the wait never blocks signer
+            # resolution for other ledgers. Entered inside the ExitStack, so a
+            # failure taking the flock releases _append_lock.
+            from . import ledger as _ledger
+            from .ledger_store import store_root
 
-        # _append_lock first, the order every append takes: a thread in this
-        # process appending meanwhile waits instead of meeting our flock.
-        lock = contextlib.ExitStack()
-        lock.enter_context(_ledger._append_lock)
-        lock.enter_context(_ledger._writer_lock(store_root(ledger_path), wait=True))
-    with lock, _cache_lock:
+            stack.enter_context(_ledger._append_lock)
+            stack.enter_context(_ledger._writer_lock(store_root(ledger_path), wait=True))
+        stack.enter_context(_cache_lock)
         cached = _cache.get(cache_key)
         if cached is None:
             cached = _cache[cache_key] = LocalKeypairSigner(resolved_path)

@@ -35,9 +35,9 @@ import contextlib
 import json
 import logging
 import os
+import secrets
 import stat
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -172,6 +172,7 @@ class StoreLines:
         self._seen: set[str] = set()
         self._segments: list[str] = []
         self._consumed: dict[str, int] = {}
+        self._identity: dict[str, tuple[int, int]] = {}
         self._skipped: list[StoreLine] = []
 
     @property
@@ -195,18 +196,25 @@ class StoreLines:
                     "to read positions and proofs"
                 )
         names = [s.name for s in segments]
-        restarted = names[: len(self._segments)] != self._segments or any(
-            (self._root / "segments" / name).stat().st_size < self._consumed[name] for name in self._segments
-        )
+
+        def changed(name: str) -> bool:
+            st = (self._root / "segments" / name).stat()
+            return st.st_size < self._consumed[name] or (st.st_dev, st.st_ino) != self._identity[name]
+
+        # A store deleted and recreated under the reader reuses segment names:
+        # a segment that is another file (or shorter) restarts the read.
+        restarted = names[: len(self._segments)] != self._segments or any(changed(n) for n in self._segments)
         if restarted:
             self._reset()
         added: list[StoreLine] = []
         for name in names:
+            path = self._root / "segments" / name
+            st = path.stat()
             if name not in self._consumed:
                 self._consumed[name] = 0
+                self._identity[name] = (st.st_dev, st.st_ino)
                 self._segments.append(name)
-            path = self._root / "segments" / name
-            size = path.stat().st_size
+            size = st.st_size
             if size == self._consumed[name]:
                 continue
             with open(path, "rb") as fh:
@@ -225,6 +233,11 @@ class StoreLines:
                     continue
                 capsule_id = _line_id(raw)
                 if capsule_id is not None and capsule_id in self._seen:
+                    # Not an entry: a duplicate append left it before CLL
+                    # checked first. Reported like a flat ledger's corrupt line.
+                    logging.getLogger(__name__).warning(
+                        "ledger store: skipping a later line repeating capsule_id %s in %s", capsule_id, path
+                    )
                     self._skipped.append(line)
                     continue
                 if capsule_id is not None:
@@ -262,6 +275,8 @@ def read_entries(root: str | os.PathLike) -> list[dict]:
             continue
         data = (root / "segments" / segment.name).read_bytes()
         complete = data.rfind(b"\n") + 1
+        if segment.name != active and complete != len(data):
+            raise LedgerLayoutError(f"{root / 'segments' / segment.name}: closed segment ends in an unterminated line")
         for raw in data[:complete].split(b"\n"):
             if not raw.strip():
                 continue
@@ -320,6 +335,18 @@ def _open(root: Path):
     return LedgerStore(root, rotate_at_checkpoint=True, max_segment_bytes=sys.maxsize)
 
 
+def _new_staging(root: Path) -> Path:
+    """A fresh staging directory beside ``root``, created exclusively with
+    mode 0o777 so the umask applies (never another ledger's directory)."""
+    while True:
+        staging = root.parent / f".{root.name}.staging-{secrets.token_hex(8)}"
+        try:
+            os.mkdir(staging, 0o777)
+            return staging
+        except FileExistsError:
+            continue
+
+
 def create_store(root: Path, first_line: str | None = None) -> None:
     """Create a marked store at ``root`` (absent, or an empty directory),
     holding ``first_line`` when given. Built in a fresh staging directory
@@ -331,20 +358,16 @@ def create_store(root: Path, first_line: str | None = None) -> None:
         # The store is renamed into place, which a mount point cannot take.
         raise LedgerLayoutError(f"{root} is a mount point; keep the ledger in a directory inside it")
     root.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{root.name}.staging-", dir=root.parent))
+    staging = _new_staging(root)
     try:
         # The store replaces an empty directory the caller made: keep its mode
-        # and group (setgid included). A new one gets the umask's default.
+        # and group (setgid included). A new one has the umask's default.
         if root.is_dir():
             st = root.stat()
             # Group first: changing a directory's group can clear its setgid bit.
             with contextlib.suppress(OSError):
                 os.chown(staging, -1, st.st_gid)
             os.chmod(staging, stat.S_IMODE(st.st_mode))
-        else:
-            umask = os.umask(0)
-            os.umask(umask)
-            os.chmod(staging, 0o777 & ~umask)
         marker = staging / MARKER_FILENAME
         with open(marker, "w", encoding="utf-8") as fh:
             json.dump(_MARKER, fh)
@@ -395,6 +418,9 @@ def reconcile(root: Path) -> None:
     store."""
     if not (root / MANIFEST_FILENAME).is_file() or not is_marked(root):
         return
+    # Validated before CLL opens it: opening a store as its writer can
+    # rewrite a manifest it does not like.
+    _read_manifest(root)
     store = _open(root)
     try:
         store.recover()

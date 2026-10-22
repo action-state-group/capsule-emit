@@ -509,3 +509,65 @@ def test_a_repeated_line_is_reported_when_read(store_dir, caplog):
     with caplog.at_level("WARNING"):
         assert len(read_ledger_entries(store_dir)) == 1
     assert "repeating capsule_id" in caplog.text
+
+
+# -- review round 2b -----------------------------------------------------------
+
+
+def test_a_failing_writer_lock_in_resolve_signer_releases_the_append_lock(store_dir, monkeypatch):
+    def fail(*args, **kwargs):
+        raise PermissionError("read-only parent")
+
+    monkeypatch.setattr(ledger, "_writer_lock", fail)
+    with pytest.raises(PermissionError):
+        signing.resolve_signer(store_dir)
+    assert not ledger._append_lock.locked()
+
+
+def test_an_invalid_manifest_is_refused_before_anything_changes(store_dir):
+    append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+    (store_dir / ledger_store.MARKER_FILENAME).write_text('{"v":1}')
+    manifest = json.loads((store_dir / "manifest.json").read_text())
+    manifest["active_segment"] = None
+    (store_dir / "manifest.json").write_text(json.dumps(manifest))
+    before = {p.name: p.read_bytes() for p in store_dir.rglob("*") if p.is_file()}
+    with pytest.raises(OSError):
+        append_to_ledger({"capsule_id": _cid("b")}, store_dir)
+    assert {p.name: p.read_bytes() for p in store_dir.rglob("*") if p.is_file()} == before
+
+
+def test_an_unterminated_closed_segment_is_refused_by_every_reader(tmp_path):
+    root = _archived_store(tmp_path)
+    manifest = json.loads((root / "manifest.json").read_text())
+    first = manifest["segments"][0]["name"]
+    archived = root / "segments" / ".archived" / first
+    (root / "segments" / first).write_bytes(archived.read_bytes()[:-1])
+    archived.unlink()
+    for entry in manifest["segments"]:
+        entry["mounted"] = True
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ledger_store.LedgerLayoutError, match="unterminated"):
+        read_ledger_entries(root)
+    with pytest.raises(ledger_store.LedgerLayoutError, match="unterminated"):
+        list(LegacyLedger(root).entries())
+
+
+def test_a_repeated_line_is_reported_through_the_proof_reader_too(store_dir, caplog):
+    append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+    manifest = json.loads((store_dir / "manifest.json").read_text())
+    with open(store_dir / "segments" / manifest["active_segment"], "ab") as fh:
+        fh.write(json.dumps({"capsule_id": _cid("a")}, separators=(",", ":")).encode() + b"\n")
+    with caplog.at_level("WARNING"):
+        assert len(list(LegacyLedger(store_dir).entries())) == 1
+    assert "repeating capsule_id" in caplog.text
+
+
+def test_a_store_deleted_and_recreated_is_read_afresh(store_dir):
+    import shutil
+
+    append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+    shared(store_dir).entries()
+    shutil.rmtree(store_dir)
+    store_dir.mkdir()
+    append_to_ledger({"capsule_id": _cid("bb"), "padding": "x" * 200}, store_dir)
+    assert [e.value.hex() for e in shared(store_dir).entries()] == [_cid("bb")]

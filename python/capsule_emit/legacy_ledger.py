@@ -468,6 +468,9 @@ class LegacyLedger:
         the first per ``capsule_id`` (``ledger_store.StoreLines``). An empty
         directory has none yet."""
         if not (self._path / _store.MANIFEST_FILENAME).is_file():
+            # No store (yet, or any more): forget what was read, so a store
+            # created here later is read from its start.
+            self._store = _store.StoreLines(self._path)
             self._reset()
             return
         try:

@@ -718,6 +718,10 @@ def answer(
       * :class:`Refusal` — signed, offline-verifiable, one of
         ``REFUSAL_REASONS``.
 
+    A ledger store with an archived segment raises
+    ``capsule_emit.ledger_store.LedgerArchivedError`` instead: positions after
+    the archived segment are unknown, so no proof over them can be built.
+
     ``signer``/``signing_key_path`` resolve to the SAME producer key
     ``seal()`` uses for this ledger (``capsule_emit.signing.resolve_signer``)
     — ``issuer: node_key``, the same identity every capsule on this ledger
