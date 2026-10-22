@@ -332,11 +332,14 @@ def _archived_placeholder(root: Path, segment: _Segment, kind: str) -> dict:
 
 
 def publish_new_file(path: Path, data: bytes, mode: int = 0o600) -> bool:
-    """Write ``data`` as the new file ``path`` without ever replacing a file:
-    a temp file beside it, fsynced, then a hard link into place. On a disk
-    without hard links (FAT, exFAT, some network mounts) the file is created
-    exclusively instead, so a process killed mid-write there can leave it
-    partial. Returns False, writing nothing, when ``path`` already exists."""
+    """Write ``data`` as the new file ``path``, complete and fsynced before
+    anyone can open it, without replacing a file: a temp file beside it,
+    then a hard link into place, which fails if ``path`` exists. On a disk
+    without hard links (FAT, exFAT, some network mounts) the temp file is
+    renamed into place once ``path`` is seen absent; a file another process
+    creates in the instant between the check and the rename is replaced, as
+    before capsule-emit 0.13 on every disk. Returns False, writing nothing,
+    when ``path`` already exists."""
     path = Path(path)
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
@@ -351,22 +354,13 @@ def publish_new_file(path: Path, data: bytes, mode: int = 0o600) -> bool:
         except FileExistsError:
             return False
         except OSError:
-            pass  # no hard links here: create the file exclusively below
+            pass  # no hard links on this disk
+        if os.path.lexists(path):
+            return False
+        os.rename(tmp, path)
+        return True
     finally:
         Path(tmp).unlink(missing_ok=True)
-    try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
-    except FileExistsError:
-        return False
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(data)
-            fh.flush()
-            os.fsync(fh.fileno())
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
-    return True
 
 
 def _fsync(path: Path) -> None:

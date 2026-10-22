@@ -10,6 +10,7 @@ import io
 import json
 import os
 import stat
+from pathlib import Path
 
 import pytest
 from test_record_proof import _clean_witness_state, _stamp_count, _start_stub_ts, _wait_for  # noqa: F401
@@ -745,3 +746,19 @@ def test_publish_new_file_never_replaces_with_or_without_hard_links(tmp_path, mo
     assert target.read_bytes() == b"theirs"
     assert ledger_store.publish_new_file(tmp_path / "new.pem", b"ours") is True
     assert (tmp_path / "new.pem").read_bytes() == b"ours"
+
+
+def test_without_hard_links_a_key_appears_only_complete(tmp_path, monkeypatch):
+    _no_hard_links(monkeypatch)
+    target = tmp_path / "k.pem"
+    seen = []
+    real_rename = os.rename
+
+    def rename(src, dst):
+        seen.append((Path(src).read_bytes(), os.path.lexists(dst)))
+        return real_rename(src, dst)
+
+    monkeypatch.setattr(os, "rename", rename)
+    assert ledger_store.publish_new_file(target, b"complete key") is True
+    assert seen == [(b"complete key", False)]  # moved into place whole, never written there
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
