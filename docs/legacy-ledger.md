@@ -77,8 +77,9 @@ The other leaves keep their writers, under the same writer lock:
   rule as a capsule append: the line needs a 64-hex lowercase `capsule_id`, an
   identical line already in the ledger is not written again, and a different
   line under the same `capsule_id` raises `ledger_store.LedgerConflictError`.
-  Every failure on it is an `OSError` (`LedgerWriteError` otherwise), so the
-  best-effort stamp and backfill writers never raise into `emit()`;
+  Every error it raises is an `OSError` subclass (`LedgerConflictError` for a
+  conflicting line, `LedgerWriteError` for anything else), so the best-effort
+  stamp and backfill writers never raise into `emit()`;
 - Rust: padding through `put`, `LegacyLedger::append_padding` and
   `pad_to_bucket`, which call `Ledger::append_padding`.
 
@@ -150,7 +151,7 @@ take such a directory; an empty directory becomes one on the first write. See
   builds the store in a staging directory and renames it into place, keeping an
   empty directory's mode and group; a mount point is refused. A store's lock and
   key derive from its canonical path, so every spelling of it is one ledger.
-- **Archived segments.** A store with an unmounted segment is listed with a
+- **Archived segments.** A store with an archived segment is listed with a
   placeholder, and later entries show no leaf number; proofs, status, the
   scan-query verbs, witnessing and writes raise `ledger_store.LedgerArchivedError`
   until it is mounted, because the positions after it are unknown.

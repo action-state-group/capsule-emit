@@ -22,10 +22,10 @@ from the segments, so they create no files; the scan-query verbs copy a
 managed store's entries into an ephemeral store (authenticity, `consequential`
 flags and correlation fields kept) instead of opening it.
 Each write takes the ledger's writer lock beside the directory
-(`capsule-ledger.lock`), runs the store's crash recovery and appends with an
+(`<dir>.lock`), runs the store's crash recovery and appends with an
 fsync; the first write builds the store in a staging directory and renames it
 into place. A store's key and lock derive from its canonical path, so
-`capsule-ledger/`, `capsule-ledger` and a symlink to it are one ledger. A store
+`<dir>/`, `<dir>` and a symlink to it are one ledger. A store
 with an archived segment is listed with a placeholder (later entries show no
 leaf number) and refused (`LedgerArchivedError`) for proofs, status, witnessing,
 the scan-query verbs and writes. The first write into an existing empty
@@ -39,8 +39,8 @@ a directory inside it). This is not the default yet (capsule-emit#358). Requires
 backfills, disclosure records and hold capsules, now goes through the same
 check as `seal()`, on flat ledgers too:
 
-- the line needs a 64-hex lowercase `capsule_id`; any other line raises
-  `ledger_store.LedgerWriteError`, which it accepted before;
+- the line needs a 64-hex lowercase `capsule_id`; a line without one raises
+  `ledger_store.LedgerWriteError` (earlier releases wrote it);
 - an identical line already in the ledger is not written again (it returns
   that line's position); before, a repeated hold or backfill wrote a second
   line;
