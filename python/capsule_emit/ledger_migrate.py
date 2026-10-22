@@ -29,7 +29,6 @@ import re
 import secrets
 import shlex
 import shutil
-import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,28 +130,16 @@ def _check_destination(dest: Path) -> None:
 
 
 def _publish_key(source_key: Path, dest_key: Path) -> None:
-    """Copy ``source_key`` to ``dest_key`` without ever leaving a partial key
-    and without ever replacing one: an exclusive temp file beside it, fsynced,
-    then hard-linked into place, which fails if a key appeared meanwhile (a
-    ``seal()`` that created one is signing with it)."""
-    fd, tmp = tempfile.mkstemp(prefix=f".{dest_key.name}.", dir=dest_key.parent)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(source_key.read_bytes())
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.chmod(tmp, 0o600)
-        try:
-            os.link(tmp, dest_key)
-        except FileExistsError:
-            raise ImportRefused(
-                f"a producer key appeared at {dest_key} during the import, so it was not replaced; "
-                "nothing was imported. Check which key that ledger should use, then import again.",
-                [],
-            ) from None
-        _store._fsync(dest_key.parent)
-    finally:
-        Path(tmp).unlink(missing_ok=True)
+    """Copy ``source_key`` to ``dest_key`` without ever replacing a key
+    (``ledger_store.publish_new_file``): a key that appeared meanwhile (a
+    ``seal()`` that created one is signing with it) refuses the import."""
+    if not _store.publish_new_file(dest_key, source_key.read_bytes()):
+        raise ImportRefused(
+            f"a producer key appeared at {dest_key} during the import, so it was not replaced; "
+            "nothing was imported. Check which key that ledger should use, then import again.",
+            [],
+        )
+    _store._fsync(dest_key.parent)
 
 
 def _copy_exclusive(source: Path, target: Path) -> None:

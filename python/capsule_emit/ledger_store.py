@@ -37,6 +37,7 @@ import os
 import secrets
 import stat
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -328,6 +329,44 @@ def _archived_placeholder(root: Path, segment: _Segment, kind: str) -> dict:
             placeholder[key] = segment.entry[key]
     placeholder["note"] = "archived -- mount to view"
     return placeholder
+
+
+def publish_new_file(path: Path, data: bytes, mode: int = 0o600) -> bool:
+    """Write ``data`` as the new file ``path`` without ever replacing a file:
+    a temp file beside it, fsynced, then a hard link into place. On a disk
+    without hard links (FAT, exFAT, some network mounts) the file is created
+    exclusively instead, so a process killed mid-write there can leave it
+    partial. Returns False, writing nothing, when ``path`` already exists."""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        try:
+            os.link(tmp, path)
+            return True
+        except FileExistsError:
+            return False
+        except OSError:
+            pass  # no hard links here: create the file exclusively below
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+    except FileExistsError:
+        return False
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return True
 
 
 def _fsync(path: Path) -> None:

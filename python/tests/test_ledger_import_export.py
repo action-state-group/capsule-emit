@@ -702,3 +702,46 @@ def test_export_tolerates_a_disk_that_cannot_fsync_a_directory(tmp_path, monkeyp
     monkeypatch.setattr(ledger_store, "_fsync", no_dir_fsync)
     ledger_migrate.export_to_file(store, tmp_path / "out.jsonl")
     assert (tmp_path / "out.jsonl").read_bytes()
+
+
+# -- Codex round 7: disks without hard links ----------------------------------------
+
+
+def _no_hard_links(monkeypatch):
+    import errno
+
+    def refuse(*args, **kwargs):
+        raise OSError(errno.ENOTSUP, "Operation not supported")
+
+    monkeypatch.setattr(os, "link", refuse)
+
+
+def test_a_new_producer_key_is_created_without_hard_links(tmp_path, monkeypatch):
+    _no_hard_links(monkeypatch)
+    result = _seal(tmp_path / "s")
+    key = tmp_path / "s.signing_key.pem"
+    assert stat.S_IMODE(key.stat().st_mode) == 0o600
+    from capsule_emit.signing import LocalKeypairSigner
+
+    assert LocalKeypairSigner(key).key_id == result.capsule["key_id"]
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".")] == []
+
+
+def test_import_copies_the_key_without_hard_links(tmp_path, monkeypatch):
+    flat = tmp_path / "ledger.jsonl"
+    first = _seal(flat)
+    _no_hard_links(monkeypatch)
+    ledger_migrate.import_ledger(flat, tmp_path / "s")
+    assert (tmp_path / "s.signing_key.pem").read_bytes() == (tmp_path / "ledger.jsonl.signing_key.pem").read_bytes()
+    assert _seal(tmp_path / "s").capsule["key_id"] == first.capsule["key_id"]
+
+
+def test_publish_new_file_never_replaces_with_or_without_hard_links(tmp_path, monkeypatch):
+    target = tmp_path / "k.pem"
+    target.write_bytes(b"theirs")
+    assert ledger_store.publish_new_file(target, b"ours") is False
+    _no_hard_links(monkeypatch)
+    assert ledger_store.publish_new_file(target, b"ours") is False
+    assert target.read_bytes() == b"theirs"
+    assert ledger_store.publish_new_file(tmp_path / "new.pem", b"ours") is True
+    assert (tmp_path / "new.pem").read_bytes() == b"ours"

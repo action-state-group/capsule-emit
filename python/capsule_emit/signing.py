@@ -176,26 +176,17 @@ class LocalKeypairSigner:
         self.key_id = _raw_public_hex(self._private_key)
 
     def _create(self, key):
-        """Persist a new key without ever replacing one: a temp file, then a
-        hard link into place, which fails if a key appeared meanwhile (another
+        """Persist a new key without ever replacing one
+        (``ledger_store.publish_new_file``), which fails if a key appeared meanwhile (another
         process, or ``capsule-emit ledger import`` copying the old ledger's key).
         Then that key is used instead, so two writers never sign as different
         producers for one ledger."""
+        from .ledger_store import publish_new_file
+
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(prefix=f".{self._path.name}.", dir=self._path.parent)
-        try:
-            with os.fdopen(fd, "wb") as fh:
-                fh.write(_pem_private_bytes(key))
-                fh.flush()
-                os.fsync(fh.fileno())
-            os.chmod(tmp, 0o600)
-            try:
-                os.link(tmp, self._path)
-            except FileExistsError:
-                return _load_pem_private_key(self._path.read_bytes())
+        if publish_new_file(self._path, _pem_private_bytes(key)):
             return key
-        finally:
-            Path(tmp).unlink(missing_ok=True)
+        return _load_pem_private_key(self._path.read_bytes())
 
     def _persist(self, key) -> None:
         """Replace the key file with ``key`` (rotation): a fresh, exclusive
