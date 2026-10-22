@@ -41,8 +41,8 @@ exist becomes a store when it has no `.`, and is refused otherwise.
   default.
 - `LegacyLedger()` with no path opens the ledger `seal()` would write. The
   LiteLLM listener reads `CAPSULE_EMIT_LEDGER`, then `CAPSULE_LEDGER`, on every
-  call. The MCP server's `capsule_verify` and `capsule_ledger` read any path,
-  including one that writing would refuse.
+  call. The MCP server's `capsule_verify` and `capsule_ledger` tools read any ledger
+  path, including a flat `.jsonl` that `seal()` would refuse to create.
 
 ### Added (Python): `capsule-emit ledger import` and `ledger export --jsonl`
 

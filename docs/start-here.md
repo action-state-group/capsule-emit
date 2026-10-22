@@ -114,7 +114,7 @@ pip install agent-action-capsule
 agent-action-capsule verify --store ./capsule-ledger
 ```
 
-The verifier is independent of `capsule-emit` on purpose: *any* tool can produce a capsule; *any* party can verify one. Reading a ledger directory needs an `agent-action-capsule` release that includes agent-action-capsule#372.
+The verifier is independent of `capsule-emit` on purpose: *any* tool can produce a capsule; *any* party can verify one. Reading a ledger directory needs an `agent-action-capsule` release later than 0.11.0. With 0.11.0, `capsule-emit verify --store ./capsule-ledger` checks the same directory.
 
 `capsule-emit verify --store ./capsule-ledger` runs that same check plus the producer signature `agent-action-capsule verify` deliberately leaves to the substrate layer (`draft-mih-scitt-agent-action-capsule` §6, Class 1 verification): each record is `VALID` only if its `capsule_id` recomputes from the carried content AND, when a `signature`/`key_id` envelope is present, that envelope verifies. A record with no envelope at all (e.g. a `capsule_emit.surface.log()` entry, which is never signed) still counts `VALID` by default, with a one-line summary — `N record(s) carry no producer signature (producer_signature_unclaimed)` — printed after the tally so the gap stays visible instead of silent. For a ledger whose producer always signs, pass `--require-signature` to make that same condition fail closed (`INVALID`, exit 1) instead of warning.
 
