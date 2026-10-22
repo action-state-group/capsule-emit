@@ -145,7 +145,7 @@ Optional environment variables:
 
 Set `AAC_ANCHOR_URL=off` to run without anchoring.
 
-Already have `capsule_ledger.jsonl` from an earlier version? The server now writes `capsule-ledger/` instead, so move the old ledger first to keep one history: `capsule-emit ledger import capsule_ledger.jsonl capsule-ledger`. Or set `CAPSULE_LEDGER=capsule_ledger.jsonl` to keep writing it, with a deprecation warning, until capsule-emit 0.15.0. The server warns at startup while the old file holds records the new ledger does not.
+Already have `capsule_ledger.jsonl` from an earlier version? The server now writes `capsule-ledger/` instead, so move the old ledger first to keep one history: `capsule-emit ledger import capsule_ledger.jsonl capsule-ledger`. Or set `CAPSULE_LEDGER=capsule_ledger.jsonl` to keep writing it, with a deprecation warning, until capsule-emit 0.15.0. The server warns at startup, and at its first record, while the old file holds records the new ledger does not.
 
 ### 4. Set CAPSULE_SEAL_URL in the agent
 

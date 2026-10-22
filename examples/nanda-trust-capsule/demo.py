@@ -16,6 +16,7 @@ Usage:
 The capsule ledger is written to the directory `nanda-trust-ledger/` in the working directory.
 After the run, verify it independently:
     agent-action-capsule verify --store nanda-trust-ledger
+(agent-action-capsule later than 0.11.0; with 0.11.0 use `capsule-emit verify --store`.)
 """
 
 from __future__ import annotations

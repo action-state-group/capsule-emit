@@ -33,7 +33,7 @@ import agent_action_capsule
 
 import capsule_emit
 from capsule_emit.ledger import read_ledger_entries
-from capsule_emit.ledger_layout import LedgerDeprecationWarning
+from capsule_emit.ledger_layout import FLAT_WRITES_STOP, LedgerDeprecationWarning
 
 try:
     from fastapi import FastAPI, HTTPException
@@ -103,16 +103,17 @@ def _warn_if_history_splits(*, at_startup: bool = False) -> None:
     if at_startup and not os.path.exists(_DEFAULT_LEDGER):
         message = (
             f"capsule-emit: {_OLD_DEFAULT_LEDGER} holds this server's earlier records, and new records "
-            f"now go to ./{_DEFAULT_LEDGER}/. To keep one history, before the first new record run: "
+            f"now go to ./{_DEFAULT_LEDGER}/. To keep one history, run this before the first new record: "
             f"capsule-emit ledger import {_OLD_DEFAULT_LEDGER} {_DEFAULT_LEDGER} "
             f"(or set CAPSULE_LEDGER={_OLD_DEFAULT_LEDGER} to keep writing it, with a deprecation "
-            "warning, until capsule-emit 0.15.0)."
+            f"warning, until capsule-emit {FLAT_WRITES_STOP})."
         )
     else:
         message = (
             f"capsule-emit: {_OLD_DEFAULT_LEDGER} holds this server's earlier records and "
             f"./{_DEFAULT_LEDGER}/ its new ones, so its history is in two ledgers. Both stay "
-            f"readable. Set CAPSULE_LEDGER={_OLD_DEFAULT_LEDGER} to keep writing the old one."
+            f"readable. Set CAPSULE_LEDGER={_OLD_DEFAULT_LEDGER} to keep writing the old one, with a "
+            f"deprecation warning, until capsule-emit {FLAT_WRITES_STOP}."
         )
     _split_warned.add(case)
     warnings.warn(message, LedgerDeprecationWarning, stacklevel=2)
