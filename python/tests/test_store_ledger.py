@@ -571,3 +571,46 @@ def test_a_store_deleted_and_recreated_is_read_afresh(store_dir):
     store_dir.mkdir()
     append_to_ledger({"capsule_id": _cid("bb"), "padding": "x" * 200}, store_dir)
     assert [e.value.hex() for e in shared(store_dir).entries()] == [_cid("bb")]
+
+
+# -- review round 3 ------------------------------------------------------------
+
+
+def test_another_reader_sees_a_recreated_store_afresh(store_dir):
+    import shutil
+
+    append_to_ledger({"capsule_id": _cid("old")}, store_dir)
+    reader = LegacyLedger(store_dir)
+    assert [e.value.hex() for e in reader.entries()] == [_cid("old")]
+    shutil.rmtree(store_dir)
+    store_dir.mkdir()
+    for name in ("new1", "new2"):
+        append_to_ledger({"capsule_id": _cid(name), "padding": "x" * 300}, store_dir)
+    assert [e.value.hex() for e in reader.entries()] == [_cid("new1"), _cid("new2")]
+
+
+def test_a_group_that_cannot_be_kept_refuses_the_first_write(store_dir, monkeypatch):
+    others = [g for g in os.getgroups() if g != store_dir.parent.stat().st_gid]
+    if not others:
+        pytest.skip("needs membership of a second group")
+    os.chown(store_dir, -1, others[0])
+
+    def fail(*args, **kwargs):
+        raise PermissionError("not allowed")
+
+    monkeypatch.setattr(ledger_store.os, "chown", fail)
+    with pytest.raises(ledger_store.LedgerLayoutError, match="group"):
+        append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+    assert list(store_dir.iterdir()) == []
+
+
+def test_scan_verbs_keep_stored_metadata_and_correlation_fields(tmp_path):
+    root = tmp_path / "s"
+    store = LedgerStore(root, rotate_at_checkpoint=True, correlation_fields=("exchange_id",))
+    store.append({"capsule_id": _cid("a"), "exchange_id": "ex-1"}, consequential=True)
+    store.close()
+    with open_ledger(root) as scan:
+        records = list(scan.scan())
+        assert [r.consequential for r in records] == [True]
+        assert [r.capsule_id for r in scan.by_correlation("ex-1")] == [_cid("a")]
+    assert not any(p.name.endswith(("-wal", "-shm")) for p in root.iterdir())

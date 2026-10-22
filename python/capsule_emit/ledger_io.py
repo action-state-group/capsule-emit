@@ -50,18 +50,22 @@ __all__ = [
 
 @contextlib.contextmanager
 def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
-    """A ``LedgerStore`` over ``path`` for the scan-query verbs. A managed
-    store (``manifest.json``, as ``seal()`` writes) is never opened live:
-    opening one runs CLL's writer-side bookkeeping beside a running writer,
-    so its entries are copied, from the segments, into an ephemeral store, as
-    a JSONL file's lines are; an empty directory is an empty ledger, and a
-    store with an archived segment raises ``ledger_store.LedgerArchivedError``.
-    An unmanaged store directory (no ``manifest.json``) is opened as before."""
+    """A ``LedgerStore`` over ``path`` for the scan-query verbs. A store
+    directory is opened in place, as an unmanaged reader: over a managed store
+    (``manifest.json``, as ``seal()`` writes) that instance only reads (it
+    never touches a segment or runs recovery), so it is safe beside a running
+    writer and keeps each record's stored admission, ``consequential`` flag and
+    the store's correlation fields. A managed store with an archived segment
+    raises ``ledger_store.LedgerArchivedError`` (positions after it are
+    unknown). An empty directory is an empty ledger and is left empty. A JSONL
+    file is imported into an ephemeral store, as before."""
     from .ledger import read_positioned_entries
-    from .ledger_store import is_store_path
+    from .ledger_store import MANIFEST_FILENAME
 
     p = Path(path)
-    if p.is_dir() and not is_store_path(p):
+    if p.is_dir() and any(p.iterdir()):
+        if (p / MANIFEST_FILENAME).is_file():
+            read_positioned_entries(p)  # refuses an archived segment first
         store = LedgerStore(p)
         try:
             yield store
@@ -72,12 +76,7 @@ def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
     tmp_root = Path(tempfile.mkdtemp(prefix="capsule-ledger-cli-"))
     store = LedgerStore(tmp_root)
     try:
-        if p.is_dir():
-            # An archived segment would leave a silent gap and renumber what
-            # follows, so it is refused; an empty directory is an empty ledger.
-            for entry in read_positioned_entries(p):
-                store.append(entry, consequential=False)
-        else:
+        if not p.is_dir():
             store.import_jsonl(p)
         yield store
     finally:

@@ -31,7 +31,6 @@ into place, so an interrupted first write never leaves a half-made store.
 """
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import os
@@ -365,8 +364,16 @@ def create_store(root: Path, first_line: str | None = None) -> None:
         if root.is_dir():
             st = root.stat()
             # Group first: changing a directory's group can clear its setgid bit.
-            with contextlib.suppress(OSError):
-                os.chown(staging, -1, st.st_gid)
+            # A group that cannot be kept refuses the write: the mode alone
+            # would grant its access to another group.
+            if staging.stat().st_gid != st.st_gid:
+                try:
+                    os.chown(staging, -1, st.st_gid)
+                except OSError as exc:
+                    raise LedgerLayoutError(
+                        f"{root}: cannot give the new store the directory's group ({exc}); "
+                        "create the store as a member of that group"
+                    ) from exc
             os.chmod(staging, stat.S_IMODE(st.st_mode))
         marker = staging / MARKER_FILENAME
         with open(marker, "w", encoding="utf-8") as fh:

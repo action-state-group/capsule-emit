@@ -50,8 +50,10 @@ def vintage(action, declared):
 
 vintage("fixture-jcs-n", True)
 vintage("fixture-absent", False)
-# The writer never deduplicated: a repeated capsule line.
-ledger.append_to_ledger(first.capsule, path)
+# Old writers never deduplicated: a repeated capsule line, written as raw bytes
+# because append_to_ledger now writes each line once.
+with open(path, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps(first.capsule, separators=(",", ":")) + "\n")
 
 
 def digest(body):

@@ -72,8 +72,13 @@ the existing entry as `idempotent` for a digest the ledger holds and fails with
 
 The other leaves keep their writers, under the same writer lock:
 
-- Python: checkpoint stamps, disclosure records and witness backfills through
-  `capsule_emit.ledger.append_to_ledger`;
+- Python: checkpoint stamps, disclosure records, witness backfills and hold
+  capsules through `capsule_emit.ledger.append_to_ledger`. It applies the same
+  rule as a capsule append: the line needs a 64-hex lowercase `capsule_id`, an
+  identical line already in the ledger is not written again, and a different
+  line under the same `capsule_id` raises `ledger_store.LedgerConflictError`.
+  Every failure on it is an `OSError` (`LedgerWriteError` otherwise), so the
+  best-effort stamp and backfill writers never raise into `emit()`;
 - Rust: padding through `put`, `LegacyLedger::append_padding` and
   `pad_to_bucket`, which call `Ledger::append_padding`.
 
@@ -113,6 +118,36 @@ bundle = build_evidence_bundle(proof_source_from_cll(ledger, ledger), root=capsu
 `capsule-emit bundle ledger.jsonl` does the same from the command line. A
 range that reaches a checkpoint-stamp, disclosure or backfill line is refused,
 because those leaves are not records; start the interval after the last one.
+
+## A ledger kept in a ledger store directory (Python)
+
+The same backend serves a ledger kept in checkpointed-local-log's managed
+`LedgerStore`: a directory with `manifest.json` and JSONL segments under
+`segments/`, the source of truth, plus SQLite indexes. It holds exactly the
+lines a flat `ledger.jsonl` holds, so the same writes give the same leaves,
+`capsule_id` values and checkpoint roots. `seal(ledger=DIR)` and every reader
+take such a directory; an empty directory becomes one on the first write. See
+`capsule_emit.ledger_store`.
+
+- **Entries** are the store's complete lines, the first per `capsule_id` (what
+  its UNIQUE index admits). The active segment's unterminated last line is not
+  an entry yet; a later line repeating a `capsule_id` (left by a duplicate
+  append before checkpointed-local-log checked first) is skipped and logged. A
+  closed segment that ends in an unterminated line is refused. Readers read the
+  segments, never SQLite, so a read creates no files.
+- **Writes** go only to stores capsule-emit created, which carry
+  `capsule-emit-store.json`. Any other managed store (capsule-emit-mesh's,
+  capsule-engine's, one built with `cll`) is read, and a write to it raises
+  `ledger_store.LedgerLayoutError`. Each write takes the writer lock beside the
+  directory (`<dir>.lock`), runs the store's crash recovery
+  (`LedgerStore.recover()`), appends with an fsync and closes. The first write
+  builds the store in a staging directory and renames it into place, keeping an
+  empty directory's mode and group; a mount point is refused. A store's lock and
+  key derive from its canonical path, so every spelling of it is one ledger.
+- **Archived segments.** A store with an unmounted segment is listed with a
+  placeholder, and later entries show no leaf number; proofs, status, the
+  scan-query verbs, witnessing and writes raise `ledger_store.LedgerArchivedError`
+  until it is mounted, because the positions after it are unknown.
 
 ## The artifact store
 
