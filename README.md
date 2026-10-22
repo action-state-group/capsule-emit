@@ -145,7 +145,7 @@ Reading a ledger directory needs an agent-action-capsule release later than 0.11
 
 Tamper with one byte and verification fails. The verifier is independent of `capsule-emit` on purpose — *any* tool can produce a capsule; *any* party can verify one. (Every `seal()` also appends to the local ledger directory `./capsule-ledger/`. View it with `capsule-emit ledger view ./capsule-ledger`; `capsule-emit verify --store ./capsule-ledger` also checks producer signatures.)
 
-**Already have a `ledger.jsonl`?** It keeps being read: every reader and verifier still takes it. New records to it still work but warn, and stop in capsule-emit 0.15.0. Move it with `capsule-emit ledger import ledger.jsonl capsule-ledger`; the default then uses the new directory.
+**Already have a `ledger.jsonl`?** It keeps being read: every reader and verifier still takes it. New records to it still work but warn, and stop in capsule-emit 0.15.0. Move it with `capsule-emit ledger import ledger.jsonl capsule-ledger`; the default then uses the new directory. A ledger that repeats a `capsule_id` (repeated hold lines from earlier releases) cannot be imported: keep it for reading and seal new records to a new directory, so its history continues there.
 
 ## Framework adapters
 
