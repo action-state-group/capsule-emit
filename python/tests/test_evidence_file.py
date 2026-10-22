@@ -49,9 +49,14 @@ def build_bundle(tmp_path, *, n=3, cose=True, unsigned_index=None, root_cites=No
     ``root_cites``: a capsule digest the newest record references."""
     signer = LocalKeypairSigner(tmp_path / "k.pem")
     log_signer = checkpoint_signer or signer
-    caps = [seal({"step": i}, anchor=False, witness=False, signer=signer).capsule for i in range(n - 1)]
+    ledger = tmp_path / "ledger"  # never the working directory's default ledger
+    caps = [
+        seal({"step": i}, anchor=False, witness=False, signer=signer, ledger=ledger).capsule for i in range(n - 1)
+    ]
     refs = (ReferenceEntry(type="agent-action-capsule", digest_alg="SHA-256", digest=root_cites),) if root_cites else None
-    caps.append(seal({"step": n - 1}, references=refs, anchor=False, witness=False, signer=signer).capsule)
+    caps.append(
+        seal({"step": n - 1}, references=refs, anchor=False, witness=False, signer=signer, ledger=ledger).capsule
+    )
     if unsigned_index is not None:
         del caps[unsigned_index]["signature"], caps[unsigned_index]["key_id"]
     store = MemoryNodeStore()

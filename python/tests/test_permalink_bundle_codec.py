@@ -36,6 +36,14 @@ _DOC = json.loads(
 CASES = pytest.mark.parametrize("case", _DOC["cases"], ids=[c["id"] for c in _DOC["cases"]])
 
 
+
+@pytest.fixture(autouse=True)
+def _own_directory(tmp_path, monkeypatch):
+    # seal() with no ledger writes the default ledger in the working
+    # directory: each test gets its own, never the checkout's.
+    monkeypatch.chdir(tmp_path)
+
+
 def _fragment(url: str) -> str:
     return url.split("#", 1)[1]
 
