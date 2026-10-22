@@ -636,6 +636,7 @@ class LegacyLedger:
         self._require_open()
         if self._store is not None:
             if not (self._path / _store.MANIFEST_FILENAME).is_file():
+                self._path.parent.mkdir(parents=True, exist_ok=True)
                 with _ledger._append_lock, _ledger._writer_lock(self._path, wait=self._wait, timeout=self._timeout):
                     if not (self._path / _store.MANIFEST_FILENAME).is_file():
                         _store.create_store(self._path)
@@ -679,14 +680,20 @@ class LegacyLedger:
         return self.append_line(line)
 
     def append_any(
-        self, line: dict, *, wait: bool | None = None, timeout: float | None = None, precheck: Any = None
+        self,
+        line: dict,
+        *,
+        wait: bool | None = None,
+        timeout: float | None = None,
+        precheck: Any = None,
+        chosen: str = "argument",
     ) -> AppendResult:
         """Write any ledger line, bookkeeping included (checkpoint stamps,
         witness backfills, disclosure records): ``append_line`` without its
         record check. ``capsule_emit.ledger.append_to_ledger`` calls it, so an
         identical line is ``idempotent`` and a different line under the same
         ``capsule_id`` is refused, for every kind of line."""
-        return self._write(line, require_record=False, wait=wait, timeout=timeout, precheck=precheck)
+        return self._write(line, require_record=False, wait=wait, timeout=timeout, precheck=precheck, chosen=chosen)
 
     def append_line(self, line: dict, *, precheck: Any = None) -> AppendResult:
         """Write one capsule line (with any inline ``signature``/``key_id``)
@@ -706,6 +713,7 @@ class LegacyLedger:
         wait: bool | None = None,
         timeout: float | None = None,
         precheck: Any = None,
+        chosen: str = "argument",
     ) -> AppendResult:
         self._require_open()
         capsule_id = line.get("capsule_id")
@@ -714,16 +722,20 @@ class LegacyLedger:
         text = _line_form(line)
         value = bytes.fromhex(capsule_id)
         # A new record to a flat ledger, by any entry point, is under the
-        # deprecation window (bookkeeping never stops, and a line already
-        # stored is idempotent): refused under the locks, warned after them,
-        # since a warnings hook may write a ledger.
+        # deprecation window (bookkeeping never stops): warned before the
+        # locks, and from the window's end refused under them, only for a
+        # line not already stored (a resend stays idempotent).
         windowed = self._store is None and line.get("kind") not in _ledger.NON_CAPSULE_KINDS
-        result = self._write_locked(line, text, value, require_record, wait, timeout, precheck, windowed)
-        if windowed and result.outcome == INSERTED:
-            from .ledger_layout import warn_new_flat_record
+        if windowed and self._path.exists():
+            from .ledger_layout import flat_writes_stopped, warn_new_flat_record
 
-            warn_new_flat_record(self._path)
-        return result
+            if not flat_writes_stopped():
+                # Before the locks, so a warning raised as an error writes
+                # nothing and a warnings hook may write a ledger.
+                warn_new_flat_record(self._path, chosen)
+        if self._store is not None:
+            self._path.parent.mkdir(parents=True, exist_ok=True)  # the lock sits beside the store
+        return self._write_locked(line, text, value, require_record, wait, timeout, precheck, windowed)
 
     def _write_locked(self, line, text, value, require_record, wait, timeout, precheck, windowed) -> AppendResult:
         """``_write`` under the ledger's locks; ``windowed`` lines are refused

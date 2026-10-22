@@ -302,7 +302,11 @@ def append_to_ledger(
                     raise _layout.DefaultMoved()
 
             try:
-                return shared(path).append_any(capsule, wait=wait, timeout=timeout, precheck=precheck).entry.seq
+                return (
+                    shared(path)
+                    .append_any(capsule, wait=wait, timeout=timeout, precheck=precheck, chosen=resolution.chosen)
+                    .entry.seq
+                )
             except _layout.DefaultMoved:
                 if attempt == 2:  # pragma: no cover - a second import between two attempts
                     raise

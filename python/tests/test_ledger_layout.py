@@ -623,3 +623,47 @@ def test_a_warnings_hook_that_writes_the_same_flat_ledger_does_not_recurse(tmp_p
         append_to_ledger(next(lines), flat)
     assert len(hooked) == 1
     assert len(read_ledger(flat)) == 2
+
+
+# -- Codex round 4 and the stand-in's third delta check ----------------------------
+
+
+@pytest.mark.parametrize("how", ["log", "explicit_signer", "append_to_ledger", "init"])
+def test_every_write_creates_a_new_nested_ledgers_parent(tmp_path, how):
+    from capsule_emit import log
+    from capsule_emit.ledger import append_to_ledger
+    from capsule_emit.legacy_ledger import LegacyLedger
+    from capsule_emit.signing import LocalKeypairSigner
+
+    target = tmp_path / "traces" / "capsule-ledger"
+    if how == "log":
+        log(b"event", operator="acme", witness=False, ledger=target)
+    elif how == "explicit_signer":
+        signer = LocalKeypairSigner(tmp_path / "key.pem")
+        _seal(ledger=target, signer=signer)
+    elif how == "append_to_ledger":
+        append_to_ledger(_a_capsule(tmp_path), target)
+    else:
+        LegacyLedger(target).init()
+    assert (target / "manifest.json").is_file()
+
+
+def test_a_warning_raised_as_an_error_writes_nothing(tmp_path):
+    from capsule_emit.ledger import append_to_ledger
+
+    flat = tmp_path / "ledger.jsonl"
+    flat.touch()
+    line = _a_capsule(tmp_path)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", LedgerDeprecationWarning)
+        with pytest.raises(LedgerDeprecationWarning):
+            append_to_ledger(line, flat)
+    assert read_ledger_entries(flat) == []
+
+
+def test_a_default_append_names_the_default_in_its_warning(tmp_path):
+    from capsule_emit.ledger import append_to_ledger
+
+    (tmp_path / "ledger.jsonl").touch()
+    with pytest.warns(LedgerDeprecationWarning, match=r"or leave ledger= unset to use the default"):
+        append_to_ledger(_a_capsule(tmp_path))
