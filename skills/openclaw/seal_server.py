@@ -25,11 +25,14 @@ CAPSULE_ANCHOR=legacy-on -- see capsule_emit.core's "Single egress" note.
 from __future__ import annotations
 
 import os
+import warnings
 from typing import Any
 
 import agent_action_capsule
 
 import capsule_emit
+from capsule_emit.ledger import read_ledger_entries
+from capsule_emit.ledger_layout import LedgerDeprecationWarning
 
 try:
     from fastapi import FastAPI, HTTPException
@@ -43,6 +46,59 @@ except ImportError as exc:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_LEDGER = os.environ.get("CAPSULE_LEDGER", "capsule-ledger")
+
+# Before capsule-emit 0.13 this server's default ledger was a flat file. A
+# server upgraded in place would start a second history in capsule-ledger/
+# next to it, so it says so: at startup, and again at the first record it
+# writes there while the old file is still beside it.
+_OLD_DEFAULT_LEDGER = "capsule_ledger.jsonl"
+_split_warned: set[str] = set()
+
+
+def _first_id(path: str) -> str | None:
+    for entry in read_ledger_entries(path):
+        if entry.get("capsule_id"):
+            return entry["capsule_id"]
+    return None
+
+
+def _history_splits() -> bool:
+    """The default ledger is a ledger directory, and the old flat default
+    beside it holds records the directory does not start with (it was not
+    imported)."""
+    if "CAPSULE_LEDGER" in os.environ or not os.path.isfile(_OLD_DEFAULT_LEDGER):
+        return False
+    old_first = _first_id(_OLD_DEFAULT_LEDGER)
+    if old_first is None:
+        return False
+    return not os.path.exists(_DEFAULT_LEDGER) or _first_id(_DEFAULT_LEDGER) != old_first
+
+
+def _warn_if_history_splits(*, at_startup: bool = False) -> None:
+    """Warn once per process at startup, and once at the first record, while
+    the old flat default holds history the default ledger directory lacks."""
+    case = "startup" if at_startup else "record"
+    if case in _split_warned or not _history_splits():
+        return
+    if at_startup and not os.path.exists(_DEFAULT_LEDGER):
+        message = (
+            f"capsule-emit: {_OLD_DEFAULT_LEDGER} holds this server's earlier records, and new records "
+            f"now go to ./{_DEFAULT_LEDGER}/. To keep one history, before the first new record run: "
+            f"capsule-emit ledger import {_OLD_DEFAULT_LEDGER} {_DEFAULT_LEDGER} "
+            f"(or set CAPSULE_LEDGER={_OLD_DEFAULT_LEDGER} to keep writing it, with a deprecation "
+            "warning, until capsule-emit 0.15.0)."
+        )
+    else:
+        message = (
+            f"capsule-emit: {_OLD_DEFAULT_LEDGER} holds this server's earlier records and "
+            f"./{_DEFAULT_LEDGER}/ its new ones, so its history is in two ledgers. Both stay "
+            f"readable. Set CAPSULE_LEDGER={_OLD_DEFAULT_LEDGER} to keep writing the old one."
+        )
+    _split_warned.add(case)
+    warnings.warn(message, LedgerDeprecationWarning, stacklevel=2)
+
+
+_warn_if_history_splits(at_startup=True)
 
 # ---------------------------------------------------------------------------
 # App
@@ -124,6 +180,8 @@ def seal(req: SealRequest) -> JSONResponse:
         # docstring). This server used to force anchor=True by default
         # (`anchor=(not _ANCHOR_OFF)`), re-enabling the exact per-record
         # egress the single-egress change removed -- the regression this fix removes.
+        if req.ledger == _DEFAULT_LEDGER:
+            _warn_if_history_splits()
         result = capsule_emit.seal(
             req.input,
             action=req.action,
