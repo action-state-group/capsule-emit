@@ -179,7 +179,7 @@ def flat_writes_stopped() -> bool:
 
 
 _warned: set[str] = set()
-_warned_lock = threading.Lock()
+_warned_lock = threading.RLock()  # a warnings hook may write a ledger
 
 
 def _message(path: Path, chosen: str, *, stopped: bool = False) -> str:
@@ -211,13 +211,13 @@ def check_new_flat_record(path: str | os.PathLike, chosen: str = "argument") -> 
     if not _warn_flat_writes:
         return
     key = os.path.abspath(os.fspath(path))
+    # Checked, issued and marked under one lock, so two threads never both
+    # warn; marked only once the warning was issued, so a filter that turns it
+    # into an error leaves the path unwarned and the next call warns again.
     with _warned_lock:
         if key in _warned:
             return
-    warnings.warn(message, LedgerDeprecationWarning, stacklevel=_caller_stacklevel())
-    # Marked only once the warning was issued: a filter that turns it into an
-    # error leaves the path unwarned, so the next call warns again.
-    with _warned_lock:
+        warnings.warn(message, LedgerDeprecationWarning, stacklevel=_caller_stacklevel())
         _warned.add(key)
 
 

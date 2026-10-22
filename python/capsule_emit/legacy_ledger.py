@@ -644,15 +644,12 @@ class LegacyLedger:
         self._path.touch(exist_ok=True)
 
     def put(self, record: Record) -> None:
-        if self._store is None:
-            # A new record to a flat ledger: the deprecation window applies.
-            from .ledger_layout import FlatLedgerWriteRefused, check_new_flat_record
+        from .ledger_layout import FlatLedgerWriteRefused
 
-            try:
-                check_new_flat_record(self._path)
-            except FlatLedgerWriteRefused as exc:
-                raise UnsupportedError(str(exc)) from exc
-        self.put_entry(record)
+        try:
+            self.put_entry(record)
+        except FlatLedgerWriteRefused as exc:  # the flat ledger's window has closed
+            raise UnsupportedError(str(exc)) from exc
 
     def put_entry(self, record: Record) -> AppendResult:
         """``put``, returning the capsule's log entry and whether this call
@@ -738,6 +735,12 @@ class LegacyLedger:
                 _store.append_line(self._path, text)
             else:
                 _refuse_new_flat_file(self._path)
+                if line.get("kind") not in _ledger.NON_CAPSULE_KINDS:
+                    # A new record to a flat ledger, by any entry point: the
+                    # deprecation window applies (bookkeeping never stops).
+                    from .ledger_layout import check_new_flat_record
+
+                    check_new_flat_record(self._path)
                 _ledger._write_line(self._path, text)
             self._refresh()
             written = self._find(value)

@@ -118,6 +118,9 @@ def _export(store: str, target: pathlib.Path) -> pathlib.Path:
     tutorial reads flat ledgers, which capsule-emit reads forever)."""
     from capsule_emit.ledger_migrate import export_to_file
 
+    # Regenerating replaces the committed fixture on purpose; export itself
+    # never replaces a file.
+    target.unlink(missing_ok=True)
     export_to_file(store, target)
     return target
 

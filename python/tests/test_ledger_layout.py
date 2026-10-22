@@ -397,3 +397,106 @@ def test_legacy_ledger_defaults_to_the_ledger_seal_writes(tmp_path):
     assert LegacyLedger()._path == ledger_store.store_root(tmp_path / "capsule-ledger")
     (tmp_path / "ledger.jsonl").touch()
     assert LegacyLedger()._path == __import__("pathlib").Path("ledger.jsonl")
+
+
+# -- Codex round 1: every entry point, holds' default, concurrent warnings, fixtures ---------
+
+
+def _a_capsule(tmp_path):
+    return _seal(ledger=tmp_path / "scratch").capsule
+
+
+def test_append_to_ledger_follows_the_window_for_records_not_bookkeeping(tmp_path, monkeypatch):
+    from capsule_emit.ledger import CHECKPOINT_STAMP_KIND, append_to_ledger
+
+    flat = tmp_path / "ledger.jsonl"
+    flat.touch()
+    with pytest.warns(LedgerDeprecationWarning):
+        append_to_ledger(_a_capsule(tmp_path), flat)
+    monkeypatch.setattr(ledger_layout, "_installed_version", lambda: (0, 15, 0))
+    with pytest.raises(FlatLedgerWriteRefused):
+        append_to_ledger(_seal(ledger=tmp_path / "scratch").capsule, flat)
+    stamp = {"capsule_id": "cd" * 32, "kind": CHECKPOINT_STAMP_KIND}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        append_to_ledger(stamp, flat)
+    assert len(read_ledger_entries(flat)) == 2
+
+
+def test_legacy_ledger_put_entry_follows_the_window(tmp_path, monkeypatch):
+    from capsule_emit.artifact import UnsupportedError
+    from capsule_emit.legacy_ledger import LegacyLedger, checked_record
+
+    capsule = _a_capsule(tmp_path)
+    record = checked_record(capsule["capsule_id"], capsule, None)
+    flat = tmp_path / "ledger.jsonl"
+    flat.touch()
+    monkeypatch.setattr(ledger_layout, "_installed_version", lambda: (0, 15, 0))
+    with pytest.raises(FlatLedgerWriteRefused):
+        LegacyLedger(flat).put_entry(record)
+    with pytest.raises(UnsupportedError):
+        LegacyLedger(flat).put(record)
+    assert read_ledger_entries(flat) == []
+
+
+def test_holds_default_to_the_ledger_seal_writes(tmp_path):
+    from capsule_emit.holds import Action, HoldEngine
+
+    action = Action(verb="money.transfer", operator="acme", developer="d", amount_minor=10, currency="USD")
+    HoldEngine(cap_minor={"money.transfer": 100}).evaluate_and_reserve(action)
+    assert len(read_ledger_entries(tmp_path / "capsule-ledger")) == 1
+
+
+def test_holds_default_falls_back_to_an_existing_flat_ledger(tmp_path):
+    from capsule_emit.holds import Action, HoldEngine
+
+    (tmp_path / "ledger.jsonl").touch()
+    action = Action(verb="money.transfer", operator="acme", developer="d", amount_minor=10, currency="USD")
+    with pytest.warns(LedgerDeprecationWarning):
+        HoldEngine(ledger_path=None, cap_minor={"money.transfer": 100}).evaluate_and_reserve(action)
+    assert len(read_ledger_entries(tmp_path / "ledger.jsonl")) == 1
+    assert not (tmp_path / "capsule-ledger").exists()
+
+
+def test_two_threads_warn_once(tmp_path, monkeypatch):
+    flat = tmp_path / "ledger.jsonl"
+    flat.touch()
+    both = threading.Barrier(2)
+    real_message = ledger_layout._message
+
+    def meet_then_message(*args, **kwargs):
+        both.wait()  # both threads are past the stop check, about to take the lock
+        return real_message(*args, **kwargs)
+
+    monkeypatch.setattr(ledger_layout, "_message", meet_then_message)
+    issued = []
+    real_warn = warnings.warn
+
+    def count(message, category=None, stacklevel=1, **kwargs):
+        if category is LedgerDeprecationWarning:
+            issued.append(message)
+        else:
+            real_warn(message, category, stacklevel + 1, **kwargs)
+
+    monkeypatch.setattr(ledger_layout.warnings, "warn", count)
+    threads = [threading.Thread(target=ledger_layout.check_new_flat_record, args=(flat,)) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(issued) == 1
+
+
+def test_the_tutorial_fixtures_regenerate_over_the_committed_ones(tmp_path):
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    fixtures = Path(__file__).resolve().parents[2] / "docs" / "tutorials" / "fixtures"
+    copy = tmp_path / "fixtures"
+    shutil.copytree(fixtures, copy)
+    run = subprocess.run([sys.executable, str(copy / "generate.py")], cwd=copy, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    for case in ("refund-support-agent", "incident-investigation-agent"):
+        assert read_ledger_entries(copy / case / "ledger.jsonl")
