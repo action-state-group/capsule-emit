@@ -134,7 +134,11 @@ take such a directory; an empty directory becomes one on the first write. See
   an entry yet; a later line repeating a `capsule_id` (left by a duplicate
   append before checkpointed-local-log checked first) is skipped and logged. A
   closed segment that ends in an unterminated line is refused. Readers read the
-  segments, never SQLite, so a read creates no files.
+  segments, so a read creates no files and works on a read-only copy. The
+  scan-query verbs copy the entries into an ephemeral store, keeping each
+  record's authenticity and the store's correlation fields, and read each
+  record's `consequential` flag through a read-only, immutable SQLite
+  connection to the store's index.
 - **Writes** go only to stores capsule-emit created, which carry
   `capsule-emit-store.json`. Any other managed store (capsule-emit-mesh's,
   capsule-engine's, one built with `cll`) is read, and a write to it raises

@@ -614,3 +614,41 @@ def test_scan_verbs_keep_stored_metadata_and_correlation_fields(tmp_path):
         assert [r.consequential for r in records] == [True]
         assert [r.capsule_id for r in scan.by_correlation("ex-1")] == [_cid("a")]
     assert not any(p.name.endswith(("-wal", "-shm")) for p in root.iterdir())
+
+
+
+# -- review round 4 ------------------------------------------------------------
+
+
+def test_scan_verbs_see_a_line_a_crashed_writer_left(store_dir):
+    append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+    manifest = json.loads((store_dir / "manifest.json").read_text())
+    with open(store_dir / "segments" / manifest["active_segment"], "ab") as fh:
+        fh.write(json.dumps({"capsule_id": _cid("crashed")}, separators=(",", ":")).encode() + b"\n")
+    with open_ledger(store_dir) as scan:
+        assert [r.capsule_id for r in scan.scan()] == [_cid("a"), _cid("crashed")]
+
+
+def test_scan_verbs_keep_signed_admission(store_dir):
+    result = _seal(store_dir)
+    with open_ledger(store_dir) as scan:
+        record = next(scan.scan())
+        assert record.capsule_id == result.capsule["capsule_id"]
+        assert record.authenticity == "signed"
+
+
+def test_scan_verbs_work_on_a_read_only_copy_and_write_nothing(store_dir):
+    _seal(store_dir)
+    before = {p.relative_to(store_dir): p.read_bytes() for p in store_dir.rglob("*") if p.is_file()}
+    for path in store_dir.rglob("*"):
+        os.chmod(path, stat.S_IRUSR | (stat.S_IXUSR if path.is_dir() else 0))
+    os.chmod(store_dir, stat.S_IRUSR | stat.S_IXUSR)
+    try:
+        with open_ledger(store_dir) as scan:
+            assert len(list(scan.scan())) == 1
+            assert {p.relative_to(store_dir) for p in store_dir.rglob("*") if p.is_file()} == set(before)
+    finally:
+        os.chmod(store_dir, stat.S_IRWXU)
+        for path in store_dir.rglob("*"):
+            os.chmod(path, stat.S_IRWXU)
+    assert {p.relative_to(store_dir): p.read_bytes() for p in store_dir.rglob("*") if p.is_file()} == before

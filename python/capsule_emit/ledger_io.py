@@ -30,8 +30,10 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -48,24 +50,64 @@ __all__ = [
 ]
 
 
+def _stored_flags(root: Path) -> dict[str, bool]:
+    """Each record's ``consequential`` flag from a managed store's index, read
+    through a read-only SQLite connection; empty when it cannot be read (the
+    copy then marks records consequential, as ``seal()`` appends them)."""
+    try:
+        # immutable: no lock and no -shm/-wal sidecar is created in the store.
+        conn = sqlite3.connect(f"{(root / 'index.sqlite3').as_uri()}?mode=ro&immutable=1", uri=True)
+        try:
+            return {cid: bool(flag) for cid, flag in conn.execute("SELECT capsule_id, consequential FROM records")}
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return {}
+
+
+def _copy_store(source: Path, target: LedgerStore) -> None:
+    """Copy a managed store's entries, read from its segments (crash-left
+    lines included), into ``target``, keeping what the scan verbs query:
+    authenticity (re-derived from each line's envelope, as CLL's ``reindex``
+    does), the ``consequential`` flag and the correlation fields."""
+    from cll.ledger import SIGNED, AdmissionRequest, ProducerEnvelope
+
+    from .ledger import read_positioned_entries
+
+    flags = _stored_flags(source)
+    for entry in read_positioned_entries(source):
+        admission = None
+        if LedgerStore._reindex_authenticity(entry) == "signed":
+            admission = AdmissionRequest(
+                mode=SIGNED, envelopes=(ProducerEnvelope(envelope=entry["signature"], key_id=entry["key_id"]),)
+            )
+            entry = {k: v for k, v in entry.items() if k not in ("signature", "key_id")}
+        target.append(entry, consequential=flags.get(entry.get("capsule_id"), True), admission=admission)
+
+
+def _correlation_fields(source: Path) -> tuple[str, ...]:
+    try:
+        return tuple(json.loads((source / "lookup_config.json").read_text())["correlation_fields"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return ()
+
+
 @contextlib.contextmanager
 def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
-    """A ``LedgerStore`` over ``path`` for the scan-query verbs. A store
-    directory is opened in place, as an unmanaged reader: over a managed store
-    (``manifest.json``, as ``seal()`` writes) that instance only reads (it
-    never touches a segment or runs recovery), so it is safe beside a running
-    writer and keeps each record's stored admission, ``consequential`` flag and
-    the store's correlation fields. A managed store with an archived segment
-    raises ``ledger_store.LedgerArchivedError`` (positions after it are
-    unknown). An empty directory is an empty ledger and is left empty. A JSONL
-    file is imported into an ephemeral store, as before."""
-    from .ledger import read_positioned_entries
+    """A ``LedgerStore`` over ``path`` for the scan-query verbs. A managed
+    store (``manifest.json``, as ``seal()`` writes) is never opened: its
+    entries are copied, from the segments, into an ephemeral store with their
+    authenticity, ``consequential`` flag and the store's correlation fields,
+    so a read writes nothing, works on a read-only copy and sees a line a
+    crashed writer left. A store with an archived segment raises
+    ``ledger_store.LedgerArchivedError`` (positions after it are unknown). An
+    empty directory is an empty ledger and is left empty. An unmanaged store
+    directory (no ``manifest.json``) is opened as before, and a JSONL file is
+    imported into an ephemeral store, as before."""
     from .ledger_store import MANIFEST_FILENAME
 
     p = Path(path)
-    if p.is_dir() and any(p.iterdir()):
-        if (p / MANIFEST_FILENAME).is_file():
-            read_positioned_entries(p)  # refuses an archived segment first
+    if p.is_dir() and any(p.iterdir()) and not (p / MANIFEST_FILENAME).is_file():
         store = LedgerStore(p)
         try:
             yield store
@@ -74,9 +116,12 @@ def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
         return
 
     tmp_root = Path(tempfile.mkdtemp(prefix="capsule-ledger-cli-"))
-    store = LedgerStore(tmp_root)
+    managed = p.is_dir() and (p / MANIFEST_FILENAME).is_file()
+    store = LedgerStore(tmp_root, correlation_fields=_correlation_fields(p) if managed else ())
     try:
-        if not p.is_dir():
+        if managed:
+            _copy_store(p, store)
+        elif not p.is_dir():
             store.import_jsonl(p)
         yield store
     finally:

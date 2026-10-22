@@ -18,8 +18,9 @@ managed store. The store holds the same lines a flat `ledger.jsonl` holds
 records, holds), so the leaves, `capsule_id` values and checkpoint roots match
 for the same writes, and witnessing, `bundle`, `record_proof`, `status`,
 `disclose`, `ledger view`/`show` and `verify --store` work on both. Reads come
-from the segments, never SQLite, so they create no files; the scan-query verbs
-copy a managed store's entries into an ephemeral store instead of opening it.
+from the segments, so they create no files; the scan-query verbs copy a
+managed store's entries into an ephemeral store (authenticity, `consequential`
+flags and correlation fields kept) instead of opening it.
 Each write takes the ledger's writer lock beside the directory
 (`capsule-ledger.lock`), runs the store's crash recovery and appends with an
 fsync; the first write builds the store in a staging directory and renames it
