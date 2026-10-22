@@ -302,6 +302,15 @@ class LocalKeypairSigner:
 
 
 def _default_key_path(ledger_path: str | os.PathLike) -> Path:
+    """``<ledger>.signing_key.pem``. A flat ledger keeps the spelling it was
+    given, so a symlinked ``ledger.jsonl`` keeps its key; a ledger store uses
+    its canonical path (``ledger_store.store_root``), so ``capsule-ledger/``
+    and ``capsule-ledger`` share one key beside the directory, never inside
+    it."""
+    if Path(ledger_path).is_dir():
+        from .ledger_store import store_root
+
+        return Path(os.fspath(store_root(ledger_path)) + ".signing_key.pem")
     return Path(os.fspath(ledger_path) + ".signing_key.pem")
 
 
@@ -336,7 +345,18 @@ def resolve_signer(
     with _cache_lock:
         cached = _cache.get(cache_key)
         if cached is None:
-            cached = LocalKeypairSigner(resolved_path)
+            # A store's default key is created only under the store's writer
+            # lock (rechecked inside it), so it never races an import copying
+            # the old ledger's key into place.
+            store_key = key_path is None and not os.environ.get(SIGNING_KEY_PATH_ENV_VAR) and Path(ledger_path).is_dir()
+            if store_key and not resolved_path.exists():
+                from . import ledger as _ledger
+                from .ledger_store import store_root
+
+                with _ledger._writer_lock(store_root(ledger_path), wait=True):
+                    cached = LocalKeypairSigner(resolved_path)
+            else:
+                cached = LocalKeypairSigner(resolved_path)
             _cache[cache_key] = cached
         return cached
 

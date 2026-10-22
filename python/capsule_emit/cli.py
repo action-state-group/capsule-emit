@@ -907,10 +907,6 @@ def _records_in_scope(
                 selected.append(capsule)
 
 
-_SEGMENTED_REFUSAL = (
-    "{path} is a Python mesh LedgerStore directory (a frozen harness); capsule-emit bundle reads "
-    "the flat capsules.jsonl + checkpoints.jsonl layout"
-)
 
 
 def _open_bundle_log(args: argparse.Namespace):
@@ -920,7 +916,9 @@ def _open_bundle_log(args: argparse.Namespace):
 
     path = Path(args.ledger)
     if is_ledger_store(path):
-        raise ValueError(_SEGMENTED_REFUSAL.format(path=path))
+        if args.signing_key is not None:
+            raise ValueError("--signing-key applies to a mesh ledger directory; a ledger store carries its own COSE checkpoints")
+        return LegacyLedger(path)
     if path.is_dir():
         if not (path / "checkpoints.jsonl").is_file():
             raise ValueError(f"{path}: not a mesh ledger directory (no checkpoints.jsonl)")

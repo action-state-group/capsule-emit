@@ -9,6 +9,7 @@ carries this as ``.seq`` (1-indexed position in the ledger file), and both
 """
 from __future__ import annotations
 
+import hashlib
 import io
 
 import pytest
@@ -83,9 +84,14 @@ def test_second_capsule_reprs_its_own_leaf(tmp_ledger):
     assert "#logged @ leaf 2" in repr(second)
 
 
+def _cid(name: str) -> str:
+    """A 64-hex capsule_id: append_to_ledger refuses anything else."""
+    return hashlib.sha256(name.encode()).hexdigest()
+
+
 def test_append_to_ledger_returns_seq(tmp_ledger):
-    assert append_to_ledger({"capsule_id": "a"}, tmp_ledger) == 1
-    assert append_to_ledger({"capsule_id": "b"}, tmp_ledger) == 2
+    assert append_to_ledger({"capsule_id": _cid("a")}, tmp_ledger) == 1
+    assert append_to_ledger({"capsule_id": _cid("b")}, tmp_ledger) == 2
 
 
 def test_ledger_show_renders_logged_at_leaf(tmp_ledger):

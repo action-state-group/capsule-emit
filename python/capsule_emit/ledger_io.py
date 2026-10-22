@@ -50,8 +50,16 @@ __all__ = [
 
 @contextlib.contextmanager
 def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
+    """A ``LedgerStore`` over ``path`` for the scan-query verbs. A managed
+    store (``manifest.json``, as ``seal()`` writes) is never opened live:
+    opening one runs CLL's writer-side bookkeeping beside a running writer,
+    so its entries are copied, from the segments, into an ephemeral store, as
+    a JSONL file's lines are. An unmanaged store directory (no
+    ``manifest.json``) is opened as before."""
+    from .ledger import is_ledger_store, read_ledger_entries
+
     p = Path(path)
-    if p.is_dir():
+    if p.is_dir() and not is_ledger_store(p):
         store = LedgerStore(p)
         try:
             yield store
@@ -62,7 +70,12 @@ def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
     tmp_root = Path(tempfile.mkdtemp(prefix="capsule-ledger-cli-"))
     store = LedgerStore(tmp_root)
     try:
-        store.import_jsonl(p)
+        if p.is_dir():
+            for entry in read_ledger_entries(p):
+                if "capsule_id" in entry:
+                    store.append(entry, consequential=False)
+        else:
+            store.import_jsonl(p)
         yield store
     finally:
         store.close()

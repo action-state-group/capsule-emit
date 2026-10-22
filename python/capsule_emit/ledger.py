@@ -251,7 +251,14 @@ def append_to_ledger(
     wait: bool = False,
     timeout: float | None = None,
 ) -> int:
-    """Append a sealed capsule dict as a single JSON line.
+    """Append one ledger line: a capsule, or bookkeeping (a checkpoint stamp,
+    witness backfill or disclosure record). ``path`` is a flat file or a
+    ledger store directory (see ``capsule_emit.ledger_store``).
+
+    The line needs a 64-hex ``capsule_id``. An identical line already in the
+    ledger is not written again; a different line under the same
+    ``capsule_id`` raises ``ledger_store.LedgerConflictError`` (an
+    ``OSError``), because ledger lines are immutable.
 
     Enforces one log, one writer (docs/concurrency.md): a second process
     already writing this same ledger raises :class:`LedgerLockedError`
@@ -266,10 +273,17 @@ def append_to_ledger(
     under the same lock that serializes the write, so it reflects this
     process's own append order; most callers don't need it and ignore it.
     """
-    p = Path(path)
-    with _append_lock, _writer_lock(p, wait=wait, timeout=timeout):
-        _write_line(p, json.dumps(capsule, separators=(",", ":")))
-        return len(read_ledger_entries(path))
+    from .artifact.record import ConflictError
+    from .legacy_ledger import shared
+
+    try:
+        return shared(path).append_any(capsule, wait=wait, timeout=timeout).entry.seq
+    except ConflictError as exc:
+        from .ledger_store import LedgerConflictError
+
+        raise LedgerConflictError(
+            f"{path} already holds a different line under capsule_id {capsule.get('capsule_id')}"
+        ) from exc
 
 
 def _write_line(path: Path, line: str) -> None:
@@ -289,31 +303,32 @@ def read_ledger_entries(path: str | os.PathLike) -> list[dict]:
     """Read every entry of a ledger, capsules and checkpoint-stamp records
     alike, in append order.
 
-    Store-aware: if ``path`` is a directory
-    holding a ``cll.ledger.store.LedgerStore`` (:func:`is_ledger_store`),
-    reads it via ``cll.ledger.store``/``cll.ledger.segments`` directly
-    rather than as a flat file. An archived (unmounted) segment never
-    raises ``cll.ledger.segments.SegmentUnmounted`` up to this caller --
-    the records this process CAN read are still returned, and one
-    synthesized ``kind="archived_segment"`` entry per unreadable segment
-    (``ARCHIVED_SEGMENT_KIND`` -- carrying ``segment``/``first_seq``/
-    ``last_seq``/``record_count``/``checkpoint_root``/``mmr_size``/
-    ``note="archived -- mount to view"``) marks the gap rather than
-    silently dropping it. :func:`read_ledger` filters these out along with
-    every other bookkeeping kind.
+    Store-aware: a directory holding a ``cll.ledger.store.LedgerStore``
+    (:func:`is_ledger_store`) is read from its segments
+    (``capsule_emit.ledger_store.read_entries``), never through SQLite. An
+    archived (unmounted) segment never raises to this caller: one synthesized
+    ``kind="archived_segment"`` entry (``ARCHIVED_SEGMENT_KIND``, with
+    ``segment`` and ``note``) marks the gap and the readable entries follow.
+    :func:`read_ledger` filters these out along with every other bookkeeping
+    kind. An empty directory is an empty ledger.
 
-    Otherwise (a flat file, or a directory with no ``manifest.json`` --
-    an older node, or a store-shaped dir with never migrated) reads it as a
-    plain JSONL file. Corrupt lines (truncated writes, disk errors) are
-    skipped with a warning so that one bad line never makes the entire
-    ledger unreadable; a missing path returns ``[]`` rather than raising.
+    Otherwise ``path`` is a flat JSONL file. Corrupt lines (truncated writes,
+    disk errors) are skipped with a warning so that one bad line never makes
+    the entire ledger unreadable; a missing path returns ``[]`` rather than
+    raising.
     """
-    if is_ledger_store(path):
-        return _read_ledger_store_entries(Path(path))
+    p = Path(path)
+    if p.is_dir():
+        from . import ledger_store
+
+        if is_ledger_store(p):
+            return ledger_store.read_entries(p)
+        if not any(p.iterdir()):
+            return []
+        raise ledger_store.LedgerLayoutError(f"{p} is a directory that is neither a ledger store nor empty")
 
     import logging
 
-    p = Path(path)
     if not p.exists():
         return []
     records = []
@@ -329,62 +344,6 @@ def read_ledger_entries(path: str | os.PathLike) -> list[dict]:
                     "read_ledger: skipping corrupt line %d in %s: %r", lineno, p, line[:80]
                 )
     return records
-
-
-def _read_ledger_store_entries(ledger_dir: Path) -> list[dict]:
-    """:func:`read_ledger_entries`'s ``cll.ledger.store.LedgerStore`` path.
-
-    Deliberately never calls ``LedgerStore.scan()`` -- it raises
-    ``SegmentUnmounted`` for the WHOLE call the instant ANY segment
-    anywhere in the log is archived (eager list comprehension under one
-    lock; see that method's docstring). Instead walks
-    ``LedgerStore.list_segments()`` in append order and resolves each
-    MOUNTED, closed segment's own ``[first_seq, last_seq]`` range via
-    ``LedgerStore.by_seq_range`` -- a bounded SQL lookup that only ever
-    touches rows inside that one segment -- so one archived segment never
-    blocks reading the records before or after it. Opens with
-    ``rotate_at_checkpoint=True`` unconditionally: ``manifest.json``
-    (:func:`is_ledger_store`'s own signal) only ever exists on a store that
-    was itself created that way.
-    """
-    from cll.ledger.segments import SegmentManifest
-    from cll.ledger.store import LedgerStore
-
-    store = LedgerStore(root=ledger_dir, rotate_at_checkpoint=True)
-    try:
-        entries: list[dict] = []
-        next_seq = 1
-        for seg in store.list_segments():
-            if seg.manifest is not None:
-                manifest = SegmentManifest.from_dict(json.loads((ledger_dir / seg.manifest).read_text()))
-                if seg.mounted:
-                    hits = store.by_seq_range(manifest.first_seq, manifest.last_seq)
-                    entries.extend(r.capsule for r in hits)
-                else:
-                    entries.append(
-                        {
-                            "kind": ARCHIVED_SEGMENT_KIND,
-                            "segment": seg.name,
-                            "first_seq": manifest.first_seq,
-                            "last_seq": manifest.last_seq,
-                            "record_count": manifest.record_count,
-                            "checkpoint_root": seg.checkpoint_root,
-                            "mmr_size": seg.mmr_size,
-                            "note": "archived -- mount to view",
-                        }
-                    )
-                next_seq = manifest.last_seq + 1
-            else:
-                # The active, still-open segment -- always last in append
-                # order, always mounted. Its own upper bound isn't known
-                # without a manifest, so ask for everything from where the
-                # previous segment left off; by_seq_range is a bounded SQL
-                # query, so this never touches an earlier segment.
-                hits = store.by_seq_range(next_seq, next_seq + 10**9)
-                entries.extend(r.capsule for r in hits)
-        return entries
-    finally:
-        store.close()
 
 
 def read_ledger(path: str | os.PathLike) -> list[dict]:

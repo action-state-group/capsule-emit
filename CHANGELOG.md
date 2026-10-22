@@ -6,6 +6,39 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (Python): a ledger kept in a ledger store directory
+
+`seal()`, `log()`, `received()`, `push()` and every writer built on them accept a
+ledger store directory as `ledger=`: checkpointed-local-log's managed
+`LedgerStore` (`manifest.json` plus JSONL segments under `segments/`). An empty
+directory becomes one on the first write; capsule-emit marks the stores it
+creates (`capsule-emit-store.json`) and writes only to those, reading any other
+managed store. The store holds the same lines a flat `ledger.jsonl` holds
+(capsules, `log()` entries, checkpoint stamps, witness backfills, disclosure
+records, holds), so the leaves, `capsule_id` values and checkpoint roots match
+for the same writes, and witnessing, `bundle`, `record_proof`, `status`,
+`disclose`, `ledger view`/`show` and `verify --store` work on both. Reads come
+from the segments, never SQLite, so they create no files; the scan-query verbs
+copy a managed store's entries into an ephemeral store instead of opening it.
+Each write takes the ledger's writer lock beside the directory
+(`capsule-ledger.lock`), runs the store's crash recovery and appends with an
+fsync; the first write builds the store in a staging directory and renames it
+into place. A store's key and lock derive from its canonical path, so
+`capsule-ledger/`, `capsule-ledger` and a symlink to it are one ledger. A store
+with an archived segment is listed with a placeholder but refused for proofs,
+witnessing and writes. This is not the default yet (capsule-emit#358). Requires
+the checkpointed-local-log release with `LedgerStore.recover()`.
+
+### Changed (Python): `append_to_ledger` writes each line once
+
+`capsule_emit.ledger.append_to_ledger`, which writes checkpoint stamps, witness
+backfills, disclosure records and hold capsules, now goes through the same
+check as `seal()`: the line needs a 64-hex `capsule_id`, an identical line
+already in the ledger is not written again, and a different line under the same
+`capsule_id` raises `ledger_store.LedgerConflictError` (an `OSError`). Before,
+it appended every line it was given, so a repeated hold or backfill wrote a
+second line. This applies to flat ledgers too.
+
 ### Changed (Python, breaking): `confirms=` cites another stream's capsule in `references[]`
 
 `seal(confirms=...)` (and every helper built on it: `seal_approval`,
