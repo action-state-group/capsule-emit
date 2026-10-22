@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: action-state-group/checkpointed-local-log
-          ref: 8fc9c56a556b99944e2e120320bd55ff727f3e51 # python/v0.6.0
+          ref: 32ce9f3f901ea85c80a4b42b6fd3ee007fdda2c0 # python/v0.7.0
           path: checkpointed-local-log
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
