@@ -636,3 +636,38 @@ def test_an_export_that_meets_a_new_file_at_its_name_does_not_replace_it(tmp_pat
     with pytest.raises(ledger_store.LedgerLayoutError, match="appeared during the export"):
         ledger_migrate.export_to_file(root, target)
     assert target.read_text() == "created meanwhile"
+
+
+
+# -- review round 6 ------------------------------------------------------------
+
+
+def test_export_refuses_where_an_absent_key_symlink_points(tmp_path):
+    root = tmp_path / "s"
+    root.mkdir()
+    append_to_ledger({"capsule_id": _cid("a")}, root)
+    (tmp_path / "s.signing_key.pem").symlink_to(tmp_path / "elsewhere.pem")
+    with pytest.raises(ledger_store.LedgerLayoutError, match="part of the store"):
+        ledger_migrate.export_to_file(root, tmp_path / "elsewhere.pem")
+    assert not (tmp_path / "elsewhere.pem").exists()
+
+
+def test_export_refuses_a_case_variant_of_an_absent_key(tmp_path):
+    root = tmp_path / "s"
+    root.mkdir()
+    append_to_ledger({"capsule_id": _cid("a")}, root)
+    with pytest.raises(ledger_store.LedgerLayoutError, match="part of the store"):
+        ledger_migrate.export_to_file(root, tmp_path / "S.SIGNING_KEY.PEM")
+
+
+def test_export_works_without_hard_links(tmp_path, monkeypatch):
+    root = tmp_path / "s"
+    root.mkdir()
+    append_to_ledger({"capsule_id": _cid("a")}, root)
+
+    def no_links(src, dst):
+        raise OSError(45, "Operation not supported")
+
+    monkeypatch.setattr(ledger_migrate.os, "link", no_links)
+    ledger_migrate.export_to_file(root, tmp_path / "copy.jsonl")
+    assert json.loads((tmp_path / "copy.jsonl").read_text())["capsule_id"] == _cid("a")

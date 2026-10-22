@@ -27,6 +27,7 @@ import os
 import re
 import secrets
 import shlex
+import shutil
 import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
@@ -151,6 +152,21 @@ def _publish_key(source_key: Path, dest_key: Path) -> None:
         _store._fsync(dest_key.parent)
     finally:
         Path(tmp).unlink(missing_ok=True)
+
+
+def _copy_exclusive(source: Path, target: Path) -> None:
+    try:
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    except FileExistsError:
+        raise _store.LedgerLayoutError(f"{target} appeared during the export; it was not replaced") from None
+    try:
+        with os.fdopen(fd, "wb") as out, open(source, "rb") as src:
+            shutil.copyfileobj(src, out)
+            out.flush()
+            os.fsync(out.fileno())
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
 
 
 def _same_file(a: Path, b: Path) -> bool:
@@ -307,9 +323,14 @@ def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> Expor
     its key and lock names are also refused up front, with a clearer message."""
     root, target = _store.store_root(store), Path(target)
     store_paths = {Path(store).absolute(), root}
-    sidecars = {Path(os.fspath(p) + suffix) for p in store_paths for suffix in (".signing_key.pem", ".lock")}
+    names = {Path(os.fspath(p) + suffix) for p in store_paths for suffix in (".signing_key.pem", ".lock")}
+    # Each reserved name, and where it resolves to if it is a symlink (even to
+    # a file that does not exist yet), compared without letter case, since a
+    # case-insensitive disk treats S.LOCK and s.lock as one file.
+    sidecars = {os.fspath(p).casefold() for p in names} | {os.path.realpath(p).casefold() for p in names}
     entry, real = Path(os.path.abspath(target)), Path(os.path.realpath(target))
-    if any(c.is_relative_to(p) for c in (entry, real) for p in store_paths) or entry in sidecars or real in sidecars:
+    reserved = os.fspath(entry).casefold() in sidecars or os.fspath(real).casefold() in sidecars
+    if any(c.is_relative_to(p) for c in (entry, real) for p in store_paths) or reserved:
         raise _store.LedgerLayoutError(f"{target} is part of the store {root} (or its key or lock); write the export elsewhere")
     if os.path.lexists(target):
         raise _store.LedgerLayoutError(f"{target} already exists; export writes a new file, choose another name")
@@ -329,6 +350,10 @@ def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> Expor
             os.link(tmp, target)
         except FileExistsError:
             raise _store.LedgerLayoutError(f"{target} appeared during the export; it was not replaced") from None
+        except OSError:
+            # A disk without hard links (FAT, exFAT, some network mounts):
+            # create the target exclusively instead, still never replacing.
+            _copy_exclusive(tmp, target)
         _store._fsync(target.parent)
     finally:
         tmp.unlink(missing_ok=True)
