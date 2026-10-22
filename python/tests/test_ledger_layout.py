@@ -87,7 +87,7 @@ def test_capsule_ledger_env_is_the_default_choice(tmp_path, monkeypatch):
 def test_an_env_flat_ledger_warns_with_the_env_remedy(tmp_path, monkeypatch):
     (tmp_path / "audit.jsonl").touch()
     monkeypatch.setenv("CAPSULE_LEDGER", str(tmp_path / "audit.jsonl"))
-    with pytest.warns(LedgerDeprecationWarning, match=r"and set CAPSULE_LEDGER=.*audit-jsonl-store"):
+    with pytest.warns(LedgerDeprecationWarning, match=r", then set CAPSULE_LEDGER=.*audit-jsonl-store\. "):
         _seal()
 
 
@@ -134,8 +134,9 @@ def test_an_unrelated_directory_is_refused(tmp_path):
 def test_from_flat_writes_stop_a_new_record_to_a_flat_ledger_is_refused(tmp_path, monkeypatch):
     (tmp_path / "ledger.jsonl").touch()
     monkeypatch.setattr(ledger_layout, "_installed_version", lambda: (0, 15, 0))
-    with pytest.raises(FlatLedgerWriteRefused, match="capsule-emit ledger import ledger.jsonl ./capsule-ledger"):
+    with pytest.raises(FlatLedgerWriteRefused, match="are refused from capsule-emit 0.15.0") as info:
         _seal()
+    assert "capsule-emit ledger import ledger.jsonl ./capsule-ledger" in str(info.value)
     assert read_ledger_entries(tmp_path / "ledger.jsonl") == []
 
 
@@ -211,3 +212,9 @@ def test_legacy_ledger_init_creates_no_new_flat_file(tmp_path):
     with pytest.raises(FlatLedgerWriteRefused):
         LegacyLedger(tmp_path / "new.jsonl").init()
     assert not (tmp_path / "new.jsonl").exists()
+
+
+def test_a_new_jsonl_path_from_the_env_names_the_env_remedy(tmp_path, monkeypatch):
+    monkeypatch.setenv("CAPSULE_LEDGER", str(tmp_path / "new.jsonl"))
+    with pytest.raises(FlatLedgerWriteRefused, match="set CAPSULE_LEDGER="):
+        _seal()

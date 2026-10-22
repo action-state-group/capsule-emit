@@ -13,8 +13,9 @@ the otel processor, the MCP server and agentgateway now write the ledger store
 directory `./capsule-ledger/` (checkpointed-local-log's managed `LedgerStore`;
 see `docs/legacy-ledger.md`), with its signing key beside it as
 `capsule-ledger.signing_key.pem`. `agent-action-capsule verify --store
-./capsule-ledger` verifies it (agent-action-capsule#372; needs the release that
-carries it, and capsule-emit's `agent-action-capsule` floor will name it).
+./capsule-ledger` verifies it with an agent-action-capsule release later than
+0.11.0 (agent-action-capsule#372); with 0.11.0, `capsule-emit verify --store
+./capsule-ledger` checks it.
 
 Choosing a ledger (`capsule_emit.ledger_layout`): `ledger=` when given, else
 `CAPSULE_LEDGER` (which `seal()` now reads too), else the default. A directory

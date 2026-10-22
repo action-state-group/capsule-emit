@@ -141,6 +141,8 @@ pip install agent-action-capsule
 agent-action-capsule verify --store ./capsule-ledger
 ```
 
+Reading a ledger directory needs an agent-action-capsule release later than 0.11.0. With 0.11.0, `capsule-emit verify --store ./capsule-ledger` checks the same directory.
+
 Tamper with one byte and verification fails. The verifier is independent of `capsule-emit` on purpose — *any* tool can produce a capsule; *any* party can verify one. (Every `seal()` also appends to the local ledger directory `./capsule-ledger/`. View it with `capsule-emit ledger view ./capsule-ledger`; `capsule-emit verify --store ./capsule-ledger` also checks producer signatures.)
 
 **Already have a `ledger.jsonl`?** It keeps being read: every reader and verifier still takes it. New records to it still work but warn, and stop in capsule-emit 0.15.0. Move it with `capsule-emit ledger import ledger.jsonl capsule-ledger`; the default then uses the new directory.

@@ -116,10 +116,13 @@ def _classify(path: Path, chosen: str) -> Resolution:
             return Resolution(path, "flat", chosen)
         from .ledger_migrate import suggested_store
 
+        if chosen == "argument":
+            instead = f'for example ledger="{suggested_store(path)}" (or leave ledger= unset to use the default, ./capsule-ledger/)'
+        else:
+            instead = f"for example set {chosen}={suggested_store(path)} (or unset it to use the default, ./capsule-ledger/)"
         raise FlatLedgerWriteRefused(
             f"{path} does not exist, and capsule-emit no longer creates flat ledgers. "
-            f'Seal to a ledger directory instead, for example ledger="{suggested_store(path)}" '
-            "(or leave ledger= unset to use the default, ./capsule-ledger/)."
+            f"Seal to a ledger directory instead, {instead}."
         )
     if "." in name:
         raise LedgerLayoutError(
@@ -176,19 +179,20 @@ _warned: set[str] = set()
 _warned_lock = threading.Lock()
 
 
-def _message(path: Path, chosen: str) -> str:
+def _message(path: Path, chosen: str, *, stopped: bool = False) -> str:
     from .ledger_migrate import suggested_store
 
     target = suggested_store(path)
     if chosen == "default":
-        unset = " (or leave ledger= unset to use the default)"
+        then = f'then seal with ledger="{target}" (or leave ledger= unset to use the default)'
     elif chosen == "argument":
-        unset = ""
+        then = f'then seal with ledger="{target}"'
     else:
-        unset = f" and set {chosen}={target}"
+        then = f"then set {chosen}={target}"
+    when = f"are refused from capsule-emit {FLAT_WRITES_STOP}" if stopped else f"stop in capsule-emit {FLAT_WRITES_STOP}"
     return (
-        f"capsule-emit: new records to the flat ledger {path} stop in capsule-emit {FLAT_WRITES_STOP}. "
-        f'To move it: capsule-emit ledger import {path} {target}, then seal with ledger="{target}"{unset}. '
+        f"capsule-emit: new records to the flat ledger {path} {when}. "
+        f"To move it: capsule-emit ledger import {path} {target}, {then}. "
         f"Reading {path} keeps working."
     )
 
@@ -198,9 +202,9 @@ def check_new_flat_record(path: str | os.PathLike, chosen: str = "argument") -> 
     warns once per process per path during the window, and from
     :data:`FLAT_WRITES_STOP` on raises :class:`FlatLedgerWriteRefused`."""
     path = Path(path)
-    message = _message(path, chosen)
     if flat_writes_stopped():
-        raise FlatLedgerWriteRefused(message)
+        raise FlatLedgerWriteRefused(_message(path, chosen, stopped=True))
+    message = _message(path, chosen)
     if not _warn_flat_writes:
         return
     key = os.path.abspath(os.fspath(path))
