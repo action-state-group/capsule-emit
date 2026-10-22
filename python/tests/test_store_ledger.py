@@ -674,3 +674,28 @@ def test_scan_verbs_keep_a_false_flag_a_live_writer_left_in_the_wal(tmp_path, mo
         assert sorted(p.name for p in root.rglob("*")) == before
     finally:
         writer.close()
+
+
+
+def test_scan_flags_survive_a_wal_checkpoint_between_copies_and_a_late_append(tmp_path, monkeypatch):
+    from capsule_emit import ledger_io
+
+    root = tmp_path / "s"
+    writer = LedgerStore(root, rotate_at_checkpoint=True)
+    writer.append({"capsule_id": _cid("history")}, consequential=False)
+    real_copy = ledger_io.shutil.copyfile
+    calls = {"n": 0}
+
+    def copy_then_checkpoint(src, dst):
+        result = real_copy(src, dst)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            writer._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return result
+
+    monkeypatch.setattr(ledger_io.shutil, "copyfile", copy_then_checkpoint)
+    try:
+        with open_ledger(root) as scan:
+            assert [(r.capsule_id, r.consequential) for r in scan.scan()] == [(_cid("history"), False)]
+    finally:
+        writer.close()

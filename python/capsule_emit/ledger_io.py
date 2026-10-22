@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import logging
 import os
 import shutil
 import sqlite3
@@ -50,26 +51,42 @@ __all__ = [
 ]
 
 
-def _stored_flags(root: Path) -> dict[str, bool]:
+def _snapshot_id(root: Path) -> tuple:
+    out = []
+    for name in ("index.sqlite3", "index.sqlite3-wal"):
+        try:
+            st = (root / name).stat()
+            out.append((name, st.st_ino, st.st_size, st.st_mtime_ns))
+        except FileNotFoundError:
+            out.append((name, None))
+    return tuple(out)
+
+
+def _stored_flags(root: Path, *, attempts: int = 3) -> dict[str, bool]:
     """Each record's ``consequential`` flag from a managed store's index. The
     index and its WAL are copied into a temporary directory and read there, so
-    the store is never touched (no lock, no sidecar) and rows a writer has
-    committed only to the WAL are still seen; SQLite's WAL checksums drop a
-    frame copied mid-write. Empty when it cannot be read (the copy then marks
-    records consequential, as ``seal()`` appends them)."""
+    the store is never opened (no lock, no sidecar) and rows committed only to
+    the WAL are still seen. The copy is retried while either file changed
+    during it (a commit or a WAL checkpoint meanwhile). Empty when no stable
+    copy could be read."""
     root = Path(os.path.abspath(root))
-    with tempfile.TemporaryDirectory(prefix="capsule-ledger-index-") as tmp:
-        try:
-            for name in ("index.sqlite3", "index.sqlite3-wal"):
-                if (root / name).is_file():
-                    shutil.copyfile(root / name, Path(tmp) / name)
-            conn = sqlite3.connect(Path(tmp) / "index.sqlite3")
+    for _ in range(attempts):
+        before = _snapshot_id(root)
+        with tempfile.TemporaryDirectory(prefix="capsule-ledger-index-") as tmp:
             try:
-                return {cid: bool(flag) for cid, flag in conn.execute("SELECT capsule_id, consequential FROM records")}
-            finally:
-                conn.close()
-        except (OSError, sqlite3.Error):
-            return {}
+                for name in ("index.sqlite3", "index.sqlite3-wal"):
+                    if (root / name).is_file():
+                        shutil.copyfile(root / name, Path(tmp) / name)
+                if _snapshot_id(root) != before:
+                    continue
+                conn = sqlite3.connect(Path(tmp) / "index.sqlite3")
+                try:
+                    return {cid: bool(f) for cid, f in conn.execute("SELECT capsule_id, consequential FROM records")}
+                finally:
+                    conn.close()
+            except (OSError, sqlite3.Error):
+                continue
+    return {}
 
 
 def _copy_store(source: Path, target: LedgerStore) -> None:
@@ -81,8 +98,20 @@ def _copy_store(source: Path, target: LedgerStore) -> None:
 
     from .ledger import read_positioned_entries
 
+    # Segments first, then the index: every record the segments yield was
+    # indexed before the flags are read, unless a crash left it unindexed.
+    entries = read_positioned_entries(source)
     flags = _stored_flags(source)
-    for entry in read_positioned_entries(source):
+    unknown = [e.get("capsule_id") for e in entries if e.get("capsule_id") not in flags]
+    if unknown:
+        # A crash-left line, or an index that could not be copied: such a
+        # record is copied as consequential, the flag seal() appends with.
+        logging.getLogger(__name__).warning(
+            "ledger scan: %d record(s) in %s have no stored consequential flag; copied as consequential",
+            len(unknown),
+            source,
+        )
+    for entry in entries:
         admission = None
         if LedgerStore._reindex_authenticity(entry) == "signed":
             admission = AdmissionRequest(

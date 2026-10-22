@@ -138,7 +138,9 @@ take such a directory; an empty directory becomes one on the first write. See
   scan-query verbs copy the entries into an ephemeral store, keeping each
   record's authenticity and the store's correlation fields, and read each
   record's `consequential` flag from a temporary copy of the store's index
-  and its write-ahead log, so the store itself is never opened.
+  and its write-ahead log, retried while either changes, so the store itself is
+  never opened. A record the copy does not hold (a line a crashed writer left)
+  is copied as consequential, the flag `seal()` appends with, and logged.
 - **Writes** go only to stores capsule-emit created, which carry
   `capsule-emit-store.json`. Any other managed store (capsule-emit-mesh's,
   capsule-engine's, one built with `cll`) is read, and a write to it raises
