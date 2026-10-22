@@ -312,7 +312,10 @@ def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> Expor
     sidecars = [Path(os.fspath(p) + suffix) for p in store_paths for suffix in (".signing_key.pem", ".lock")]
     entry, real = Path(os.path.abspath(target)), Path(os.path.realpath(target))
     inside = any(c.is_relative_to(p) for c in (entry, real) for p in store_paths)
-    if inside or any(c in sidecars or _same_file(c, sc) for c in (entry, real) for sc in sidecars if sc.exists()):
+    # Reserved by name whether or not the file exists yet: a seal() may create
+    # the key while the export runs.
+    named = any(c in sidecars for c in (entry, real))
+    if inside or named or any(_same_file(c, sc) for c in (entry, real) for sc in sidecars if sc.exists()):
         raise _store.LedgerLayoutError(f"{target} is part of the store {root} (or its key or lock); write the export elsewhere")
     while True:
         tmp = target.parent / f".{target.name}.{secrets.token_hex(8)}"

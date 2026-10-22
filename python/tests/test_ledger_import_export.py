@@ -574,3 +574,21 @@ def test_export_refuses_a_symlinked_key_or_lock(tmp_path, sidecar):
     with pytest.raises(ledger_store.LedgerLayoutError, match="part of the store"):
         ledger_migrate.export_to_file(root, target)
     assert target.is_symlink()
+
+
+
+# -- review round 4 ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("dangling", [False, True])
+def test_export_refuses_an_absent_or_dangling_key_name(tmp_path, dangling):
+    root = tmp_path / "s"
+    root.mkdir()
+    append_to_ledger({"capsule_id": _cid("a")}, root)
+    key = tmp_path / "s.signing_key.pem"
+    assert not key.exists()
+    if dangling:
+        key.symlink_to(tmp_path / "nowhere.pem")
+    with pytest.raises(ledger_store.LedgerLayoutError, match="part of the store"):
+        ledger_migrate.export_to_file(root, key)
+    assert key.is_symlink() == dangling and not key.exists()
