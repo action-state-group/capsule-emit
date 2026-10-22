@@ -514,3 +514,63 @@ def test_reimporting_an_export_keeps_the_checkpoints(witnessed_flat, tmp_path):
     second = tmp_path / "second"
     ledger_migrate.import_ledger(out, second)
     assert LegacyLedger(second).load_cll().checkpoint == LegacyLedger(witnessed_flat).load_cll().checkpoint
+
+
+# -- review round 3 ------------------------------------------------------------
+
+
+def test_the_differing_key_note_names_the_store_key_under_an_override(tmp_path, capsys, monkeypatch):
+    flat = tmp_path / "ledger.jsonl"
+    _seal(flat)
+    from capsule_emit import signing
+
+    signing.LocalKeypairSigner(tmp_path / "s.signing_key.pem")
+    monkeypatch.setenv("CAPSULE_SIGNING_KEY_PATH", str(tmp_path / "kms.pem"))
+    assert cli.main(["ledger", "import", str(flat), str(tmp_path / "s")]) == 0
+    out = capsys.readouterr().out
+    assert f"note: {tmp_path / 's.signing_key.pem'} was already there" in out
+    assert "while CAPSULE_SIGNING_KEY_PATH is set" in out
+
+
+def test_a_line_with_a_real_replacement_char_and_a_bad_byte_is_reported(tmp_path, capsys):
+    flat = tmp_path / "ledger.jsonl"
+    flat.write_bytes(b'{"capsule_id":"' + _cid("a").encode() + b'","x":"\xef\xbf\xbd \xff"}\n')
+    assert cli.main(["ledger", "import", str(flat), str(tmp_path / "s")]) == 0
+    assert "line(s) 1: held bytes that are not UTF-8" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("alias", ["name", "symlink", "hardlink"])
+def test_a_source_that_is_the_stores_lock_file_is_refused_untouched(tmp_path, alias):
+    real = tmp_path / "ledger.jsonl"
+    _seal(real)
+    lock = tmp_path / "s.lock"
+    if alias == "name":
+        real.rename(lock)
+        source = lock
+    elif alias == "symlink":
+        lock.symlink_to(real)
+        source = real
+    else:
+        os.link(real, lock)
+        source = real
+    before = (lock if alias == "name" else real).read_bytes()
+    with pytest.raises(ledger_migrate.ImportRefused, match="lock file"):
+        ledger_migrate.import_ledger(source, tmp_path / "s")
+    assert (lock if alias == "name" else real).read_bytes() == before
+
+
+@pytest.mark.parametrize("sidecar", ["s.signing_key.pem", "s.lock"])
+def test_export_refuses_a_symlinked_key_or_lock(tmp_path, sidecar):
+    root = tmp_path / "s"
+    root.mkdir()
+    _seal(root)
+    elsewhere = tmp_path / f"elsewhere-{sidecar}"
+    target = tmp_path / sidecar
+    if target.exists():
+        target.rename(elsewhere)
+    else:
+        elsewhere.write_text("lock")
+    target.symlink_to(elsewhere)
+    with pytest.raises(ledger_store.LedgerLayoutError, match="part of the store"):
+        ledger_migrate.export_to_file(root, target)
+    assert target.is_symlink()

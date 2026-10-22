@@ -133,10 +133,13 @@ def _cmd_ledger_import(args: argparse.Namespace) -> int:
     if report.key_copied:
         print(f"copied the producer key to {report.key_copied}")
     if report.key_differs:
-        print(
-            f"note: {report.key_in_use} was already there and is not the old ledger's key, so records sealed "
-            "to the store carry a different producer identity"
+        note = (
+            f"note: {report.store_key} was already there and is not the old ledger's key, so records sealed "
+            "to the store with it carry a different producer identity"
         )
+        if report.key_source not in ("default", "new"):
+            note += f" (while {report.key_source} is set, seal() signs with that key instead)"
+        print(note)
     if report.key_source == "default":
         print(f"seal() to this store signs with {report.key_in_use}")
     elif report.key_source:

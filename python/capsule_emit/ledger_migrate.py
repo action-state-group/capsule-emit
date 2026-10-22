@@ -59,8 +59,9 @@ class ImportReport:
     skipped_unparseable: list[int] = field(default_factory=list)
     reserialized: list[int] = field(default_factory=list)
     key_copied: Path | None = None
-    #: The store already had a key that is not the old ledger's.
+    #: The store already had a key (``store_key``) that is not the old ledger's.
     key_differs: bool = False
+    store_key: Path | None = None
     replaced_utf8: list[int] = field(default_factory=list)
     #: The key seal() to this store will sign with, and why.
     key_in_use: Path | None = None
@@ -152,6 +153,15 @@ def _publish_key(source_key: Path, dest_key: Path) -> None:
         Path(tmp).unlink(missing_ok=True)
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    if os.path.realpath(a) == os.path.realpath(b):
+        return True
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
 def _key_in_use(dest_key: Path) -> tuple[Path | None, str]:
     """The key seal() to the new store will sign with, and how it was chosen."""
     from .signing import SIGNING_KEY_PATH_ENV_VAR
@@ -178,6 +188,11 @@ def import_ledger(source: str | os.PathLike, dest: str | os.PathLike) -> ImportR
     dest = Path(dest)
     _check_destination(dest)
     root = _store.store_root(dest)
+    # Taking the locks rewrites the lock files: a source that is one of them
+    # (by name, symlink or hard link) would be destroyed before it is read.
+    for lock in (Path(os.fspath(root) + ".lock"), Path(os.fspath(source) + ".lock")):
+        if _same_file(source, lock):
+            raise ImportRefused(f"{source} is the lock file {lock}; it is not a ledger", [])
     report = ImportReport(source=source, store=root)
     with _ledger._writer_lock(root, wait=True), _ledger._writer_lock(source, wait=True):
         _check_destination(dest)
@@ -198,7 +213,9 @@ def import_ledger(source: str | os.PathLike, dest: str | os.PathLike) -> ImportR
                 except ValueError:
                     report.skipped_unparseable.append(number)
                     continue
-                if "\ufffd" in text and b"\xef\xbf\xbd" not in raw:
+                try:
+                    raw.decode("utf-8")
+                except UnicodeDecodeError:
                     report.replaced_utf8.append(number)
                 if not isinstance(obj, dict) or not isinstance(obj.get("capsule_id"), str) or not _HEX64.fullmatch(obj["capsule_id"]):
                     bad_ids.append(number)
@@ -239,6 +256,7 @@ def import_ledger(source: str | os.PathLike, dest: str | os.PathLike) -> ImportR
             report.key_copied = dest_key
         elif source_key.is_file() and dest_key.is_file():
             report.key_differs = source_key.read_bytes() != dest_key.read_bytes()
+        report.store_key = dest_key
         report.key_in_use, report.key_source = _key_in_use(dest_key)
         try:
             _store.create_store(root, lines=texts)
@@ -287,9 +305,14 @@ def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> Expor
     root, target = _store.store_root(store), Path(target)
     if target.is_dir():
         raise _store.LedgerLayoutError(f"{target} is a directory; name a file")
-    real = os.path.realpath(target)
-    sidecars = {os.fspath(root) + ".signing_key.pem", os.fspath(root) + ".lock"}
-    if real.startswith(os.fspath(root) + os.sep) or real in sidecars:
+    # The entry replaced is the target's own path (os.replace does not follow a
+    # symlink), and what it may point at: both are checked against the store
+    # and its key and lock, by name and by file.
+    store_paths = {Path(store).absolute(), root}
+    sidecars = [Path(os.fspath(p) + suffix) for p in store_paths for suffix in (".signing_key.pem", ".lock")]
+    entry, real = Path(os.path.abspath(target)), Path(os.path.realpath(target))
+    inside = any(c.is_relative_to(p) for c in (entry, real) for p in store_paths)
+    if inside or any(c in sidecars or _same_file(c, sc) for c in (entry, real) for sc in sidecars if sc.exists()):
         raise _store.LedgerLayoutError(f"{target} is part of the store {root} (or its key or lock); write the export elsewhere")
     while True:
         tmp = target.parent / f".{target.name}.{secrets.token_hex(8)}"
