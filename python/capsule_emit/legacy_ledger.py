@@ -470,13 +470,13 @@ class LegacyLedger:
         if not (self._path / _store.MANIFEST_FILENAME).is_file():
             self._reset()
             return
-        restarted, added = self._store.refresh()
-        if restarted:
-            self._reset()
-        seq = len(self._lines) + 1
-        previous = self._last_time()
-        parsed = []
         try:
+            restarted, added = self._store.refresh()
+            if restarted:
+                self._reset()
+            seq = len(self._lines) + 1
+            previous = self._last_time()
+            parsed = []
             for raw_line in added:
                 line = self._parse(raw_line.raw, raw_line.offset, seq, previous)
                 if line is None:
@@ -626,7 +626,7 @@ class LegacyLedger:
         self._require_open()
         if self._store is not None:
             if not (self._path / _store.MANIFEST_FILENAME).is_file():
-                with _ledger._writer_lock(self._path, wait=self._wait, timeout=self._timeout):
+                with _ledger._append_lock, _ledger._writer_lock(self._path, wait=self._wait, timeout=self._timeout):
                     if not (self._path / _store.MANIFEST_FILENAME).is_file():
                         _store.create_store(self._path)
             return

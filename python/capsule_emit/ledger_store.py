@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import stat
 import sys
@@ -271,6 +272,11 @@ def read_entries(root: str | os.PathLike) -> list[dict]:
             capsule_id = obj.get("capsule_id") if isinstance(obj, dict) else None
             if isinstance(capsule_id, str):
                 if capsule_id in seen:
+                    # Not an entry: a duplicate append left it before CLL
+                    # checked first. Reported like a flat ledger's corrupt line.
+                    logging.getLogger(__name__).warning(
+                        "ledger store: skipping a later line repeating capsule_id %s in %s", capsule_id, segment.name
+                    )
                     continue
                 seen.add(capsule_id)
             entries.append(obj)

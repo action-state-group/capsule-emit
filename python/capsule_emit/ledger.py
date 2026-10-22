@@ -284,6 +284,8 @@ def append_to_ledger(
     from .ledger_store import LedgerConflictError, LedgerWriteError
     from .legacy_ledger import shared
 
+    if not isinstance(capsule, dict):
+        raise LedgerWriteError(f"{path}: a ledger line is a JSON object, not {type(capsule).__name__}")
     try:
         return shared(path).append_any(capsule, wait=wait, timeout=timeout).entry.seq
     except ConflictError as exc:
@@ -292,7 +294,7 @@ def append_to_ledger(
         ) from exc
     except OSError:
         raise
-    except (ArtifactError, CllError, ValueError, RuntimeError, sqlite3.Error) as exc:
+    except (ArtifactError, CllError, ValueError, TypeError, RuntimeError, sqlite3.Error) as exc:
         raise LedgerWriteError(f"{path}: cannot append this line: {exc}") from exc
 
 

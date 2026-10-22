@@ -358,7 +358,11 @@ def resolve_signer(
         from . import ledger as _ledger
         from .ledger_store import store_root
 
-        lock = _ledger._writer_lock(store_root(ledger_path), wait=True)
+        # _append_lock first, the order every append takes: a thread in this
+        # process appending meanwhile waits instead of meeting our flock.
+        lock = contextlib.ExitStack()
+        lock.enter_context(_ledger._append_lock)
+        lock.enter_context(_ledger._writer_lock(store_root(ledger_path), wait=True))
     with lock, _cache_lock:
         cached = _cache.get(cache_key)
         if cached is None:

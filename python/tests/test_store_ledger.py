@@ -450,3 +450,62 @@ def test_store_key_creation_waits_for_a_held_writer_lock(store_dir):
     assert done.wait(timeout=10)
     resolver.join(timeout=10)
     assert key.is_file()
+
+
+# -- review round 2 ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("line", [["not", "a", "dict"], {"capsule_id": "ab" * 32, "x": b"bytes"}])
+def test_append_to_ledger_refuses_unwritable_values_as_oserror(store_dir, line):
+    with pytest.raises(ledger_store.LedgerWriteError):
+        append_to_ledger(line, store_dir)
+
+
+def test_a_transient_read_failure_is_retried_whole(store_dir, monkeypatch):
+    for name in ("a", "b", "c"):
+        append_to_ledger({"capsule_id": _cid(name)}, store_dir)
+    reader = LegacyLedger(store_dir)
+    real = ledger_store.StoreLines.refresh
+    calls = {"n": 0}
+
+    def flaky(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("transient")
+        return real(self)
+
+    monkeypatch.setattr(ledger_store.StoreLines, "refresh", flaky)
+    with pytest.raises(OSError):
+        list(reader.entries())
+    assert len(list(reader.entries())) == 3
+
+
+def test_an_append_while_a_thread_creates_the_store_key_waits(store_dir, monkeypatch):
+    import threading
+    import time
+
+    real_init = signing.LocalKeypairSigner.__init__
+    started = threading.Event()
+
+    def slow_init(self, key_path):
+        started.set()
+        time.sleep(0.5)
+        real_init(self, key_path)
+
+    monkeypatch.setattr(signing.LocalKeypairSigner, "__init__", slow_init)
+    resolver = threading.Thread(target=signing.resolve_signer, args=(store_dir,))
+    resolver.start()
+    assert started.wait(timeout=5)
+    append_to_ledger({"capsule_id": _cid("during")}, store_dir)
+    resolver.join(timeout=10)
+    assert [e["capsule_id"] for e in read_ledger_entries(store_dir)] == [_cid("during")]
+
+
+def test_a_repeated_line_is_reported_when_read(store_dir, caplog):
+    append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+    manifest = json.loads((store_dir / "manifest.json").read_text())
+    with open(store_dir / "segments" / manifest["active_segment"], "ab") as fh:
+        fh.write(json.dumps({"capsule_id": _cid("a")}, separators=(",", ":")).encode() + b"\n")
+    with caplog.at_level("WARNING"):
+        assert len(read_ledger_entries(store_dir)) == 1
+    assert "repeating capsule_id" in caplog.text
