@@ -1,0 +1,235 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Move a flat ``ledger.jsonl`` into a ledger store, and write a store back out
+as plain JSON lines: ``capsule-emit ledger import`` and ``ledger export``.
+
+**Import** copies every line of the flat file, in order and unchanged as JSON,
+into a new store (``capsule_emit.ledger_store``), so the store holds the same
+leaves: every checkpoint the old file recorded covers the same leaf count and
+root over the store's prefix, and its stamps verify there. It is one shot and
+all or nothing: the destination must be new (a non-existent name without a
+dot, or an empty directory), the store is built in a staging directory and
+renamed into place, and nothing is written when the source cannot be copied
+whole. A line that does not parse (a fragment a crashed writer left) is not a
+leaf, so it is skipped and reported. A line without a 64-hex ``capsule_id``, or
+a ``capsule_id`` that repeats, refuses the import: a store admits one line per
+``capsule_id``, so a repeat would shift every later leaf. Witnessing starts a
+new log, because a ledger's log id is its path. The producer key is carried
+over: the old ledger's default key is copied beside the store when the store
+has none. The source is never modified and stays readable.
+
+**Export** writes a store's entries, in order and as stored, the line form a
+flat ledger holds. Importing an export gives the same lines and roots.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import tempfile
+from collections import Counter
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from . import ledger as _ledger
+from . import ledger_store as _store
+from .legacy_ledger import _line_form
+
+__all__ = ["ImportRefused", "ImportReport", "export_ledger", "import_ledger", "suggested_store"]
+
+_HEX64 = re.compile(r"[0-9a-f]{64}")
+
+
+class ImportRefused(ValueError):
+    """The flat ledger cannot be copied whole; nothing was written. ``lines``
+    names the 1-based source lines at fault."""
+
+    def __init__(self, message: str, lines: list[int]) -> None:
+        super().__init__(message)
+        self.lines = lines
+
+
+@dataclass
+class ImportReport:
+    source: Path
+    store: Path
+    imported: Counter = field(default_factory=Counter)
+    skipped_unparseable: list[int] = field(default_factory=list)
+    reserialized: list[int] = field(default_factory=list)
+    key_copied: Path | None = None
+    key_in_use: Path | None = None
+
+
+def _kind(obj: dict) -> str:
+    if obj.get("kind"):
+        return str(obj["kind"])
+    if obj.get("record_type") == _ledger.PADDING_RECORD_TYPE:
+        return "padding"
+    return "capsule"
+
+
+def _source_key(source: Path) -> Path:
+    from .signing import _default_key_path
+
+    return _default_key_path(source)
+
+
+def _store_key(root: Path) -> Path:
+    return Path(os.fspath(root) + ".signing_key.pem")
+
+
+def suggested_store(path: str | os.PathLike) -> str:
+    """The store directory the deprecation messages print for a flat ledger:
+    ``./capsule-ledger`` for ``./ledger.jsonl``; otherwise, beside the file,
+    its name with leading dots dropped, each other ``.`` replaced by ``-`` and
+    ``-store`` added. If that path exists and is not an empty directory, the
+    first free ``-2``, ``-3``, ... suffix. Always printed with a directory
+    prefix, so it never reads as a command-line option."""
+    p = Path(path)
+    parent = p.parent
+    if p.name == "ledger.jsonl" and os.path.realpath(parent) == os.path.realpath(os.curdir):
+        base = "capsule-ledger"
+    else:
+        base = p.name.lstrip(".").replace(".", "-") + "-store"
+    candidate = parent / base
+    n = 2
+    while candidate.exists() and not (candidate.is_dir() and not any(candidate.iterdir())):
+        candidate = parent / f"{base}-{n}"
+        n += 1
+    text = os.fspath(candidate)
+    return text if os.path.dirname(text) else os.path.join(os.curdir, text)
+
+
+def _check_destination(dest: Path) -> None:
+    if dest.exists():
+        if not dest.is_dir() or any(dest.iterdir()):
+            raise ImportRefused(f"{dest} exists and is not an empty directory; choose a new name", [])
+    elif "." in dest.name:
+        raise ImportRefused(f"{dest}: a new ledger store's name has no '.'; choose a name without one", [])
+
+
+def _publish_key(source_key: Path, dest_key: Path) -> None:
+    """Copy ``source_key`` to ``dest_key`` without ever leaving a partial
+    key: an exclusive temp file beside it, fsynced, then renamed."""
+    fd, tmp = tempfile.mkstemp(prefix=f".{dest_key.name}.", dir=dest_key.parent)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(source_key.read_bytes())
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, 0o600)
+        os.rename(tmp, dest_key)
+        _store._fsync(dest_key.parent)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def import_ledger(source: str | os.PathLike, dest: str | os.PathLike) -> ImportReport:
+    """Copy the flat ledger ``source`` into a new ledger store ``dest``.
+    Raises :class:`ImportRefused` (nothing written) when it cannot be copied
+    whole; see the module docstring."""
+    source = Path(source)
+    if not source.is_file():
+        raise ImportRefused(f"{source} is not a flat ledger file", [])
+    dest = Path(dest)
+    _check_destination(dest)
+    root = _store.store_root(dest)
+    report = ImportReport(source=source, store=root)
+    with _ledger._writer_lock(root, wait=True), _ledger._writer_lock(source, wait=True):
+        _check_destination(dest)
+        texts: list[str] = []
+        seen: dict[str, int] = {}
+        bad_ids: list[int] = []
+        repeats: list[int] = []
+        with open(source, "rb") as fh:
+            for number, raw in enumerate(fh, start=1):
+                stripped = raw.strip()
+                if not stripped:
+                    continue
+                try:
+                    obj = json.loads(stripped)
+                except ValueError:
+                    report.skipped_unparseable.append(number)
+                    continue
+                if not isinstance(obj, dict) or not isinstance(obj.get("capsule_id"), str) or not _HEX64.fullmatch(obj["capsule_id"]):
+                    bad_ids.append(number)
+                    continue
+                if obj["capsule_id"] in seen:
+                    repeats.append(number)
+                    continue
+                seen[obj["capsule_id"]] = number
+                text = _line_form(obj)
+                if text.encode() != stripped:
+                    report.reserialized.append(number)
+                texts.append(text)
+                report.imported[_kind(obj)] += 1
+        if bad_ids:
+            raise ImportRefused(
+                f"{source}: line(s) {_lines(bad_ids)} have no 64-hex capsule_id; nothing was imported", bad_ids
+            )
+        if repeats:
+            message = (
+                f"{source}: line(s) {_lines(repeats)} repeat a capsule_id already on an earlier line, "
+                "which a ledger store admits only once (likely repeated hold lines, which capsule-emit "
+                "wrote before it checked for repeats); nothing was imported. Keep the file for reading "
+                "and verifying, and seal new records to a new ledger directory."
+            )
+            source_key, dest_key = _source_key(source), _store_key(root)
+            if source_key.is_file() and not dest_key.exists():
+                message += f" To keep the producer identity, first run: cp -n {source_key} {dest_key}"
+            raise ImportRefused(message, repeats)
+
+        source_key, dest_key = _source_key(source), _store_key(root)
+        if source_key.is_file() and not dest_key.exists():
+            _publish_key(source_key, dest_key)
+            report.key_copied = dest_key
+        report.key_in_use = dest_key
+        try:
+            _store.create_store(root, lines=texts)
+        except ValueError as exc:
+            raise ImportRefused(f"{source}: a line cannot be stored ({exc}); nothing was imported", []) from exc
+    return report
+
+
+def _lines(numbers: list[int]) -> str:
+    shown = ", ".join(str(n) for n in numbers[:10])
+    return shown + (f" and {len(numbers) - 10} more" if len(numbers) > 10 else "")
+
+
+@dataclass
+class ExportReport:
+    lines: int = 0
+    skipped_repeats: int = 0
+
+
+def export_ledger(store: str | os.PathLike, out) -> ExportReport:
+    """Write the entries of ``store`` to the binary stream ``out`` as JSON
+    lines, in order and as stored. Raises
+    ``ledger_store.LedgerArchivedError`` when a segment is archived."""
+    root = Path(store)
+    if not _ledger.is_ledger_store(root):
+        raise _store.LedgerLayoutError(f"{root} is not a ledger store directory")
+    lines = _store.StoreLines(root)
+    _, entries = lines.refresh()
+    report = ExportReport(skipped_repeats=len(lines.skipped))
+    for line in entries:
+        out.write(line.raw + b"\n")
+        report.lines += 1
+    return report
+
+
+def _copy_out(store: Path, target: Path) -> ExportReport:
+    """Export to ``target`` through a temp file, so a failed export never
+    leaves a partial file under that name."""
+    fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            report = export_ledger(store, fh)
+            fh.flush()
+            os.fsync(fh.fileno())
+        shutil.move(tmp, target)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+    return report

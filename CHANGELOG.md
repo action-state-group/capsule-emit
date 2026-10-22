@@ -6,6 +6,26 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (Python): `capsule-emit ledger import` and `ledger export --jsonl`
+
+`capsule-emit ledger import LEDGER.jsonl DIR` copies a flat ledger into a new
+ledger store, whole or not at all. `DIR` must be new: a name without a `.`, or
+an empty directory. Every line is copied in order, so the store holds the same
+leaves, and each checkpoint the old file recorded covers the same leaf count and
+root over the store's prefix. A line that does not parse (a fragment a crashed
+write left) was never an entry: it is skipped and reported. A line without a
+64-hex `capsule_id`, or a `capsule_id` that repeats (likely repeated hold lines,
+which earlier releases wrote), refuses the import and nothing is written; the
+message names the lines and prints the command that keeps the producer key. The
+old ledger's default producer key is copied beside the store when the store has
+none, so sealing to the store keeps the same identity. Witnessing starts a new
+log for the store, because a ledger's log id is its path. The source is never
+modified and stays readable.
+
+`capsule-emit ledger export --jsonl DIR [-o FILE]` writes a store's entries as
+JSON lines, in order and as stored: a reading copy. Importing an export gives
+the same lines and roots.
+
 ### Added (Python): a ledger kept in a ledger store directory
 
 `seal()`, `log()`, `received()`, `push()` and every writer built on them accept a

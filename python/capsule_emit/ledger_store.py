@@ -360,10 +360,10 @@ def _new_staging(root: Path) -> Path:
             continue
 
 
-def create_store(root: Path, first_line: str | None = None) -> None:
+def create_store(root: Path, first_line: str | None = None, *, lines: list[str] | None = None) -> None:
     """Create a marked store at ``root`` (absent, or an empty directory),
-    holding ``first_line`` when given. Built in a fresh staging directory
-    beside ``root`` and renamed into place after everything in it is fsynced.
+    holding ``first_line`` when given, or every line of ``lines`` in order.
+    Built in a fresh staging directory beside ``root`` and renamed into place after everything in it is fsynced.
     The caller holds the writer lock."""
     if root.exists() and not (root.is_dir() and not any(root.iterdir())):
         raise LedgerLayoutError(f"{root} exists and is not an empty directory")
@@ -398,6 +398,10 @@ def create_store(root: Path, first_line: str | None = None) -> None:
         try:
             if first_line is not None:
                 store.append(json.loads(first_line), consequential=True)
+            # Imported lines are history, not new actions (CLL's own import
+            # marks them so); every file is fsynced before the rename anyway.
+            for text in lines or []:
+                store.append(json.loads(text), consequential=False)
         finally:
             store.close()
         for path in sorted(staging.rglob("*"), key=lambda p: len(p.parts), reverse=True):

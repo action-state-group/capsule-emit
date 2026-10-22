@@ -435,6 +435,8 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
         "bundle": [["bundle", str(path), "--all", "-o", str(proven)]],
         "disclose": [["disclose", str(path), cid, "--audience", "auditor", "--reveal", f"{cid}:agent_input={inputs}",
                       "--reveal", f"{cid}:agent_output={outputs}"]],
+        "ledger import": [["ledger", "import", str(path), str(tmp_path / "imported")]],
+        "ledger export": [["ledger", "export", "--jsonl", str(tmp_path / "imported"), "-o", str(tmp_path / "exported.jsonl")]],
     }
     runs["verify"] += [["verify", "--bundle", str(bundle)], ["verify", "--bundle", str(proven)]]
     assert _subcommands() == set(runs), "a CLI command is missing from this test"
