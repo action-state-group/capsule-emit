@@ -40,7 +40,7 @@ dependencies = [
     # 0.4.0: range/inclusion proofs for verify --bundle; 0.4.1: scan compares instants (--period).
     # 0.5: no default witness and no built-in witness key (verification trusts only the caller's keys).
     # 0.6: cll.log, the entry-log interface capsule_emit.legacy_ledger implements.
-    "checkpointed-local-log>=0.6,<0.7",
+    "checkpointed-local-log>=0.7,<0.8",
 ]
 
 [project.optional-dependencies]

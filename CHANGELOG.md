@@ -31,7 +31,7 @@ leaf number) and refused (`LedgerArchivedError`) for proofs, status, witnessing,
 the scan-query verbs and writes. The first write into an existing empty
 directory keeps its mode and group; a mount point is refused (keep the ledger in
 a directory inside it). This is not the default yet (capsule-emit#358). Requires
-the checkpointed-local-log release with `LedgerStore.recover()`.
+`checkpointed-local-log>=0.7,<0.8`, for `LedgerStore.recover()`.
 
 ### Changed (Python, breaking): `append_to_ledger` writes each line once
 
