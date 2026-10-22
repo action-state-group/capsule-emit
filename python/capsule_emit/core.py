@@ -548,13 +548,17 @@ class LogEntry:
         return f"LogEntry(capsule_id={self.capsule_id!r}) #logged @ leaf {self.seq}"
 
 
-def _emit_capsule(*args: Any, ledger: str | os.PathLike | None = None, **kwargs: Any) -> EmitResult:
+def _emit_capsule(
+    *args: Any, ledger: str | os.PathLike | None = None, _ledger_env: tuple[str, ...] | None = None, **kwargs: Any
+) -> EmitResult:
     """:func:`_emit_capsule_at` against the ledger ``ledger`` resolves to
-    (``capsule_emit.ledger_layout.resolve_ledger``)."""
-    return _with_resolved_ledger(_emit_capsule_at, ledger, args, kwargs)
+    (``capsule_emit.ledger_layout.resolve_ledger``). ``_ledger_env`` names the
+    environment variables an adapter reads the ledger from, in order, so a
+    deprecation message names the variable the user set."""
+    return _with_resolved_ledger(_emit_capsule_at, ledger, args, kwargs, env=_ledger_env)
 
 
-def _with_resolved_ledger(fn: Any, ledger: Any, args: tuple, kwargs: dict) -> Any:
+def _with_resolved_ledger(fn: Any, ledger: Any, args: tuple, kwargs: dict, *, env: tuple[str, ...] | None = None) -> Any:
     """Resolve ``ledger`` and call ``fn`` against it. A new record to a flat
     ledger is checked against the deprecation window first. When the default
     fell back to ``./ledger.jsonl`` and an import published
@@ -565,7 +569,7 @@ def _with_resolved_ledger(fn: Any, ledger: Any, args: tuple, kwargs: dict) -> An
     from . import ledger_layout as _layout
 
     for attempt in (1, 2):
-        resolution = _layout.resolve_ledger(ledger)
+        resolution = _layout.resolve_ledger(ledger, env=env or (_layout.LEDGER_ENV,))
         if resolution.layout == "flat":
             _layout.check_new_flat_record(resolution.path, resolution.chosen)
         try:

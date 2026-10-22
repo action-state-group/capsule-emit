@@ -32,6 +32,8 @@ disclosure records) never warn and never stop, and reading never ends.
 from __future__ import annotations
 
 import os
+import re
+import sys
 import threading
 import warnings
 from dataclasses import dataclass
@@ -161,12 +163,13 @@ def default_moved(resolution: Resolution) -> bool:
 
 
 def _installed_version() -> tuple[int, ...] | None:
+    """The installed release as (major, minor, patch). A pre-release or dev
+    build of a release (``0.15.0rc1``, ``0.15.0.dev3``) counts as that
+    release, so a release candidate behaves as the release will."""
     from . import __version__
 
-    try:
-        return tuple(int(part) for part in __version__.split("+")[0].split(".")[:3])
-    except ValueError:
-        return None
+    match = re.match(r"(\d+)\.(\d+)\.(\d+)", __version__)
+    return tuple(int(part) for part in match.groups()) if match else None
 
 
 def flat_writes_stopped() -> bool:
@@ -211,5 +214,20 @@ def check_new_flat_record(path: str | os.PathLike, chosen: str = "argument") -> 
     with _warned_lock:
         if key in _warned:
             return
+    warnings.warn(message, LedgerDeprecationWarning, stacklevel=_caller_stacklevel())
+    # Marked only once the warning was issued: a filter that turns it into an
+    # error leaves the path unwarned, so the next call warns again.
+    with _warned_lock:
         _warned.add(key)
-    warnings.warn(message, LedgerDeprecationWarning, stacklevel=3)
+
+
+def _caller_stacklevel() -> int:
+    """The ``stacklevel`` that points a warning issued by this module's caller
+    at the first frame outside capsule-emit, whichever entry point led here."""
+    package = os.path.dirname(os.path.abspath(__file__)) + os.sep
+    frame = sys._getframe(1)  # the function that calls warnings.warn: level 1
+    level = 1
+    while frame is not None and os.path.abspath(frame.f_code.co_filename).startswith(package):
+        frame = frame.f_back
+        level += 1
+    return level

@@ -211,7 +211,7 @@ pip install "capsule-emit[agentgateway]"
 
 ```sh
 # Env vars for your deployment
-export CAPSULE_LEDGER=/var/log/capsules.jsonl
+export CAPSULE_LEDGER=/var/log/capsule-ledger
 export CAPSULE_OPERATOR=acme-co
 export CAPSULE_DEVELOPER=agentgateway-agent@v1
 
@@ -256,13 +256,13 @@ Every `tools/call` routed through agentgateway now seals a planned capsule and a
 ## Verify a session
 
 ```sh
-capsule-emit verify --store /var/log/capsules.jsonl
+capsule-emit verify --store /var/log/capsule-ledger
 ```
 
 Or inspect the last 10 capsules:
 
 ```sh
-capsule-emit ledger --store /var/log/capsules.jsonl --limit 10
+capsule-emit ledger --store /var/log/capsule-ledger --limit 10
 ```
 
 ## Environment variables

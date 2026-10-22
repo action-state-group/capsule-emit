@@ -61,11 +61,9 @@ def test_server_module_importable():
     assert isinstance(_server_module.mcp, FastMCP)
 
 
-def test_server_capsule_record(tmp_path):
+def test_server_capsule_record(tmp_path, monkeypatch):
     """capsule_record tool seals a capsule to the specified ledger."""
-    import os
-
-    os.environ["CAPSULE_LEDGER"] = str(tmp_path / "l.jsonl")
+    monkeypatch.setenv("CAPSULE_LEDGER", str(tmp_path / "ledger"))
 
     # Re-import to pick up the env var (defaults are evaluated at import time
     # in the module — we call the function directly to bypass that)
@@ -75,10 +73,10 @@ def test_server_capsule_record(tmp_path):
         action="buy_widget",
         tool_input='{"qty": 3}',
         tool_output='{"status": "ok"}',
-        ledger=str(tmp_path / "l.jsonl"),
+        ledger=str(tmp_path / "ledger"),
     )
     assert "sealed capsule_id=" in reply
-    records = read_ledger(tmp_path / "l.jsonl")
+    records = read_ledger(tmp_path / "ledger")
     assert len(records) == 1
     assert "buy_widget" in records[0].get("action_id", "")
 
@@ -461,7 +459,7 @@ def test_capsule_anchor_true_reaches_anchor_call(tmp_path, monkeypatch, _server_
         action="buy_widget",
         tool_input='{"qty": 1}',
         tool_output='{"status": "ok"}',
-        ledger=str(tmp_path / "l.jsonl"),
+        ledger=str(tmp_path / "ledger"),
     )
     assert "sealed capsule_id=" in reply
     assert len(calls) == 1
@@ -480,7 +478,7 @@ def test_capsule_anchor_false_skips_anchor_call(tmp_path, monkeypatch, _server_r
         action="buy_widget",
         tool_input='{"qty": 1}',
         tool_output='{"status": "ok"}',
-        ledger=str(tmp_path / "l.jsonl"),
+        ledger=str(tmp_path / "ledger"),
     )
     assert "sealed capsule_id=" in reply
     assert calls == []

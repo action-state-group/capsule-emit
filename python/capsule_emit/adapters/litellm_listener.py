@@ -581,7 +581,6 @@ def listener_from_env(**overrides: Any) -> LiteLLMCapsuleListener:
     kw: dict[str, Any] = {
         "operator": os.environ["CAPSULE_EMIT_OPERATOR"],
         "developer": os.environ["CAPSULE_EMIT_DEVELOPER"],
-        "ledger": os.environ.get("CAPSULE_EMIT_LEDGER") or None,
         "include_request_record": os.environ.get("CAPSULE_EMIT_LITELLM_REQUEST_RECORD", "1") != "0",
         "include_unredacted_failure_payload": os.environ.get(
             "CAPSULE_EMIT_LITELLM_FAILURE_PAYLOAD", "0"
@@ -590,7 +589,11 @@ def listener_from_env(**overrides: Any) -> LiteLLMCapsuleListener:
         "max_payload_chars": int(os.environ.get("CAPSULE_EMIT_LITELLM_MAX_PAYLOAD_CHARS", "20000")),
     }
     kw.update(overrides)
-    return LiteLLMCapsuleListener(**kw)
+    listener = LiteLLMCapsuleListener(**kw)
+    # Resolved on every call, CAPSULE_EMIT_LEDGER first, so a deprecation
+    # message names the variable that chose the ledger.
+    listener.core._ledger_env = ("CAPSULE_EMIT_LEDGER", "CAPSULE_LEDGER")
+    return listener
 
 
 def __getattr__(name: str) -> Any:

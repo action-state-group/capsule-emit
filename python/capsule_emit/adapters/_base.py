@@ -73,6 +73,9 @@ class CapsuleEmitterBase:
         self._operator = operator
         self._developer = developer
         self._ledger = ledger
+        # The environment variables a ledger=None call reads, in order; an
+        # adapter with its own variable puts it first.
+        self._ledger_env: tuple[str, ...] | None = None
         self._anchor = anchor
         self._anchor_url = anchor_url
         self._anchor_wait = anchor_wait
@@ -138,6 +141,7 @@ class CapsuleEmitterBase:
             relation=relation,
             anchor=self._anchor,
             ledger=self._ledger,
+            _ledger_env=self._ledger_env,
             anchor_url=self._anchor_url,
             anchor_wait=self._anchor_wait,
             model=model if model is not None else self._default_model,

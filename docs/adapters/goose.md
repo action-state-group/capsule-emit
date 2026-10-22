@@ -219,7 +219,7 @@ extensions:
     args: ["-m", "capsule_emit.server"]
     timeout: 30
     envs:
-      CAPSULE_LEDGER: "/tmp/goose-capsules.jsonl"
+      CAPSULE_LEDGER: "/tmp/goose-capsule-ledger"
       CAPSULE_OPERATOR: "my-org"
       CAPSULE_DEVELOPER: "goose-agent@v1"
 ```

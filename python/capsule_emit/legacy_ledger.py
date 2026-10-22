@@ -329,7 +329,9 @@ def checked_record(capsule_id: str, obj: dict, trusted: list | None = None) -> R
 
 class LegacyLedger:
     """A ``ledger.jsonl`` file as a CLL ``EntryStore`` and an artifact
-    ``Store``, with the capability limits in ``CAPABILITIES``.
+    ``Store``, with the capability limits in ``CAPABILITIES``. ``path``
+    defaults to the ledger ``seal()`` writes, resolved when it is constructed
+    (``capsule_emit.ledger_layout.resolve_ledger``).
 
     ``trusted`` (raw 32-byte Ed25519 public keys) turns on signer
     authorization; ``None`` accepts any signer whose envelope verifies.
@@ -346,7 +348,7 @@ class LegacyLedger:
 
     def __init__(
         self,
-        path: str | os.PathLike = "ledger.jsonl",
+        path: str | os.PathLike | None = None,
         namespace: str = DEFAULT_NAMESPACE,
         trusted: list | None = None,
         *,
@@ -365,6 +367,10 @@ class LegacyLedger:
         # is addressed by its canonical path, so every spelling shares one
         # lock; a flat file keeps the spelling it was given.
         self._store: _store.StoreLines | None = None
+        if path is None:  # the default ledger, as seal() resolves it now
+            from .ledger_layout import resolve_ledger
+
+            path = resolve_ledger(None).path
         if Path(path).is_dir() or _store.is_store_target(path):
             if Path(path).is_dir() and not _store.is_store_path(path):
                 raise _store.LedgerLayoutError(

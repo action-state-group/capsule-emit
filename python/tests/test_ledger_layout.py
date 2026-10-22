@@ -218,3 +218,182 @@ def test_a_new_jsonl_path_from_the_env_names_the_env_remedy(tmp_path, monkeypatc
     monkeypatch.setenv("CAPSULE_LEDGER", str(tmp_path / "new.jsonl"))
     with pytest.raises(FlatLedgerWriteRefused, match="set CAPSULE_LEDGER="):
         _seal()
+
+
+# -- D3 (b): what follows the store when the call runs again ------------------------
+
+
+def _import_during_the_first_precheck(monkeypatch, tmp_path, during=None):
+    """Patch LegacyLedger._write so that, the first time a default-flat write
+    reaches its precheck, ``during`` runs first (by default, the import that
+    publishes ./capsule-ledger/)."""
+    from capsule_emit.legacy_ledger import LegacyLedger
+
+    real_write = LegacyLedger._write
+    fired = threading.Event()
+
+    def write(self, line, **kwargs):
+        if kwargs.get("precheck") is not None and not fired.is_set():
+            fired.set()
+            if during is None:
+                ledger_migrate.import_ledger(tmp_path / "ledger.jsonl", tmp_path / "capsule-ledger")
+            else:
+                during()
+        return real_write(self, line, **kwargs)
+
+    monkeypatch.setattr(LegacyLedger, "_write", write)
+    return fired
+
+
+def test_a_rerun_seal_keeps_its_confirms_link(tmp_path, monkeypatch):
+    (tmp_path / "ledger.jsonl").touch()
+    first = _seal()
+    _import_during_the_first_precheck(monkeypatch, tmp_path)
+    second = _seal(confirms=first.capsule["capsule_id"])
+    store = read_ledger(tmp_path / "capsule-ledger")
+    assert [c["capsule_id"] for c in store] == [first.capsule["capsule_id"], second.capsule["capsule_id"]]
+    assert store[1]["chain"] == {"parent_capsule_id": first.capsule["capsule_id"], "relation": "confirms"}
+
+
+def test_a_rerun_seal_with_require_witness_reports_the_store(tmp_path, monkeypatch):
+    from capsule_emit.witness import WitnessRequiredError
+
+    (tmp_path / "ledger.jsonl").touch()
+    _seal()
+    _import_during_the_first_precheck(monkeypatch, tmp_path)
+    with pytest.raises(WitnessRequiredError, match="capsule-ledger"):
+        _seal(require_witness=True)
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 1
+    assert len(read_ledger(tmp_path / "capsule-ledger")) == 2
+
+
+def test_a_rerun_seal_signs_with_the_stores_key(tmp_path, monkeypatch):
+    (tmp_path / "ledger.jsonl").touch()
+    flat_key = _seal().capsule["key_id"]
+    made = {}
+
+    def another_process_makes_the_store():
+        made["key"] = _seal(ledger="capsule-ledger").capsule["key_id"]
+
+    _import_during_the_first_precheck(monkeypatch, tmp_path, during=another_process_makes_the_store)
+    rerun = _seal()
+    assert made["key"] != flat_key
+    assert rerun.capsule["key_id"] == made["key"]
+    assert [c["key_id"] for c in read_ledger(tmp_path / "capsule-ledger")] == [made["key"]] * 2
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 1
+
+
+def test_two_imports_racing_publish_one_store(tmp_path):
+    (tmp_path / "ledger.jsonl").touch()
+    for _ in range(3):
+        _seal()
+    start = threading.Barrier(2)
+    outcomes = []
+
+    def run():
+        start.wait()
+        try:
+            ledger_migrate.import_ledger(tmp_path / "ledger.jsonl", tmp_path / "capsule-ledger")
+            outcomes.append("imported")
+        except (ledger_migrate.ImportRefused, ledger_store.LedgerLayoutError) as exc:
+            outcomes.append(type(exc).__name__)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert outcomes.count("imported") == 1
+    assert read_ledger(tmp_path / "capsule-ledger") == read_ledger(tmp_path / "ledger.jsonl")
+
+
+def test_a_seal_that_waited_on_the_append_lock_follows_the_import(tmp_path):
+    from capsule_emit import ledger as _ledger
+
+    (tmp_path / "ledger.jsonl").touch()
+    _seal()
+    results = []
+    with _ledger._append_lock:  # another seal in this process is writing
+        waiting = threading.Thread(target=lambda: results.append(_seal()))
+        waiting.start()
+        waiting.join(0.5)
+        assert waiting.is_alive()  # resolved to ./ledger.jsonl, blocked on the lock
+        ledger_migrate.import_ledger(tmp_path / "ledger.jsonl", tmp_path / "capsule-ledger")
+    waiting.join(10)
+    assert not waiting.is_alive()
+    assert len(read_ledger(tmp_path / "ledger.jsonl")) == 1
+    store = read_ledger(tmp_path / "capsule-ledger")
+    assert [c["capsule_id"] for c in store][-1] == results[0].capsule["capsule_id"]
+
+
+# -- the warning, and the callers that name their own variable -----------------------
+
+
+def test_the_warning_points_at_the_caller(tmp_path):
+    (tmp_path / "ledger.jsonl").touch()
+    with pytest.warns(LedgerDeprecationWarning) as caught:
+        _seal()
+    assert caught[0].filename == __file__
+
+
+def test_a_warning_raised_as_an_error_is_issued_again(tmp_path):
+    (tmp_path / "ledger.jsonl").touch()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", LedgerDeprecationWarning)
+        with pytest.raises(LedgerDeprecationWarning):
+            _seal()
+    with pytest.warns(LedgerDeprecationWarning):
+        _seal()
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [("0.13.0", (0, 13, 0)), ("0.15.0rc1", (0, 15, 0)), ("0.15.0.dev3", (0, 15, 0)), ("0.14.2+local", (0, 14, 2)), ("dev", None)],
+)
+def test_installed_version_reads_pre_releases(monkeypatch, version, expected):
+    import capsule_emit
+
+    monkeypatch.setattr(capsule_emit, "__version__", version)
+    assert ledger_layout._installed_version() == expected
+
+
+def test_a_release_candidate_of_the_stop_release_refuses(tmp_path, monkeypatch):
+    import capsule_emit
+
+    (tmp_path / "ledger.jsonl").touch()
+    monkeypatch.setattr(capsule_emit, "__version__", "0.15.0rc1")
+    with pytest.raises(FlatLedgerWriteRefused):
+        _seal()
+
+
+def test_litellm_names_capsule_emit_ledger_in_its_warning(tmp_path, monkeypatch):
+    pytest.importorskip("litellm")
+    from capsule_emit.adapters.litellm_listener import listener_from_env
+
+    (tmp_path / "proxy.jsonl").touch()
+    monkeypatch.setenv("CAPSULE_EMIT_OPERATOR", "acme")
+    monkeypatch.setenv("CAPSULE_EMIT_DEVELOPER", "gw@v1")
+    monkeypatch.setenv("CAPSULE_EMIT_LEDGER", str(tmp_path / "proxy.jsonl"))
+    monkeypatch.setenv("CAPSULE_LEDGER", str(tmp_path / "ignored"))
+    listener = listener_from_env(anchor=False)
+    with pytest.warns(LedgerDeprecationWarning, match=r"then set CAPSULE_EMIT_LEDGER=.*proxy-jsonl-store\."):
+        listener.core.emit_capsule("tool.call")
+    assert len(read_ledger(tmp_path / "proxy.jsonl")) == 1
+    assert not (tmp_path / "ignored").exists()
+
+
+def test_the_mcp_read_tools_never_refuse_a_path(tmp_path):
+    pytest.importorskip("mcp")
+    from capsule_emit import server
+
+    new = str(tmp_path / "missing.jsonl")
+    assert server.capsule_ledger(ledger=new).startswith("empty ledger")
+    assert server.capsule_verify("ab" * 32, ledger=new).startswith("not_found")
+
+
+def test_legacy_ledger_defaults_to_the_ledger_seal_writes(tmp_path):
+    from capsule_emit.legacy_ledger import LegacyLedger
+
+    assert LegacyLedger()._path == ledger_store.store_root(tmp_path / "capsule-ledger")
+    (tmp_path / "ledger.jsonl").touch()
+    assert LegacyLedger()._path == __import__("pathlib").Path("ledger.jsonl")

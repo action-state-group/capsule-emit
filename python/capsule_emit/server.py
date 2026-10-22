@@ -41,7 +41,7 @@ calls, verify capsules, and inspect the ledger.  Add to
         args: ["-m", "capsule_emit.server"]
         timeout: 30
         envs:
-          CAPSULE_LEDGER: "/tmp/goose-capsules.jsonl"
+          CAPSULE_LEDGER: "/tmp/goose-capsule-ledger"
           CAPSULE_OPERATOR: "my-org"
           CAPSULE_DEVELOPER: "goose-agent@v1"
           CAPSULE_ANCHOR: "true"
@@ -74,7 +74,8 @@ except ImportError:  # mcp < 2
     from mcp.server.fastmcp import FastMCP
 
 from capsule_emit import read_ledger, seal
-from capsule_emit.ledger_layout import resolve_ledger
+from capsule_emit.ledger_layout import DEFAULT_STORE, LEDGER_ENV, resolve_ledger
+from capsule_emit.ledger_store import LedgerLayoutError
 
 try:
     from .verification import verify_capsule as _aac_verify
@@ -85,6 +86,16 @@ except ImportError:
 
 # None: seal() and the readers resolve CAPSULE_LEDGER, else the default.
 _LEDGER: str | None = None
+
+
+def _ledger_to_read(ledger: str | None) -> str:
+    """The ledger a read tool reads. Reading never refuses what only writing
+    refuses, such as a new ``.jsonl`` path: a path that cannot be written to
+    is read as it is."""
+    try:
+        return str(resolve_ledger(ledger).path)
+    except LedgerLayoutError:
+        return str(ledger or os.environ.get(LEDGER_ENV) or DEFAULT_STORE)
 _OPERATOR = os.environ.get("CAPSULE_OPERATOR", "goose-user")
 _DEVELOPER = os.environ.get("CAPSULE_DEVELOPER", "goose-agent@v1")
 _ANCHOR = os.environ.get("CAPSULE_ANCHOR", "false").lower() not in ("0", "false", "no")
@@ -164,7 +175,7 @@ def capsule_verify(capsule_id: str, ledger: str | None = _LEDGER) -> str:
             f"error: capsule_id prefix too short ({len(capsule_id)} chars); "
             "provide at least 8 hex characters to avoid ambiguous matches"
         )
-    ledger = str(resolve_ledger(ledger).path)
+    ledger = _ledger_to_read(ledger)
     records = read_ledger(ledger)
     match = next(
         (r for r in records if r.get("capsule_id", "").startswith(capsule_id)),
@@ -190,7 +201,7 @@ def capsule_ledger(ledger: str | None = _LEDGER, limit: int = 20) -> str:
         ledger: Ledger path (default: CAPSULE_LEDGER, else ./capsule-ledger/).
         limit: Maximum number of rows to return (default 20, minimum 1).
     """
-    ledger = str(resolve_ledger(ledger).path)
+    ledger = _ledger_to_read(ledger)
     records = read_ledger(ledger)
     if not records:
         return f"empty ledger: {ledger}"
