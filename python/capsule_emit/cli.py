@@ -149,7 +149,8 @@ def _cmd_ledger_import(args: argparse.Namespace) -> int:
             print("no producer key was found for the old ledger; the first seal() to this store creates a new one")
     print(
         "The old checkpoints' roots match the store's prefix. Witnessing starts a new log for the store "
-        f"(its log id is its path). {report.source} is unchanged and stays readable."
+        f"(its log id is its path); the old file's witness receipts still verify against {report.source}, "
+        "which is unchanged and stays readable."
     )
     return 0
 
@@ -169,7 +170,7 @@ def _cmd_ledger_export(args: argparse.Namespace) -> int:
     note = f"exported {report.lines} line(s)"
     if report.skipped_repeats:
         note += f"; skipped {report.skipped_repeats} later line(s) repeating a capsule_id (not entries)"
-    print(note + ". A reading copy: checkpoints are the stamp lines it holds; originals are not included.", file=sys.stderr)
+    print(note + ". A reading copy, not a ledger to seal into: checkpoints are the stamp lines it holds; originals are not included.", file=sys.stderr)
     return 0
 
 

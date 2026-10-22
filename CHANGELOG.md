@@ -23,11 +23,13 @@ none, so sealing to the store keeps the same identity (the report says when
 the store already had a different key, or `CAPSULE_SIGNING_KEY_PATH` overrides
 it). Imported lines are recorded as non-consequential history in the store's
 index, as checkpointed-local-log's own import records them. Witnessing starts a new
-log for the store, because a ledger's log id is its path. The source is never
-modified and stays readable.
+log for the store, because a ledger's log id is its path; the old file's witness
+receipts still verify against the old file. The source is never modified and
+stays readable.
 
 `capsule-emit ledger export --jsonl DIR [-o FILE]` writes a store's entries as
-JSON lines, in order and as stored: a reading copy. Importing an export gives
+JSON lines, in order and as stored: a reading copy, not a ledger to seal into.
+Importing an export gives
 the same lines and roots.
 
 ### Added (Python): a ledger kept in a ledger store directory
