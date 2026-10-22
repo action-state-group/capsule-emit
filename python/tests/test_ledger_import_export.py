@@ -762,3 +762,17 @@ def test_without_hard_links_a_key_appears_only_complete(tmp_path, monkeypatch):
     assert ledger_store.publish_new_file(target, b"complete key") is True
     assert seen == [(b"complete key", False)]  # moved into place whole, never written there
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_without_hard_links_a_key_that_appears_before_the_rename_is_kept(tmp_path, monkeypatch):
+    _no_hard_links(monkeypatch)
+    target = tmp_path / "k.pem"
+
+    def someone_else_first(src, dst):
+        Path(dst).write_bytes(b"theirs")
+        raise FileExistsError(dst)  # as os.rename does on Windows
+
+    monkeypatch.setattr(os, "rename", someone_else_first)
+    assert ledger_store.publish_new_file(target, b"ours") is False
+    assert target.read_bytes() == b"theirs"
+    assert [p.name for p in tmp_path.iterdir()] == ["k.pem"]
