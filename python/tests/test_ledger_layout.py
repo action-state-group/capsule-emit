@@ -461,14 +461,14 @@ def test_holds_default_falls_back_to_an_existing_flat_ledger(tmp_path):
 def test_two_threads_warn_once(tmp_path, monkeypatch):
     flat = tmp_path / "ledger.jsonl"
     flat.touch()
-    both = threading.Barrier(2)
-    real_message = ledger_layout._message
+    both = threading.Barrier(2, timeout=10)
+    real_stopped = ledger_layout.flat_writes_stopped
 
-    def meet_then_message(*args, **kwargs):
-        both.wait()  # both threads are past the stop check, about to take the lock
-        return real_message(*args, **kwargs)
+    def meet_then_check(*args, **kwargs):
+        both.wait()  # both threads are at the stop check, just before the warning's lock
+        return real_stopped(*args, **kwargs)
 
-    monkeypatch.setattr(ledger_layout, "_message", meet_then_message)
+    monkeypatch.setattr(ledger_layout, "flat_writes_stopped", meet_then_check)
     issued = []
     real_warn = warnings.warn
 
@@ -582,3 +582,44 @@ def test_holds_name_the_variable_that_chose_their_flat_ledger(tmp_path, monkeypa
     action = Action(verb="money.transfer", operator="acme", developer="d", amount_minor=10, currency="USD")
     with pytest.warns(LedgerDeprecationWarning, match="then set CAPSULE_LEDGER="):
         HoldEngine(cap_minor={"money.transfer": 100}).evaluate_and_reserve(action)
+
+
+# -- Codex round 3 and the stand-in's delta check ---------------------------------
+
+
+def test_a_new_nested_ledger_directory_is_created_with_its_parent(tmp_path):
+    result = _seal(ledger="traces/capsule-ledger")
+    assert read_ledger(tmp_path / "traces" / "capsule-ledger") == [result.capsule]
+
+
+def test_resending_a_stored_line_stays_idempotent_after_the_window(tmp_path, monkeypatch):
+    from capsule_emit.ledger import append_to_ledger
+
+    flat = tmp_path / "ledger.jsonl"
+    flat.touch()
+    line = _seal(ledger=tmp_path / "scratch").capsule
+    with pytest.warns(LedgerDeprecationWarning):
+        seq = append_to_ledger(line, flat)
+    monkeypatch.setattr(ledger_layout, "_installed_version", lambda: (0, 15, 0))
+    assert append_to_ledger(line, flat) == seq
+    with pytest.raises(FlatLedgerWriteRefused):
+        append_to_ledger(_seal(ledger=tmp_path / "scratch").capsule, flat)
+
+
+def test_a_warnings_hook_that_writes_the_same_flat_ledger_does_not_recurse(tmp_path, monkeypatch):
+    from capsule_emit.ledger import append_to_ledger
+
+    flat = tmp_path / "ledger.jsonl"
+    flat.touch()
+    lines = iter([_seal(ledger=tmp_path / "scratch").capsule for _ in range(3)])
+    hooked = []
+
+    def record_the_warning(message, category, filename, lineno, file=None, line=None):
+        hooked.append(append_to_ledger(next(lines), flat))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("always", LedgerDeprecationWarning)
+        warnings.showwarning = record_the_warning
+        append_to_ledger(next(lines), flat)
+    assert len(hooked) == 1
+    assert len(read_ledger(flat)) == 2

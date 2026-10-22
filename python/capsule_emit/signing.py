@@ -384,8 +384,10 @@ def resolve_signer(
             from . import ledger as _ledger
             from .ledger_store import store_root
 
+            root = store_root(ledger_path)
+            root.parent.mkdir(parents=True, exist_ok=True)  # the lock sits beside the store
             stack.enter_context(_ledger._append_lock)
-            stack.enter_context(_ledger._writer_lock(store_root(ledger_path), wait=True))
+            stack.enter_context(_ledger._writer_lock(root, wait=True))
         stack.enter_context(_cache_lock)
         cached = _cache.get(cache_key)
         if cached is None:

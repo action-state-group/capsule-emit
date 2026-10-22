@@ -179,6 +179,7 @@ def flat_writes_stopped() -> bool:
 
 
 _warned: set[str] = set()
+_in_flight: set[str] = set()  # paths whose warning is being issued now
 _warned_lock = threading.RLock()  # a warnings hook may write a ledger
 
 
@@ -200,25 +201,44 @@ def _message(path: Path, chosen: str, *, stopped: bool = False) -> str:
     )
 
 
+def refuse_if_stopped(path: str | os.PathLike, chosen: str = "argument") -> None:
+    """From :data:`FLAT_WRITES_STOP` on, raises :class:`FlatLedgerWriteRefused`
+    for a new record to the flat ledger ``path``. Issues no warning, so it is
+    safe under a ledger's write locks."""
+    if flat_writes_stopped():
+        raise FlatLedgerWriteRefused(_message(Path(path), chosen, stopped=True))
+
+
+def warn_new_flat_record(path: str | os.PathLike, chosen: str = "argument") -> None:
+    """Warns once per process per path that a new record went to the flat
+    ledger ``path`` during the window. Call it outside a ledger's write locks:
+    a warnings hook may write a ledger."""
+    if not _warn_flat_writes:
+        return
+    path = Path(path)
+    key = os.path.abspath(os.fspath(path))
+    # Checked, issued and marked under one lock, so two threads never both
+    # warn; marked only once the warning was issued, so a filter that turns it
+    # into an error leaves the path unwarned and the next call warns again. A
+    # warnings hook that writes this same ledger re-enters on this thread
+    # while the warning is in flight, and is not warned again.
+    with _warned_lock:
+        if key in _warned or key in _in_flight:
+            return
+        _in_flight.add(key)
+        try:
+            warnings.warn(_message(path, chosen), LedgerDeprecationWarning, stacklevel=_caller_stacklevel())
+            _warned.add(key)
+        finally:
+            _in_flight.discard(key)
+
+
 def check_new_flat_record(path: str | os.PathLike, chosen: str = "argument") -> None:
     """Called before a new record is written to the flat ledger ``path``:
     warns once per process per path during the window, and from
     :data:`FLAT_WRITES_STOP` on raises :class:`FlatLedgerWriteRefused`."""
-    path = Path(path)
-    if flat_writes_stopped():
-        raise FlatLedgerWriteRefused(_message(path, chosen, stopped=True))
-    message = _message(path, chosen)
-    if not _warn_flat_writes:
-        return
-    key = os.path.abspath(os.fspath(path))
-    # Checked, issued and marked under one lock, so two threads never both
-    # warn; marked only once the warning was issued, so a filter that turns it
-    # into an error leaves the path unwarned and the next call warns again.
-    with _warned_lock:
-        if key in _warned:
-            return
-        warnings.warn(message, LedgerDeprecationWarning, stacklevel=_caller_stacklevel())
-        _warned.add(key)
+    refuse_if_stopped(path, chosen)
+    warn_new_flat_record(path, chosen)
 
 
 def _caller_stacklevel() -> int:

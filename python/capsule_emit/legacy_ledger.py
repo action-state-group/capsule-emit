@@ -713,14 +713,21 @@ class LegacyLedger:
             raise InvalidError("capsule id")
         text = _line_form(line)
         value = bytes.fromhex(capsule_id)
-        if self._store is None and self._path.exists() and line.get("kind") not in _ledger.NON_CAPSULE_KINDS:
-            # A record to a flat ledger, by any entry point: the deprecation
-            # window applies (bookkeeping never stops). Checked before the
-            # locks are taken, so a warnings hook that writes a ledger cannot
-            # deadlock on them.
-            from .ledger_layout import check_new_flat_record
+        # A new record to a flat ledger, by any entry point, is under the
+        # deprecation window (bookkeeping never stops, and a line already
+        # stored is idempotent): refused under the locks, warned after them,
+        # since a warnings hook may write a ledger.
+        windowed = self._store is None and line.get("kind") not in _ledger.NON_CAPSULE_KINDS
+        result = self._write_locked(line, text, value, require_record, wait, timeout, precheck, windowed)
+        if windowed and result.outcome == INSERTED:
+            from .ledger_layout import warn_new_flat_record
 
-            check_new_flat_record(self._path)
+            warn_new_flat_record(self._path)
+        return result
+
+    def _write_locked(self, line, text, value, require_record, wait, timeout, precheck, windowed) -> AppendResult:
+        """``_write`` under the ledger's locks; ``windowed`` lines are refused
+        here from the end of the flat ledger's window."""
         lock = _ledger._writer_lock(
             self._path,
             wait=self._wait if wait is None else wait,
@@ -745,6 +752,10 @@ class LegacyLedger:
                 _store.append_line(self._path, text)
             else:
                 _refuse_new_flat_file(self._path)
+                if windowed:
+                    from .ledger_layout import refuse_if_stopped
+
+                    refuse_if_stopped(self._path)
                 _ledger._write_line(self._path, text)
             self._refresh()
             written = self._find(value)
