@@ -137,8 +137,8 @@ take such a directory; an empty directory becomes one on the first write. See
   segments, so a read creates no files and works on a read-only copy. The
   scan-query verbs copy the entries into an ephemeral store, keeping each
   record's authenticity and the store's correlation fields, and read each
-  record's `consequential` flag through a read-only, immutable SQLite
-  connection to the store's index.
+  record's `consequential` flag from a temporary copy of the store's index
+  and its write-ahead log, so the store itself is never opened.
 - **Writes** go only to stores capsule-emit created, which carry
   `capsule-emit-store.json`. Any other managed store (capsule-emit-mesh's,
   capsule-engine's, one built with `cll`) is read, and a write to it raises

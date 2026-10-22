@@ -652,3 +652,25 @@ def test_scan_verbs_work_on_a_read_only_copy_and_write_nothing(store_dir):
         for path in store_dir.rglob("*"):
             os.chmod(path, stat.S_IRWXU)
     assert {p.relative_to(store_dir): p.read_bytes() for p in store_dir.rglob("*") if p.is_file()} == before
+
+
+
+# -- review round 5 ------------------------------------------------------------
+
+
+def test_scan_verbs_keep_a_false_flag_a_live_writer_left_in_the_wal(tmp_path, monkeypatch):
+    root = tmp_path / "s"
+    writer = LedgerStore(root, rotate_at_checkpoint=True)
+    writer.append({"capsule_id": _cid("history")}, consequential=False)
+    writer.append({"capsule_id": _cid("action")}, consequential=True)
+    before = sorted(p.name for p in root.rglob("*"))
+    try:
+        monkeypatch.chdir(tmp_path)
+        with open_ledger("s") as scan:
+            assert [(r.capsule_id, r.consequential) for r in scan.scan()] == [
+                (_cid("history"), False),
+                (_cid("action"), True),
+            ]
+        assert sorted(p.name for p in root.rglob("*")) == before
+    finally:
+        writer.close()

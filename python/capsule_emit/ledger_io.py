@@ -51,18 +51,25 @@ __all__ = [
 
 
 def _stored_flags(root: Path) -> dict[str, bool]:
-    """Each record's ``consequential`` flag from a managed store's index, read
-    through a read-only SQLite connection; empty when it cannot be read (the
-    copy then marks records consequential, as ``seal()`` appends them)."""
-    try:
-        # immutable: no lock and no -shm/-wal sidecar is created in the store.
-        conn = sqlite3.connect(f"{(root / 'index.sqlite3').as_uri()}?mode=ro&immutable=1", uri=True)
+    """Each record's ``consequential`` flag from a managed store's index. The
+    index and its WAL are copied into a temporary directory and read there, so
+    the store is never touched (no lock, no sidecar) and rows a writer has
+    committed only to the WAL are still seen; SQLite's WAL checksums drop a
+    frame copied mid-write. Empty when it cannot be read (the copy then marks
+    records consequential, as ``seal()`` appends them)."""
+    root = Path(os.path.abspath(root))
+    with tempfile.TemporaryDirectory(prefix="capsule-ledger-index-") as tmp:
         try:
-            return {cid: bool(flag) for cid, flag in conn.execute("SELECT capsule_id, consequential FROM records")}
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        return {}
+            for name in ("index.sqlite3", "index.sqlite3-wal"):
+                if (root / name).is_file():
+                    shutil.copyfile(root / name, Path(tmp) / name)
+            conn = sqlite3.connect(Path(tmp) / "index.sqlite3")
+            try:
+                return {cid: bool(flag) for cid, flag in conn.execute("SELECT capsule_id, consequential FROM records")}
+            finally:
+                conn.close()
+        except (OSError, sqlite3.Error):
+            return {}
 
 
 def _copy_store(source: Path, target: LedgerStore) -> None:
