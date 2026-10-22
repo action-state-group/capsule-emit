@@ -409,13 +409,13 @@ def test_cli_mesh_without_cose_needs_the_signing_key(tmp_path, capsys):
     assert code == 0, err
 
 
-def test_cli_refuses_a_segmented_store_by_name(tmp_path, capsys):
+def test_cli_refuses_a_store_whose_manifest_is_invalid(tmp_path, capsys):
     store = tmp_path / "store"
     store.mkdir()
     (store / "manifest.json").write_text("{}")
     code, _, err = _cli(capsys, store, "--all", "-o", tmp_path / "b.json")
     assert code == 1
-    assert "is a Python mesh LedgerStore directory (a frozen harness); capsule-emit bundle reads the flat" in err
+    assert "is not a ledger store manifest" in err
 
 
 def test_cli_refuses_a_directory_that_is_not_a_mesh_ledger(tmp_path, capsys):

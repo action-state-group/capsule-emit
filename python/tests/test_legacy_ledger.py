@@ -32,6 +32,7 @@ from capsule_emit.artifact import NotFoundError as ArtifactNotFoundError
 from capsule_emit.artifact import UnsupportedError as ArtifactUnsupportedError
 from capsule_emit.artifact import conformance as artifact_conformance
 from capsule_emit.artifact.record import Artifact
+from capsule_emit.ledger_store import LedgerLayoutError
 from capsule_emit.legacy_ledger import CAPABILITIES, LegacyLedger
 
 FIXTURE = Path(__file__).parent / "fixtures" / "legacy_ledger" / "ledger.jsonl"
@@ -367,10 +368,16 @@ def test_init_creates_the_file_and_namespace_is_reported(tmp_path):
         LegacyLedger(path, "bad/namespace")
 
 
-def test_a_ledger_store_directory_is_refused(tmp_path):
-    (tmp_path / ledger.LEDGER_STORE_MANIFEST_FILENAME).write_text("{}")
-    with pytest.raises(InvalidError):
+def test_a_directory_that_is_not_a_store_is_refused(tmp_path):
+    (tmp_path / "notes.txt").write_text("not a ledger")
+    with pytest.raises(LedgerLayoutError):
         LegacyLedger(tmp_path)
+
+
+def test_an_invalid_store_manifest_is_refused_on_read(tmp_path):
+    (tmp_path / ledger.LEDGER_STORE_MANIFEST_FILENAME).write_text("{}")
+    with pytest.raises(LedgerLayoutError):
+        list(LegacyLedger(tmp_path).entries())
 
 
 def test_new_stamp_lines_are_covered_by_the_next_checkpoint(fixture_path):

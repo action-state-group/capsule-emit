@@ -79,9 +79,9 @@ def record_proof(path, capsule_id: str) -> RecordProof:
     """
     from cll.checkpoint.bundle import bundle as _cll_bundle
 
-    from .ledger import NON_CAPSULE_KINDS, read_ledger_entries
+    from .ledger import NON_CAPSULE_KINDS, read_positioned_entries
 
-    entries = read_ledger_entries(path)
+    entries = read_positioned_entries(path)
     if not entries:
         raise RecordProofError(f"{path}: empty or not found")
     return _cll_bundle(entries, capsule_id, non_leaf_kinds=frozenset(NON_CAPSULE_KINDS))

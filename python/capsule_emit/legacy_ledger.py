@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """The flat ``ledger.jsonl`` as a backend for both storage interfaces.
 
+The same backend also serves a ledger kept in a ledger store directory
+(``capsule_emit.ledger_store``): its lines are read from the store's segments
+and appended through the store, and everything below holds for it, except
+that a store's entries are its complete lines, the first per ``capsule_id``.
+
 ``LegacyLedger`` puts the ledger file that ``seal()`` has always written behind
 the CLL entry log (``cll.log.EntryStore``, checkpointed-local-log's
 ``docs/backend-contract.md``) and the artifact store
@@ -119,6 +124,7 @@ from cll.log.engine import check_append, check_scan, check_value
 from cll.log.ledger import capsule_timestamp
 
 from . import ledger as _ledger
+from . import ledger_store as _store
 from .artifact.record import (
     PADDING_RECORD_TYPE,
     ConflictError,
@@ -170,6 +176,8 @@ class _Line:
     offset: int
     length: int
     capsule: bool
+    #: The store segment holding the line; None in a flat file.
+    segment: str | None = None
 
 
 class _Stamped:
@@ -351,11 +359,20 @@ class LegacyLedger:
             self._trusted = None
         else:
             self._trusted = check_store_config(namespace, trusted)
-        self._path = Path(path)
-        if _ledger.is_ledger_store(self._path):
-            raise InvalidError(
-                f"{self._path} is a LedgerStore directory; use cll.log.ledger.LedgerEntryStore for it"
-            )
+        # A directory is a ledger store (a managed LedgerStore, or an empty
+        # directory that becomes one); anything else is a flat file. A store
+        # is addressed by its canonical path, so every spelling shares one
+        # lock; a flat file keeps the spelling it was given.
+        self._store: _store.StoreLines | None = None
+        if Path(path).is_dir():
+            if not _store.is_store_path(path):
+                raise _store.LedgerLayoutError(
+                    f"{path} is a directory that is neither a ledger store nor empty"
+                )
+            self._path = _store.store_root(path)
+            self._store = _store.StoreLines(self._path)
+        else:
+            self._path = Path(path)
         self._namespace = namespace
         self._wait = wait
         self._timeout = timeout
@@ -401,6 +418,9 @@ class LegacyLedger:
 
     def _refresh(self) -> None:
         """Index lines appended since the last call. Caller holds ``_lock``."""
+        if self._store is not None:
+            self._refresh_store()
+            return
         try:
             stat = self._path.stat()
             size, identity = stat.st_size, (stat.st_dev, stat.st_ino)
@@ -443,6 +463,41 @@ class LegacyLedger:
         self._consumed = offset
         self._tail = tail_line
 
+    def _refresh_store(self) -> None:
+        """``_refresh`` for a ledger store: its entries are complete lines,
+        the first per ``capsule_id`` (``ledger_store.StoreLines``). An empty
+        directory has none yet."""
+        if not (self._path / _store.MANIFEST_FILENAME).is_file():
+            # No store (yet, or any more): forget what was read, so a store
+            # created here later is read from its start.
+            self._store = _store.StoreLines(self._path)
+            self._reset()
+            return
+        try:
+            restarted, added = self._store.refresh()
+            if restarted:
+                self._reset()
+            seq = len(self._lines) + 1
+            previous = self._last_time()
+            parsed = []
+            for raw_line in added:
+                line = self._parse(raw_line.raw, raw_line.offset, seq, previous)
+                if line is None:
+                    continue
+                parsed.append(_Line(line.entry, line.offset, line.length, line.capsule, raw_line.segment))
+                seq += 1
+                previous = line.entry.appended_at
+        except BaseException:
+            # The source already counted these lines as read: forget them
+            # both there and here, so the next call reads them again (and
+            # fails the same way) rather than skipping them.
+            self._store = _store.StoreLines(self._path)
+            self._reset()
+            raise
+        for line in parsed:
+            self._lines.append(line)
+            self._first.setdefault(line.entry.value, len(self._lines) - 1)
+
     def _last_time(self) -> datetime:
         return self._lines[-1].entry.appended_at if self._lines else _EPOCH
 
@@ -458,6 +513,10 @@ class LegacyLedger:
         return None
 
     def _read_raw(self, line: _Line) -> bytes:
+        if line.segment is not None:
+            with open(self._path / "segments" / line.segment, "rb") as fh:
+                fh.seek(line.offset)
+                return fh.read(line.length).strip()
         with open(self._path, "rb") as fh:
             fh.seek(line.offset)
             return fh.read(line.length).strip()
@@ -565,8 +624,15 @@ class LegacyLedger:
         return self._namespace
 
     def init(self) -> None:
-        """Creates an empty ledger file when none exists."""
+        """Creates an empty ledger when none exists: an empty file, or for a
+        store path an empty capsule-emit store (never a regular file)."""
         self._require_open()
+        if self._store is not None:
+            if not (self._path / _store.MANIFEST_FILENAME).is_file():
+                with _ledger._append_lock, _ledger._writer_lock(self._path, wait=self._wait, timeout=self._timeout):
+                    if not (self._path / _store.MANIFEST_FILENAME).is_file():
+                        _store.create_store(self._path)
+            return
         self._path.touch(exist_ok=True)
 
     def put(self, record: Record) -> None:
@@ -599,6 +665,14 @@ class LegacyLedger:
             line["key_id"] = key_id
         return self.append_line(line)
 
+    def append_any(self, line: dict, *, wait: bool | None = None, timeout: float | None = None) -> AppendResult:
+        """Write any ledger line, bookkeeping included (checkpoint stamps,
+        witness backfills, disclosure records): ``append_line`` without its
+        record check. ``capsule_emit.ledger.append_to_ledger`` calls it, so an
+        identical line is ``idempotent`` and a different line under the same
+        ``capsule_id`` is refused, for every kind of line."""
+        return self._write(line, require_record=False, wait=wait, timeout=timeout)
+
     def append_line(self, line: dict) -> AppendResult:
         """Write one capsule line (with any inline ``signature``/``key_id``)
         unless its ``capsule_id`` is already in the ledger. ``put`` calls it
@@ -607,22 +681,39 @@ class LegacyLedger:
         envelope, which the ledger has always accepted (``get`` then reports
         that line ``invalid``). An existing identical line is ``idempotent``;
         any other line under the same ``capsule_id`` is ``ConflictError``."""
+        return self._write(line, require_record=True)
+
+    def _write(
+        self, line: dict, *, require_record: bool, wait: bool | None = None, timeout: float | None = None
+    ) -> AppendResult:
         self._require_open()
         capsule_id = line.get("capsule_id")
-        if not valid_id(capsule_id) or not _is_record(line):
+        if not valid_id(capsule_id) or (require_record and not _is_record(line)):
             raise InvalidError("capsule id")
         text = _line_form(line)
         value = bytes.fromhex(capsule_id)
-        lock = _ledger._writer_lock(self._path, wait=self._wait, timeout=self._timeout)
+        lock = _ledger._writer_lock(
+            self._path,
+            wait=self._wait if wait is None else wait,
+            timeout=self._timeout if wait is None else timeout,
+        )
         with _ledger._append_lock, lock, self._lock, _as_artifact_errors():
             self._require_open()
+            if self._store is not None:
+                # A crashed append may have left this very line written but
+                # unindexed: recover first, so "already present" also means
+                # indexed.
+                _store.reconcile(self._path)
             self._refresh()
             existing = self._find(value)
             if existing is not None:
-                if not existing.capsule or self._read_raw(existing) != text.encode("ascii"):
+                if (require_record and not existing.capsule) or self._read_raw(existing) != text.encode("ascii"):
                     raise ConflictError("immutable record conflict")
                 return AppendResult(existing.entry, IDEMPOTENT)
-            _ledger._write_line(self._path, text)
+            if self._store is not None:
+                _store.append_line(self._path, text)
+            else:
+                _ledger._write_line(self._path, text)
             self._refresh()
             written = self._find(value)
             if written is None:  # pragma: no cover - the line was just written
@@ -664,7 +755,7 @@ _shared: dict[str, LegacyLedger] = {}
 def shared(path: str | os.PathLike) -> LegacyLedger:
     """The process-wide ``LegacyLedger`` for ``path``, so ``seal()`` and the
     checkpoint index reuse one incremental index per ledger file."""
-    key = os.path.abspath(os.fspath(path))
+    key = os.fspath(_store.store_root(path)) if Path(path).is_dir() else os.path.abspath(os.fspath(path))
     with _shared_lock:
         store = _shared.get(key)
         if store is None or store._closed:

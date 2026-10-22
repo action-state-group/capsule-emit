@@ -6,6 +6,52 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (Python): a ledger kept in a ledger store directory
+
+`seal()`, `log()`, `received()`, `push()` and every writer built on them accept a
+ledger store directory as `ledger=`: checkpointed-local-log's managed
+`LedgerStore` (`manifest.json` plus JSONL segments under `segments/`). An empty
+directory becomes one on the first write; capsule-emit marks the stores it
+creates (`capsule-emit-store.json`) and writes only to those, reading any other
+managed store. The store holds the same lines a flat `ledger.jsonl` holds
+(capsules, `log()` entries, checkpoint stamps, witness backfills, disclosure
+records, holds), so the leaves, `capsule_id` values and checkpoint roots match
+for the same writes, and witnessing, `bundle`, `record_proof`, `status`,
+`disclose`, `ledger view`/`show` and `verify --store` work on both. Reads come
+from the segments, so they create no files; the scan-query verbs copy a
+managed store's entries into an ephemeral store (authenticity, `consequential`
+flags and correlation fields kept) instead of opening it.
+Each write takes the ledger's writer lock beside the directory
+(`<dir>.lock`), runs the store's crash recovery and appends with an
+fsync; the first write builds the store in a staging directory and renames it
+into place. A store's key and lock derive from its canonical path, so
+`<dir>/`, `<dir>` and a symlink to it are one ledger. A store
+with an archived segment is listed with a placeholder (later entries show no
+leaf number) and refused (`LedgerArchivedError`) for proofs, status, witnessing,
+the scan-query verbs and writes. The first write into an existing empty
+directory keeps its mode and group; a mount point is refused (keep the ledger in
+a directory inside it). This is not the default yet (capsule-emit#358). Requires
+`checkpointed-local-log>=0.7,<0.8`, for `LedgerStore.recover()`.
+
+### Changed (Python, breaking): `append_to_ledger` writes each line once
+
+`capsule_emit.ledger.append_to_ledger`, which writes checkpoint stamps, witness
+backfills, disclosure records and hold capsules, now goes through the same
+check as `seal()`, on flat ledgers too:
+
+- the line needs a 64-hex lowercase `capsule_id`; a line without one raises
+  `ledger_store.LedgerWriteError` (earlier releases wrote it);
+- an identical line already in the ledger is not written again (it returns
+  that line's position); before, a repeated hold or backfill wrote a second
+  line;
+- a different line under the same `capsule_id` raises
+  `ledger_store.LedgerConflictError`;
+- any other failure (a corrupt ledger, a store that cannot record the line) is
+  `LedgerWriteError`, with the cause chained.
+
+All three errors are `OSError` subclasses, so the best-effort checkpoint-stamp
+and witness-backfill writers still never raise into `emit()`.
+
 ### Changed (Python, breaking): `confirms=` cites another stream's capsule in `references[]`
 
 `seal(confirms=...)` (and every helper built on it: `seal_approval`,

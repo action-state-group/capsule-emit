@@ -600,9 +600,9 @@ def _build_chain_segment(
     cheap by construction and never paged (see the module docstring)."""
     from .chain_segment import ChainSegmentError
     from .chain_segment import chain_segment as _chain_segment_fn
-    from .ledger import read_ledger_entries
+    from .ledger import read_positioned_entries
 
-    entries = read_ledger_entries(ledger)
+    entries = read_positioned_entries(ledger)
     if not entries:
         return None, REASON_NO_SUCH_SUBJECT, None
 
@@ -717,6 +717,10 @@ def answer(
         ``ChainSegment`` objects;
       * :class:`Refusal` — signed, offline-verifiable, one of
         ``REFUSAL_REASONS``.
+
+    A ledger store with an archived segment raises
+    ``capsule_emit.ledger_store.LedgerArchivedError`` instead: positions after
+    the archived segment are unknown, so no proof over them can be built.
 
     ``signer``/``signing_key_path`` resolve to the SAME producer key
     ``seal()`` uses for this ledger (``capsule_emit.signing.resolve_signer``)

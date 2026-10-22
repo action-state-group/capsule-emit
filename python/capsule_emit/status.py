@@ -107,9 +107,9 @@ def compute_status(
     """
     from . import witness
     from .checkpoint import core
-    from .ledger import NON_CAPSULE_KINDS, read_ledger_entries
+    from .ledger import NON_CAPSULE_KINDS, read_positioned_entries
 
-    entries = read_ledger_entries(path)
+    entries = read_positioned_entries(path)
     capsules = [e for e in entries if e.get("kind") not in NON_CAPSULE_KINDS]
     states = witness.checkpoint_witness_states(path)
 

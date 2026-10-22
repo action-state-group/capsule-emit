@@ -80,6 +80,7 @@ the record; it does not seal one.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 from dataclasses import dataclass
@@ -302,6 +303,15 @@ class LocalKeypairSigner:
 
 
 def _default_key_path(ledger_path: str | os.PathLike) -> Path:
+    """``<ledger>.signing_key.pem``. A flat ledger keeps the spelling it was
+    given, so a symlinked ``ledger.jsonl`` keeps its key; a ledger store uses
+    its canonical path (``ledger_store.store_root``), so ``capsule-ledger/``
+    and ``capsule-ledger`` share one key beside the directory, never inside
+    it."""
+    if Path(ledger_path).is_dir():
+        from .ledger_store import store_root
+
+        return Path(os.fspath(store_root(ledger_path)) + ".signing_key.pem")
     return Path(os.fspath(ledger_path) + ".signing_key.pem")
 
 
@@ -335,9 +345,28 @@ def resolve_signer(
     cache_key = str(resolved_path)
     with _cache_lock:
         cached = _cache.get(cache_key)
+        if cached is not None:
+            return cached
+    store_key = key_path is None and not os.environ.get(SIGNING_KEY_PATH_ENV_VAR) and Path(ledger_path).is_dir()
+    with contextlib.ExitStack() as stack:
+        if store_key and not resolved_path.exists():
+            # A store's default key is created only under the store's writer
+            # lock (and rechecked inside it, by LocalKeypairSigner), so it
+            # never races an import copying the old ledger's key into place.
+            # _append_lock first, the order every append takes, so a thread in
+            # this process appending meanwhile waits instead of meeting our
+            # flock; both before _cache_lock, so the wait never blocks signer
+            # resolution for other ledgers. Entered inside the ExitStack, so a
+            # failure taking the flock releases _append_lock.
+            from . import ledger as _ledger
+            from .ledger_store import store_root
+
+            stack.enter_context(_ledger._append_lock)
+            stack.enter_context(_ledger._writer_lock(store_root(ledger_path), wait=True))
+        stack.enter_context(_cache_lock)
+        cached = _cache.get(cache_key)
         if cached is None:
-            cached = LocalKeypairSigner(resolved_path)
-            _cache[cache_key] = cached
+            cached = _cache[cache_key] = LocalKeypairSigner(resolved_path)
         return cached
 
 

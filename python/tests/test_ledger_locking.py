@@ -14,6 +14,7 @@ would pass without ever exercising the flock path.
 """
 from __future__ import annotations
 
+import hashlib
 import multiprocessing as mp
 import threading
 import time
@@ -21,6 +22,11 @@ import time
 import pytest
 
 from capsule_emit.ledger import LedgerLockedError, _writer_lock, append_to_ledger, read_ledger
+
+
+def _cid(name: str) -> str:
+    """A 64-hex capsule_id: append_to_ledger refuses anything else."""
+    return hashlib.sha256(name.encode()).hexdigest()
 
 
 @pytest.fixture
@@ -33,8 +39,8 @@ def tmp_ledger(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_single_writer_appends_and_cleans_up_lock_file(tmp_ledger):
-    append_to_ledger({"capsule_id": "c1"}, tmp_ledger)
-    assert read_ledger(tmp_ledger) == [{"capsule_id": "c1"}]
+    append_to_ledger({"capsule_id": _cid("c1")}, tmp_ledger)
+    assert read_ledger(tmp_ledger) == [{"capsule_id": _cid("c1")}]
     lock_file = tmp_ledger.with_name(tmp_ledger.name + ".lock")
     assert lock_file.exists()  # sidecar persists; only the flock itself is released
 
@@ -49,7 +55,7 @@ def test_second_writer_fails_immediately_while_lock_held(tmp_ledger):
     with _writer_lock(tmp_ledger):
         start = time.monotonic()
         with pytest.raises(LedgerLockedError):
-            append_to_ledger({"capsule_id": "c2"}, tmp_ledger)
+            append_to_ledger({"capsule_id": _cid("c2")}, tmp_ledger)
         elapsed = time.monotonic() - start
 
     assert elapsed < 1.0, "default (wait=False) must fail immediately, not block"
@@ -59,7 +65,7 @@ def test_second_writer_fails_immediately_while_lock_held(tmp_ledger):
 def test_locked_error_names_holder_and_points_at_doc(tmp_ledger):
     with _writer_lock(tmp_ledger):
         with pytest.raises(LedgerLockedError) as exc_info:
-            append_to_ledger({"capsule_id": "c2"}, tmp_ledger)
+            append_to_ledger({"capsule_id": _cid("c2")}, tmp_ledger)
 
     message = str(exc_info.value)
     assert f"pid {__import__('os').getpid()}" in message
@@ -69,8 +75,8 @@ def test_locked_error_names_holder_and_points_at_doc(tmp_ledger):
 def test_lock_released_after_append_lets_next_writer_through(tmp_ledger):
     with _writer_lock(tmp_ledger):
         pass  # acquired and released
-    append_to_ledger({"capsule_id": "c3"}, tmp_ledger)
-    assert read_ledger(tmp_ledger) == [{"capsule_id": "c3"}]
+    append_to_ledger({"capsule_id": _cid("c3")}, tmp_ledger)
+    assert read_ledger(tmp_ledger) == [{"capsule_id": _cid("c3")}]
 
 
 # ---------------------------------------------------------------------------
@@ -97,12 +103,12 @@ def test_wait_true_blocks_until_holder_releases(tmp_ledger):
     threading.Thread(target=release_soon).start()
 
     start = time.monotonic()
-    append_to_ledger({"capsule_id": "c4"}, tmp_ledger, wait=True)
+    append_to_ledger({"capsule_id": _cid("c4")}, tmp_ledger, wait=True)
     elapsed = time.monotonic() - start
 
     holder.join(timeout=5)
     assert elapsed >= 0.15, "wait=True must actually wait for the holder, not race it"
-    assert read_ledger(tmp_ledger) == [{"capsule_id": "c4"}]
+    assert read_ledger(tmp_ledger) == [{"capsule_id": _cid("c4")}]
 
 
 def test_wait_with_timeout_raises_after_deadline_names_wait(tmp_ledger):
@@ -120,7 +126,7 @@ def test_wait_with_timeout_raises_after_deadline_names_wait(tmp_ledger):
 
     try:
         with pytest.raises(LedgerLockedError) as exc_info:
-            append_to_ledger({"capsule_id": "c5"}, tmp_ledger, wait=True, timeout=0.2)
+            append_to_ledger({"capsule_id": _cid("c5")}, tmp_ledger, wait=True, timeout=0.2)
         assert "after waiting 0.2s" in str(exc_info.value)
     finally:
         release.set()
@@ -159,7 +165,7 @@ def test_two_real_processes_second_fails_then_succeeds_after_release(tmp_ledger)
 
         start = time.monotonic()
         with pytest.raises(LedgerLockedError) as exc_info:
-            append_to_ledger({"capsule_id": "cross-process"}, tmp_ledger)
+            append_to_ledger({"capsule_id": _cid("cross-process")}, tmp_ledger)
         elapsed = time.monotonic() - start
 
         assert elapsed < 1.0, "a second OS process must fail immediately, not block"
@@ -171,5 +177,5 @@ def test_two_real_processes_second_fails_then_succeeds_after_release(tmp_ledger)
         release_event.set()
         proc.join(timeout=10)
 
-    append_to_ledger({"capsule_id": "after-release"}, tmp_ledger)
-    assert read_ledger(tmp_ledger) == [{"capsule_id": "after-release"}]
+    append_to_ledger({"capsule_id": _cid("after-release")}, tmp_ledger)
+    assert read_ledger(tmp_ledger) == [{"capsule_id": _cid("after-release")}]

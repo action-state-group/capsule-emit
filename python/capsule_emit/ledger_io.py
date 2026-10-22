@@ -30,8 +30,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
+import logging
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -48,10 +51,99 @@ __all__ = [
 ]
 
 
+def _snapshot_id(root: Path) -> tuple:
+    out = []
+    for name in ("index.sqlite3", "index.sqlite3-wal"):
+        try:
+            st = (root / name).stat()
+            out.append((name, st.st_ino, st.st_size, st.st_mtime_ns))
+        except FileNotFoundError:
+            out.append((name, None))
+    return tuple(out)
+
+
+def _stored_flags(root: Path, *, attempts: int = 3) -> dict[str, bool]:
+    """Each record's ``consequential`` flag from a managed store's index. The
+    index and its WAL are copied into a temporary directory and read there, so
+    the store is never opened (no lock, no sidecar) and rows committed only to
+    the WAL are still seen. The copy is retried while either file changed
+    during it (a commit or a WAL checkpoint meanwhile). Empty when no stable
+    copy could be read."""
+    root = Path(os.path.abspath(root))
+    for _ in range(attempts):
+        before = _snapshot_id(root)
+        with tempfile.TemporaryDirectory(prefix="capsule-ledger-index-") as tmp:
+            try:
+                for name in ("index.sqlite3", "index.sqlite3-wal"):
+                    if (root / name).is_file():
+                        shutil.copyfile(root / name, Path(tmp) / name)
+                if _snapshot_id(root) != before:
+                    continue
+                conn = sqlite3.connect(Path(tmp) / "index.sqlite3")
+                try:
+                    return {cid: bool(f) for cid, f in conn.execute("SELECT capsule_id, consequential FROM records")}
+                finally:
+                    conn.close()
+            except (OSError, sqlite3.Error):
+                continue
+    return {}
+
+
+def _copy_store(source: Path, target: LedgerStore) -> None:
+    """Copy a managed store's entries, read from its segments (crash-left
+    lines included), into ``target``, keeping what the scan verbs query:
+    authenticity (re-derived from each line's envelope, as CLL's ``reindex``
+    does), the ``consequential`` flag and the correlation fields."""
+    from cll.ledger import SIGNED, AdmissionRequest, ProducerEnvelope
+
+    from .ledger import read_positioned_entries
+
+    # Segments first, then the index: every record the segments yield was
+    # indexed before the flags are read, unless a crash left it unindexed.
+    entries = read_positioned_entries(source)
+    flags = _stored_flags(source)
+    unknown = [e.get("capsule_id") for e in entries if e.get("capsule_id") not in flags]
+    if unknown:
+        # A crash-left line, or an index that could not be copied: such a
+        # record is copied as consequential, the flag seal() appends with.
+        logging.getLogger(__name__).warning(
+            "ledger scan: %d record(s) in %s have no stored consequential flag; copied as consequential",
+            len(unknown),
+            source,
+        )
+    for entry in entries:
+        admission = None
+        if LedgerStore._reindex_authenticity(entry) == "signed":
+            admission = AdmissionRequest(
+                mode=SIGNED, envelopes=(ProducerEnvelope(envelope=entry["signature"], key_id=entry["key_id"]),)
+            )
+            entry = {k: v for k, v in entry.items() if k not in ("signature", "key_id")}
+        target.append(entry, consequential=flags.get(entry.get("capsule_id"), True), admission=admission)
+
+
+def _correlation_fields(source: Path) -> tuple[str, ...]:
+    try:
+        return tuple(json.loads((source / "lookup_config.json").read_text())["correlation_fields"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return ()
+
+
 @contextlib.contextmanager
 def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
+    """A ``LedgerStore`` over ``path`` for the scan-query verbs. A managed
+    store (``manifest.json``, as ``seal()`` writes) is never opened: its
+    entries are copied, from the segments, into an ephemeral store with their
+    authenticity, ``consequential`` flag and the store's correlation fields,
+    so a read writes nothing, works on a read-only copy and sees a line a
+    crashed writer left. A store with an archived segment raises
+    ``ledger_store.LedgerArchivedError`` (positions after it are unknown). An
+    empty directory is an empty ledger and is left empty. An unmanaged store
+    directory (no ``manifest.json``) is opened as before, and a JSONL file is
+    imported into an ephemeral store, as before."""
+    from .ledger_store import MANIFEST_FILENAME
+
     p = Path(path)
-    if p.is_dir():
+    if p.is_dir() and any(p.iterdir()) and not (p / MANIFEST_FILENAME).is_file():
         store = LedgerStore(p)
         try:
             yield store
@@ -60,9 +152,13 @@ def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
         return
 
     tmp_root = Path(tempfile.mkdtemp(prefix="capsule-ledger-cli-"))
-    store = LedgerStore(tmp_root)
+    managed = p.is_dir() and (p / MANIFEST_FILENAME).is_file()
+    store = LedgerStore(tmp_root, correlation_fields=_correlation_fields(p) if managed else ())
     try:
-        store.import_jsonl(p)
+        if managed:
+            _copy_store(p, store)
+        elif not p.is_dir():
+            store.import_jsonl(p)
         yield store
     finally:
         store.close()
