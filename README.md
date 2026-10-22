@@ -141,7 +141,7 @@ pip install agent-action-capsule
 agent-action-capsule verify --store ./capsule-ledger
 ```
 
-Reading a ledger directory needs an agent-action-capsule release later than 0.11.0. With 0.11.0, `capsule-emit verify --store ./capsule-ledger` checks the same directory.
+`agent-action-capsule` reads a ledger directory from 0.12.0, which capsule-emit requires.
 
 Tamper with one byte and verification fails. The verifier is independent of `capsule-emit` on purpose — *any* tool can produce a capsule; *any* party can verify one. (Every `seal()` also appends to the local ledger directory `./capsule-ledger/`. View it with `capsule-emit ledger view ./capsule-ledger`; `capsule-emit verify --store ./capsule-ledger` also checks producer signatures.)
 

@@ -33,11 +33,18 @@ import json
 import subprocess
 
 import pytest
-from agent_action_capsule.cli import _load_store
+from agent_action_capsule.cli import _load_store as _load_store_result
 
 from capsule_emit import ledger_view, read_ledger, seal
 from capsule_emit.signing import verify_store_signed as verify_store
 from capsule_emit.verification import verify_capsule as verify
+
+
+def _load_store(path: str) -> list:
+    """The Capsules agent-action-capsule's verify --store reads from path (from
+    0.12.0 its loader returns them with the lines it counted instead)."""
+    return _load_store_result(path).capsules
+
 
 # ---------------------------------------------------------------------------
 # Fixture
@@ -345,3 +352,16 @@ def test_neutral_capsule_id_recomputes_after_stripping_local_fields(tmp_ledger):
     cap = _emit_n(1, tmp_ledger)[0].capsule
     neutral_capsule = {k: v for k, v in cap.items() if k not in ("signature", "key_id")}
     assert neutral_compute_capsule_id(neutral_capsule) == cap["capsule_id"]
+
+
+# ---------------------------------------------------------------------------
+# Group: a ledger directory (capsule-emit#358, agent-action-capsule#372)
+# ---------------------------------------------------------------------------
+
+def test_load_store_reads_a_ledger_directory(tmp_path):
+    store = tmp_path / "capsule-ledger"
+    results = _emit_n(3, store)
+    caps = _load_store(str(store))
+    assert [c["capsule_id"] for c in caps] == [r.capsule["capsule_id"] for r in results]
+    for cap in caps:
+        assert verify(cap).ok
