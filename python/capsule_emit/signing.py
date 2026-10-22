@@ -198,12 +198,20 @@ class LocalKeypairSigner:
             Path(tmp).unlink(missing_ok=True)
 
     def _persist(self, key) -> None:
+        """Replace the key file with ``key`` (rotation): a fresh, exclusive
+        temp file beside it (never a fixed name another writer could fill),
+        fsynced, then renamed over the key."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        pem = _pem_private_bytes(key)
-        tmp = self._path.with_name(self._path.name + ".tmp")
-        tmp.write_bytes(pem)
-        os.chmod(tmp, 0o600)
-        tmp.replace(self._path)
+        fd, tmp = tempfile.mkstemp(prefix=f".{self._path.name}.", dir=self._path.parent)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(_pem_private_bytes(key))
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, self._path)
+        finally:
+            Path(tmp).unlink(missing_ok=True)
 
     def sign(self, payload: bytes) -> tuple[str, str]:
         """Sign ``payload`` and return ``(signature, key_id)`` as one atomic

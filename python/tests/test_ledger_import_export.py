@@ -592,3 +592,47 @@ def test_export_refuses_an_absent_or_dangling_key_name(tmp_path, dangling):
     with pytest.raises(ledger_store.LedgerLayoutError, match="part of the store"):
         ledger_migrate.export_to_file(root, key)
     assert key.is_symlink() == dangling and not key.exists()
+
+
+# -- review round 5 ------------------------------------------------------------
+
+
+def test_export_never_replaces_an_existing_file(tmp_path, capsys):
+    root = tmp_path / "s"
+    root.mkdir()
+    append_to_ledger({"capsule_id": _cid("a")}, root)
+    target = tmp_path / "copy.jsonl"
+    target.write_text("keep me")
+    assert cli.main(["ledger", "export", "--jsonl", str(root), "-o", str(target)]) == 1
+    assert target.read_text() == "keep me"
+
+
+def test_export_refuses_a_case_variant_of_the_key_on_a_case_insensitive_disk(tmp_path):
+    root = tmp_path / "s"
+    root.mkdir()
+    _seal(root)
+    key = tmp_path / "s.signing_key.pem"
+    variant = tmp_path / "S.SIGNING_KEY.PEM"
+    if not variant.exists():
+        pytest.skip("case-sensitive filesystem")
+    before = key.read_bytes()
+    with pytest.raises(ledger_store.LedgerLayoutError):
+        ledger_migrate.export_to_file(root, variant)
+    assert key.read_bytes() == before
+
+
+def test_an_export_that_meets_a_new_file_at_its_name_does_not_replace_it(tmp_path, monkeypatch):
+    root = tmp_path / "s"
+    root.mkdir()
+    append_to_ledger({"capsule_id": _cid("a")}, root)
+    target = tmp_path / "copy.jsonl"
+    real_link = os.link
+
+    def racing_link(src, dst):
+        target.write_text("created meanwhile")
+        return real_link(src, dst)
+
+    monkeypatch.setattr(ledger_migrate.os, "link", racing_link)
+    with pytest.raises(ledger_store.LedgerLayoutError, match="appeared during the export"):
+        ledger_migrate.export_to_file(root, target)
+    assert target.read_text() == "created meanwhile"

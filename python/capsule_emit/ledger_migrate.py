@@ -298,25 +298,21 @@ def export_ledger(store: str | os.PathLike, out) -> ExportReport:
 
 
 def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> ExportReport:
-    """Export to the file ``target``: written to a temp file beside it (with
-    the usual file mode), fsynced, then renamed over it, so a failed export
-    never leaves a partial file. Refuses a directory target and one inside the
-    store."""
+    """Export to the new file ``target``: written to a temp file beside it
+    (with the usual file mode), fsynced, then hard-linked to ``target``, which
+    fails if anything exists under that name. So an export never replaces a
+    file, whatever its name or case or what a symlink there points at: the
+    store's key and lock, a key a concurrent ``seal()`` creates, or any other
+    file. A failed export leaves no partial file. Paths inside the store and
+    its key and lock names are also refused up front, with a clearer message."""
     root, target = _store.store_root(store), Path(target)
-    if target.is_dir():
-        raise _store.LedgerLayoutError(f"{target} is a directory; name a file")
-    # The entry replaced is the target's own path (os.replace does not follow a
-    # symlink), and what it may point at: both are checked against the store
-    # and its key and lock, by name and by file.
     store_paths = {Path(store).absolute(), root}
-    sidecars = [Path(os.fspath(p) + suffix) for p in store_paths for suffix in (".signing_key.pem", ".lock")]
+    sidecars = {Path(os.fspath(p) + suffix) for p in store_paths for suffix in (".signing_key.pem", ".lock")}
     entry, real = Path(os.path.abspath(target)), Path(os.path.realpath(target))
-    inside = any(c.is_relative_to(p) for c in (entry, real) for p in store_paths)
-    # Reserved by name whether or not the file exists yet: a seal() may create
-    # the key while the export runs.
-    named = any(c in sidecars for c in (entry, real))
-    if inside or named or any(_same_file(c, sc) for c in (entry, real) for sc in sidecars if sc.exists()):
+    if any(c.is_relative_to(p) for c in (entry, real) for p in store_paths) or entry in sidecars or real in sidecars:
         raise _store.LedgerLayoutError(f"{target} is part of the store {root} (or its key or lock); write the export elsewhere")
+    if os.path.lexists(target):
+        raise _store.LedgerLayoutError(f"{target} already exists; export writes a new file, choose another name")
     while True:
         tmp = target.parent / f".{target.name}.{secrets.token_hex(8)}"
         try:
@@ -329,7 +325,10 @@ def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> Expor
             report = export_ledger(root, fh)
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(tmp, target)
+        try:
+            os.link(tmp, target)
+        except FileExistsError:
+            raise _store.LedgerLayoutError(f"{target} appeared during the export; it was not replaced") from None
         _store._fsync(target.parent)
     finally:
         tmp.unlink(missing_ok=True)
