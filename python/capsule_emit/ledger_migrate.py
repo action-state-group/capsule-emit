@@ -25,7 +25,8 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
+import secrets
+import shlex
 import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
@@ -41,8 +42,9 @@ _HEX64 = re.compile(r"[0-9a-f]{64}")
 
 
 class ImportRefused(ValueError):
-    """The flat ledger cannot be copied whole; nothing was written. ``lines``
-    names the 1-based source lines at fault."""
+    """The flat ledger cannot be copied whole, so no store was created.
+    ``lines`` names the 1-based source lines at fault. A producer key copied
+    beside the store before the refusal stays: it is the same key."""
 
     def __init__(self, message: str, lines: list[int]) -> None:
         super().__init__(message)
@@ -57,7 +59,9 @@ class ImportReport:
     skipped_unparseable: list[int] = field(default_factory=list)
     reserialized: list[int] = field(default_factory=list)
     key_copied: Path | None = None
+    #: The key seal() to this store will sign with, and why.
     key_in_use: Path | None = None
+    key_source: str = ""
 
 
 def _kind(obj: dict) -> str:
@@ -91,9 +95,15 @@ def suggested_store(path: str | os.PathLike) -> str:
         base = "capsule-ledger"
     else:
         base = p.name.lstrip(".").replace(".", "-") + "-store"
+    def taken(candidate: Path) -> bool:
+        # A leftover key beside a name would become the new store's identity.
+        return (candidate.exists() and not (candidate.is_dir() and not any(candidate.iterdir()))) or _store_key(
+            candidate
+        ).exists()
+
     candidate = parent / base
     n = 2
-    while candidate.exists() and not (candidate.is_dir() and not any(candidate.iterdir())):
+    while taken(candidate):
         candidate = parent / f"{base}-{n}"
         n += 1
     text = os.fspath(candidate)
@@ -101,6 +111,8 @@ def suggested_store(path: str | os.PathLike) -> str:
 
 
 def _check_destination(dest: Path) -> None:
+    if not dest.parent.is_dir():
+        raise ImportRefused(f"{dest.parent} does not exist; create it first", [])
     if dest.exists():
         if not dest.is_dir() or any(dest.iterdir()):
             raise ImportRefused(f"{dest} exists and is not an empty directory; choose a new name", [])
@@ -109,8 +121,10 @@ def _check_destination(dest: Path) -> None:
 
 
 def _publish_key(source_key: Path, dest_key: Path) -> None:
-    """Copy ``source_key`` to ``dest_key`` without ever leaving a partial
-    key: an exclusive temp file beside it, fsynced, then renamed."""
+    """Copy ``source_key`` to ``dest_key`` without ever leaving a partial key
+    and without ever replacing one: an exclusive temp file beside it, fsynced,
+    then hard-linked into place, which fails if a key appeared meanwhile (a
+    ``seal()`` that created one is signing with it)."""
     fd, tmp = tempfile.mkstemp(prefix=f".{dest_key.name}.", dir=dest_key.parent)
     try:
         with os.fdopen(fd, "wb") as fh:
@@ -118,11 +132,33 @@ def _publish_key(source_key: Path, dest_key: Path) -> None:
             fh.flush()
             os.fsync(fh.fileno())
         os.chmod(tmp, 0o600)
-        os.rename(tmp, dest_key)
+        try:
+            os.link(tmp, dest_key)
+        except FileExistsError:
+            raise ImportRefused(
+                f"a producer key appeared at {dest_key} during the import, so it was not replaced; "
+                "nothing was imported. Check which key that ledger should use, then import again.",
+                [],
+            ) from None
         _store._fsync(dest_key.parent)
-    except BaseException:
+    finally:
         Path(tmp).unlink(missing_ok=True)
-        raise
+
+
+def _key_in_use(dest_key: Path) -> tuple[Path | None, str]:
+    """The key seal() to the new store will sign with, and how it was chosen."""
+    from .signing import SIGNING_KEY_PATH_ENV_VAR
+
+    override = os.environ.get(SIGNING_KEY_PATH_ENV_VAR)
+    if override:
+        return Path(override), SIGNING_KEY_PATH_ENV_VAR
+    if dest_key.exists():
+        return dest_key, "default"
+    return None, "new"
+
+
+def _cp_command(source_key: Path, dest_key: Path) -> str:
+    return f"cp -n -- {shlex.quote(os.fspath(source_key))} {shlex.quote(os.fspath(dest_key))}"
 
 
 def import_ledger(source: str | os.PathLike, dest: str | os.PathLike) -> ImportReport:
@@ -147,8 +183,10 @@ def import_ledger(source: str | os.PathLike, dest: str | os.PathLike) -> ImportR
                 stripped = raw.strip()
                 if not stripped:
                     continue
+                # Decoded as the flat reader decodes it (LegacyLedger._parse),
+                # so a line it counts as a leaf is a leaf here too.
                 try:
-                    obj = json.loads(stripped)
+                    obj = json.loads(stripped.decode("utf-8", errors="replace"))
                 except ValueError:
                     report.skipped_unparseable.append(number)
                     continue
@@ -177,14 +215,17 @@ def import_ledger(source: str | os.PathLike, dest: str | os.PathLike) -> ImportR
             )
             source_key, dest_key = _source_key(source), _store_key(root)
             if source_key.is_file() and not dest_key.exists():
-                message += f" To keep the producer identity, first run: cp -n {source_key} {dest_key}"
+                message += (
+                    " To keep the producer identity, run this before the first seal to the new directory: "
+                    + _cp_command(source_key, dest_key)
+                )
             raise ImportRefused(message, repeats)
 
         source_key, dest_key = _source_key(source), _store_key(root)
         if source_key.is_file() and not dest_key.exists():
             _publish_key(source_key, dest_key)
             report.key_copied = dest_key
-        report.key_in_use = dest_key
+        report.key_in_use, report.key_source = _key_in_use(dest_key)
         try:
             _store.create_store(root, lines=texts)
         except ValueError as exc:
@@ -219,17 +260,30 @@ def export_ledger(store: str | os.PathLike, out) -> ExportReport:
     return report
 
 
-def _copy_out(store: Path, target: Path) -> ExportReport:
-    """Export to ``target`` through a temp file, so a failed export never
-    leaves a partial file under that name."""
-    fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> ExportReport:
+    """Export to the file ``target``: written to a temp file beside it (with
+    the usual file mode), fsynced, then renamed over it, so a failed export
+    never leaves a partial file. Refuses a directory target and one inside the
+    store."""
+    root, target = _store.store_root(store), Path(target)
+    if target.is_dir():
+        raise _store.LedgerLayoutError(f"{target} is a directory; name a file")
+    if os.path.realpath(target).startswith(os.fspath(root) + os.sep):
+        raise _store.LedgerLayoutError(f"{target} is inside the store {root}; write the export elsewhere")
+    while True:
+        tmp = target.parent / f".{target.name}.{secrets.token_hex(8)}"
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+            break
+        except FileExistsError:
+            continue
     try:
         with os.fdopen(fd, "wb") as fh:
-            report = export_ledger(store, fh)
+            report = export_ledger(root, fh)
             fh.flush()
             os.fsync(fh.fileno())
-        shutil.move(tmp, target)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+        os.replace(tmp, target)
+        _store._fsync(target.parent)
+    finally:
+        tmp.unlink(missing_ok=True)
     return report

@@ -103,7 +103,7 @@ def test_a_repeated_capsule_id_refuses_the_import(tmp_path, capsys, second):
     assert cli.main(["ledger", "import", str(flat), str(store)]) == 1
     err = capsys.readouterr().err
     assert "line(s) 3 repeat a capsule_id" in err and "repeated hold lines" in err
-    assert f"cp -n {flat}.signing_key.pem {tmp_path / 'capsule-ledger.signing_key.pem'}" in err
+    assert f"cp -n -- {flat}.signing_key.pem {tmp_path / 'capsule-ledger.signing_key.pem'}" in err
     assert not store.exists() and not (tmp_path / "capsule-ledger.signing_key.pem").exists()
 
 
@@ -215,3 +215,216 @@ def test_export_reports_repeats_it_skipped(tmp_path):
     out = io.BytesIO()
     report = ledger_migrate.export_ledger(root, out)
     assert report.lines == 1 and report.skipped_repeats == 1
+
+
+# -- review round 1 ------------------------------------------------------------
+
+
+def test_a_key_appearing_during_import_is_never_replaced(tmp_path, monkeypatch):
+    flat = tmp_path / "ledger.jsonl"
+    _seal(flat)
+    dest_key = tmp_path / "capsule-ledger.signing_key.pem"
+    real_link = os.link
+
+    def racing_link(src, dst):
+        dest_key.write_bytes(b"a key a concurrent seal() made")
+        return real_link(src, dst)
+
+    monkeypatch.setattr(ledger_migrate.os, "link", racing_link)
+    with pytest.raises(ledger_migrate.ImportRefused, match="appeared"):
+        ledger_migrate.import_ledger(flat, tmp_path / "capsule-ledger")
+    assert dest_key.read_bytes() == b"a key a concurrent seal() made"
+    assert not (tmp_path / "capsule-ledger").exists()
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".capsule-ledger.signing_key")] == []
+
+
+def test_an_interrupted_key_copy_leaves_no_partial_key_and_a_retry_works(tmp_path, monkeypatch):
+    flat = tmp_path / "ledger.jsonl"
+    first = _seal(flat).capsule
+    real_fsync = os.fsync
+
+    def fail(fd):
+        raise OSError("I/O error")
+
+    monkeypatch.setattr(ledger_migrate.os, "fsync", fail)
+    with pytest.raises(OSError):
+        ledger_migrate.import_ledger(flat, tmp_path / "capsule-ledger")
+    monkeypatch.setattr(ledger_migrate.os, "fsync", real_fsync)
+    assert not (tmp_path / "capsule-ledger.signing_key.pem").exists()
+    ledger_migrate.import_ledger(flat, tmp_path / "capsule-ledger")
+    assert _seal(tmp_path / "capsule-ledger").capsule["key_id"] == first["key_id"]
+
+
+def test_a_failed_rename_publishes_no_store_and_keeps_the_key(tmp_path, monkeypatch):
+    flat = tmp_path / "ledger.jsonl"
+    _seal(flat)
+
+    def fail(src, dst):
+        raise OSError("rename failed")
+
+    monkeypatch.setattr(ledger_store.os, "rename", fail)
+    with pytest.raises(OSError):
+        ledger_migrate.import_ledger(flat, tmp_path / "s")
+    monkeypatch.undo()
+    assert not (tmp_path / "s").exists()
+    assert (tmp_path / "s.signing_key.pem").is_file()
+    assert [p.name for p in tmp_path.iterdir() if ".staging-" in p.name] == []
+    ledger_migrate.import_ledger(flat, tmp_path / "s")
+
+
+def test_a_failure_after_the_rename_leaves_a_complete_store(tmp_path, monkeypatch):
+    flat = tmp_path / "ledger.jsonl"
+    _seal(flat)
+    real = ledger_store._fsync
+    target_parent = os.fspath(tmp_path)
+
+    def fail_parent(path):
+        # Only the fsync of the parent after the store was renamed into place.
+        if os.fspath(path) == target_parent and (tmp_path / "s").exists():
+            raise OSError("parent fsync failed")
+        return real(path)
+
+    monkeypatch.setattr(ledger_store, "_fsync", fail_parent)
+    with pytest.raises(OSError):
+        ledger_migrate.import_ledger(flat, tmp_path / "s")
+    monkeypatch.undo()
+    assert (tmp_path / "s" / ledger_store.MARKER_FILENAME).is_file()
+    assert read_ledger_entries(tmp_path / "s") == read_ledger_entries(flat)
+
+
+def test_a_stale_staging_directory_is_left_alone(tmp_path):
+    flat = tmp_path / "ledger.jsonl"
+    _seal(flat)
+    stale = tmp_path / ".s.staging-deadbeef"
+    stale.mkdir()
+    ledger_migrate.import_ledger(flat, tmp_path / "s")
+    assert stale.is_dir() and read_ledger_entries(tmp_path / "s")
+
+
+def test_a_line_the_store_cannot_hold_refuses_the_import(tmp_path):
+    flat = tmp_path / "ledger.jsonl"
+    flat.write_text(json.dumps({"capsule_id": _cid("a"), "timestamp": 10**30}) + "\n")
+    with pytest.raises(ledger_migrate.ImportRefused, match="cannot be stored"):
+        ledger_migrate.import_ledger(flat, tmp_path / "s")
+    assert not (tmp_path / "s").exists()
+
+
+def test_reserialized_lines_are_reported(tmp_path, capsys):
+    flat = tmp_path / "ledger.jsonl"
+    flat.write_text(json.dumps({"capsule_id": _cid("a"), "n": 1}, indent=None) + "\n")
+    assert cli.main(["ledger", "import", str(flat), str(tmp_path / "s")]) == 0
+    assert "line(s) 1: stored in compact JSON form" in capsys.readouterr().out
+
+
+def test_invalid_utf8_inside_a_line_is_kept_as_the_flat_reader_keeps_it(tmp_path):
+    flat = tmp_path / "ledger.jsonl"
+    flat.write_bytes(b'{"capsule_id":"' + _cid("a").encode() + b'","note":"\xff"}\n' + json.dumps({"capsule_id": _cid("b")}).encode() + b"\n")
+    ledger_migrate.import_ledger(flat, tmp_path / "s")
+    assert [e.value for e in LegacyLedger(tmp_path / "s").entries()] == [e.value for e in LegacyLedger(flat).entries()]
+
+
+def test_export_refuses_a_directory_target_and_one_inside_the_store(tmp_path, capsys):
+    root = tmp_path / "s"
+    root.mkdir()
+    append_to_ledger({"capsule_id": _cid("a")}, root)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    assert cli.main(["ledger", "export", "--jsonl", str(root), "-o", str(out_dir)]) == 1
+    assert list(out_dir.iterdir()) == []
+    assert cli.main(["ledger", "export", "--jsonl", str(root), "-o", str(root / "manifest.json")]) == 1
+    assert json.loads((root / "manifest.json").read_text())["segments"]
+
+
+def test_export_file_has_the_usual_mode(tmp_path):
+    root = tmp_path / "s"
+    root.mkdir()
+    append_to_ledger({"capsule_id": _cid("a")}, root)
+    old = os.umask(0o022)
+    try:
+        ledger_migrate.export_to_file(root, tmp_path / "x.jsonl")
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(os.stat(tmp_path / "x.jsonl").st_mode) == 0o644
+
+
+def test_export_refuses_an_archived_store(tmp_path):
+    from cll.checkpoint.index import MmrLedger
+    from cll.ledger import LedgerStore
+    from cll.ledger.segments import MmrCheckpointer
+
+    class _FixedSigner:
+        key_id = "00" * 32
+
+        def sign(self, digest_hex: str) -> str:
+            return "00" * 64
+
+    root = tmp_path / "rotating"
+    store = LedgerStore(root, rotate_at_checkpoint=True, max_segment_bytes=200)
+    store.set_checkpointer(MmrCheckpointer(mmr=MmrLedger(store), signer=_FixedSigner(), log_id="demo"))
+    for i in range(20):
+        store.append({"capsule_id": f"{i:064x}", "payload": "x" * 40})
+    store.unmount_segment(store.list_segments()[0].name)
+    store.close()
+    with pytest.raises(ledger_store.LedgerArchivedError):
+        ledger_migrate.export_ledger(root, io.BytesIO())
+
+
+def test_the_key_report_names_an_override_and_a_missing_key(tmp_path, capsys, monkeypatch):
+    flat = tmp_path / "ledger.jsonl"
+    flat.write_text(json.dumps({"capsule_id": _cid("a")}) + "\n")
+    assert cli.main(["ledger", "import", str(flat), str(tmp_path / "s")]) == 0
+    assert "creates a new one" in capsys.readouterr().out
+    monkeypatch.setenv("CAPSULE_SIGNING_KEY_PATH", str(tmp_path / "kms.pem"))
+    assert cli.main(["ledger", "import", str(flat), str(tmp_path / "t")]) == 0
+    assert "the key CAPSULE_SIGNING_KEY_PATH names" in capsys.readouterr().out
+
+
+def test_the_copy_command_is_shell_safe(tmp_path, capsys):
+    odd = tmp_path / "my dir"
+    odd.mkdir()
+    flat = odd / "ledger.jsonl"
+    _seal(flat)
+    with open(flat, "a") as fh:
+        line = json.dumps({"capsule_id": _cid("x")})
+        fh.write(line + "\n" + line + "\n")
+    with pytest.raises(ledger_migrate.ImportRefused) as info:
+        ledger_migrate.import_ledger(flat, odd / "s")
+    import shlex
+
+    command = str(info.value).split("new directory: ", 1)[1]
+    assert shlex.split(command)[:3] == ["cp", "-n", "--"]
+    assert shlex.split(command)[3] == f"{flat}.signing_key.pem"
+
+
+def test_a_missing_parent_is_refused_clearly(tmp_path):
+    flat = tmp_path / "ledger.jsonl"
+    _seal(flat)
+    with pytest.raises(ledger_migrate.ImportRefused, match="does not exist"):
+        ledger_migrate.import_ledger(flat, tmp_path / "nope" / "s")
+
+
+def test_suggested_store_skips_a_name_whose_key_is_left_over(tmp_path):
+    (tmp_path / "audit-log-store.signing_key.pem").write_text("left over")
+    assert ledger_migrate.suggested_store(tmp_path / "audit.log") == os.fspath(tmp_path / "audit-log-store-2")
+
+
+def test_a_new_store_directory_gets_the_umask_default(tmp_path):
+    flat = tmp_path / "ledger.jsonl"
+    _seal(flat)
+    old = os.umask(0o027)
+    try:
+        ledger_migrate.import_ledger(flat, tmp_path / "s")
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE((tmp_path / "s").stat().st_mode) == 0o750
+
+
+def test_a_first_seal_into_an_empty_directory_is_consequential(tmp_path):
+    import sqlite3
+
+    root = tmp_path / "s"
+    root.mkdir()
+    _seal(root)
+    _seal(root)
+    with sqlite3.connect(root / "index.sqlite3") as conn:
+        assert [r[0] for r in conn.execute("SELECT consequential FROM records ORDER BY seq")] == [1, 1]

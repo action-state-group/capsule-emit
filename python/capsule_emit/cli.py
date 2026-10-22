@@ -113,19 +113,27 @@ def _cmd_ledger_import(args: argparse.Namespace) -> int:
     except OSError as exc:
         print(f"ledger import: {exc}", file=sys.stderr)
         return 1
+    from .ledger_migrate import _lines
+
     total = sum(report.imported.values())
     kinds = ", ".join(f"{n} {kind}" for kind, n in sorted(report.imported.items()))
-    print(f"imported {total} line(s) from {report.source} into {report.store} ({kinds})")
+    print(f"imported {total} line(s) from {report.source} into {report.store}" + (f" ({kinds})" if kinds else ""))
     if report.skipped_unparseable:
-        lines = ", ".join(str(n) for n in report.skipped_unparseable)
-        print(f"skipped line(s) {lines}: not JSON (fragments a crashed write left; they were never entries)")
+        print(
+            f"skipped line(s) {_lines(report.skipped_unparseable)}: not JSON "
+            "(fragments a crashed write left; they were never entries)"
+        )
     if report.reserialized:
-        lines = ", ".join(str(n) for n in report.reserialized[:10])
-        print(f"line(s) {lines}: stored in compact JSON form; the values are unchanged")
+        print(f"line(s) {_lines(report.reserialized)}: stored in compact JSON form; the capsule_id is unchanged")
     if report.key_copied:
-        print(f"copied the producer key to {report.key_copied}, so sealing to the store keeps the same identity")
-    elif report.key_in_use:
+        print(f"copied the producer key to {report.key_copied}")
+    if report.key_source == "default":
         print(f"seal() to this store signs with {report.key_in_use}")
+    elif report.key_source:
+        if report.key_source != "new":
+            print(f"seal() signs with {report.key_in_use}, the key {report.key_source} names")
+        else:
+            print("no producer key was found for the old ledger; the first seal() to this store creates a new one")
     print(
         "The old checkpoints' roots match the store's prefix. Witnessing starts a new log for the store "
         f"(its log id is its path). {report.source} is unchanged and stays readable."
@@ -134,11 +142,11 @@ def _cmd_ledger_import(args: argparse.Namespace) -> int:
 
 
 def _cmd_ledger_export(args: argparse.Namespace) -> int:
-    from .ledger_migrate import _copy_out, export_ledger
+    from .ledger_migrate import export_ledger, export_to_file
 
     try:
         if args.out:
-            report = _copy_out(Path(args.store), Path(args.out))
+            report = export_to_file(args.store, args.out)
         else:
             report = export_ledger(args.store, sys.stdout.buffer)
             sys.stdout.flush()
