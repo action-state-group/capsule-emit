@@ -110,7 +110,7 @@ def test_a_repeated_capsule_id_refuses_the_import(tmp_path, capsys, second):
 def test_a_line_without_a_capsule_id_refuses_the_import(tmp_path):
     flat = tmp_path / "ledger.jsonl"
     flat.write_text(json.dumps({"capsule_id": "short"}) + "\n")
-    with pytest.raises(ledger_migrate.ImportRefused, match="no 64-hex capsule_id") as info:
+    with pytest.raises(ledger_migrate.ImportRefused, match="no lowercase 64-hex capsule_id") as info:
         ledger_migrate.import_ledger(flat, tmp_path / "s")
     assert info.value.lines == [1]
     assert not (tmp_path / "s").exists()
@@ -316,10 +316,11 @@ def test_reserialized_lines_are_reported(tmp_path, capsys):
     assert "line(s) 1: stored in compact JSON form" in capsys.readouterr().out
 
 
-def test_invalid_utf8_inside_a_line_is_kept_as_the_flat_reader_keeps_it(tmp_path):
+def test_invalid_utf8_inside_a_line_is_kept_as_the_flat_reader_keeps_it(tmp_path, capsys):
     flat = tmp_path / "ledger.jsonl"
     flat.write_bytes(b'{"capsule_id":"' + _cid("a").encode() + b'","note":"\xff"}\n' + json.dumps({"capsule_id": _cid("b")}).encode() + b"\n")
-    ledger_migrate.import_ledger(flat, tmp_path / "s")
+    assert cli.main(["ledger", "import", str(flat), str(tmp_path / "s")]) == 0
+    assert "not UTF-8, stored as U+FFFD" in capsys.readouterr().out
     assert [e.value for e in LegacyLedger(tmp_path / "s").entries()] == [e.value for e in LegacyLedger(flat).entries()]
 
 
@@ -428,3 +429,88 @@ def test_a_first_seal_into_an_empty_directory_is_consequential(tmp_path):
     _seal(root)
     with sqlite3.connect(root / "index.sqlite3") as conn:
         assert [r[0] for r in conn.execute("SELECT consequential FROM records ORDER BY seq")] == [1, 1]
+
+
+# -- review round 2 ------------------------------------------------------------
+
+
+def test_a_new_default_key_never_replaces_one_that_appeared(tmp_path, monkeypatch):
+    from capsule_emit import signing
+
+    key = tmp_path / "s.signing_key.pem"
+    other = signing.LocalKeypairSigner(tmp_path / "other.pem")
+    real_link = os.link
+
+    def racing_link(src, dst):
+        # import (or another process) publishes its key first
+        real_link(tmp_path / "other.pem", dst)
+        return real_link(src, dst)
+
+    monkeypatch.setattr(signing.os, "link", racing_link)
+    signer = signing.LocalKeypairSigner(key)
+    assert signer.key_id == other.key_id
+    assert key.read_bytes() == (tmp_path / "other.pem").read_bytes()
+
+
+@pytest.mark.parametrize("sidecar", ["s.signing_key.pem", "s.lock"])
+def test_export_refuses_the_stores_key_and_lock(tmp_path, sidecar):
+    root = tmp_path / "s"
+    root.mkdir()
+    _seal(root)
+    target = tmp_path / sidecar
+    before = target.read_bytes() if target.exists() else None
+    with pytest.raises(ledger_store.LedgerLayoutError, match="part of the store"):
+        ledger_migrate.export_to_file(root, target)
+    assert (target.read_bytes() if target.exists() else None) == before
+
+
+def test_a_line_wrapped_in_unicode_whitespace_is_kept(tmp_path):
+    flat = tmp_path / "ledger.jsonl"
+    flat.write_bytes(
+        json.dumps({"capsule_id": _cid("a")}).encode() + b"\n"
+        + "\u00a0".encode() + json.dumps({"capsule_id": _cid("b")}).encode() + "\u00a0".encode() + b"\n"
+    )
+    ledger_migrate.import_ledger(flat, tmp_path / "s")
+    assert [e.value for e in LegacyLedger(tmp_path / "s").entries()] == [e.value for e in LegacyLedger(flat).entries()]
+
+
+def test_a_store_key_that_differs_from_the_old_one_is_reported(tmp_path, capsys):
+    flat = tmp_path / "ledger.jsonl"
+    _seal(flat)
+    from capsule_emit import signing
+
+    signing.LocalKeypairSigner(tmp_path / "s.signing_key.pem")
+    assert cli.main(["ledger", "import", str(flat), str(tmp_path / "s")]) == 0
+    assert "is not the old ledger's key" in capsys.readouterr().out
+
+
+def test_an_uppercase_capsule_id_is_refused_with_the_reason(tmp_path):
+    flat = tmp_path / "ledger.jsonl"
+    flat.write_text(json.dumps({"capsule_id": _cid("a").upper()}) + "\n")
+    with pytest.raises(ledger_migrate.ImportRefused, match="lowercase 64-hex"):
+        ledger_migrate.import_ledger(flat, tmp_path / "s")
+
+
+def test_a_dangling_symlink_destination_is_refused_clearly(tmp_path):
+    flat = tmp_path / "ledger.jsonl"
+    _seal(flat)
+    (tmp_path / "link").symlink_to(tmp_path / "missing" / "s")
+    with pytest.raises(ledger_migrate.ImportRefused, match="does not exist"):
+        ledger_migrate.import_ledger(flat, tmp_path / "link")
+
+
+def test_a_suggested_name_under_a_dash_directory_stays_a_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "-runs").mkdir()
+    suggestion = ledger_migrate.suggested_store("-runs/audit.jsonl")
+    assert suggestion.startswith("./") and not suggestion.startswith("-")
+
+
+def test_reimporting_an_export_keeps_the_checkpoints(witnessed_flat, tmp_path):
+    first = tmp_path / "first"
+    ledger_migrate.import_ledger(witnessed_flat, first)
+    out = tmp_path / "copy.jsonl"
+    ledger_migrate.export_to_file(first, out)
+    second = tmp_path / "second"
+    ledger_migrate.import_ledger(out, second)
+    assert LegacyLedger(second).load_cll().checkpoint == LegacyLedger(witnessed_flat).load_cll().checkpoint

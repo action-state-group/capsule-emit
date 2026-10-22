@@ -82,6 +82,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import tempfile
 import threading
 from dataclasses import dataclass
 from enum import Enum
@@ -171,9 +172,30 @@ class LocalKeypairSigner:
         if self._path.exists():
             self._private_key = _load_pem_private_key(self._path.read_bytes())
         else:
-            self._private_key = Ed25519PrivateKey.generate()
-            self._persist(self._private_key)
+            self._private_key = self._create(Ed25519PrivateKey.generate())
         self.key_id = _raw_public_hex(self._private_key)
+
+    def _create(self, key):
+        """Persist a new key without ever replacing one: a temp file, then a
+        hard link into place, which fails if a key appeared meanwhile (another
+        process, or ``capsule-emit ledger import`` copying the old ledger's key).
+        Then that key is used instead, so two writers never sign as different
+        producers for one ledger."""
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=f".{self._path.name}.", dir=self._path.parent)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(_pem_private_bytes(key))
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.chmod(tmp, 0o600)
+            try:
+                os.link(tmp, self._path)
+            except FileExistsError:
+                return _load_pem_private_key(self._path.read_bytes())
+            return key
+        finally:
+            Path(tmp).unlink(missing_ok=True)
 
     def _persist(self, key) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)

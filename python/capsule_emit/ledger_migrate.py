@@ -59,6 +59,9 @@ class ImportReport:
     skipped_unparseable: list[int] = field(default_factory=list)
     reserialized: list[int] = field(default_factory=list)
     key_copied: Path | None = None
+    #: The store already had a key that is not the old ledger's.
+    key_differs: bool = False
+    replaced_utf8: list[int] = field(default_factory=list)
     #: The key seal() to this store will sign with, and why.
     key_in_use: Path | None = None
     key_source: str = ""
@@ -107,12 +110,16 @@ def suggested_store(path: str | os.PathLike) -> str:
         candidate = parent / f"{base}-{n}"
         n += 1
     text = os.fspath(candidate)
-    return text if os.path.dirname(text) else os.path.join(os.curdir, text)
+    if not os.path.dirname(text) or text.startswith("-"):
+        text = os.path.join(os.curdir, text)
+    return text
 
 
 def _check_destination(dest: Path) -> None:
-    if not dest.parent.is_dir():
-        raise ImportRefused(f"{dest.parent} does not exist; create it first", [])
+    root = _store.store_root(dest)
+    for parent in (dest.parent, root.parent):
+        if not parent.is_dir():
+            raise ImportRefused(f"{parent} does not exist; create it first", [])
     if dest.exists():
         if not dest.is_dir() or any(dest.iterdir()):
             raise ImportRefused(f"{dest} exists and is not an empty directory; choose a new name", [])
@@ -180,16 +187,19 @@ def import_ledger(source: str | os.PathLike, dest: str | os.PathLike) -> ImportR
         repeats: list[int] = []
         with open(source, "rb") as fh:
             for number, raw in enumerate(fh, start=1):
-                stripped = raw.strip()
-                if not stripped:
+                # Decoded, then stripped, exactly as the flat reader reads it
+                # (LegacyLedger._parse), so a line it counts as a leaf is a
+                # leaf here too.
+                text = raw.decode("utf-8", errors="replace").strip()
+                if not text:
                     continue
-                # Decoded as the flat reader decodes it (LegacyLedger._parse),
-                # so a line it counts as a leaf is a leaf here too.
                 try:
-                    obj = json.loads(stripped.decode("utf-8", errors="replace"))
+                    obj = json.loads(text)
                 except ValueError:
                     report.skipped_unparseable.append(number)
                     continue
+                if "\ufffd" in text and b"\xef\xbf\xbd" not in raw:
+                    report.replaced_utf8.append(number)
                 if not isinstance(obj, dict) or not isinstance(obj.get("capsule_id"), str) or not _HEX64.fullmatch(obj["capsule_id"]):
                     bad_ids.append(number)
                     continue
@@ -197,14 +207,16 @@ def import_ledger(source: str | os.PathLike, dest: str | os.PathLike) -> ImportR
                     repeats.append(number)
                     continue
                 seen[obj["capsule_id"]] = number
-                text = _line_form(obj)
-                if text.encode() != stripped:
+                line = _line_form(obj)
+                if line.encode() != raw.strip() and number not in report.replaced_utf8:
                     report.reserialized.append(number)
-                texts.append(text)
+                texts.append(line)
                 report.imported[_kind(obj)] += 1
         if bad_ids:
             raise ImportRefused(
-                f"{source}: line(s) {_lines(bad_ids)} have no 64-hex capsule_id; nothing was imported", bad_ids
+                f"{source}: line(s) {_lines(bad_ids)} have no lowercase 64-hex capsule_id, which a ledger store "
+                "needs; nothing was imported",
+                bad_ids,
             )
         if repeats:
             message = (
@@ -225,12 +237,19 @@ def import_ledger(source: str | os.PathLike, dest: str | os.PathLike) -> ImportR
         if source_key.is_file() and not dest_key.exists():
             _publish_key(source_key, dest_key)
             report.key_copied = dest_key
+        elif source_key.is_file() and dest_key.is_file():
+            report.key_differs = source_key.read_bytes() != dest_key.read_bytes()
         report.key_in_use, report.key_source = _key_in_use(dest_key)
         try:
             _store.create_store(root, lines=texts)
         except ValueError as exc:
             raise ImportRefused(f"{source}: a line cannot be stored ({exc}); nothing was imported", []) from exc
     return report
+
+
+def format_lines(numbers: list[int]) -> str:
+    """Line numbers for a message: the first ten, then a count."""
+    return _lines(numbers)
 
 
 def _lines(numbers: list[int]) -> str:
@@ -268,8 +287,10 @@ def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> Expor
     root, target = _store.store_root(store), Path(target)
     if target.is_dir():
         raise _store.LedgerLayoutError(f"{target} is a directory; name a file")
-    if os.path.realpath(target).startswith(os.fspath(root) + os.sep):
-        raise _store.LedgerLayoutError(f"{target} is inside the store {root}; write the export elsewhere")
+    real = os.path.realpath(target)
+    sidecars = {os.fspath(root) + ".signing_key.pem", os.fspath(root) + ".lock"}
+    if real.startswith(os.fspath(root) + os.sep) or real in sidecars:
+        raise _store.LedgerLayoutError(f"{target} is part of the store {root} (or its key or lock); write the export elsewhere")
     while True:
         tmp = target.parent / f".{target.name}.{secrets.token_hex(8)}"
         try:

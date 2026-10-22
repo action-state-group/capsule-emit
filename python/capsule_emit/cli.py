@@ -113,7 +113,7 @@ def _cmd_ledger_import(args: argparse.Namespace) -> int:
     except OSError as exc:
         print(f"ledger import: {exc}", file=sys.stderr)
         return 1
-    from .ledger_migrate import _lines
+    from .ledger_migrate import format_lines as _lines
 
     total = sum(report.imported.values())
     kinds = ", ".join(f"{n} {kind}" for kind, n in sorted(report.imported.items()))
@@ -123,10 +123,20 @@ def _cmd_ledger_import(args: argparse.Namespace) -> int:
             f"skipped line(s) {_lines(report.skipped_unparseable)}: not JSON "
             "(fragments a crashed write left; they were never entries)"
         )
+    if report.replaced_utf8:
+        print(
+            f"line(s) {_lines(report.replaced_utf8)}: held bytes that are not UTF-8, stored as U+FFFD, as the flat "
+            "reader reads them; the capsule_id is unchanged, the replaced text is not the original"
+        )
     if report.reserialized:
         print(f"line(s) {_lines(report.reserialized)}: stored in compact JSON form; the capsule_id is unchanged")
     if report.key_copied:
         print(f"copied the producer key to {report.key_copied}")
+    if report.key_differs:
+        print(
+            f"note: {report.key_in_use} was already there and is not the old ledger's key, so records sealed "
+            "to the store carry a different producer identity"
+        )
     if report.key_source == "default":
         print(f"seal() to this store signs with {report.key_in_use}")
     elif report.key_source:
