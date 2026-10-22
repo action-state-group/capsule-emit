@@ -22,6 +22,7 @@ flat ledger holds. Importing an export gives the same lines and roots.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -319,8 +320,11 @@ def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> Expor
     fails if anything exists under that name. So an export never replaces a
     file, whatever its name or case or what a symlink there points at: the
     store's key and lock, a key a concurrent ``seal()`` creates, or any other
-    file. A failed export leaves no partial file. Paths inside the store and
-    its key and lock names are also refused up front, with a clearer message."""
+    file. A failed export leaves no partial file, except that on a disk
+    without hard links a process killed mid-copy can leave a partial
+    ``target``. Paths inside the store and its key and lock names are also
+    refused up front, with a clearer message; all of these comparisons ignore
+    letter case."""
     root, target = _store.store_root(store), Path(target)
     store_paths = {Path(store).absolute(), root}
     names = {Path(os.fspath(p) + suffix) for p in store_paths for suffix in (".signing_key.pem", ".lock")}
@@ -330,7 +334,9 @@ def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> Expor
     sidecars = {os.fspath(p).casefold() for p in names} | {os.path.realpath(p).casefold() for p in names}
     entry, real = Path(os.path.abspath(target)), Path(os.path.realpath(target))
     reserved = os.fspath(entry).casefold() in sidecars or os.fspath(real).casefold() in sidecars
-    if any(c.is_relative_to(p) for c in (entry, real) for p in store_paths) or reserved:
+    folded = [Path(os.fspath(p).casefold()) for p in store_paths]
+    inside = any(Path(os.fspath(c).casefold()).is_relative_to(p) for c in (entry, real) for p in folded)
+    if inside or reserved:
         raise _store.LedgerLayoutError(f"{target} is part of the store {root} (or its key or lock); write the export elsewhere")
     if os.path.lexists(target):
         raise _store.LedgerLayoutError(f"{target} already exists; export writes a new file, choose another name")
@@ -354,7 +360,13 @@ def export_to_file(store: str | os.PathLike, target: str | os.PathLike) -> Expor
             # A disk without hard links (FAT, exFAT, some network mounts):
             # create the target exclusively instead, still never replacing.
             _copy_exclusive(tmp, target)
-        _store._fsync(target.parent)
+        try:
+            _store._fsync(target.parent)
+        except OSError as exc:
+            # The target is complete and fsynced; a disk that cannot fsync a
+            # directory (some network and FAT mounts) only loses that step.
+            if exc.errno not in (errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP):
+                raise
     finally:
         tmp.unlink(missing_ok=True)
     return report

@@ -638,7 +638,6 @@ def test_an_export_that_meets_a_new_file_at_its_name_does_not_replace_it(tmp_pat
     assert target.read_text() == "created meanwhile"
 
 
-
 # -- review round 6 ------------------------------------------------------------
 
 
@@ -671,3 +670,35 @@ def test_export_works_without_hard_links(tmp_path, monkeypatch):
     monkeypatch.setattr(ledger_migrate.os, "link", no_links)
     ledger_migrate.export_to_file(root, tmp_path / "copy.jsonl")
     assert json.loads((tmp_path / "copy.jsonl").read_text())["capsule_id"] == _cid("a")
+
+
+# -- the stand-in's delta check of 3a112c6 -------------------------------------------
+
+
+def test_export_refuses_the_store_directory_in_another_case(tmp_path):
+    store = tmp_path / "s"
+    store.mkdir()
+    append_to_ledger({"capsule_id": _cid("a")}, store)
+    if not (tmp_path / "S").exists():
+        pytest.skip("needs a case-insensitive disk")
+    with pytest.raises(ledger_store.LedgerLayoutError, match="is part of the store"):
+        ledger_migrate.export_to_file(store, tmp_path / "S" / "out.jsonl")
+    assert not (store / "out.jsonl").exists()
+
+
+def test_export_tolerates_a_disk_that_cannot_fsync_a_directory(tmp_path, monkeypatch):
+    import errno
+
+    store = tmp_path / "s"
+    store.mkdir()
+    append_to_ledger({"capsule_id": _cid("a")}, store)
+    real = ledger_store._fsync
+
+    def no_dir_fsync(path):
+        if os.fspath(path) == os.fspath(tmp_path):  # the export's parent directory
+            raise OSError(errno.EINVAL, "Invalid argument")
+        return real(path)
+
+    monkeypatch.setattr(ledger_store, "_fsync", no_dir_fsync)
+    ledger_migrate.export_to_file(store, tmp_path / "out.jsonl")
+    assert (tmp_path / "out.jsonl").read_bytes()
