@@ -667,3 +667,17 @@ def test_a_default_append_names_the_default_in_its_warning(tmp_path):
     (tmp_path / "ledger.jsonl").touch()
     with pytest.warns(LedgerDeprecationWarning, match=r"or leave ledger= unset to use the default"):
         append_to_ledger(_a_capsule(tmp_path))
+
+
+def test_a_resend_during_the_window_is_idempotent_under_warnings_as_errors(tmp_path, monkeypatch):
+    from capsule_emit.ledger import append_to_ledger
+
+    flat = tmp_path / "ledger.jsonl"
+    flat.touch()
+    line = _a_capsule(tmp_path)
+    with pytest.warns(LedgerDeprecationWarning):
+        seq = append_to_ledger(line, flat)
+    monkeypatch.setattr(ledger_layout, "_warned", set())  # a fresh process
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", LedgerDeprecationWarning)
+        assert append_to_ledger(line, flat) == seq

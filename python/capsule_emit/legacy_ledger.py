@@ -729,13 +729,21 @@ class LegacyLedger:
         if windowed and self._path.exists():
             from .ledger_layout import flat_writes_stopped, warn_new_flat_record
 
-            if not flat_writes_stopped():
-                # Before the locks, so a warning raised as an error writes
-                # nothing and a warnings hook may write a ledger.
+            if not flat_writes_stopped() and not self._holds(value):
+                # Before the write locks, so a warning raised as an error
+                # writes nothing and a warnings hook may write a ledger; not
+                # for a line already stored, which stays idempotent.
                 warn_new_flat_record(self._path, chosen)
         if self._store is not None:
             self._path.parent.mkdir(parents=True, exist_ok=True)  # the lock sits beside the store
         return self._write_locked(line, text, value, require_record, wait, timeout, precheck, windowed)
+
+    def _holds(self, value: bytes) -> bool:
+        """Whether a line under this capsule id is already stored (read
+        without the write locks)."""
+        with self._lock, _as_artifact_errors():
+            self._refresh()
+            return self._find(value) is not None
 
     def _write_locked(self, line, text, value, require_record, wait, timeout, precheck, windowed) -> AppendResult:
         """``_write`` under the ledger's locks; ``windowed`` lines are refused
