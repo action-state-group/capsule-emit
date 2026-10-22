@@ -82,6 +82,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import tempfile
 import threading
 from dataclasses import dataclass
 from enum import Enum
@@ -171,17 +172,37 @@ class LocalKeypairSigner:
         if self._path.exists():
             self._private_key = _load_pem_private_key(self._path.read_bytes())
         else:
-            self._private_key = Ed25519PrivateKey.generate()
-            self._persist(self._private_key)
+            self._private_key = self._create(Ed25519PrivateKey.generate())
         self.key_id = _raw_public_hex(self._private_key)
 
-    def _persist(self, key) -> None:
+    def _create(self, key):
+        """Persist a new key without ever replacing one
+        (``ledger_store.publish_new_file``), which fails if a key appeared meanwhile (another
+        process, or ``capsule-emit ledger import`` copying the old ledger's key).
+        Then that key is used instead, so two writers never sign as different
+        producers for one ledger."""
+        from .ledger_store import publish_new_file
+
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        pem = _pem_private_bytes(key)
-        tmp = self._path.with_name(self._path.name + ".tmp")
-        tmp.write_bytes(pem)
-        os.chmod(tmp, 0o600)
-        tmp.replace(self._path)
+        if publish_new_file(self._path, _pem_private_bytes(key)):
+            return key
+        return _load_pem_private_key(self._path.read_bytes())
+
+    def _persist(self, key) -> None:
+        """Replace the key file with ``key`` (rotation): a fresh, exclusive
+        temp file beside it (never a fixed name another writer could fill),
+        fsynced, then renamed over the key."""
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=f".{self._path.name}.", dir=self._path.parent)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(_pem_private_bytes(key))
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, self._path)
+        finally:
+            Path(tmp).unlink(missing_ok=True)
 
     def sign(self, payload: bytes) -> tuple[str, str]:
         """Sign ``payload`` and return ``(signature, key_id)`` as one atomic

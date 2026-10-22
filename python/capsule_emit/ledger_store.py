@@ -37,6 +37,7 @@ import os
 import secrets
 import stat
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -330,6 +331,41 @@ def _archived_placeholder(root: Path, segment: _Segment, kind: str) -> dict:
     return placeholder
 
 
+def publish_new_file(path: Path, data: bytes, mode: int = 0o600) -> bool:
+    """Write ``data`` as the new file ``path``, complete and fsynced before
+    anyone can open it, without replacing a file: a temp file beside it,
+    then a hard link into place, which fails if ``path`` exists. On a disk
+    without hard links (FAT, exFAT, some network mounts) the temp file is
+    renamed into place once ``path`` is seen absent; a file another process
+    creates in the instant between the check and the rename is replaced, as
+    before capsule-emit 0.13 on every disk. Returns False, writing nothing,
+    when ``path`` already exists."""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        try:
+            os.link(tmp, path)
+            return True
+        except FileExistsError:
+            return False
+        except OSError:
+            pass  # no hard links on this disk
+        if os.path.lexists(path):
+            return False
+        try:
+            os.rename(tmp, path)
+        except FileExistsError:  # Windows: the file appeared after the check
+            return False
+        return True
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+
+
 def _fsync(path: Path) -> None:
     """fsync a file or a directory (its entries)."""
     fd = os.open(path, os.O_RDONLY)
@@ -360,10 +396,10 @@ def _new_staging(root: Path) -> Path:
             continue
 
 
-def create_store(root: Path, first_line: str | None = None) -> None:
+def create_store(root: Path, first_line: str | None = None, *, lines: list[str] | None = None) -> None:
     """Create a marked store at ``root`` (absent, or an empty directory),
-    holding ``first_line`` when given. Built in a fresh staging directory
-    beside ``root`` and renamed into place after everything in it is fsynced.
+    holding ``first_line`` when given, or every line of ``lines`` in order.
+    Built in a fresh staging directory beside ``root`` and renamed into place after everything in it is fsynced.
     The caller holds the writer lock."""
     if root.exists() and not (root.is_dir() and not any(root.iterdir())):
         raise LedgerLayoutError(f"{root} exists and is not an empty directory")
@@ -398,6 +434,10 @@ def create_store(root: Path, first_line: str | None = None) -> None:
         try:
             if first_line is not None:
                 store.append(json.loads(first_line), consequential=True)
+            # Imported lines are history, not new actions (CLL's own import
+            # marks them so); every file is fsynced before the rename anyway.
+            for text in lines or []:
+                store.append(json.loads(text), consequential=False)
         finally:
             store.close()
         for path in sorted(staging.rglob("*"), key=lambda p: len(p.parts), reverse=True):

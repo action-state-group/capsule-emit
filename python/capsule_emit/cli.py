@@ -102,6 +102,78 @@ def _cmd_ledger_show(args: argparse.Namespace) -> int:
     return 0 if found else 1
 
 
+def _cmd_ledger_import(args: argparse.Namespace) -> int:
+    from .ledger_migrate import ImportRefused, import_ledger
+
+    try:
+        report = import_ledger(args.source, args.store)
+    except ImportRefused as exc:
+        print(f"ledger import: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"ledger import: {exc}", file=sys.stderr)
+        return 1
+    from .ledger_migrate import format_lines as _lines
+
+    total = sum(report.imported.values())
+    kinds = ", ".join(f"{n} {kind}" for kind, n in sorted(report.imported.items()))
+    print(f"imported {total} line(s) from {report.source} into {report.store}" + (f" ({kinds})" if kinds else ""))
+    if report.skipped_unparseable:
+        print(
+            f"skipped line(s) {_lines(report.skipped_unparseable)}: not JSON "
+            "(fragments a crashed write left; they were never entries)"
+        )
+    if report.replaced_utf8:
+        print(
+            f"line(s) {_lines(report.replaced_utf8)}: held bytes that are not UTF-8, stored as U+FFFD, as the flat "
+            "reader reads them; the capsule_id is unchanged, the replaced text is not the original"
+        )
+    if report.reserialized:
+        print(f"line(s) {_lines(report.reserialized)}: stored in compact JSON form; the capsule_id is unchanged")
+    if report.key_copied:
+        print(f"copied the producer key to {report.key_copied}")
+    if report.key_differs:
+        note = (
+            f"note: {report.store_key} was already there and is not the old ledger's key, so records sealed "
+            "to the store with it carry a different producer identity"
+        )
+        if report.key_source not in ("default", "new"):
+            note += f" (while {report.key_source} is set, seal() signs with that key instead)"
+        print(note)
+    if report.key_source == "default":
+        print(f"seal() to this store signs with {report.key_in_use}")
+    elif report.key_source:
+        if report.key_source != "new":
+            print(f"seal() signs with {report.key_in_use}, the key {report.key_source} names")
+        else:
+            print("no producer key was found for the old ledger; the first seal() to this store creates a new one")
+    print(
+        "The old checkpoints' roots match the store's prefix. Witnessing starts a new log for the store "
+        f"(its log id is its path); the old file's witness receipts still verify against {report.source}, "
+        "which is unchanged and stays readable."
+    )
+    return 0
+
+
+def _cmd_ledger_export(args: argparse.Namespace) -> int:
+    from .ledger_migrate import export_ledger, export_to_file
+
+    try:
+        if args.out:
+            report = export_to_file(args.store, args.out)
+        else:
+            report = export_ledger(args.store, sys.stdout.buffer)
+            sys.stdout.flush()
+    except OSError as exc:
+        print(f"ledger export: {exc}", file=sys.stderr)
+        return 1
+    note = f"exported {report.lines} line(s)"
+    if report.skipped_repeats:
+        note += f"; skipped {report.skipped_repeats} later line(s) repeating a capsule_id (not entries)"
+    print(note + ". A reading copy, not a ledger to seal into: checkpoints are the stamp lines it holds; originals are not included.", file=sys.stderr)
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="capsule-emit",
@@ -114,7 +186,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # ledger view
     view = ledger_sub.add_parser("view", help="display the ledger (L1 table or L2 chain tree)")
-    view.add_argument("path", help="path to a JSONL ledger file")
+    view.add_argument("path", help="path to a JSONL ledger file or a ledger store directory")
     view.add_argument(
         "--chains",
         action="store_true",
@@ -124,8 +196,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # ledger show
     show = ledger_sub.add_parser("show", help="L3: full detail for one capsule")
-    show.add_argument("path", help="path to a JSONL ledger file")
+    show.add_argument("path", help="path to a JSONL ledger file or a ledger store directory")
     show.add_argument("capsule_id", help="full or prefix (≥8 chars) capsule_id")
+
+    # ledger import
+    imp = ledger_sub.add_parser(
+        "import", help="copy a flat ledger.jsonl into a new ledger store directory (one shot; the source is unchanged)"
+    )
+    imp.add_argument("source", help="path to the flat JSONL ledger")
+    imp.add_argument("store", help="the new ledger store directory (a new name without a '.', or an empty directory)")
+
+    # ledger export
+    exp = ledger_sub.add_parser("export", help="write a ledger store's lines as plain JSON lines")
+    exp.add_argument("--jsonl", action="store_true", required=True, help="JSON lines (the one format)")
+    exp.add_argument("store", help="path to the ledger store directory")
+    exp.add_argument("-o", "--out", help="write to this file instead of stdout")
 
     # verify
     verify_p = sub.add_parser("verify", help="verify capsules")
@@ -1084,6 +1169,10 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_ledger_view(args)
         if args.ledger_cmd == "show":
             return _cmd_ledger_show(args)
+        if args.ledger_cmd == "import":
+            return _cmd_ledger_import(args)
+        if args.ledger_cmd == "export":
+            return _cmd_ledger_export(args)
 
     if args.command == "verify":
         return _cmd_verify(args)
