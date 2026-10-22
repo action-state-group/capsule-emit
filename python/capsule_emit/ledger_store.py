@@ -21,20 +21,22 @@ segment hides its ids, so positions after it cannot be established:
 **Writing** goes only to stores capsule-emit created, which carry
 ``capsule-emit-store.json``; any other managed store is read and never written
 (:class:`LedgerLayoutError`). The caller holds the ledger's writer lock
-(``capsule_emit.ledger._writer_lock``). Each append opens the store, runs CLL's
-``recover()`` (a torn tail or an unindexed line left by a crash), appends with
-an fsync and closes, so a second process never acts on a stale manifest. The
+(``capsule_emit.ledger._writer_lock``). Each append runs CLL's ``recover()`` (a
+torn tail or an unindexed line left by a crash), then appends with an fsync,
+opening the store for the call and closing it after, so a second process never
+acts on a stale manifest. The
 store never rotates (an unbounded segment size), so it needs no checkpointer.
 A new store is built in a fresh staging directory beside its path and renamed
 into place, so an interrupted first write never leaves a half-made store.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import stat
 import sys
 import tempfile
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,14 +46,15 @@ __all__ = [
     "LedgerArchivedError",
     "LedgerConflictError",
     "LedgerLayoutError",
+    "LedgerWriteError",
     "StoreLine",
     "StoreLines",
     "append_line",
     "create_store",
     "is_marked",
     "is_store_path",
-    "iter_lines",
     "read_entries",
+    "reconcile",
     "store_root",
 ]
 
@@ -73,6 +76,13 @@ class LedgerLayoutError(OSError):
 class LedgerArchivedError(OSError):
     """A store segment is archived (unmounted): its entries' positions, and so
     proofs and appends, cannot be established until it is mounted."""
+
+
+class LedgerWriteError(OSError):
+    """A ledger line could not be written: it is not a valid line, the ledger
+    holds a line that is not one, or the store could not record it. The cause
+    is chained. An ``OSError``, so best-effort writers that catch ``OSError``
+    (checkpoint stamps, witness backfills) never raise into a caller."""
 
 
 class LedgerConflictError(OSError):
@@ -223,11 +233,6 @@ class StoreLines:
             self._consumed[name] = offset
         return restarted, added
 
-    def read(self, line: StoreLine) -> bytes:
-        with open(self._root / "segments" / line.segment, "rb") as fh:
-            fh.seek(line.offset)
-            return fh.read(len(line.raw))
-
 
 def _line_id(raw: bytes) -> str | None:
     try:
@@ -291,20 +296,14 @@ def _archived_placeholder(root: Path, segment: _Segment, kind: str) -> dict:
     return placeholder
 
 
-def _fsync_dir(path: Path) -> None:
+def _fsync(path: Path) -> None:
+    """fsync a file or a directory (its entries)."""
     fd = os.open(path, os.O_RDONLY)
     try:
         os.fsync(fd)
     finally:
         os.close(fd)
 
-
-def _fsync_file(path: Path) -> None:
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
 
 
 def _open(root: Path):
@@ -322,9 +321,24 @@ def create_store(root: Path, first_line: str | None = None) -> None:
     The caller holds the writer lock."""
     if root.exists() and not (root.is_dir() and not any(root.iterdir())):
         raise LedgerLayoutError(f"{root} exists and is not an empty directory")
+    if root.exists() and os.path.ismount(root):
+        # The store is renamed into place, which a mount point cannot take.
+        raise LedgerLayoutError(f"{root} is a mount point; keep the ledger in a directory inside it")
     root.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{root.name}.staging-", dir=root.parent))
     try:
+        # The store replaces an empty directory the caller made: keep its mode
+        # and group (setgid included). A new one gets the umask's default.
+        if root.is_dir():
+            st = root.stat()
+            # Group first: changing a directory's group can clear its setgid bit.
+            with contextlib.suppress(OSError):
+                os.chown(staging, -1, st.st_gid)
+            os.chmod(staging, stat.S_IMODE(st.st_mode))
+        else:
+            umask = os.umask(0)
+            os.umask(umask)
+            os.chmod(staging, 0o777 & ~umask)
         marker = staging / MARKER_FILENAME
         with open(marker, "w", encoding="utf-8") as fh:
             json.dump(_MARKER, fh)
@@ -337,13 +351,10 @@ def create_store(root: Path, first_line: str | None = None) -> None:
         finally:
             store.close()
         for path in sorted(staging.rglob("*"), key=lambda p: len(p.parts), reverse=True):
-            if path.is_file():
-                _fsync_file(path)
-            elif path.is_dir():
-                _fsync_dir(path)
-        _fsync_dir(staging)
+            _fsync(path)
+        _fsync(staging)
         os.rename(staging, root)
-        _fsync_dir(root.parent)
+        _fsync(root.parent)
     except BaseException:
         if staging.exists():
             import shutil
@@ -354,8 +365,8 @@ def create_store(root: Path, first_line: str | None = None) -> None:
 
 def append_line(root: Path, text: str) -> None:
     """Append one line to the marked store at ``root`` (created when absent or
-    an empty directory). The caller holds the writer lock and has checked that
-    ``capsule_id`` is new."""
+    an empty directory). The caller holds the writer lock, has run
+    :func:`reconcile` under it and has checked that ``capsule_id`` is new."""
     if not (root / MANIFEST_FILENAME).is_file():
         create_store(root, text)
         return
@@ -366,14 +377,20 @@ def append_line(root: Path, text: str) -> None:
         )
     store = _open(root)
     try:
-        store.recover()
         store.append(json.loads(text), consequential=True)
     finally:
         store.close()
 
 
-def iter_lines(root: str | os.PathLike) -> Iterator[bytes]:
-    """The raw bytes of each entry of a store, in order (for export)."""
-    lines = StoreLines(Path(root))
-    for line in lines.refresh()[1]:
-        yield line.raw
+def reconcile(root: Path) -> None:
+    """Run the store's crash recovery (CLL ``recover()``) on a marked store, so
+    an append that finds its line already present also finds it indexed. The
+    caller holds the writer lock. Does nothing for an absent or foreign
+    store."""
+    if not (root / MANIFEST_FILENAME).is_file() or not is_marked(root):
+        return
+    store = _open(root)
+    try:
+        store.recover()
+    finally:
+        store.close()

@@ -907,8 +907,6 @@ def _records_in_scope(
                 selected.append(capsule)
 
 
-
-
 def _open_bundle_log(args: argparse.Namespace):
     from .evidence_bundle import MeshLedgerLog
     from .ledger import is_ledger_store

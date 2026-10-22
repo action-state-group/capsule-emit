@@ -54,12 +54,14 @@ def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
     store (``manifest.json``, as ``seal()`` writes) is never opened live:
     opening one runs CLL's writer-side bookkeeping beside a running writer,
     so its entries are copied, from the segments, into an ephemeral store, as
-    a JSONL file's lines are. An unmanaged store directory (no
-    ``manifest.json``) is opened as before."""
-    from .ledger import is_ledger_store, read_ledger_entries
+    a JSONL file's lines are; an empty directory is an empty ledger, and a
+    store with an archived segment raises ``ledger_store.LedgerArchivedError``.
+    An unmanaged store directory (no ``manifest.json``) is opened as before."""
+    from .ledger import read_positioned_entries
+    from .ledger_store import is_store_path
 
     p = Path(path)
-    if p.is_dir() and not is_ledger_store(p):
+    if p.is_dir() and not is_store_path(p):
         store = LedgerStore(p)
         try:
             yield store
@@ -71,9 +73,10 @@ def open_ledger(path: str | os.PathLike) -> Iterator[LedgerStore]:
     store = LedgerStore(tmp_root)
     try:
         if p.is_dir():
-            for entry in read_ledger_entries(p):
-                if "capsule_id" in entry:
-                    store.append(entry, consequential=False)
+            # An archived segment would leave a silent gap and renumber what
+            # follows, so it is refused; an empty directory is an empty ledger.
+            for entry in read_positioned_entries(p):
+                store.append(entry, consequential=False)
         else:
             store.import_jsonl(p)
         yield store

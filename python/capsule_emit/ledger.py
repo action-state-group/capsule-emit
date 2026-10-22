@@ -259,6 +259,9 @@ def append_to_ledger(
     ledger is not written again; a different line under the same
     ``capsule_id`` raises ``ledger_store.LedgerConflictError`` (an
     ``OSError``), because ledger lines are immutable.
+    Every other failure (an invalid line, a corrupt ledger, a store that
+    cannot record it) is ``ledger_store.LedgerWriteError``, also an
+    ``OSError``, with the cause chained.
 
     Enforces one log, one writer (docs/concurrency.md): a second process
     already writing this same ledger raises :class:`LedgerLockedError`
@@ -273,17 +276,24 @@ def append_to_ledger(
     under the same lock that serializes the write, so it reflects this
     process's own append order; most callers don't need it and ignore it.
     """
-    from .artifact.record import ConflictError
+    import sqlite3
+
+    from cll.log import CllError
+
+    from .artifact.record import ArtifactError, ConflictError
+    from .ledger_store import LedgerConflictError, LedgerWriteError
     from .legacy_ledger import shared
 
     try:
         return shared(path).append_any(capsule, wait=wait, timeout=timeout).entry.seq
     except ConflictError as exc:
-        from .ledger_store import LedgerConflictError
-
         raise LedgerConflictError(
             f"{path} already holds a different line under capsule_id {capsule.get('capsule_id')}"
         ) from exc
+    except OSError:
+        raise
+    except (ArtifactError, CllError, ValueError, RuntimeError, sqlite3.Error) as exc:
+        raise LedgerWriteError(f"{path}: cannot append this line: {exc}") from exc
 
 
 def _write_line(path: Path, line: str) -> None:
@@ -344,6 +354,22 @@ def read_ledger_entries(path: str | os.PathLike) -> list[dict]:
                     "read_ledger: skipping corrupt line %d in %s: %r", lineno, p, line[:80]
                 )
     return records
+
+
+def read_positioned_entries(path: str | os.PathLike) -> list[dict]:
+    """:func:`read_ledger_entries` for readers that need every entry's leaf
+    position (proofs, checkpoint status, chain segments): a store with an
+    archived segment raises ``ledger_store.LedgerArchivedError``, because the
+    positions after it are unknown."""
+    entries = read_ledger_entries(path)
+    archived = [e.get("segment") for e in entries if e.get("kind") == ARCHIVED_SEGMENT_KIND]
+    if archived:
+        from .ledger_store import LedgerArchivedError
+
+        raise LedgerArchivedError(
+            f"{path}: segment {archived[0]} is archived; mount it (cll segments mount) to read positions and proofs"
+        )
+    return entries
 
 
 def read_ledger(path: str | os.PathLike) -> list[dict]:
@@ -572,10 +598,15 @@ def show(
         return False
 
     cid = cap.get("capsule_id", "?")
-    seq = next(
-        (i for i, r in enumerate(read_ledger_entries(path), start=1) if r.get("capsule_id") == cid),
-        None,
-    )
+    # A leaf position is known only while no archived segment comes before
+    # the entry (its entries are not readable, so they cannot be counted).
+    seq = None
+    for i, r in enumerate(read_ledger_entries(path), start=1):
+        if r.get("kind") == ARCHIVED_SEGMENT_KIND:
+            break
+        if r.get("capsule_id") == cid:
+            seq = i
+            break
     leaf_str = f"  #logged @ leaf {seq}" if seq is not None else ""
     print(f"\n── capsule {cid} ──{leaf_str}\n", file=out)
 

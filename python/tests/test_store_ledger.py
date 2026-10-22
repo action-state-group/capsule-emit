@@ -10,12 +10,16 @@ import json
 import multiprocessing as mp
 import os
 import stat
+import tempfile
+from pathlib import Path
 
 import pytest
 from cll.ledger import LedgerStore
+from cll.log import conformance as cll_conformance
 from test_record_proof import _clean_witness_state, _stamp_count, _start_stub_ts, _wait_for  # noqa: F401
 
 from capsule_emit import cli, ledger, ledger_store, log, seal, signing
+from capsule_emit.artifact import conformance as artifact_conformance
 from capsule_emit.ledger import (
     LedgerLockedError,
     _writer_lock,
@@ -219,7 +223,6 @@ def test_an_archived_segment_shows_as_a_placeholder_and_blocks_positions(tmp_pat
 
 
 def _hold(path: str, ready, release) -> None:
-    from capsule_emit.ledger import _writer_lock
 
     with _writer_lock(__import__("pathlib").Path(path)):
         ready.put(True)
@@ -239,15 +242,6 @@ def test_a_second_writer_process_is_refused(store_dir):
         release.set()
         proc.join(timeout=10)
     append_to_ledger({"capsule_id": _cid("x")}, store_dir)
-
-
-def test_store_key_creation_waits_for_the_writer_lock(store_dir):
-    root = ledger_store.store_root(store_dir)
-    with _writer_lock(root):
-        pass
-    signer = signing.resolve_signer(store_dir)
-    assert (root.parent / f"{root.name}.signing_key.pem").is_file()
-    assert signing.resolve_signer(f"{store_dir}/") is signer
 
 
 @pytest.fixture
@@ -283,3 +277,176 @@ def test_view_show_and_verify_read_a_store(store_dir, capsys):
     assert ledger.show(store_dir, result.capsule["capsule_id"]) is True
     assert "#logged @ leaf 1" in capsys.readouterr().out
     assert cli.main(["verify", "--store", str(store_dir)]) == 0
+
+
+# -- the same conformance subsets as the flat ledger, on a store --------------
+
+
+def _fresh_store():
+    d = Path(tempfile.mkdtemp()) / "capsule-ledger"
+    d.mkdir()
+    return d
+
+
+def _reopen(current):
+    current.close()
+    return LegacyLedger(current._path)
+
+
+STORE_CLL_CASES = cll_conformance.cases(
+    lambda: LegacyLedger(_fresh_store()), _reopen, digest_append=False, interfaces=("entries", "close")
+)
+
+
+@pytest.mark.parametrize("case", STORE_CLL_CASES, ids=[c.name for c in STORE_CLL_CASES])
+def test_cll_conformance_subset_on_a_store(case):
+    if case.skip:
+        pytest.skip(case.skip)
+    case.run()
+
+
+STORE_HARNESS = artifact_conformance.Harness(
+    new_backing=_fresh_store,
+    open=lambda path, namespace, trusted: LegacyLedger(path, namespace, trusted),
+    durable=True,
+    originals=False,
+    purge=False,
+)
+STORE_ARTIFACT_TESTS = artifact_conformance.tests(STORE_HARNESS)
+
+
+@pytest.mark.parametrize("test", STORE_ARTIFACT_TESTS, ids=[t.name for t in STORE_ARTIFACT_TESTS])
+def test_artifact_conformance_subset_on_a_store(test):
+    if test.skip:
+        pytest.skip(test.skip)
+    test.run()
+
+
+# -- review round 1 ------------------------------------------------------------
+
+
+def test_the_first_write_keeps_the_directory_mode_and_group(store_dir):
+    os.chmod(store_dir, 0o2775)
+    group = store_dir.stat().st_gid
+    append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+    assert stat.S_IMODE(store_dir.stat().st_mode) == 0o2775
+    assert store_dir.stat().st_gid == group
+
+
+def test_a_mount_point_is_refused_with_a_clear_message(store_dir, monkeypatch):
+    real = os.path.ismount
+    monkeypatch.setattr(ledger_store.os.path, "ismount", lambda p: os.fspath(p) == os.fspath(ledger_store.store_root(store_dir)) or real(p))
+    with pytest.raises(ledger_store.LedgerLayoutError, match="mount point"):
+        append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+    assert list(store_dir.iterdir()) == []
+
+
+@pytest.mark.parametrize("line", [{"capsule_id": "short"}, {"no": "id"}, {"capsule_id": "AB" * 32}])
+def test_append_to_ledger_refuses_bad_lines_as_oserror(store_dir, tmp_path, line):
+    for target in (store_dir, tmp_path / "ledger.jsonl"):
+        with pytest.raises(ledger_store.LedgerWriteError) as info:
+            append_to_ledger(line, target)
+        assert isinstance(info.value, OSError)
+
+
+def test_append_to_ledger_reports_a_corrupt_store_as_oserror(store_dir):
+    append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+    manifest = json.loads((store_dir / "manifest.json").read_text())
+    with open(store_dir / "segments" / manifest["active_segment"], "ab") as fh:
+        fh.write(b"not json\n")
+    with pytest.raises(OSError):
+        append_to_ledger({"capsule_id": _cid("b")}, store_dir)
+
+
+def test_scan_verbs_leave_an_empty_directory_empty(store_dir):
+    with open_ledger(store_dir) as store:
+        assert list(store.scan()) == []
+    assert list(store_dir.iterdir()) == []
+    append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+
+
+def _archived_store(tmp_path):
+    from cll.checkpoint.index import MmrLedger
+    from cll.ledger.segments import MmrCheckpointer
+
+    class _FixedSigner:
+        key_id = "00" * 32
+
+        def sign(self, digest_hex: str) -> str:
+            return "00" * 64
+
+    root = tmp_path / "rotating"
+    store = LedgerStore(root, rotate_at_checkpoint=True, max_segment_bytes=200)
+    store.set_checkpointer(MmrCheckpointer(mmr=MmrLedger(store), signer=_FixedSigner(), log_id="demo"))
+    for i in range(20):
+        store.append({"capsule_id": f"{i:064x}", "payload": "x" * 40})
+    store.unmount_segment(store.list_segments()[0].name)
+    store.close()
+    return root
+
+
+def test_positions_and_proofs_refuse_an_archived_store(tmp_path, capsys):
+    from capsule_emit.record_proof import record_proof
+
+    root = _archived_store(tmp_path)
+    last = f"{19:064x}"
+    with pytest.raises(ledger_store.LedgerArchivedError):
+        record_proof(root, last)
+    with pytest.raises(ledger_store.LedgerArchivedError):
+        with open_ledger(root):
+            pass
+    assert ledger.show(root, last) is True
+    assert "#logged @ leaf" not in capsys.readouterr().out
+
+
+def test_a_bad_line_fails_every_read_not_just_the_first(store_dir):
+    append_to_ledger({"capsule_id": _cid("a")}, store_dir)
+    manifest = json.loads((store_dir / "manifest.json").read_text())
+    with open(store_dir / "segments" / manifest["active_segment"], "ab") as fh:
+        fh.write(b'{"capsule_id":"short"}\n' + json.dumps({"capsule_id": _cid("c")}).encode() + b"\n")
+    reader = LegacyLedger(store_dir)
+    for _ in range(2):
+        with pytest.raises(Exception, match="32-byte"):
+            list(reader.entries())
+
+
+def test_an_idempotent_retry_after_a_crash_finds_the_line_indexed(store_dir):
+    line = {"capsule_id": _cid("a")}
+    append_to_ledger({"capsule_id": _cid("first")}, store_dir)
+    manifest = json.loads((store_dir / "manifest.json").read_text())
+    with open(store_dir / "segments" / manifest["active_segment"], "ab") as fh:
+        fh.write(json.dumps(line, separators=(",", ":")).encode() + b"\n")
+    assert append_to_ledger(dict(line), store_dir) == 2
+    store = LedgerStore(store_dir, rotate_at_checkpoint=True)
+    try:
+        assert store.fetch(_cid("a")).seq == 2
+    finally:
+        store.close()
+
+
+def _resolve_in_child(path: str, done) -> None:
+    from capsule_emit import signing as child_signing
+
+    child_signing.resolve_signer(path)
+    done.set()
+
+
+def test_store_key_creation_waits_for_a_held_writer_lock(store_dir):
+    ctx = mp.get_context("spawn")
+    ready, release = ctx.Queue(), ctx.Event()
+    holder = ctx.Process(target=_hold, args=(str(ledger_store.store_root(store_dir)), ready, release))
+    holder.start()
+    key = signing._default_key_path(store_dir)
+    try:
+        assert ready.get(timeout=10) is True
+        done = ctx.Event()
+        resolver = ctx.Process(target=_resolve_in_child, args=(str(store_dir), done))
+        resolver.start()
+        assert not done.wait(timeout=1.0)
+        assert not key.exists()
+    finally:
+        release.set()
+        holder.join(timeout=10)
+    assert done.wait(timeout=10)
+    resolver.join(timeout=10)
+    assert key.is_file()

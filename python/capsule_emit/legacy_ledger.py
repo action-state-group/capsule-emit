@@ -476,13 +476,21 @@ class LegacyLedger:
         seq = len(self._lines) + 1
         previous = self._last_time()
         parsed = []
-        for raw_line in added:
-            line = self._parse(raw_line.raw, raw_line.offset, seq, previous)
-            if line is None:
-                continue
-            parsed.append(_Line(line.entry, line.offset, line.length, line.capsule, raw_line.segment))
-            seq += 1
-            previous = line.entry.appended_at
+        try:
+            for raw_line in added:
+                line = self._parse(raw_line.raw, raw_line.offset, seq, previous)
+                if line is None:
+                    continue
+                parsed.append(_Line(line.entry, line.offset, line.length, line.capsule, raw_line.segment))
+                seq += 1
+                previous = line.entry.appended_at
+        except BaseException:
+            # The source already counted these lines as read: forget them
+            # both there and here, so the next call reads them again (and
+            # fails the same way) rather than skipping them.
+            self._store = _store.StoreLines(self._path)
+            self._reset()
+            raise
         for line in parsed:
             self._lines.append(line)
             self._first.setdefault(line.entry.value, len(self._lines) - 1)
@@ -688,6 +696,11 @@ class LegacyLedger:
         )
         with _ledger._append_lock, lock, self._lock, _as_artifact_errors():
             self._require_open()
+            if self._store is not None:
+                # A crashed append may have left this very line written but
+                # unindexed: recover first, so "already present" also means
+                # indexed.
+                _store.reconcile(self._path)
             self._refresh()
             existing = self._find(value)
             if existing is not None:

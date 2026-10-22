@@ -80,6 +80,7 @@ the record; it does not seal one.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 from dataclasses import dataclass
@@ -344,20 +345,24 @@ def resolve_signer(
     cache_key = str(resolved_path)
     with _cache_lock:
         cached = _cache.get(cache_key)
-        if cached is None:
-            # A store's default key is created only under the store's writer
-            # lock (rechecked inside it), so it never races an import copying
-            # the old ledger's key into place.
-            store_key = key_path is None and not os.environ.get(SIGNING_KEY_PATH_ENV_VAR) and Path(ledger_path).is_dir()
-            if store_key and not resolved_path.exists():
-                from . import ledger as _ledger
-                from .ledger_store import store_root
+        if cached is not None:
+            return cached
+    store_key = key_path is None and not os.environ.get(SIGNING_KEY_PATH_ENV_VAR) and Path(ledger_path).is_dir()
+    lock = contextlib.nullcontext()
+    if store_key and not resolved_path.exists():
+        # A store's default key is created only under the store's writer lock
+        # (and rechecked inside it, by LocalKeypairSigner), so it never races
+        # an import copying the old ledger's key into place. The flock is
+        # taken before _cache_lock, so waiting for it never blocks signer
+        # resolution for other ledgers.
+        from . import ledger as _ledger
+        from .ledger_store import store_root
 
-                with _ledger._writer_lock(store_root(ledger_path), wait=True):
-                    cached = LocalKeypairSigner(resolved_path)
-            else:
-                cached = LocalKeypairSigner(resolved_path)
-            _cache[cache_key] = cached
+        lock = _ledger._writer_lock(store_root(ledger_path), wait=True)
+    with lock, _cache_lock:
+        cached = _cache.get(cache_key)
+        if cached is None:
+            cached = _cache[cache_key] = LocalKeypairSigner(resolved_path)
         return cached
 
 

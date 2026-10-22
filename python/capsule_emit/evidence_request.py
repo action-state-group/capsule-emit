@@ -600,9 +600,9 @@ def _build_chain_segment(
     cheap by construction and never paged (see the module docstring)."""
     from .chain_segment import ChainSegmentError
     from .chain_segment import chain_segment as _chain_segment_fn
-    from .ledger import read_ledger_entries
+    from .ledger import read_positioned_entries
 
-    entries = read_ledger_entries(ledger)
+    entries = read_positioned_entries(ledger)
     if not entries:
         return None, REASON_NO_SUCH_SUBJECT, None
 

@@ -25,19 +25,31 @@ Each write takes the ledger's writer lock beside the directory
 fsync; the first write builds the store in a staging directory and renames it
 into place. A store's key and lock derive from its canonical path, so
 `capsule-ledger/`, `capsule-ledger` and a symlink to it are one ledger. A store
-with an archived segment is listed with a placeholder but refused for proofs,
-witnessing and writes. This is not the default yet (capsule-emit#358). Requires
+with an archived segment is listed with a placeholder (later entries show no
+leaf number) and refused (`LedgerArchivedError`) for proofs, status, witnessing,
+the scan-query verbs and writes. The first write into an existing empty
+directory keeps its mode and group; a mount point is refused (keep the ledger in
+a directory inside it). This is not the default yet (capsule-emit#358). Requires
 the checkpointed-local-log release with `LedgerStore.recover()`.
 
-### Changed (Python): `append_to_ledger` writes each line once
+### Changed (Python, breaking): `append_to_ledger` writes each line once
 
 `capsule_emit.ledger.append_to_ledger`, which writes checkpoint stamps, witness
 backfills, disclosure records and hold capsules, now goes through the same
-check as `seal()`: the line needs a 64-hex `capsule_id`, an identical line
-already in the ledger is not written again, and a different line under the same
-`capsule_id` raises `ledger_store.LedgerConflictError` (an `OSError`). Before,
-it appended every line it was given, so a repeated hold or backfill wrote a
-second line. This applies to flat ledgers too.
+check as `seal()`, on flat ledgers too:
+
+- the line needs a 64-hex lowercase `capsule_id`; any other line raises
+  `ledger_store.LedgerWriteError`, which it accepted before;
+- an identical line already in the ledger is not written again (it returns
+  that line's position); before, a repeated hold or backfill wrote a second
+  line;
+- a different line under the same `capsule_id` raises
+  `ledger_store.LedgerConflictError`;
+- any other failure (a corrupt ledger, a store that cannot record the line) is
+  `LedgerWriteError`, with the cause chained.
+
+All three errors are `OSError` subclasses, so the best-effort checkpoint-stamp
+and witness-backfill writers still never raise into `emit()`.
 
 ### Changed (Python, breaking): `confirms=` cites another stream's capsule in `references[]`
 
