@@ -20,7 +20,7 @@ from capsule_emit.verification import verify_capsule
 from capsule_emit.adapters import ext_mcp_pb2
 assert ext_mcp_pb2.McpRequest is not None
 capsule = seal({'stage':'external-package'}, action='test', operator='test',
-               developer='test', ledger='external.jsonl', witness=False, anchor=False)
+               developer='test', ledger='external-ledger', witness=False, anchor=False)
 assert verify_capsule(capsule.capsule).ok
 entrypoints = {e.name:e.value for e in metadata.distribution('capsule-emit').entry_points}
 assert entrypoints == {
