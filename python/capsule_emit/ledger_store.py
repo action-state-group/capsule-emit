@@ -173,8 +173,9 @@ class StoreLines:
         self._consumed: dict[str, int] = {}
         self._identity: dict[str, tuple[int, int]] = {}
         # The last line read from each segment (its offset and bytes): a
-        # recreated store can reuse a segment's name and inode, but not its
-        # bytes at that offset.
+        # recreated store can reuse a segment's name and inode. Only that
+        # last line is compared, so a recreated segment holding the very same
+        # line at the same offset still reads as the old one grown.
         self._tail: dict[str, tuple[int, bytes]] = {}
         self._skipped: list[StoreLine] = []
 
