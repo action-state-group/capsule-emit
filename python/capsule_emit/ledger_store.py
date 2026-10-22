@@ -357,7 +357,10 @@ def publish_new_file(path: Path, data: bytes, mode: int = 0o600) -> bool:
             pass  # no hard links on this disk
         if os.path.lexists(path):
             return False
-        os.rename(tmp, path)
+        try:
+            os.rename(tmp, path)
+        except FileExistsError:  # Windows: the file appeared after the check
+            return False
         return True
     finally:
         Path(tmp).unlink(missing_ok=True)
