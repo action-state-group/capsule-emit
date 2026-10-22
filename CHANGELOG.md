@@ -39,7 +39,8 @@ exist becomes a store when it has no `.`, and is refused otherwise.
 - An import that publishes `./capsule-ledger/` while a `seal()` waits on the old
   default's lock does not lose that record: the call runs again against the new
   default.
-- `LegacyLedger()` with no path opens the ledger `seal()` would write. The
+- `LegacyLedger()` and `HoldEngine()` with no path open the ledger `seal()`
+  would write, and `append_to_ledger()` with no path writes it. The
   LiteLLM listener reads `CAPSULE_EMIT_LEDGER`, then `CAPSULE_LEDGER`, on every
   call. The MCP server's `capsule_verify` and `capsule_ledger` tools read any ledger
   path, including a flat `.jsonl` that `seal()` would refuse to create.
