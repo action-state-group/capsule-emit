@@ -45,6 +45,6 @@ depends on this one
 Building this crate in the same build as `capsule-emit` turns on serde_json's
 `arbitrary_precision` feature (through `agent-action-capsule`). serde_json
 then reads `-0` as the integer 0, as the Go and Python references do, so
-`capsule-emit`'s structure check accepts it instead of refusing it as a float.
+agent-action-capsule's verifier accepts it instead of refusing it as a float.
 
 Licensed under Apache-2.0.

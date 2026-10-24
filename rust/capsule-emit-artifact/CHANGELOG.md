@@ -6,10 +6,13 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+## 0.0.1
+
 The first version: the artifact store contract (`docs/artifact-store.md` in
 the capsule-emit repository) as the `Store` and `TxStore` traits, with `jsonl`
 and `memory` backends and `sqlite` and `mysql` backends behind Cargo features,
-and `conformance::run`, the shared conformance suite. Not published yet.
+and `conformance::run`, the shared conformance suite. It requires
+`agent-action-capsule` 0.4.1.
 
 `ArtifactError::Unsupported` reports a store's capability limits, which only
 the legacy ledgers have (`docs/legacy-ledger.md`). capsule-emit's legacy

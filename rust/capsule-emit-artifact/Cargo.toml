@@ -10,9 +10,6 @@ readme = "README.md"
 keywords = ["scitt", "agent-action-capsule", "evidence", "storage"]
 categories = ["cryptography", "database"]
 include = ["/src/**/*.rs", "/src/conformance_vectors.json", "/src/*.sql", "/Cargo.toml", "/README.md", "/CHANGELOG.md", "/LICENSE"]
-# Not released yet: publishing needs an entry in .github/releases.json and the
-# crates.io trusted publisher, which come with a release decision.
-publish = false
 
 [lib]
 name = "capsule_emit_artifact"
@@ -27,7 +24,7 @@ sqlite = ["dep:rusqlite"]
 mysql = ["dep:mysql"]
 
 [dependencies]
-agent-action-capsule = "0.1"
+agent-action-capsule = "0.4.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
