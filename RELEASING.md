@@ -94,7 +94,9 @@ first version is published by hand by one of its crates.io owners.
 dispatches nothing. An owner runs `cargo publish --locked -p
 capsule-emit-artifact` from `rust/` at the merge commit, pushes
 `crates/capsule-emit-artifact-v0.0.1` on that commit, and configures the
-Trusted Publisher; later versions go through the flow above. `capsule-emit`
+Trusted Publisher; later versions go through the flow above. Pushing the tag
+starts `publish-rust.yml`, whose check stops at "already on crates.io": that
+failure is expected, and the run is not re-run. `capsule-emit`
 depends on it, so no `capsule-emit` version after 0.0.8 can publish before it.
 
 Renaming a publisher workflow breaks publishing until the registry is updated
