@@ -192,7 +192,6 @@ jobs:
       # index only (a workspace [patch] would not count). capsule-emit now
       # depends on capsule-emit-artifact, which is not published yet, so
       # DEPS_ON_CRATES_IO is off until it is.
-
       - name: Publish dry run, capsule-emit (no upload)
         if: env.DEPS_ON_CRATES_IO == 'true'
         run: cargo publish --dry-run -p capsule-emit
