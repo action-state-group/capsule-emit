@@ -8,10 +8,16 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## 0.13.0 — 2026-10-23
 
-A minor release with breaking changes. With no ledger chosen, `seal()` now
-writes a ledger store directory, and flat `ledger.jsonl` writing is deprecated
-(#358); `capsule_emit.verification` is agent-action-capsule's verifier (#367).
-The package requires `agent-action-capsule>=0.12.0`.
+Python 0.13.0, a minor release with breaking changes. With no ledger chosen,
+`seal()` now writes a ledger store directory, and flat `ledger.jsonl` writing
+is deprecated (#358); `append_to_ledger` refuses a line without a `capsule_id`
+and does not write a repeated one; and `confirms=` cites another stream's
+capsule in `references[]` rather than `chain`. `capsule_emit.verification` is
+now agent-action-capsule's verifier (#367). The package requires
+`agent-action-capsule>=0.12.0`. The TypeScript and Rust parts of the entries
+below are not released yet: they ship with the next
+`@action-state-group/capsule-emit` and `capsule-emit` crate releases, and the
+crate's release waits on #371.
 
 ### Changed (Python): `capsule_emit.verification` is agent-action-capsule's verifier
 
