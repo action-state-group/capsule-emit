@@ -6,6 +6,13 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+## 0.13.0 — 2026-10-23
+
+A minor release with breaking changes. With no ledger chosen, `seal()` now
+writes a ledger store directory, and flat `ledger.jsonl` writing is deprecated
+(#358); `capsule_emit.verification` is agent-action-capsule's verifier (#367).
+The package requires `agent-action-capsule>=0.12.0`.
+
 ### Changed (Python): `capsule_emit.verification` is agent-action-capsule's verifier
 
 `capsule_emit.verification.verify_capsule` and `verify_store` are now
