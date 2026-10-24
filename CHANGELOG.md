@@ -6,6 +6,16 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed (Python): `capsule_emit.verification` is agent-action-capsule's verifier
+
+`capsule_emit.verification.verify_capsule` and `verify_store` are now
+`agent_action_capsule.verify` and `verify_store` themselves (#367). The adapter
+that replaced AAC's capsule ID check is gone: AAC recomputes the format-4 `jcs`
+id, and every other declaration already fails its check 1, so verdicts do not
+change. A record that already fails no longer gets an extra
+`capsule_id_mismatch` for its vintage `jcs-n` id, and its result's
+`capsule_id` is `None`.
+
 ### Changed (Python, breaking): the default ledger is a ledger store directory; flat ledger.jsonl writing is deprecated
 
 With no ledger chosen, `seal()`, `log()`, `received()`, `push()`, the adapters,

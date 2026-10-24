@@ -49,6 +49,9 @@ witness directory (``witnesses.json``, see ``capsule_emit.witness_directory``).
 Every row is read the same way, and no service -- including the library's
 own default witness, or public Rekor -- has a key built in here. A receipt
 from a witness with no directory row is ``not checked``.
+
+Each receipt is checked by ``agent_action_capsule.witness``. This module
+registers checkpoints and counts the receipts that verifier passes.
 """
 from __future__ import annotations
 
