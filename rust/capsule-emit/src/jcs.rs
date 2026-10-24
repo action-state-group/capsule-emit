@@ -18,7 +18,7 @@
 //!
 //! **`capsule_id`.** [`compute_capsule_id`] is the digest primitive: it does
 //! not check `format_version` or `canonicalization_id` (a verifier's job,
-//! see [`crate::structure`]), so it also names records that are not
+//! see [`crate::verify`]), so it also names records that are not
 //! capsules, such as padding records.
 
 use agent_action_capsule::canonical::{self, CanonicalError};

@@ -25,10 +25,9 @@
 //! - [`padding`]: padding records, so a checkpoint's leaf count falls on a
 //!   bucket boundary (Evidence Layer -00 §12.1).
 //! - [`anchor`]: an optional client for a SCITT transparency service.
-//! - [`structure`]: the Class 1 checks a capsule's own bytes must pass
-//!   (§6), without a store: the reference verifier's gating checks.
-//! - [`verify`]: offline verification: those checks, `capsule_id`
-//!   recomputation, the COSE signature and chain-parent membership.
+//! - [`verify`]: offline verification: the reference verifier's Class 1
+//!   checks (`agent_action_capsule::verify`), then the COSE signature over the
+//!   signed statement and its binding to the capsule.
 //! - [`sequence`]: per-counterparty monotone sequence numbers and the
 //!   gap/regression check over a pair's records.
 //! - [`settlement`]: two-party settlement records
@@ -46,7 +45,6 @@ pub mod legacy_ledger;
 pub mod padding;
 pub mod sequence;
 pub mod settlement;
-pub mod structure;
 mod substrate;
 pub mod timestamp;
 pub mod verify;

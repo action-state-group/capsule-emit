@@ -1,29 +1,30 @@
-//! Offline verification: run the Class 1 checks on the capsule's own bytes
-//! ([`crate::structure`]), recompute `capsule_id`, verify the COSE_Sign1
-//! signature, check the COSE payload matches the supplied capsule bytes, and
-//! (when a store of known `capsule_id`s is given) check chain-parent
-//! membership -- entirely local, no network calls. Mirrors the composition
-//! `agent_action_capsule.verify()` (JCS/chain structural checks) +
-//! `scitt_cose.verify_sign1()` (signature) perform together on the Python
-//! side, so a capsule this crate calls `ok()` verifies for the same reasons
-//! the Python reference would call it ok.
+//! Offline verification: the Class 1 checks on the capsule's own bytes
+//! (`agent_action_capsule::verify::verify`, which recomputes `capsule_id` and,
+//! given a store, checks chain-parent membership), plus the COSE_Sign1
+//! signature, the COSE payload matching the supplied capsule bytes, and the
+//! CWT subject naming that capsule -- entirely local, no network calls. The
+//! Class 1 verdict is the reference verifier's own; this module adds only the
+//! signed-statement checks, which that verifier leaves to the SCITT/COSE
+//! substrate.
 //!
-//! Chain-parent membership follows the reference verifier's Check 6 exactly: with no
+//! Chain-parent membership follows the reference verifier's Check 6: with no
 //! store supplied, an unresolvable parent is an `info`-level finding, not a
 //! failure (the capsule may simply be verified in isolation, without its
 //! ledger); with a store, a missing parent gates the verdict.
 
 use crate::cose::verify_signed_statement;
-use crate::jcs::compute_capsule_id;
+use agent_action_capsule::verify::{verify, Finding};
 use ed25519_dalek::VerifyingKey;
 use serde_json::Value;
 use std::collections::HashSet;
 
 #[derive(Debug)]
 pub struct VerifyReport {
-    /// The capsule passes the Class 1 checks on its own bytes
-    /// ([`crate::structure`]); each failing one is also in `findings`.
+    /// The capsule passes the reference verifier's Class 1 checks
+    /// (`agent_action_capsule::verify::verify`); each failing one is also in
+    /// `findings`.
     pub structure_ok: bool,
+    /// The carried `capsule_id` recomputes (Class 1 check 2).
     pub capsule_id_ok: bool,
     pub cose_ok: bool,
     pub payload_matches_capsule: bool,
@@ -32,6 +33,8 @@ pub struct VerifyReport {
     /// spliced from another capsule must not verify green -- previously this
     /// mismatch only landed in `findings` and `ok()` still passed.
     pub subject_matches_capsule_id: bool,
+    /// The chain block passes Class 1 check 6: well formed, and with a store,
+    /// its parent is in it.
     pub chain_ok: bool,
     pub capsule_id: Option<String>,
     pub findings: Vec<String>,
@@ -48,6 +51,10 @@ impl VerifyReport {
     }
 }
 
+fn is_error(finding: &Finding) -> bool {
+    finding.severity == "error"
+}
+
 pub fn verify_offline(
     capsule: &Value,
     signed_statement: &[u8],
@@ -55,23 +62,35 @@ pub fn verify_offline(
     known_capsule_ids: Option<&HashSet<String>>,
 ) -> VerifyReport {
     let mut findings = Vec::new();
-    let mut capsule_id_ok = false;
-    let mut capsule_id: Option<String> = None;
 
-    match compute_capsule_id(capsule) {
-        Ok(recomputed) => {
-            let stored = capsule.get("capsule_id").and_then(Value::as_str);
-            if stored == Some(recomputed.as_str()) {
-                capsule_id_ok = true;
-                capsule_id = Some(recomputed);
-            } else {
-                findings.push(format!(
-                    "capsule_id mismatch: stored {stored:?}, recomputed {recomputed:?}"
-                ));
-            }
+    // The reference verifier reads a store of bare `capsule_id` strings.
+    let store: Option<Vec<Value>> =
+        known_capsule_ids.map(|ids| ids.iter().map(|id| Value::String(id.clone())).collect());
+    let class1 = verify(capsule, store.as_deref());
+    // Every error, and check 6's note that a parent was not looked up.
+    for finding in &class1.findings {
+        if is_error(finding) || finding.check == Some(6) {
+            findings.push(format!(
+                "check {}: {}: {}",
+                finding.check.unwrap_or(0),
+                finding.code,
+                finding.detail
+            ));
         }
-        Err(e) => findings.push(format!("capsule_id computation failed: {e}")),
     }
+    let failed = |check: i32| {
+        class1
+            .findings
+            .iter()
+            .any(|f| is_error(f) && f.check == Some(check))
+    };
+    let stored = capsule.get("capsule_id").and_then(Value::as_str);
+    let capsule_id = class1
+        .capsule_id
+        .clone()
+        .filter(|recomputed| stored == Some(recomputed.as_str()));
+    let capsule_id_ok = capsule_id.is_some() && !failed(2);
+    let chain_ok = !failed(6);
 
     let mut cose_ok = false;
     let mut payload_matches_capsule = false;
@@ -100,45 +119,8 @@ pub fn verify_offline(
         Err(e) => findings.push(format!("COSE verification failed: {e}")),
     }
 
-    let mut chain_ok = true;
-    if let Some(chain) = capsule.get("chain") {
-        let parent = chain.get("parent_capsule_id").and_then(Value::as_str);
-        let relation = chain.get("relation").and_then(Value::as_str);
-        match (parent, relation) {
-            (Some(p), Some(_)) => {
-                if let Some(store) = known_capsule_ids {
-                    if !store.contains(p) {
-                        chain_ok = false;
-                        findings.push(format!("chain parent {p} not found in supplied store"));
-                    }
-                } else {
-                    findings.push(
-                        "chain present but no store supplied -- parent membership not checked (info, non-gating)"
-                            .to_string(),
-                    );
-                }
-            }
-            _ => {
-                chain_ok = false;
-                findings.push(
-                    "chain block malformed: missing parent_capsule_id or relation".to_string(),
-                );
-            }
-        }
-    }
-
-    let structure = crate::structure::check_structure(capsule);
-    for finding in structure.errors() {
-        findings.push(format!(
-            "check {}: {}: {}",
-            finding.check.unwrap_or(0),
-            finding.code,
-            finding.detail
-        ));
-    }
-
     VerifyReport {
-        structure_ok: structure.ok(),
+        structure_ok: class1.ok,
         capsule_id_ok,
         cose_ok,
         payload_matches_capsule,

@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use aac_bundle::bundle::{
+use agent_action_capsule::bundle::{
     build_evidence_bundle, proof_source_from_cll, BuildOptions, Interval, RecordSource,
     StoredRecord,
 };
