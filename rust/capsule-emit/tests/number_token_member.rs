@@ -19,7 +19,6 @@ use capsule_emit::checkpoint::{CheckpointCadenceConfig, CheckpointState};
 use capsule_emit::cose::{build_signed_statement, SignedStatementInput};
 use capsule_emit::jcs::{compute_capsule_id, decode_record};
 use capsule_emit::ledger::Ledger;
-use capsule_emit::structure::check_structure;
 use capsule_emit::verify::verify_offline;
 use ed25519_dalek::SigningKey;
 use serde_json::Value;
@@ -69,7 +68,6 @@ fn the_member_gets_the_references_capsule_id_on_every_read_path() {
             *capsule_id,
             "{token}"
         );
-        assert!(check_structure(&capsule).ok(), "{token}");
 
         let dir = tempfile::tempdir().unwrap();
         let statement = build_signed_statement(

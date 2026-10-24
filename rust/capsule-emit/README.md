@@ -31,8 +31,7 @@ let capsule = seal(&input)?; // `capsule["capsule_id"]` is set
 | `legacy_ledger` | an existing `capsules.jsonl` ledger as an artifact store and a CLL entry log, for readers |
 | `padding` | padding records, so a checkpoint's size falls on a bucket boundary |
 | `anchor` | an optional SCITT transparency service client |
-| `structure` | the Class 1 checks on a capsule's own bytes (§6, no store): the reference verifier's gating checks |
-| `verify` | offline verification (the `structure` checks, id, signature, chain parent) |
+| `verify` | offline verification: the reference verifier's Class 1 checks (`agent_action_capsule::verify`, including the id and chain parent), then the signed statement's signature and its binding to the capsule |
 | `sequence` | per-counterparty sequence numbers and the gap check |
 
 The `verify_capsule` binary verifies one capsule and statement offline.
@@ -105,25 +104,14 @@ Anything a deployment adds beyond the core capsule members goes in
 `CapsuleInput::compute_attestation_extensions`: committed into `capsule_id`
 in the order given, never interpreted by this crate.
 
-## Differences from the reference verifier
+## Verification
 
-`structure` gives the reference verifier's (`agent_action_capsule.verify`)
-verdict and findings on every conformance vector. Numbers are judged by
-their text, as the reference judges them: `-0` is the integer 0, and an
-integer above `u64::MAX` is refused `unsafe_integer_in_digest_field`
-(`tests/structure_vectors.rs` pins both). Read record JSON with
+This crate produces records; agent-action-capsule verifies them.
+`verify::verify_offline` takes its Class 1 verdict from
+`agent_action_capsule::verify::verify` and adds only the COSE_Sign1 checks on
+the signed statement this crate writes. Read record JSON with
 `jcs::decode_record`, not `serde_json`, so it decodes as it does in the
 reference (see the `jcs` module).
-
-A list or object in a string-typed field is no longer a difference. The
-reference now refuses it in check 1 with `field_not_string`
-([agent-action-capsule#147](https://github.com/action-state-group/agent-action-capsule/pull/147)
-and its follow-up for the `provenance_mode` and `references[].retention`
-members), and so does this crate, for the same fields in the same order.
-
-Also by design: at most 64 float and 64 unsafe-integer findings are
-reported (the reference lists every one), and a finding quotes at most 64
-characters of the record. Neither changes a verdict.
 
 ## Tests
 
@@ -131,13 +119,11 @@ characters of the record. Neither changes a verdict.
 cargo test
 ```
 
-`tests/jcs_vectors.rs` and `tests/structure_vectors.rs` run the pinned
-conformance vectors in `tests/vectors/` (see `tests/vectors/SOURCES.md`):
-every Class 1 capsule and provenance-mode case gets the reference verifier's
-verdict and error and warning findings. `tests/structure_bounds.rs` checks,
-with a counting allocator, that hostile shapes (a 250,000-element array
-under a 500 KB key) are checked in memory bounded by a few copies of the
-record. The cross-language tests
+`tests/jcs_vectors.rs` runs the pinned conformance vectors in
+`tests/vectors/` (see `tests/vectors/SOURCES.md`) through this crate's
+canonicalization. `tests/verify_class1.rs` checks that `verify_offline`
+refuses signed records the reference verifier refuses, and says which check
+did. The cross-language tests
 (`cross_language_conformance`, `chain_ledger_conformance`,
 `checkpoint_invariance`, `anchor_conformance`) are ignored by default and
 need the Python reference installed; each file's header gives the command.
