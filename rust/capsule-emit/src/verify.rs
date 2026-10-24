@@ -33,8 +33,10 @@ pub struct VerifyReport {
     /// spliced from another capsule must not verify green -- previously this
     /// mismatch only landed in `findings` and `ok()` still passed.
     pub subject_matches_capsule_id: bool,
-    /// The chain block passes Class 1 check 6: well formed, and with a store,
-    /// its parent is in it.
+    /// The chain block passes Class 1 check 6: a 64-hex parent and a
+    /// `relation`, and with a store, the parent is in it. A `chain` or
+    /// `relation` of the wrong JSON type fails check 1 instead, and so
+    /// `structure_ok`.
     pub chain_ok: bool,
     pub capsule_id: Option<String>,
     pub findings: Vec<String>,
@@ -55,6 +57,10 @@ fn is_error(finding: &Finding) -> bool {
     finding.severity == "error"
 }
 
+/// Verify `capsule` and the COSE_Sign1 `signed_statement` that carries it
+/// under `verifying_key`. `known_capsule_ids` is the store chain parents are
+/// looked up in; each call copies it, so pass it once per capsule, not a
+/// growing ledger's ids for every record of a large batch.
 pub fn verify_offline(
     capsule: &Value,
     signed_statement: &[u8],
@@ -70,12 +76,10 @@ pub fn verify_offline(
     // Every error, and check 6's note that a parent was not looked up.
     for finding in &class1.findings {
         if is_error(finding) || finding.check == Some(6) {
-            findings.push(format!(
-                "check {}: {}: {}",
-                finding.check.unwrap_or(0),
-                finding.code,
-                finding.detail
-            ));
+            findings.push(match finding.check {
+                Some(check) => format!("check {check}: {}: {}", finding.code, finding.detail),
+                None => format!("{}: {}", finding.code, finding.detail),
+            });
         }
     }
     let failed = |check: i32| {
@@ -90,6 +94,9 @@ pub fn verify_offline(
         .clone()
         .filter(|recomputed| stored == Some(recomputed.as_str()));
     let capsule_id_ok = capsule_id.is_some() && !failed(2);
+    if class1.capsule_id.is_none() && !failed(2) {
+        findings.push("capsule_id not recomputed: the record fails check 1".to_string());
+    }
     let chain_ok = !failed(6);
 
     let mut cose_ok = false;

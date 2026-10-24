@@ -279,3 +279,95 @@ fn chain_parent_membership_uses_the_supplied_store() {
     assert!(!missing.chain_ok);
     assert!(!missing.structure_ok);
 }
+
+/// With no carried `capsule_id`, or a declaration the reference verifier
+/// does not recompute, there is no id for the subject to match: refused, and
+/// the findings say why.
+#[test]
+fn a_record_whose_id_is_not_recomputed_is_refused() {
+    let mut no_id = seal(record());
+    no_id.as_object_mut().unwrap().remove("capsule_id");
+    let mut other_profile = record();
+    other_profile["canonicalization_id"] = json!("jcs-n");
+    for (name, sealed, code) in [
+        ("no capsule_id", no_id, "missing_required_field"),
+        (
+            "jcs-n",
+            seal(other_profile),
+            "canonicalization_profile_mismatch",
+        ),
+    ] {
+        let report = offline(&sealed);
+        assert!(!report.ok(), "{name}");
+        assert!(!report.capsule_id_ok, "{name}");
+        assert!(!report.subject_matches_capsule_id, "{name}");
+        assert_eq!(report.capsule_id, None, "{name}");
+        let want = format!("check 1: {code}: ");
+        assert!(
+            report.findings.iter().any(|f| f.starts_with(&want)),
+            "{name}: {:?}",
+            report.findings
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f == "capsule_id not recomputed: the record fails check 1"),
+            "{name}: {:?}",
+            report.findings
+        );
+    }
+}
+
+/// A capsule that is not a JSON object is refused without a panic.
+#[test]
+fn a_non_object_is_refused() {
+    let key = ed25519_dalek::SigningKey::from_bytes(&KEY);
+    let capsule = json!(["not", "a", "capsule"]);
+    let statement = build_signed_statement(
+        &SignedStatementInput {
+            payload: &serde_json::to_vec(&capsule).unwrap(),
+            issuer: "example-issuer",
+            subject: "x",
+            content_type: "application/json",
+        },
+        &key,
+    );
+    let report = verify_offline(&capsule, &statement, &key.verifying_key(), None);
+    assert!(!report.ok());
+    assert!(!report.structure_ok);
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|f| f.starts_with("check 1: not_an_object: ")),
+        "{:?}",
+        report.findings
+    );
+}
+
+/// A chain block of the wrong JSON type fails check 1, so the record is
+/// refused even with a store that holds its parent.
+#[test]
+fn a_malformed_chain_block_is_refused_with_a_store() {
+    let parent = "a".repeat(64);
+    let store = HashSet::from([parent.clone()]);
+    for (name, chain) in [
+        ("chain not an object", json!([])),
+        (
+            "relation not a string",
+            json!({"parent_capsule_id": parent, "relation": 7}),
+        ),
+    ] {
+        let mut capsule = record();
+        capsule["chain"] = chain;
+        let report = offline_with(&seal(capsule), Some(&store));
+        assert!(!report.ok(), "{name}");
+        assert!(!report.structure_ok, "{name}");
+        assert!(
+            report.findings.iter().any(|f| f.starts_with("check 1: ")),
+            "{name}: {:?}",
+            report.findings
+        );
+    }
+}
