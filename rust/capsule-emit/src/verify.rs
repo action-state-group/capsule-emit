@@ -94,7 +94,7 @@ pub fn verify_offline(
         .clone()
         .filter(|recomputed| stored == Some(recomputed.as_str()));
     let capsule_id_ok = capsule_id.is_some() && !failed(2);
-    if class1.capsule_id.is_none() && !failed(2) {
+    if class1.capsule_id.is_none() && failed(1) && !failed(2) {
         findings.push("capsule_id not recomputed: the record fails check 1".to_string());
     }
     let chain_ok = !failed(6);
