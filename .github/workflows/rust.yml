@@ -185,6 +185,9 @@ jobs:
           cargo package --list -p capsule-emit
           cargo package --list -p capsule-emit-artifact
 
+      - name: Publish dry run, capsule-emit-artifact (no upload)
+        run: cargo publish --locked --dry-run -p capsule-emit-artifact
+
       # `cargo publish --dry-run` resolves dependencies from the crates.io
       # index only (a workspace [patch] would not count). capsule-emit now
       # depends on capsule-emit-artifact, which is not published yet, so

@@ -42,9 +42,9 @@ capsule-emit's existing ledger (`capsules.jsonl` + `signed-statements/`) is a
 depends on this one
 ([`docs/legacy-ledger.md`](https://github.com/action-state-group/capsule-emit/blob/main/docs/legacy-ledger.md)).
 
-Building this crate in the same build as `capsule-emit` turns on serde_json's
-`arbitrary_precision` feature (through `agent-action-capsule`). serde_json
-then reads `-0` as the integer 0, as the Go and Python references do, so
-`capsule-emit`'s structure check accepts it instead of refusing it as a float.
+`agent-action-capsule` turns on serde_json's `arbitrary_precision` feature,
+for this crate and for everything built with it. serde_json then reads `-0`
+as the integer 0, as the Go and Python references do, so
+agent-action-capsule's verifier accepts it instead of refusing it as a float.
 
 Licensed under Apache-2.0.

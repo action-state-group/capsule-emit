@@ -12,6 +12,7 @@ merging it tags and publishes. The packages are listed in
 | `python` | `python/pyproject.toml` | `python/v<version>` | `publish-python.yml` | `pypi` (tag rule `python/v*`) |
 | `ts` | `ts/package.json` and `ts/package-lock.json` | `ts/v<version>` | `publish-ts.yml` | `npm` (tag rule `ts/v*`) |
 | `crates/capsule-emit` | `rust/capsule-emit/Cargo.toml` and `rust/Cargo.lock` | `crates/capsule-emit-v<version>` | `publish-rust.yml` | `crates-io` (tag rule `crates/*-v*`) |
+| `crates/capsule-emit-artifact` | `rust/capsule-emit-artifact/Cargo.toml` and `rust/Cargo.lock` | `crates/capsule-emit-artifact-v<version>` | `publish-rust.yml` | `crates-io` (tag rule `crates/*-v*`) |
 
 The prefix is only on the Git tag. The registry version stays plain (`0.9.1`).
 
@@ -84,6 +85,25 @@ workflow file and its environment:
 | PyPI | `capsule-emit` | `publish-python.yml` | `pypi` |
 | npm | `@action-state-group/capsule-emit` | `publish-ts.yml` | `npm` or blank |
 | crates.io | `capsule-emit` | `publish-rust.yml` | `crates-io` |
+| crates.io | `capsule-emit-artifact` | `publish-rust.yml` | `crates-io` |
+
+crates.io offers Trusted Publishing only for a crate that exists, so a crate's
+first version is published by hand by one of its crates.io owners.
+`capsule-emit-artifact` 0.0.1 is that case. Its manifest was on `main` at
+0.0.1 before its `releases.json` entry, so merging the entry tags and
+dispatches nothing. An owner runs `cargo publish --locked -p
+capsule-emit-artifact` from `rust/` at the merge commit, pushes
+`crates/capsule-emit-artifact-v0.0.1` on that commit, and configures the
+Trusted Publisher. Pushing the tag starts `publish-rust.yml`, whose check
+stops at "already on crates.io": that failure is expected, and the run is not
+re-run. `capsule-emit` depends on this crate, so no `capsule-emit` version
+after 0.0.8 can publish before it.
+
+Later artifact versions go through the flow above, with one addition: Release
+· Prepare raises only the artifact crate's own manifest, so on the same branch
+raise `capsule-emit`'s two `capsule-emit-artifact` requirements in
+`rust/capsule-emit/Cargo.toml` to the new version (a 0.0.x requirement
+matches only that exact version).
 
 Renaming a publisher workflow breaks publishing until the registry is updated
 first. No registry token is stored in this repository. Historical tags and

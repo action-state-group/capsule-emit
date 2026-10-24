@@ -17,5 +17,12 @@
     "lockfile": "rust/Cargo.lock",
     "tag_prefix": "crates/capsule-emit-v",
     "workflow": "publish-rust.yml"
+  },
+  "crates/capsule-emit-artifact": {
+    "kind": "cargo",
+    "manifest": "rust/capsule-emit-artifact/Cargo.toml",
+    "lockfile": "rust/Cargo.lock",
+    "tag_prefix": "crates/capsule-emit-artifact-v",
+    "workflow": "publish-rust.yml"
   }
 }
