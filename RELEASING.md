@@ -89,15 +89,21 @@ workflow file and its environment:
 
 crates.io offers Trusted Publishing only for a crate that exists, so a crate's
 first version is published by hand by one of its crates.io owners.
-`capsule-emit-artifact` 0.0.1 is that case: its manifest was on `main` at
+`capsule-emit-artifact` 0.0.1 is that case. Its manifest was on `main` at
 0.0.1 before its `releases.json` entry, so merging the entry tags and
 dispatches nothing. An owner runs `cargo publish --locked -p
 capsule-emit-artifact` from `rust/` at the merge commit, pushes
 `crates/capsule-emit-artifact-v0.0.1` on that commit, and configures the
-Trusted Publisher; later versions go through the flow above. Pushing the tag
-starts `publish-rust.yml`, whose check stops at "already on crates.io": that
-failure is expected, and the run is not re-run. `capsule-emit`
-depends on it, so no `capsule-emit` version after 0.0.8 can publish before it.
+Trusted Publisher. Pushing the tag starts `publish-rust.yml`, whose check
+stops at "already on crates.io": that failure is expected, and the run is not
+re-run. `capsule-emit` depends on this crate, so no `capsule-emit` version
+after 0.0.8 can publish before it.
+
+Later artifact versions go through the flow above, with one addition: Release
+· Prepare raises only the artifact crate's own manifest, so on the same branch
+raise `capsule-emit`'s two `capsule-emit-artifact` requirements in
+`rust/capsule-emit/Cargo.toml` to the new version (a 0.0.x requirement
+matches only that exact version).
 
 Renaming a publisher workflow breaks publishing until the registry is updated
 first. No registry token is stored in this repository. Historical tags and

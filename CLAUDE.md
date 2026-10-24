@@ -64,7 +64,9 @@ verification rather than reimplementing them.
 
 Follow [RELEASING.md](RELEASING.md). In short: run **Release · Prepare**, merge
 its pull request, and the Release · Tag workflow tags and publishes. Never
-create release tags by hand, except `go/v*`, which an admin pushes. Do not
+create release tags by hand, except `go/v*`, which an admin pushes, and a
+crate's first version, which its crates.io owner publishes and tags as
+RELEASING.md describes. Do not
 rename `publish-python.yml`, `publish-ts.yml` or `publish-rust.yml`: the
 registries' trusted publishers name them, so publishing breaks until the
 registry is updated first. `.github/release.py` is an identical copy shared
