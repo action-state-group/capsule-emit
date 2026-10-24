@@ -12,7 +12,7 @@ All notable changes to `capsule-emit` are documented here. The format follows
 `agent_action_capsule.verify` and `verify_store` themselves (#367). The adapter
 that replaced AAC's capsule ID check is gone: AAC recomputes the format-4 `jcs`
 id, and every other declaration already fails its check 1, so verdicts do not
-change. A record that already fails check 1 (a vintage `jcs-n` record, another
+change. A record whose identity profile or `capsule_id` fails check 1 (a vintage `jcs-n` record, another
 `format_version` or `canonicalization_id`, a malformed `capsule_id`) no longer
 gets a `capsule_id_mismatch` or `capsule_id_uncomputable`, and its result's
 `capsule_id` is `None`.
