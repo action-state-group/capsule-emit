@@ -371,3 +371,27 @@ fn a_malformed_chain_block_is_refused_with_a_store() {
         );
     }
 }
+
+/// Many failing numbers under a long key cost a bounded report: the
+/// reference verifier keeps at most 64 findings of each kind and clips each
+/// path (agent-action-capsule#381). Before 0.4.1 this record gave 2,000
+/// findings of about 50 KB each.
+#[test]
+fn many_failing_numbers_give_a_bounded_report() {
+    let mut capsule = record();
+    capsule["model_attestation"] = json!({ "k".repeat(50_000): vec![json!(0.5); 2_000] });
+    // No id can be computed over floats; any 64-hex id will do.
+    capsule["capsule_id"] = json!("0".repeat(64));
+    let report = offline(&capsule);
+    assert!(!report.ok());
+    let floats = report
+        .findings
+        .iter()
+        .filter(|f| f.starts_with("check 1: float_in_digest_field: "))
+        .count();
+    assert_eq!(floats, 64);
+    assert!(
+        report.findings.iter().all(|f| f.chars().count() < 1_000),
+        "a finding quotes too much of the record"
+    );
+}

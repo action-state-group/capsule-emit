@@ -15,9 +15,11 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   COSE_Sign1 statement itself. `structure::check_structure`,
   `StructureReport`, `Finding`, `Severity`, `MAX_PATH_FINDINGS` and
   `MAX_DETAIL_CHARS` are removed: call `agent_action_capsule::verify::verify`
-  instead. `verify_offline`'s findings
-  are now the reference verifier's codes, written `check N: code: detail`.
-  The crate now depends on `agent-action-capsule` 0.4.
+  instead. `verify_offline`'s findings are now the reference verifier's codes,
+  written `check N: code: detail`. The crate now depends on
+  `agent-action-capsule` 0.4.1, whose verifier keeps the bounds `structure`
+  had on hostile numbers: at most 64 findings of each kind, each quoting at
+  most 256 characters of its path.
 - **A ledger in the standard storage layers** (#341):
   `ledger::Ledger::open_stores(log, artifacts)` keeps the ledger in a CLL
   entry log (`cll::log::EntryStore`: memory, jsonl, sqlite, mysql) plus a
