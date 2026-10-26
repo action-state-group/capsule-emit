@@ -49,11 +49,14 @@ def period_bounds(period: str, *, anchor: datetime | None = None) -> tuple[str, 
     (and tests) can pin the "current instant" instead of depending on the
     wall clock at call time.
 
-    ``day`` is the UTC calendar day; ``week`` is the Monday-through-Sunday ISO calendar week; ``month`` is the
-    calendar month -- all inclusive of their last microsecond, matching
+    ``day`` is the UTC calendar day; ``week`` is the Monday-through-Sunday ISO
+    calendar week; ``month`` is the calendar month -- all inclusive of their
+    last microsecond, matching
     ``since``/``until``'s own "inclusive ISO-8601 bounds" contract.
     """
-    now = anchor if anchor is not None else datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc) if anchor is None else anchor
+    if now.tzinfo is not None:
+        now = now.astimezone(timezone.utc)
     if period == "day":
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1) - timedelta(microseconds=1)

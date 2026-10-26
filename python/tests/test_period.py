@@ -35,6 +35,15 @@ def test_period_bounds_day_at_a_week_and_month_boundary():
     assert period_bounds("day", anchor=datetime(2026, 12, 31, 12, tzinfo=timezone.utc))[1] == "2026-12-31T23:59:59.999999Z"
 
 
+def test_period_bounds_converts_a_non_utc_anchor_to_utc_first():
+    # 01:00+08:00 on Aug 19 is 17:00 UTC on Aug 18.
+    anchor = datetime.fromisoformat("2026-08-19T01:00:00+08:00")
+    assert period_bounds("day", anchor=anchor) == ("2026-08-18T00:00:00.000000Z", "2026-08-18T23:59:59.999999Z")
+    # 23:00-05:00 on Aug 30 is 04:00 UTC on Aug 31: the next ISO week and day.
+    anchor = datetime.fromisoformat("2026-08-30T23:00:00-05:00")
+    assert period_bounds("week", anchor=anchor)[0] == "2026-08-31T00:00:00.000000Z"
+
+
 def test_period_bounds_week_is_the_monday_through_sunday_iso_week():
     since, until = period_bounds("week", anchor=_ANCHOR)
     assert since == "2026-08-17T00:00:00.000000Z"
