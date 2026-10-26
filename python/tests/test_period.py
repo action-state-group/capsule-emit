@@ -15,6 +15,26 @@ from capsule_emit.period import add_period_arg, apply_period, period_bounds
 _ANCHOR = datetime(2026, 8, 19, 15, 30, 45, 123456, tzinfo=timezone.utc)
 
 
+def test_period_bounds_day_is_the_utc_calendar_day():
+    since, until = period_bounds("day", anchor=_ANCHOR)
+    assert since == "2026-08-19T00:00:00.000000Z"
+    assert until == "2026-08-19T23:59:59.999999Z"
+
+
+def test_period_bounds_day_at_a_week_and_month_boundary():
+    # Sunday 2026-08-30 ends an ISO week; Monday 2026-08-31 ends August.
+    assert period_bounds("day", anchor=datetime(2026, 8, 30, 23, 59, 59, 999999, tzinfo=timezone.utc)) == (
+        "2026-08-30T00:00:00.000000Z",
+        "2026-08-30T23:59:59.999999Z",
+    )
+    assert period_bounds("day", anchor=datetime(2026, 8, 31, tzinfo=timezone.utc)) == (
+        "2026-08-31T00:00:00.000000Z",
+        "2026-08-31T23:59:59.999999Z",
+    )
+    # Dec 31 crosses the year; the day's end stays inside the day.
+    assert period_bounds("day", anchor=datetime(2026, 12, 31, 12, tzinfo=timezone.utc))[1] == "2026-12-31T23:59:59.999999Z"
+
+
 def test_period_bounds_week_is_the_monday_through_sunday_iso_week():
     since, until = period_bounds("week", anchor=_ANCHOR)
     assert since == "2026-08-17T00:00:00.000000Z"
@@ -76,5 +96,6 @@ def test_add_period_arg_enforces_choices():
     parser = argparse.ArgumentParser()
     add_period_arg(parser)
     assert parser.parse_args(["--period", "week"]).period == "week"
+    assert parser.parse_args(["--period", "day"]).period == "day"
     with pytest.raises(SystemExit):
         parser.parse_args(["--period", "fortnight"])

@@ -6,6 +6,12 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (Python): `--period day`
+
+`--period` now accepts `day` besides `week` and `month`, so the unit set is
+`{day, week, month}` (#375). `period_bounds("day")` is the current UTC calendar
+day, from its first to its last microsecond, inclusive like the other units.
+
 ## 0.13.0 — 2026-10-23
 
 Python 0.13.0, a minor release with breaking changes. With no ledger chosen,
