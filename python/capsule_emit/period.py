@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``--period week|month`` sugar over ``--since``/``--until``. The ledger
+"""``--period day|week|month`` sugar over ``--since``/``--until``. The ledger
 scan already takes ``since``/``until`` (ISO-8601); ``--period`` only computes
-those two bounds for a calendar week or month.
+those two bounds for a calendar day, week or month.
 
 It lives beside :mod:`capsule_emit.ledger_io` -- the shared scan-query
 plumbing these flags decorate -- so every ledger-backed verb reuses one
@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 __all__ = ["PERIOD_CHOICES", "add_period_arg", "period_bounds", "apply_period"]
 
-PERIOD_CHOICES = ("week", "month")
+PERIOD_CHOICES = ("day", "week", "month")
 
 # The bounds are the period's first and last microsecond, as RFC 3339 UTC.
 # Ledger timestamps come in more than one spelling of the same kind of
@@ -36,7 +36,7 @@ def add_period_arg(parser: argparse.ArgumentParser) -> None:
         "--period",
         choices=PERIOD_CHOICES,
         default=None,
-        help="sugar: fill in --since/--until with the current calendar week or month (UTC) wherever "
+        help="sugar: fill in --since/--until with the current calendar day, week or month (UTC) wherever "
         "you did not set them explicitly",
     )
 
@@ -49,12 +49,18 @@ def period_bounds(period: str, *, anchor: datetime | None = None) -> tuple[str, 
     (and tests) can pin the "current instant" instead of depending on the
     wall clock at call time.
 
-    ``week`` is the Monday-through-Sunday ISO calendar week; ``month`` is the
-    calendar month -- both inclusive of their last microsecond, matching
+    ``day`` is the UTC calendar day; ``week`` is the Monday-through-Sunday ISO
+    calendar week; ``month`` is the calendar month -- all inclusive of their
+    last microsecond, matching
     ``since``/``until``'s own "inclusive ISO-8601 bounds" contract.
     """
-    now = anchor if anchor is not None else datetime.now(timezone.utc)
-    if period == "week":
+    now = datetime.now(timezone.utc) if anchor is None else anchor
+    if now.tzinfo is not None:
+        now = now.astimezone(timezone.utc)
+    if period == "day":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1) - timedelta(microseconds=1)
+    elif period == "week":
         start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=7) - timedelta(microseconds=1)
     elif period == "month":

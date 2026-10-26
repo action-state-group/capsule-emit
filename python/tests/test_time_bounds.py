@@ -52,7 +52,7 @@ def test_an_unreadable_as_of_is_refused():
         active_exposure_minor([], "dev-1", as_of="yesterday")
 
 
-@pytest.mark.parametrize("period", ["week", "month"])
+@pytest.mark.parametrize("period", ["day", "week", "month"])
 def test_period_bounds_are_the_first_and_last_microsecond(period):
     anchor = datetime(2026, 8, 19, 15, 30, 45, 123456, tzinfo=timezone.utc)
     since, until = period_bounds(period, anchor=anchor)
