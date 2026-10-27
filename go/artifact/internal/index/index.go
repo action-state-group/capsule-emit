@@ -79,7 +79,7 @@ func wrap(paths []string) []string {
 // DecodePaths reads EncodePaths output back.
 func DecodePaths(stored string) ([]string, error) {
 	var paths []string
-	if err := jsonv2.Unmarshal([]byte(stored), &paths); err != nil {
+	if err := jsonv2.Unmarshal([]byte(stored), &paths); err != nil || paths == nil {
 		return nil, fmt.Errorf("%w: stored index paths: %v", artifact.ErrCorrupt, err)
 	}
 	normalized, err := NormalizePaths(paths)

@@ -56,7 +56,7 @@ func TestPathsRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, `[]`, EncodePaths(none))
 
-	for _, stored := range []string{`{`, `["a","a"]`, `[" "]`} {
+	for _, stored := range []string{`{`, `null`, `["a","a"]`, `[" "]`} {
 		_, err := DecodePaths(stored)
 		assert.ErrorIs(t, err, artifact.ErrCorrupt, stored)
 	}
