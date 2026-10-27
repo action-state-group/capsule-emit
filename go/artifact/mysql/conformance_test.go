@@ -23,7 +23,7 @@ func TestConformance(t *testing.T) {
 			store, err := mysqlstore.New(db, "conformance", []ed25519.PublicKey{make([]byte, ed25519.PublicKeySize)})
 			require.NoError(t, err)
 			require.NoError(t, store.Init(t.Context()))
-			for _, table := range []string{"capsule_store_artifacts", "capsule_store_capsules"} {
+			for _, table := range []string{"capsule_store_artifacts", "capsule_store_capsules", "capsule_store_index", "capsule_store_index_records", "capsule_store_index_paths"} {
 				_, err := db.ExecContext(t.Context(), "DELETE FROM "+table+" WHERE namespace IN (?,?,?)", conformanceNamespaces...)
 				require.NoError(t, err)
 			}
@@ -32,6 +32,6 @@ func TestConformance(t *testing.T) {
 		Open: func(_ *testing.T, db *sql.DB, namespace string, trusted []ed25519.PublicKey) (artifact.Store, error) {
 			return mysqlstore.New(db, namespace, trusted)
 		},
-		Capabilities: artifacttest.Capabilities{Durable: true, SharedBacking: true},
+		Capabilities: artifacttest.Capabilities{Durable: true, SharedBacking: true, DurableIndex: true},
 	})
 }

@@ -16,6 +16,6 @@ func TestConformance(t *testing.T) {
 		Open: func(_ *testing.T, db *sql.DB, namespace string, trusted []ed25519.PublicKey) (artifact.Store, error) {
 			return sqlitestore.New(db, namespace, trusted)
 		},
-		Capabilities: artifacttest.Capabilities{Durable: true, SharedBacking: true},
+		Capabilities: artifacttest.Capabilities{Durable: true, SharedBacking: true, DurableIndex: true},
 	})
 }

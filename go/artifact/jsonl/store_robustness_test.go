@@ -185,3 +185,25 @@ func TestJSONLTornLastLineIsNotIndexed(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, bytes.HasSuffix(after, append([]byte{'\n'}, tail...)), "torn tail kept verbatim")
 }
+
+// TestJSONLIndexSkipsDamagedLine: declaring index paths leaves out a line whose
+// capsule_id is readable but which no longer decodes as a record; Get reports
+// it as corrupt, and the readable records are still found.
+func TestJSONLIndexSkipsDamagedLine(t *testing.T) {
+	good, pub := testutil.Record(t, "jsonl-index-good")
+	path := filepath.Join(t.TempDir(), "artifacts.jsonl")
+	damaged := `{"capsule_id":"` + strings.Repeat("ab", 32) + `","capsule":1}` + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(damaged), 0o644))
+	s, err := jsonlstore.New(path, "test-index", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	require.NoError(t, s.Put(t.Context(), good))
+	require.NoError(t, s.InitIndex(t.Context(), []string{"operator"}))
+	page, err := s.Find(t.Context(), artifact.Query{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{good.CapsuleID}, page.IDs)
+	assert.ErrorIs(t, s.Reindex(t.Context(), []string{"a", "a"}), artifact.ErrInvalid)
+	require.NoError(t, s.Reindex(t.Context(), []string{"developer"}))
+	page, err = s.Find(t.Context(), artifact.Query{Where: map[string]string{"developer": "test-developer"}})
+	require.NoError(t, err)
+	assert.Equal(t, []string{good.CapsuleID}, page.IDs)
+}

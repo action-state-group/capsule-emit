@@ -25,12 +25,13 @@ import (
 	"sync"
 
 	"github.com/action-state-group/capsule-emit/go/artifact"
+	"github.com/action-state-group/capsule-emit/go/artifact/internal/index"
 )
 
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-var _ artifact.Store = (*Store)(nil)
+var _ artifact.IndexStore = (*Store)(nil)
 
 type indexEntry struct {
 	offset int64
@@ -46,6 +47,12 @@ type Store struct {
 	trusted   []ed25519.PublicKey
 	mu        sync.Mutex
 	index     map[string]indexEntry
+	// order lists Capsule IDs by first appearance in the file, which is
+	// admission order; purge rewrites lines in place and keeps it.
+	order []string
+	// lookup is the index extension's in-memory index. Its declaration lives
+	// only in this Store: a jsonl file stores records and nothing else.
+	lookup index.Memory
 }
 
 // New validates the namespace and trusted keys, then opens the file and builds
@@ -104,6 +111,9 @@ func (s *Store) scanIndex(r io.Reader) error {
 		}
 		if err := jsonv2.Unmarshal(line, &peek); err == nil && peek.CapsuleID != "" {
 			// Last-occurrence-wins as a defensive tie-break only.
+			if _, seen := s.index[peek.CapsuleID]; !seen {
+				s.order = append(s.order, peek.CapsuleID)
+			}
 			s.index[peek.CapsuleID] = indexEntry{offset: offset, length: len(line)}
 		}
 		offset += int64(len(token))
@@ -228,7 +238,63 @@ func (s *Store) Put(ctx context.Context, record artifact.Record) error {
 	}
 
 	s.index[record.CapsuleID] = indexEntry{offset: offset, length: len(data)}
+	s.order = append(s.order, record.CapsuleID)
+	return s.lookup.Add(record.CapsuleID, record.Capsule)
+}
+
+// InitIndex creates the file as Init does, then declares paths for this Store
+// and indexes the records in the file, in file order.
+func (s *Store) InitIndex(ctx context.Context, paths []string) error {
+	if err := s.Init(ctx); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fresh, err := s.lookup.Declare(paths)
+	if err != nil || !fresh {
+		return err
+	}
+	return s.indexAll()
+}
+
+// Reindex replaces the declared paths and rebuilds the index from the file.
+func (s *Store) Reindex(ctx context.Context, paths []string) error {
+	normalized, err := index.NormalizePaths(paths)
+	if err != nil {
+		return err
+	}
+	if err := s.Init(ctx); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lookup.Reset(normalized)
+	return s.indexAll()
+}
+
+// indexAll adds every readable record to a freshly declared index. A line that
+// no longer decodes as a record is left out; Get reports it as corrupt.
+func (s *Store) indexAll() error {
+	for _, id := range s.order {
+		record, err := s.readAt(s.index[id])
+		if errors.Is(err, artifact.ErrCorrupt) || (err == nil && record.CapsuleID != id) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err := s.lookup.Add(id, record.Capsule); err != nil && !errors.Is(err, artifact.ErrCorrupt) {
+			return err
+		}
+	}
 	return nil
+}
+
+// Find returns one page of IDs matching q in admission order.
+func (s *Store) Find(_ context.Context, q artifact.Query) (artifact.Page, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lookup.Find(q)
 }
 
 // Get loads a record by capsule ID, verifying the signer against trusted keys.

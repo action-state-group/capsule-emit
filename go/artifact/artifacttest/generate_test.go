@@ -58,8 +58,12 @@ func seedKey(b byte) ed25519.PrivateKey {
 func (g *generator) seal(key string, input emit.Input, payload, output any) emit.Result {
 	identity, err := emit.NewEd25519SigningIdentity(g.keys[key])
 	require.NoError(g.t, err)
-	input.Operator, input.Developer = "conformance-operator", "conformance-developer"
-	input.Timestamp = time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
+	if input.Operator == "" {
+		input.Operator, input.Developer = "conformance-operator", "conformance-developer"
+	}
+	if input.Timestamp.IsZero() {
+		input.Timestamp = time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
+	}
 	sealed, err := emit.Seal(emit.SealInput{Capsule: input, Payload: payload, AgentOutput: output, Identity: identity})
 	require.NoError(g.t, err)
 	return sealed
@@ -150,6 +154,25 @@ func generate(t *testing.T) []byte {
 	g.variant("effect.response_mismatch", "effect", func(r *artifact.Record) {
 		r.Artifacts[1] = artifact.Artifact{Name: "response", Binding: artifact.EffectResponseDigest, Content: content(`{"ok":false}`), State: artifact.Present}
 	})
+
+	// Index records: generic capsule fields plus a neutral fixture extension
+	// whose tags array exercises list matching.
+	for _, ix := range []struct {
+		name, operator, developer string
+		at                        time.Time
+		tags                      string
+	}{
+		{"index.a", "op-a", "dev-1", time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC), `{"tags":["red","blue"],"level":1}`},
+		{"index.b", "op-b", "dev-1", time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC), `{"tags":["red"],"level":"one"}`},
+		{"index.c", "op-a", "dev-2", time.Date(2026, 10, 17, 0, 0, 0, 1000, time.UTC), `{"tags":["blue","blue",7]}`},
+	} {
+		sealed := g.seal("trusted", emit.Input{ActionID: "conformance-" + ix.name, ActionType: emit.ActionTypeFYI,
+			Operator: ix.operator, Developer: ix.developer, Timestamp: ix.at,
+			Extensions: []emit.Extension{{Name: "fixture", Value: json.RawMessage(ix.tags)}}},
+			map[string]any{"index": ix.name}, nil)
+		g.add(ix.name, artifact.Record{CapsuleID: sealed.CapsuleID, Capsule: sealed.Payload, ProducerEnvelope: sealed.Envelope,
+			Artifacts: []artifact.Artifact{}})
+	}
 
 	rotated := g.seal("rotated", emit.Input{ActionID: "conformance-rotated", ActionType: emit.ActionTypeFYI},
 		json.RawMessage(payload), json.RawMessage(output))
@@ -322,7 +345,7 @@ func generate(t *testing.T) []byte {
 		v.Lines = append(v.Lines, LineVector{Record: name, Line: string(line)})
 	}
 	v.Open = openVectors(v.Keys["trusted"])
-	v.Cases = cases(g.records)
+	v.Cases = append(cases(g.records), indexCases(g.records)...)
 
 	data, err := jsonv2.Marshal(v, jsonv2.Deterministic(true), jsontext.WithIndent("  "))
 	require.NoError(t, err)
@@ -409,6 +432,126 @@ func get(id, expect, result string) Step {
 	return Step{Op: "get", ID: &id, Expect: expect, Result: result}
 }
 func purge(id, expect string) Step { return Step{Op: "purge", ID: &id, Expect: expect} }
+
+func initIndex(paths ...string) Step { return Step{Op: "init_index", Paths: paths, Expect: "ok"} }
+
+// find expects records by name, in order, and whether a further page exists.
+func find(where map[string]string, records ...string) Step {
+	return Step{Op: "find", Where: where, Expect: "ok", Found: records}
+}
+
+func indexCases(r map[string]artifact.Record) []Case {
+	main := map[string]StoreSpec{"main": {Namespace: "conformance", Trusted: []string{"trusted"}}}
+	paths := []string{"operator", "developer", "fixture.tags", "fixture.level"}
+	op := func(v string) map[string]string { return map[string]string{"operator": v} }
+	tag := func(v string) map[string]string { return map[string]string{"fixture.tags": v} }
+	since := func(at string, records ...string) Step { s := find(nil, records...); s.Since = at; return s }
+	bad := func(s Step) Step { s.Expect, s.Found = "invalid", nil; return s }
+	putABC := []Step{put("index.a", "ok"), put("index.b", "ok"), put("index.c", "ok")}
+	index := []string{"index"}
+	return []Case{
+		{Name: "index_find_equality", Description: "Find returns the records whose declared paths hold every given value, in admission order.",
+			Requires: index, Stores: main,
+			Steps: append(append([]Step{initIndex(paths...)}, putABC...),
+				find(op("op-a"), "index.a", "index.c"), find(op("op-b"), "index.b"), find(op("nobody")),
+				find(tag("red"), "index.a", "index.b"), find(tag("blue"), "index.a", "index.c"),
+				find(map[string]string{"operator": "op-a", "fixture.tags": "red"}, "index.a"),
+				find(map[string]string{"operator": "op-a", "developer": "dev-2", "fixture.tags": "blue"}, "index.c"),
+				find(map[string]string{"fixture.level": "one"}, "index.b"), find(map[string]string{"fixture.level": "1"}),
+				find(tag("7")), find(nil, "index.a", "index.b", "index.c"))},
+		{Name: "index_find_since", Description: "Since is an inclusive lower bound on the top-level timestamp, compared in UTC; records without one never match it.",
+			Requires: index, Stores: main,
+			Steps: append(append([]Step{initIndex(paths...), put("padding", "ok")}, putABC...),
+				find(nil, "padding", "index.a", "index.b", "index.c"),
+				since("2026-10-16T00:00:00Z", "index.b", "index.c"), since("2026-10-16T02:00:00+02:00", "index.b", "index.c"),
+				since("2026-10-15T19:00:00.5-05:00", "index.c"), since("2026-10-15T19:00:00-05:00", "index.b", "index.c"),
+				since("2026-10-17T00:00:00.000001Z", "index.c"), since("2026-10-17T00:00:00.0000019Z", "index.c"),
+				since("2026-10-17T00:00:00.000002Z"), since("2000-01-01T00:00:00Z", "index.a", "index.b", "index.c"),
+				func() Step {
+					s := since("2026-10-16T00:00:00Z", "index.a")
+					s.Where = op("op-a")
+					s.Found = []string{"index.c"}
+					return s
+				}())},
+		{Name: "index_find_paging", Description: "Find pages by limit; the cursor continues after the last returned record.",
+			Requires: index, Stores: main,
+			Steps: append(append([]Step{initIndex(paths...)}, putABC...),
+				Step{Op: "find", Limit: 1, Expect: "ok", Found: []string{"index.a"}, More: true},
+				Step{Op: "find", Limit: 1, Continue: true, Expect: "ok", Found: []string{"index.b"}, More: true},
+				Step{Op: "find", Limit: 1, Continue: true, Expect: "ok", Found: []string{"index.c"}},
+				Step{Op: "find", Where: op("op-a"), Limit: 1, Expect: "ok", Found: []string{"index.a"}, More: true},
+				Step{Op: "find", Where: op("op-a"), Limit: 1, Continue: true, Expect: "ok", Found: []string{"index.c"}},
+				Step{Op: "find", Where: op("op-a"), Limit: 2, Expect: "ok", Found: []string{"index.a", "index.c"}})},
+		{Name: "index_backfill", Description: "Declaring paths indexes the records already stored; retries and purges change nothing.",
+			Requires: index, Stores: main,
+			Steps: []Step{put("index.a", "ok"), put("index.b", "ok"), put("basic", "ok"), initIndex(paths...),
+				{Op: "find", Where: tag("red"), Unordered: true, Expect: "ok", Found: []string{"index.a", "index.b"}},
+				put("index.c", "ok"), put("index.a", "ok"), purge(r["basic"].CapsuleID, "ok"),
+				{Op: "find", Unordered: true, Expect: "ok", Found: []string{"index.a", "index.b", "basic", "index.c"}},
+				find(op("op-a"), "index.a", "index.c")}},
+		{Name: "index_declaration", Description: "The declared paths are a set: the same set again is a no-op, another is a conflict, and reindex replaces it.",
+			Requires: index, Stores: main,
+			Steps: append(append([]Step{initIndex("operator", "fixture.tags")}, putABC...),
+				initIndex("fixture.tags", "operator"),
+				Step{Op: "init_index", Paths: []string{"operator"}, Expect: "conflict"},
+				Step{Op: "init_index", Paths: []string{"operator", "fixture.tags", "developer"}, Expect: "conflict"},
+				bad(find(map[string]string{"developer": "dev-1"})),
+				Step{Op: "reindex", Paths: []string{"developer"}, Expect: "ok"},
+				Step{Op: "find", Where: map[string]string{"developer": "dev-1"}, Unordered: true, Expect: "ok", Found: []string{"index.a", "index.b"}},
+				bad(find(op("op-a"))),
+				Step{Op: "reindex", Paths: []string{}, Expect: "ok"},
+				Step{Op: "find", Unordered: true, Expect: "ok", Found: []string{"index.a", "index.b", "index.c"}},
+				bad(find(map[string]string{"developer": "dev-1"})))},
+		{Name: "index_invalid", Description: "Malformed paths, queries and cursors are invalid, and so is find before any declaration.",
+			Requires: index, Stores: main,
+			Steps: []Step{bad(find(nil)), put("index.a", "ok"),
+				{Op: "init_index", Paths: []string{""}, Expect: "invalid"},
+				{Op: "init_index", Paths: []string{"a..b"}, Expect: "invalid"},
+				{Op: "init_index", Paths: []string{".a"}, Expect: "invalid"},
+				{Op: "init_index", Paths: []string{"a b"}, Expect: "invalid"},
+				{Op: "init_index", Paths: []string{"a.b.c.d.e.f.g.h.i"}, Expect: "invalid"},
+				{Op: "init_index", Paths: []string{strings.Repeat("s", 65)}, Expect: "invalid"},
+				{Op: "init_index", Paths: []string{"operator", "operator"}, Expect: "invalid"},
+				{Op: "init_index", Paths: manyPaths(33), Expect: "invalid"},
+				{Op: "reindex", Paths: []string{"ä"}, Expect: "invalid"},
+				bad(find(nil)),
+				initIndex(manyPaths(32)...), {Op: "init_index", Paths: append(manyPaths(32)[1:], "p32"), Expect: "conflict"},
+				{Op: "reindex", Paths: []string{"a.b.c.d.e.f.g.h", "operator"}, Expect: "ok"},
+				bad(find(map[string]string{"developer": "dev-1"})),
+				find(op("op-a"), "index.a"),
+				bad(since("2026-10-16")), bad(since("2026-10-16 00:00:00Z")), bad(since("2026-10-16t00:00:00z")),
+				bad(since("2026-02-30T00:00:00Z")), bad(since("2026-10-16T24:00:00Z")), bad(since("2026-10-16T00:00:60Z")),
+				bad(since("2026-10-16T00:00:00.Z")), bad(since("2026-10-16T00:00:00.0000000001Z")), bad(since("2026-10-16T00:00:00+24:00")),
+				bad(since("２０２６-10-16T00:00:00Z")),
+				{Op: "find", Limit: 1001, Expect: "invalid"}, {Op: "find", Limit: -1, Expect: "invalid"},
+				{Op: "find", After: "x", Expect: "invalid"}, {Op: "find", After: "0", Expect: "invalid"},
+				{Op: "find", After: "01", Expect: "invalid"}, {Op: "find", After: "-1", Expect: "invalid"},
+				{Op: "find", Limit: 1000, Expect: "ok", Found: []string{"index.a"}}}},
+		{Name: "index_durable", Description: "A stored declaration survives reopening, and a store that never declared paths still indexes its writes.",
+			Requires: []string{"index", "durable_index"}, Stores: main,
+			Steps: []Step{initIndex(paths...), put("index.a", "ok"), {Op: "reopen", Expect: "ok"},
+				put("index.b", "ok"), find(tag("red"), "index.a", "index.b"),
+				{Op: "init_index", Paths: []string{"operator"}, Expect: "conflict"}, {Op: "reopen", Expect: "ok"},
+				initIndex(paths...), put("index.c", "ok"), find(op("op-a"), "index.a", "index.c")}},
+		{Name: "index_namespace_isolation", Description: "Namespaces sharing storage keep their own declarations and indexes.",
+			Requires: []string{"index", "durable_index", "shared_backing"},
+			Stores: map[string]StoreSpec{"main": {Namespace: "alpha", Trusted: []string{"trusted"}},
+				"beta": {Namespace: "beta", Trusted: []string{"trusted"}}},
+			Steps: []Step{initIndex("operator"), {Op: "init_index", Store: "beta", Paths: []string{"developer"}, Expect: "ok"},
+				put("index.a", "ok"), {Op: "put", Store: "beta", Record: "index.b", Expect: "ok"},
+				find(nil, "index.a"), {Op: "find", Store: "beta", Expect: "ok", Found: []string{"index.b"}},
+				bad(find(map[string]string{"developer": "dev-1"})),
+				{Op: "find", Store: "beta", Where: map[string]string{"developer": "dev-1"}, Expect: "ok", Found: []string{"index.b"}}}},
+	}
+}
+
+func manyPaths(n int) []string {
+	paths := make([]string, n)
+	for i := range paths {
+		paths[i] = fmt.Sprintf("p%02d", i)
+	}
+	return paths
+}
 
 func cases(r map[string]artifact.Record) []Case {
 	main := map[string]StoreSpec{"main": {Namespace: "conformance", Trusted: []string{"trusted"}}}

@@ -40,6 +40,10 @@ type Capabilities struct {
 	Durable bool
 	// SharedBacking: stores with different namespaces can share one backing.
 	SharedBacking bool
+	// DurableIndex: a store reopened over the same backing keeps the index
+	// paths declared earlier (the SQL backends). The "index" capability is
+	// detected: the store implements artifact.IndexStore.
+	DurableIndex bool
 }
 
 // Harness adapts one backend to the suite. B is the backend's storage handle
@@ -109,6 +113,19 @@ type Step struct {
 	Trusted []string `json:"trusted,omitempty"`
 	Expect  string   `json:"expect"`
 	Result  string   `json:"result,omitempty"`
+	// Index extension steps: init_index and reindex take Paths; find takes
+	// Where, Since, After (a literal cursor), Limit and Continue (use the
+	// previous find's Next), and expects Found (record names, in order unless
+	// Unordered) and More (a non-empty Next).
+	Paths     []string          `json:"paths,omitzero"`
+	Where     map[string]string `json:"where,omitempty"`
+	Since     string            `json:"since,omitempty"`
+	After     string            `json:"after,omitempty"`
+	Limit     int               `json:"limit,omitzero"`
+	Continue  bool              `json:"continue,omitzero"`
+	Found     []string          `json:"found,omitempty"`
+	More      bool              `json:"more,omitzero"`
+	Unordered bool              `json:"unordered,omitzero"`
 }
 
 // Load decodes the embedded conformance vectors.
@@ -158,7 +175,8 @@ func Run[B any](t *testing.T, h Harness[B]) {
 	for _, c := range v.Cases {
 		t.Run(c.Name, func(t *testing.T) {
 			for _, r := range c.Requires {
-				if (r == "durable" && !h.Durable) || (r == "shared_backing" && !h.SharedBacking) {
+				if (r == "durable" && !h.Durable) || (r == "shared_backing" && !h.SharedBacking) ||
+					(r == "durable_index" && !h.DurableIndex) || (r == "index" && !indexes(t, h)) {
 					t.Skipf("backend lacks capability %s", r)
 				}
 			}
@@ -167,9 +185,28 @@ func Run[B any](t *testing.T, h Harness[B]) {
 	}
 }
 
+// indexes reports whether the backend's stores implement artifact.IndexStore.
+func indexes[B any](t *testing.T, h Harness[B]) bool {
+	store, err := h.Open(t, h.NewBacking(t), "probe", namedKeys(t, mustLoad(t), []string{"trusted"}))
+	if err != nil {
+		t.Fatalf("open probe store: %v", err)
+	}
+	_, ok := store.(artifact.IndexStore)
+	return ok
+}
+
+func mustLoad(t *testing.T) Vectors {
+	v, err := Load()
+	if err != nil {
+		t.Fatalf("load vectors: %v", err)
+	}
+	return v
+}
+
 func runCase[B any](t *testing.T, h Harness[B], v Vectors, c Case) {
 	backing := h.NewBacking(t)
 	stores := map[string]artifact.Store{}
+	next := ""
 	open := func(name string, trusted []string) {
 		spec := c.Stores[name]
 		store, err := h.Open(t, backing, spec.Namespace, namedKeys(t, v, trusted))
@@ -226,6 +263,24 @@ func runCase[B any](t *testing.T, h Harness[B], v Vectors, c Case) {
 			}
 		case "purge":
 			checkOutcome(t, label, s.Expect, store.Purge(t.Context(), id))
+		case "init_index", "reindex":
+			is := store.(artifact.IndexStore)
+			run := is.InitIndex
+			if s.Op == "reindex" {
+				run = is.Reindex
+			}
+			checkOutcome(t, label, s.Expect, run(t.Context(), s.Paths))
+		case "find":
+			q := artifact.Query{Where: s.Where, Since: s.Since, After: s.After, Limit: s.Limit}
+			if s.Continue {
+				q.After = next
+			}
+			page, err := store.(artifact.IndexStore).Find(t.Context(), q)
+			checkOutcome(t, label, s.Expect, err)
+			if err == nil {
+				checkFound(t, label, v, s, page)
+				next = page.Next
+			}
 		case "reopen":
 			trusted := s.Trusted
 			if trusted == nil {
@@ -235,6 +290,29 @@ func runCase[B any](t *testing.T, h Harness[B], v Vectors, c Case) {
 		default:
 			t.Fatalf("%s: unknown op", label)
 		}
+	}
+}
+
+func checkFound(t *testing.T, label string, v Vectors, s Step, page artifact.Page) {
+	t.Helper()
+	want := make([]string, 0, len(s.Found))
+	for _, name := range s.Found {
+		record, ok := v.Records[name]
+		if !ok {
+			t.Fatalf("%s: unknown record %q", label, name)
+		}
+		want = append(want, record.CapsuleID)
+	}
+	got := slices.Clone(page.IDs)
+	if s.Unordered {
+		slices.Sort(want)
+		slices.Sort(got)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("%s: found %v, want %v (%v)", label, got, want, s.Found)
+	}
+	if (page.Next != "") != s.More {
+		t.Fatalf("%s: next %q, want more=%t", label, page.Next, s.More)
 	}
 }
 
