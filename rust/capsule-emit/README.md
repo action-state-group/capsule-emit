@@ -22,6 +22,7 @@ let capsule = seal(&input)?; // `capsule["capsule_id"]` is set
 
 | Module | What |
 | --- | --- |
+| `produce` | the Go and TypeScript producing calls: `build`, `received`, `carry`, `build_composition`, `seal`, `sign`, `digest_json`, `verify_capsule`, `verify_envelope`; writes nothing |
 | `capsule` | `seal` a capsule; `seal_local_record` for a record that cites or observes rather than serving an exchange; the inline producer envelope |
 | `jcs` | canonicalization and `capsule_id` |
 | `cose` | COSE_Sign1 signed statements and producer envelopes |
@@ -35,6 +36,47 @@ let capsule = seal(&input)?; // `capsule["capsule_id"]` is set
 | `sequence` | per-counterparty sequence numbers and the gap check |
 
 The `verify_capsule` binary verifies one capsule and statement offline.
+
+## Producing Capsules without a ledger (`produce`)
+
+`produce` offers the same calls as the Go module and the TypeScript package,
+and returns the same bytes. Nothing in it writes: the caller supplies the
+action id and timestamp and keeps the Capsule and envelope it gets back.
+
+| Call | What |
+| --- | --- |
+| `build(input)` | validate an `Input`, derive assurance, compute `capsule_id`, return canonical bytes (`BuiltPayload`) |
+| `received(input, bytes, type)` / `carry(input, bytes)` | bind an opaque foreign artifact by the SHA-256 of its exact bytes |
+| `who`, `can`, `did`, `audit` | assign an existing Capsule to a composition slot |
+| `build_composition(input, members)` | bind existing Capsules into slots, in slot order |
+| `digest_json(value)` | AAC JSON-DIGEST (SHA-256 over JCS) of a serializable value |
+| `sign(built, identity)` | one Producer Envelope over a built Capsule's id |
+| `seal(SealInput)` | digest the payload and output, build, sign; returns `Sealed` |
+| `verify_capsule(bytes)` | strict decode plus AAC Class 1 |
+| `verify_envelope(capsule_id, bytes)` | authenticate a Producer Envelope |
+| `decode_payload(bytes)` | strict JSON decode of Capsule bytes |
+| `SigningIdentity` | `from_ed25519(key)`, or `new(signer, public_key)` for a KMS or HSM signer |
+
+```rust
+use capsule_emit::produce::{self, Input, SealInput, SigningIdentity};
+
+let sealed = produce::seal(SealInput {
+    capsule: Input { action_id, action_type: "fyi".into(), operator, developer,
+                     timestamp: Some(now), ..Input::default() },
+    payload: Some(serde_json::json!({"ticket": 105})),
+    agent_output: None,
+    model: None,
+    runtime: String::new(),
+    members: None,
+    identity: SigningIdentity::from_ed25519(signing_key),
+})?;
+// sealed.capsule_id, sealed.payload (JCS bytes), sealed.envelope (COSE_Sign1)
+```
+
+`tests/produce_interop.rs` replays the Go module's `format4-interop-v05` and
+`produce-cross-check` packs and compares every Capsule, envelope, digest and
+timestamp byte for byte, and each refusal's error text (for one, only the
+part before the JSON decoder's own message).
 
 ## Keeping the ledger in SQLite (or another standard backend)
 

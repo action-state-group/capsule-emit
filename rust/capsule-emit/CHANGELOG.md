@@ -7,6 +7,12 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+- **The `produce` module: the Go module's producing calls.** `build`,
+  `received`, `carry`, `who`/`can`/`did`/`audit`, `build_composition`,
+  `digest_json`, `sign`, `seal`, `verify_capsule`, `verify_envelope`,
+  `decode_payload`, `SigningIdentity` and the spec constants, with Capsule and
+  Producer Envelope bytes identical to Go's. Nothing in it writes a ledger or
+  store. Additive: `capsule::seal` and the ledger are unchanged.
 - **Breaking: the `structure` module is gone; Class 1 verification is
   agent-action-capsule's** (#366). `verify::verify_offline` takes
   `structure_ok`, `capsule_id_ok` and `chain_ok` from

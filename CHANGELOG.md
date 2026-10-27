@@ -6,6 +6,22 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (Rust): the producing calls Go and TypeScript have
+
+The `capsule-emit` crate has a `produce` module with the Go module's
+producing API: `build`, `received`, `carry`, `who`/`can`/`did`/`audit`,
+`build_composition`, `digest_json`, `sign`, `seal` (build, sign and return,
+writing nothing), `verify_capsule`, `verify_envelope`, `decode_payload`, a
+`SigningIdentity` that takes a local Ed25519 key or an external signer, and
+the spec constants and wire vocabulary. Its Capsule bytes, Capsule IDs and
+Producer Envelopes are identical to Go's: the crate's tests replay
+`go/testdata/capsule-emit/format4-interop-v05` and the Go-generated
+`go/testdata/produce-cross-check` pack Python also replays, which pins
+digests, timestamps and the error text of refused inputs as well. That pack
+gained the cases the Rust work needed (non-UTF-8 artifacts, negative zero,
+composition of a composition, and 29 more rejections). The existing
+`capsule::seal` and the ledger are unchanged.
+
 ### Added (all languages): artifact store index and find
 
 The artifact store has an optional index extension (#380). A namespace
