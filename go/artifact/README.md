@@ -17,6 +17,12 @@ existing storage-free behavior.
   originals. None seals, appends to CLL, or publishes checkpoints. Only the SQL
   backends implement the optional `artifact.TxStore` (`PutTx`/`GetTx`) for
   joining a caller-owned transaction; detect it with a type assertion.
+- Every backend also implements the optional `artifact.IndexStore`
+  (`InitIndex`/`Reindex`/`Find`): a namespace declares JSON paths into its
+  Capsules, the store extracts their values at `Put`, and `Find` returns the
+  matching Capsule IDs in admission order, a page at a time. Admission order
+  is not CLL order. The SQL backends persist the declaration; `jsonl` and
+  `memory` keep it in the open store.
 - The SQL backends hold immutable Capsule/envelope bytes and an inventory checksum
   in `capsule_store_capsules`, and named originals plus purge tombstones in
   `capsule_store_artifacts`. The JSONL backend instead stores one record per line
