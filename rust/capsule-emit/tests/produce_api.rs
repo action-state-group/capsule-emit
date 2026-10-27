@@ -248,3 +248,96 @@ fn constants_mirror_the_go_module() {
     ));
     assert!(!is_v4_irreversibility_class("custom_class"));
 }
+
+fn nested_arrays(levels: usize) -> Vec<u8> {
+    format!("{}0{}", "[".repeat(levels), "]".repeat(levels)).into_bytes()
+}
+
+/// A Capsule is one level deeper than its deepest extension, so the deepest
+/// extension `build` accepts is the deepest whose Capsule still decodes.
+#[test]
+fn build_refuses_a_capsule_nested_deeper_than_verify_capsule_decodes() {
+    let with_extension = |levels: usize| Input {
+        extensions: vec![Extension {
+            name: "note".into(),
+            value: nested_arrays(levels),
+        }],
+        ..input("d/1")
+    };
+    let deepest = build(with_extension(127)).unwrap();
+    assert!(verify_capsule(&deepest.json).unwrap().ok);
+    sign(&deepest, &SigningIdentity::from_ed25519(key(1))).unwrap();
+    assert_eq!(
+        build(with_extension(128)).unwrap_err().to_string(),
+        "built Capsule nests 129 levels deep; a Capsule may nest at most 128"
+    );
+
+    // Reference coordinates sit three levels down: references, the entry,
+    // then log_coordinates.
+    let deep = capsule_emit::jcs::decode_record(&nested_arrays(125)).unwrap();
+    let mut coordinates = serde_json::Map::new();
+    coordinates.insert("proof".into(), deep);
+    let with_reference = Input {
+        references: Some(vec![Reference {
+            reference_type: "r".into(),
+            digest_alg: "SHA-256".into(),
+            digest: "d".into(),
+            log_coordinates: Some(coordinates),
+            ..Reference::default()
+        }]),
+        ..input("d/2")
+    };
+    assert_eq!(
+        build(with_reference).unwrap_err().to_string(),
+        "built Capsule nests 129 levels deep; a Capsule may nest at most 128"
+    );
+}
+
+#[test]
+fn go_zero_time_is_no_timestamp() {
+    let zero = Utc.with_ymd_and_hms(1, 1, 1, 0, 0, 0).unwrap();
+    let at = |timestamp| Input {
+        timestamp: Some(timestamp),
+        ..input("z/1")
+    };
+    assert_eq!(
+        build(at(zero)).unwrap_err().to_string(),
+        "timestamp is required"
+    );
+    // One nanosecond later is not Go's zero time, though it truncates to it.
+    let built = build(at(zero + chrono::Duration::nanoseconds(1))).unwrap();
+    assert_eq!(built.value["timestamp"], json!("0001-01-01T00:00:00Z"));
+}
+
+/// Native floats go through `digest_json` as Go marshals them; a
+/// `serde_json::Value` number keeps its text, so `2.0` there is a float, as
+/// Go's `json.Number("2.0")` is.
+#[test]
+fn integral_floats_follow_their_representation() {
+    assert_eq!(
+        digest_json(&[2.0f64, -0.0]).unwrap(),
+        digest_json(&json!([2, 0])).unwrap()
+    );
+    assert!(digest_json(&json!(2.0)).is_err());
+
+    let coordinates = |value: serde_json::Value| Input {
+        references: Some(vec![Reference {
+            reference_type: "r".into(),
+            digest_alg: "SHA-256".into(),
+            digest: "d".into(),
+            log_coordinates: Some(value.as_object().unwrap().clone()),
+            ..Reference::default()
+        }]),
+        ..input("f/2")
+    };
+    build(coordinates(
+        json!({"log_id": "l", "leaf_index": 2, "inclusion_proof": []}),
+    ))
+    .unwrap();
+    assert!(build(coordinates(
+        json!({"log_id": "l", "leaf_index": 2.0, "inclusion_proof": []})
+    ))
+    .unwrap_err()
+    .to_string()
+    .starts_with("compute capsule id: "));
+}

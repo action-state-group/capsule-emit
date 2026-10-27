@@ -105,6 +105,15 @@ pub(super) fn build_with(
         payload.insert(extension.name.clone(), value);
     }
 
+    // Extensions and reference coordinates each fit the decoder's limit on
+    // their own but sit one or more levels down in the Capsule; refuse a
+    // Capsule that verify_capsule could not decode back.
+    let levels = nesting_levels(&payload);
+    if levels > MAX_CAPSULE_LEVELS {
+        return invalid(format!(
+            "built Capsule nests {levels} levels deep; a Capsule may nest at most {MAX_CAPSULE_LEVELS}"
+        ));
+    }
     let capsule_id = canonical::compute_capsule_id(&payload)
         .map_err(|e| ProduceError::invalid(format!("compute capsule id: {e}")))?;
     payload.insert("capsule_id".into(), json!(capsule_id));
@@ -125,6 +134,35 @@ pub(super) fn build_with(
         value,
         json: encoded,
     })
+}
+
+/// Go's zero `time.Time`, January 1 of year 1, 00:00:00 UTC.
+fn go_zero_time() -> DateTime<Utc> {
+    chrono::NaiveDate::from_ymd_opt(1, 1, 1)
+        .and_then(|day| day.and_hms_opt(0, 0, 0))
+        .expect("a valid date")
+        .and_utc()
+}
+
+/// The deepest nesting the agent-action-capsule decoder accepts, counting
+/// the Capsule object itself as one level.
+const MAX_CAPSULE_LEVELS: usize = 128;
+
+/// How many levels of objects and arrays a Capsule nests, the Capsule
+/// object included. Iterative, so a deep value cannot overflow the stack.
+fn nesting_levels(payload: &Map<String, Value>) -> usize {
+    let mut deepest = 1;
+    let mut pending: Vec<(&Value, usize)> = payload.values().map(|v| (v, 2)).collect();
+    while let Some((value, level)) = pending.pop() {
+        let children: Vec<&Value> = match value {
+            Value::Object(members) => members.values().collect(),
+            Value::Array(items) => items.iter().collect(),
+            _ => continue,
+        };
+        deepest = deepest.max(level);
+        pending.extend(children.into_iter().map(|child| (child, level + 1)));
+    }
+    deepest
 }
 
 fn insert_text(map: &mut Map<String, Value>, key: &str, value: &str) {
@@ -299,7 +337,12 @@ fn validate_input(input: &Input, binding: Option<&Binding>) -> Result<(), Produc
             return invalid(format!("{name} is required"));
         }
     }
-    if input.timestamp.is_none() {
+    // Go's zero time.Time (0001-01-01T00:00:00Z) is its "unset" value; refuse
+    // it here too, compared before microsecond truncation as Go's IsZero is.
+    if input
+        .timestamp
+        .is_none_or(|timestamp| timestamp == go_zero_time())
+    {
         return invalid("timestamp is required");
     }
     if input.action_type != ACTION_TYPE_FYI && input.action_type != ACTION_TYPE_DECIDE {

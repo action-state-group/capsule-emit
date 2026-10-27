@@ -42,7 +42,10 @@ The `verify_capsule` binary verifies one capsule and statement offline.
 `produce` offers the same calls as the Go module and the TypeScript package,
 and returns the same bytes, with one limit: JSON nesting is capped at 128
 levels (Go accepts 1000), so Rust refuses an input Go accepts at 129 to 1000
-levels. Nothing in it writes: the caller supplies the
+levels, counting the Capsule object itself. `digest_json` writes native
+floats as Go does: an integral value below 1e21 as an integer, NaN and
+infinities refused. A `serde_json::Value` number keeps its text, so
+`json!(2.0)` is a float, as Go's `json.Number("2.0")` is. Nothing in it writes: the caller supplies the
 action id and timestamp and keeps the Capsule and envelope it gets back.
 
 | Call | What |
