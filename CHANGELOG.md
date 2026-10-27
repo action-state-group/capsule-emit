@@ -24,9 +24,10 @@ unchanged. Detect the extension with Go `artifact.IndexStore`, TypeScript
 Python now has the producing calls Go and TypeScript have, in snake_case:
 `digest_json`, `build`, `received`, `carry`, `who`/`can`/`did`/`audit`,
 `build_composition`, `sign`, `seal`, `verify_envelope`, `verify_capsule`,
-`decode_payload`, an Ed25519 signing identity
-(`new_ed25519_signing_identity`, `generate_signing_identity`) and the spec
-constants, with typed dataclass inputs (`Input`, `SealInput` and their
+`decode_payload`, an Ed25519 signing identity from a key or seed
+(`new_ed25519_signing_identity`, `generate_signing_identity`; no
+external-signer constructor yet, unlike Go `NewSigningIdentity` and TypeScript
+`createSigningIdentity`) and the spec constants, with typed dataclass inputs (`Input`, `SealInput` and their
 members). They write nothing: `produce.seal` returns the Capsule ID, the
 exact Capsule bytes and the Producer Envelope bytes. For the same inputs the
 bytes equal Go's and TypeScript's: the tests replay the shared

@@ -3,7 +3,7 @@
 
 It builds Agent Action Capsule format-4 records from values an application
 observed, signs their Producer Envelopes and verifies both, and writes
-nothing: persistence, ledgers and witnessing stay with the caller. For the
+nothing: storage and witnessing stay with the caller. For the
 same inputs it returns byte-identical Capsule and envelope bytes to
 ``github.com/action-state-group/capsule-emit/go`` and
 ``@action-state-group/capsule-emit``.
