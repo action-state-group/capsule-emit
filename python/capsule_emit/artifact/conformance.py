@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from importlib import resources
 from typing import Any, Callable
 
+from .index import IndexStore
 from .record import ArtifactError, Record, decode_record
 
 __all__ = ["ConformanceTest", "Harness", "Outcome", "diff", "load_vectors", "needs", "run", "tests"]
@@ -40,6 +41,9 @@ class Harness:
     store over it without calling ``init`` and lets constructor errors raise.
     ``durable``: a store reopened over the same backing sees earlier writes.
     ``shared_backing``: stores with different namespaces can share a backing.
+    ``durable_index``: a store reopened over the same backing keeps the index
+    paths declared earlier (the SQL backends). The ``index`` capability is
+    detected: the store implements :class:`~capsule_emit.artifact.index.IndexStore`.
     ``close(backing)``, if given, releases a backing after its case.
     ``originals`` and ``purge`` are ``False`` for a store that declares it
     keeps no originals or refuses purge (the legacy ledger); the cases that
@@ -50,6 +54,7 @@ class Harness:
     open: Callable[[Any, str, list], Any]
     durable: bool = False
     shared_backing: bool = False
+    durable_index: bool = False
     close: Callable[[Any], None] | None = None
     originals: bool = True
     purge: bool = True
@@ -148,6 +153,7 @@ def _case_test(harness: Harness, vectors: dict, case: dict) -> Callable[[], None
     def run() -> None:
         backing = harness.new_backing()
         stores: dict = {}
+        next_cursor = ""
 
         def open_store(name: str, trusted: list) -> None:
             spec = case["stores"][name]
@@ -180,6 +186,21 @@ def _case_test(harness: Harness, vectors: dict, case: dict) -> Callable[[], None
                 elif op == "purge":
                     got, detail = _outcome(lambda s=store, i=step["id"]: s.purge(i))
                     _expect(label, step["expect"], got, detail)
+                elif op in ("init_index", "reindex"):
+                    method = store.init_index if op == "init_index" else store.reindex
+                    paths = step.get("paths") or []
+                    got, detail = _outcome(lambda m=method, p=paths: m(p))
+                    _expect(label, step["expect"], got, detail)
+                elif op == "find":
+                    after = next_cursor if step.get("continue") else step.get("after")
+                    query = {"where": step.get("where"), "since": step.get("since"), "after": after}
+                    if "limit" in step:
+                        query["limit"] = step["limit"]
+                    got, page = _outcome(lambda s=store, q=query: s.find(**q))
+                    _expect(label, step["expect"], got, page)
+                    if got == "ok":
+                        _check_found(label, vectors, step, page)
+                        next_cursor = page.next
                 elif op == "reopen":
                     open_store(name, step.get("trusted") or case["stores"][name]["trusted"])
                 else:
@@ -189,6 +210,32 @@ def _case_test(harness: Harness, vectors: dict, case: dict) -> Callable[[], None
                 harness.close(backing)
 
     return run
+
+
+def _check_found(label: str, vectors: dict, step: dict, page: Any) -> None:
+    want = []
+    for name in step.get("found", []):
+        if name not in vectors["records"]:
+            raise ConformanceFailure(f"{label}: unknown record {name!r}")
+        want.append(vectors["records"][name]["capsule_id"])
+    got = list(page.ids)
+    if step.get("unordered"):
+        want, got = sorted(want), sorted(got)
+    if got != want:
+        raise ConformanceFailure(f"{label}: found {got}, want {want} ({step.get('found', [])})")
+    if bool(page.next) != bool(step.get("more")):
+        raise ConformanceFailure(f"{label}: next {page.next!r}, want more={bool(step.get('more'))}")
+
+
+def _indexes(harness: Harness, vectors: dict) -> bool:
+    """Whether the backend's stores implement the index extension."""
+    backing = harness.new_backing()
+    try:
+        store = harness.open(backing, "probe", _keys(vectors, ["trusted"]))
+        return isinstance(store, IndexStore)
+    finally:
+        if harness.close is not None:
+            harness.close(backing)
 
 
 def needs(vectors: dict, case: dict) -> list:
@@ -213,9 +260,12 @@ def tests(harness: Harness, vectors: dict | None = None) -> list:
     capabilities = {
         "durable": harness.durable,
         "shared_backing": harness.shared_backing,
+        "durable_index": harness.durable_index,
         "originals": harness.originals,
         "purge": harness.purge,
     }
+    if any("index" in case.get("requires", []) for case in vectors["cases"]):
+        capabilities["index"] = _indexes(harness, vectors)
     for case in vectors["cases"]:
         missing = [r for r in needs(vectors, case) if not capabilities.get(r, False)]
         skip = f"backend lacks capability {missing[0]}" if missing else None

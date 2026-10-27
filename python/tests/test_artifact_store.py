@@ -39,6 +39,7 @@ VECTORS = conformance.load_vectors()
 TRUSTED = bytes.fromhex(VECTORS["keys"]["trusted"])
 MYSQL = os.environ.get("CAPSULE_STORAGE_TEST_MYSQL", "")
 CONFORMANCE_NAMESPACES = ("conformance", "alpha", "beta")
+INDEX_TABLES = ("capsule_store_index", "capsule_store_index_records", "capsule_store_index_paths")
 
 
 def record(name):
@@ -64,7 +65,7 @@ def mysql_backing():
     connection = mysql_connection()
     MysqlArtifactStore(connection, "conformance", [TRUSTED]).init()
     with connection.cursor() as cursor:
-        for table in ("capsule_store_artifacts", "capsule_store_capsules"):
+        for table in INDEX_TABLES + ("capsule_store_artifacts", "capsule_store_capsules"):
             cursor.execute(f"DELETE FROM {table} WHERE namespace IN (%s,%s,%s)", CONFORMANCE_NAMESPACES)
     connection.commit()
     return connection
@@ -84,6 +85,7 @@ def harnesses(tmp_path_factory):
         open=lambda conn, ns, keys: SqliteArtifactStore(conn, ns, keys),
         durable=True,
         shared_backing=True,
+        durable_index=True,
         close=lambda conn: conn.close(),
     )
     yield "mysql", conformance.Harness(
@@ -91,6 +93,7 @@ def harnesses(tmp_path_factory):
         open=lambda conn, ns, keys: MysqlArtifactStore(conn, ns, keys),
         durable=True,
         shared_backing=True,
+        durable_index=True,
         close=lambda conn: conn.close(),
     )
 
@@ -393,7 +396,7 @@ def test_mysql_transactional_extension_and_lock():
     store = MysqlArtifactStore(connection, "py-tx", [TRUSTED])
     store.init()
     with connection.cursor() as cursor:
-        for table in ("capsule_store_artifacts", "capsule_store_capsules"):
+        for table in INDEX_TABLES + ("capsule_store_artifacts", "capsule_store_capsules"):
             cursor.execute(f"DELETE FROM {table} WHERE namespace='py-tx'")
     connection.commit()
     connection.begin()

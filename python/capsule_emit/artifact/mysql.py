@@ -13,9 +13,11 @@ number as ``args[0]`` (PyMySQL, mysqlclient).
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable, Mapping
 from typing import Any, Callable, TypeVar
 
 from ._sql import SqlArtifactStore
+from .index import DEFAULT_FIND_LIMIT, Page, normalize_paths
 from .record import InvalidError, Record, valid_id
 
 __all__ = ["SCHEMA", "MysqlArtifactStore"]
@@ -50,6 +52,30 @@ CREATE TABLE IF NOT EXISTS capsule_store_artifacts (
    OR (retention_state = 'never_retained' AND content_bytes IS NULL AND content_sha256 = '' AND purged_at IS NULL)
  )
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS capsule_store_index_paths (
+ namespace VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ paths TEXT CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ PRIMARY KEY (namespace)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS capsule_store_index_records (
+ seq BIGINT NOT NULL AUTO_INCREMENT,
+ namespace VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ capsule_id CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ ts BIGINT NULL,
+ PRIMARY KEY (seq),
+ UNIQUE KEY capsule_store_index_records_id (namespace, capsule_id),
+ KEY capsule_store_index_records_ts (namespace, ts)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS capsule_store_index (
+ namespace VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ path VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ value_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ seq BIGINT NOT NULL,
+ PRIMARY KEY (namespace, path, value_sha256, seq)
+) ENGINE=InnoDB;
 """
 
 _DUPLICATE_KEY = 1062
@@ -68,10 +94,18 @@ class MysqlArtifactStore(SqlArtifactStore):
     """Implements the store contract and its transactional extension
     (:meth:`put_tx`, :meth:`get_tx`, where ``tx`` is this store's connection
     inside a transaction the caller began). ``get_tx(..., lock=True)`` reads
-    with ``FOR UPDATE``."""
+    with ``FOR UPDATE``. Also implements the index extension
+    (:class:`capsule_emit.artifact.index.IndexStore`)."""
 
     _created_at = "UTC_TIMESTAMP(6)"
     _now = "UTC_TIMESTAMP(6)"
+    _index_tables_exist = (
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()"
+        " AND table_name IN ('capsule_store_index_paths','capsule_store_index_records','capsule_store_index')"
+    )
+    _lock_shared = " FOR SHARE"
+    _lock_update = " FOR UPDATE"
+    _insert_ignore = "INSERT IGNORE INTO"
 
     def _sql(self, statement: str) -> str:
         return statement.replace("%", "%%").replace("?", "%s")
@@ -83,7 +117,7 @@ class MysqlArtifactStore(SqlArtifactStore):
         return " FOR UPDATE" if lock else ""
 
     def init(self) -> None:
-        """Creates the v1 tables if absent. Run during provisioning, never inside
+        """Creates the tables if absent. Run during provisioning, never inside
         an application transaction: MySQL DDL commits implicitly."""
         with self._conn.cursor() as cursor:
             for statement in SCHEMA.split(";"):
@@ -104,14 +138,17 @@ class MysqlArtifactStore(SqlArtifactStore):
     def put(self, record: Record) -> None:
         """Admits a record in its own transaction, retrying an InnoDB deadlock at
         most four times with bounded backoff. :meth:`put_tx` never retries."""
+        self._retry_deadlock(lambda: self._transaction(lambda: self.put_tx(self._conn, record)))
+
+    def _retry_deadlock(self, run: Callable[[], T]) -> T:
         for attempt in range(_MAX_DEADLOCK_RETRIES + 1):
             try:
-                self._transaction(lambda: self.put_tx(self._conn, record))
-                return
+                return run()
             except Exception as exc:
                 if _errno(exc) != _DEADLOCK or attempt == _MAX_DEADLOCK_RETRIES:
                     raise
             time.sleep((1 << attempt) * 0.01)
+        raise AssertionError("unreachable")
 
     def get(self, capsule_id: str) -> Record:
         if not valid_id(capsule_id):
@@ -124,3 +161,27 @@ class MysqlArtifactStore(SqlArtifactStore):
         if not valid_id(capsule_id):
             raise InvalidError("capsule id")
         self._transaction(lambda: self._purge_tx(self._conn, capsule_id))
+
+    def init_index(self, paths: Iterable[str]) -> None:
+        """Provisions the tables as :meth:`init` does, then declares paths for
+        the namespace and indexes its stored records. The same set again does
+        nothing; a different set raises ``ConflictError``."""
+        paths = normalize_paths(paths)
+        self.init()
+        self._retry_deadlock(lambda: self._transaction(lambda: self._declare_tx(self._conn, paths)))
+
+    def reindex(self, paths: Iterable[str]) -> None:
+        """Replaces the namespace's declared paths and rebuilds its index."""
+        paths = normalize_paths(paths)
+        self.init()
+        self._retry_deadlock(lambda: self._transaction(lambda: self._reindex_tx(self._conn, paths)))
+
+    def find(
+        self,
+        where: Mapping[str, str] | None = None,
+        since: str | None = None,
+        after: str | None = None,
+        limit: int = DEFAULT_FIND_LIMIT,
+    ) -> Page:
+        """Returns one page of IDs matching the query in admission order."""
+        return self._transaction(lambda: self._find_tx(self._conn, where, since, after, limit))
