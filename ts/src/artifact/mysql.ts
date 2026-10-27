@@ -2,7 +2,12 @@
 // backend's contract: immutable records, byte-identical retry admission, and
 // fail-closed reads that verify signer and original digests. The caller owns
 // the pool, credentials, TLS, and trusted keys.
-import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
+import type {
+  Pool,
+  PoolConnection,
+  ResultSetHeader,
+  RowDataPacket,
+} from "mysql2/promise";
 
 import {
   ArtifactError,
@@ -14,6 +19,13 @@ import {
   type RetentionState,
   type TxStore,
 } from "./record.js";
+import {
+  normalizePaths,
+  type IndexStore,
+  type Page,
+  type Query,
+} from "./lookup.js";
+import { MYSQL_INDEX_SCHEMA, SqlIndex, type SqlTx } from "./lookup-sql.js";
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 const ID_PATTERN = /^[0-9a-f]{64}$/u;
@@ -49,6 +61,38 @@ CREATE TABLE IF NOT EXISTS capsule_store_artifacts (
 ) ENGINE=InnoDB;
 `;
 
+const DIALECT = {
+  tablesExist:
+    "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema=DATABASE()" +
+    " AND table_name IN ('capsule_store_index_paths','capsule_store_index_records','capsule_store_index')",
+  lockShared: " FOR SHARE",
+  lockUpdate: " FOR UPDATE",
+  insertIgnore: "INSERT IGNORE INTO",
+};
+
+// mysql2 formats a bigint parameter inconsistently across versions; integers
+// past 2^53 are not stored here, so pass them as decimal strings.
+function sqlTx(connection: PoolConnection): SqlTx {
+  const bind = (params: readonly unknown[]): unknown[] =>
+    params.map((p) => (typeof p === "bigint" ? p.toString() : p));
+  return {
+    all: async (sql, params) => {
+      const [rows] = await connection.query<RowDataPacket[]>(sql, bind(params));
+      return rows;
+    },
+    run: async (sql, params) => {
+      const [result] = await connection.query<ResultSetHeader>(
+        sql,
+        bind(params),
+      );
+      return {
+        changes: result.affectedRows,
+        lastId: BigInt(result.insertId),
+      };
+    },
+  };
+}
+
 const DUPLICATE_KEY = 1062;
 const DEADLOCK = 1213;
 
@@ -68,8 +112,9 @@ function toBytes(value: Buffer): Uint8Array {
  * An application-importable SDK, independent of CLI profiles and CLL log IDs.
  * A namespace isolates a collection; it must not implicitly be a log ID.
  */
-export class MysqlArtifactStore implements TxStore<PoolConnection> {
+export class MysqlArtifactStore implements TxStore<PoolConnection>, IndexStore {
   private readonly trusted: Uint8Array[];
+  private readonly lookup: SqlIndex;
 
   public constructor(
     private readonly pool: Pool,
@@ -84,6 +129,7 @@ export class MysqlArtifactStore implements TxStore<PoolConnection> {
         throw new ArtifactError("invalid", "public key size");
       this.trusted.push(Uint8Array.from(key));
     }
+    this.lookup = new SqlIndex(namespace, DIALECT);
   }
 
   /**
@@ -91,7 +137,7 @@ export class MysqlArtifactStore implements TxStore<PoolConnection> {
    * application transaction: MySQL DDL implicitly commits.
    */
   public async init(): Promise<void> {
-    for (const statement of SCHEMA.split(";")) {
+    for (const statement of (SCHEMA + MYSQL_INDEX_SCHEMA).split(";")) {
       if (statement.trim() === "") continue;
       await this.pool.query(statement);
     }
@@ -167,6 +213,11 @@ export class MysqlArtifactStore implements TxStore<PoolConnection> {
           a.state,
         ],
       );
+    await this.lookup.admit(
+      sqlTx(connection),
+      prepared.capsuleId,
+      prepared.capsule,
+    );
   }
 
   /** Loads a coherent snapshot and verifies authenticity and original digests. */
@@ -261,6 +312,48 @@ export class MysqlArtifactStore implements TxStore<PoolConnection> {
       throw error;
     } finally {
       connection.release();
+    }
+  }
+
+  /**
+   * Provisions the tables as `init` does, then declares index paths for the
+   * namespace and indexes its stored records. The same set again does
+   * nothing; a different set is `conflict`.
+   */
+  public async initIndex(paths: readonly string[]): Promise<void> {
+    normalizePaths(paths);
+    await this.init();
+    await this.inTx((tx) => this.lookup.declare(tx, paths));
+  }
+
+  /** Replaces the namespace's declared index paths and rebuilds its index. */
+  public async reindex(paths: readonly string[]): Promise<void> {
+    normalizePaths(paths);
+    await this.init();
+    await this.inTx((tx) => this.lookup.reindex(tx, paths));
+  }
+
+  /** Returns one page of IDs matching the query, in admission order. */
+  public async find(query?: Query): Promise<Page> {
+    return this.inTx((tx) => this.lookup.find(tx, query));
+  }
+
+  // Runs one transaction, retrying a deadlock like put.
+  private async inTx<T>(run: (tx: SqlTx) => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt += 1) {
+      const connection = await this.pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const result = await run(sqlTx(connection));
+        await connection.commit();
+        return result;
+      } catch (error) {
+        await connection.rollback();
+        if (errno(error) !== DEADLOCK || attempt >= 4) throw error;
+      } finally {
+        connection.release();
+      }
+      await sleep((1 << attempt) * 10);
     }
   }
 }

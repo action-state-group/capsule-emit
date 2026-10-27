@@ -41,7 +41,9 @@ describe("MySQL async verification transaction boundary (driver double)", () => 
     const writing = store.put(record);
     expect(calls.commit).not.toHaveBeenCalled();
     await writing;
-    expect(calls.query).toHaveBeenCalledTimes(record.artifacts.length + 1);
+    // The capsule row, each artifact, and the check for the index tables
+    // (which this double reports as absent).
+    expect(calls.query).toHaveBeenCalledTimes(record.artifacts.length + 2);
     expect(calls.commit).toHaveBeenCalledOnce();
     expect(calls.rollback).not.toHaveBeenCalled();
     expect(calls.release).toHaveBeenCalledOnce();

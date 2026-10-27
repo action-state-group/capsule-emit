@@ -14,6 +14,13 @@ import {
   type RetentionState,
   type TxStore,
 } from "./record.js";
+import {
+  normalizePaths,
+  type IndexStore,
+  type Page,
+  type Query,
+} from "./lookup.js";
+import { SQLITE_INDEX_SCHEMA, SqlIndex, type SqlTx } from "./lookup-sql.js";
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 const ID_PATTERN = /^[0-9a-f]{64}$/u;
@@ -47,6 +54,27 @@ CREATE TABLE IF NOT EXISTS capsule_store_artifacts (
  )
 );
 `;
+
+const DIALECT = {
+  tablesExist: `SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('capsule_store_index_paths','capsule_store_index_records','capsule_store_index')`,
+  lockShared: "",
+  lockUpdate: "",
+  insertIgnore: "INSERT OR IGNORE INTO",
+};
+
+function sqlTx(db: Database): SqlTx {
+  return {
+    all: async (sql, params) =>
+      db.prepare(sql).all(...params) as { [column: string]: unknown }[],
+    run: async (sql, params) => {
+      const result = db.prepare(sql).run(...params);
+      return {
+        changes: result.changes,
+        lastId: BigInt(result.lastInsertRowid),
+      };
+    },
+  };
+}
 
 interface CapsuleRow {
   capsule_bytes: Buffer;
@@ -82,8 +110,9 @@ function isConstraint(error: unknown): boolean {
  * foreign_keys=ON` and at most one in-flight transaction) and the trusted
  * keys. A namespace isolates a collection; it must not implicitly be a log ID.
  */
-export class SqliteArtifactStore implements TxStore<Database> {
+export class SqliteArtifactStore implements TxStore<Database>, IndexStore {
   private readonly trusted: Uint8Array[];
+  private readonly lookup: SqlIndex;
 
   public constructor(
     private readonly db: Database,
@@ -98,11 +127,12 @@ export class SqliteArtifactStore implements TxStore<Database> {
         throw new ArtifactError("invalid", "public key size");
       this.trusted.push(Uint8Array.from(key));
     }
+    this.lookup = new SqlIndex(namespace, DIALECT);
   }
 
   /** Creates v1 tables. Run explicitly during provisioning; no existing data is altered. */
   public async init(): Promise<void> {
-    this.db.exec(SCHEMA);
+    this.db.exec(SCHEMA + SQLITE_INDEX_SCHEMA);
   }
 
   /** Persists an immutable record atomically, accepting byte-identical retries. */
@@ -168,6 +198,7 @@ export class SqliteArtifactStore implements TxStore<Database> {
         a.contentSha256 ?? "",
         a.state,
       );
+    await this.lookup.admit(sqlTx(tx), prepared.capsuleId, prepared.capsule);
   }
 
   /** Loads a coherent snapshot and verifies authenticity and original digests. */
@@ -257,6 +288,41 @@ export class SqliteArtifactStore implements TxStore<Database> {
         )
         .run(this.namespace, id);
       this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  /**
+   * Provisions the tables as `init` does, then declares index paths for the
+   * namespace and indexes its stored records. The same set again does
+   * nothing; a different set is `conflict`.
+   */
+  public async initIndex(paths: readonly string[]): Promise<void> {
+    normalizePaths(paths);
+    await this.init();
+    await this.inTx((tx) => this.lookup.declare(tx, paths));
+  }
+
+  /** Replaces the namespace's declared index paths and rebuilds its index. */
+  public async reindex(paths: readonly string[]): Promise<void> {
+    normalizePaths(paths);
+    await this.init();
+    await this.inTx((tx) => this.lookup.reindex(tx, paths));
+  }
+
+  /** Returns one page of IDs matching the query, in admission order. */
+  public async find(query?: Query): Promise<Page> {
+    return this.inTx((tx) => this.lookup.find(tx, query));
+  }
+
+  private async inTx<T>(run: (tx: SqlTx) => Promise<T>): Promise<T> {
+    this.db.exec("BEGIN");
+    try {
+      const result = await run(sqlTx(this.db));
+      this.db.exec("COMMIT");
+      return result;
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;

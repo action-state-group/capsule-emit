@@ -18,8 +18,14 @@ import {
   type Artifact,
   type Record,
   type RetentionState,
-  type Store,
 } from "./record.js";
+import {
+  MemoryIndex,
+  normalizePaths,
+  type IndexStore,
+  type Page,
+  type Query,
+} from "./lookup.js";
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 const ID_PATTERN = /^[0-9a-f]{64}$/u;
@@ -210,9 +216,14 @@ function readSpan(filePath: string, span: LineSpan): string {
  * path and the trusted keys. A namespace isolates a collection; it must not
  * implicitly be a log ID.
  */
-export class JsonlArtifactStore implements Store {
+export class JsonlArtifactStore implements IndexStore {
   private readonly trusted: Uint8Array[];
+  // Map iteration follows first insertion, which is admission order: purge
+  // rebuilds it in file order.
   private index: Map<string, LineSpan>;
+  // The index extension's declaration lives only in this store: a JSONL file
+  // stores records and nothing else.
+  private readonly lookup = new MemoryIndex();
 
   public constructor(
     private readonly filePath: string,
@@ -287,6 +298,44 @@ export class JsonlArtifactStore implements Store {
     }
     fs.appendFileSync(this.filePath, Buffer.concat([prefix, lineBuf]));
     this.index.set(prepared.capsuleId, { offset, length: lineBuf.length });
+    this.lookup.add(prepared.capsuleId, prepared.capsule);
+  }
+
+  /**
+   * Creates the file as `init` does, then declares index paths for this store
+   * and indexes the records in the file, in file order.
+   */
+  public async initIndex(paths: readonly string[]): Promise<void> {
+    normalizePaths(paths);
+    await this.init();
+    if (this.lookup.declare(paths)) this.indexAll();
+  }
+
+  /** Replaces the declared index paths and rebuilds the index from the file. */
+  public async reindex(paths: readonly string[]): Promise<void> {
+    const normalized = normalizePaths(paths);
+    await this.init();
+    this.lookup.reset(normalized);
+    this.indexAll();
+  }
+
+  /** Returns one page of IDs matching the query, in admission order. */
+  public async find(query?: Query): Promise<Page> {
+    return this.lookup.find(query);
+  }
+
+  // A line that no longer decodes as a record is left out; get reports it as
+  // corrupt.
+  private indexAll(): void {
+    for (const [id, span] of this.index) {
+      try {
+        const record = decodeRecord(readSpan(this.filePath, span));
+        if (record.capsuleId === id) this.lookup.add(id, record.capsule);
+      } catch (error) {
+        if (!(error instanceof ArtifactError && error.code === "corrupt"))
+          throw error;
+      }
+    }
   }
 
   /** Loads a coherent snapshot and verifies authenticity and original digests. */

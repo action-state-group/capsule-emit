@@ -6,6 +6,7 @@
 // runArtifactConformance runs them all and reports outcomes.
 import vectorsJson from "./conformance-vectors.json" with { type: "json" };
 import { decodeRecord } from "./jsonl.js";
+import { isIndexStore, type IndexStore, type Page } from "./lookup.js";
 import { ArtifactError, type Record, type Store } from "./record.js";
 
 /** Adapts one backend to the suite. `B` is its storage handle. */
@@ -23,6 +24,10 @@ export interface ConformanceHarness<B> {
   durable?: boolean;
   /** Stores with different namespaces can share one backing. */
   sharedBacking?: boolean;
+  /** The backend implements the index extension ({@link IndexStore}). */
+  index?: boolean;
+  /** A reopened store keeps the index paths declared earlier (the SQL backends). */
+  durableIndex?: boolean;
 }
 
 interface StoreSpec {
@@ -38,6 +43,15 @@ interface Step {
   trusted?: string[];
   expect: string;
   result?: string;
+  paths?: string[];
+  where?: { [path: string]: string };
+  since?: string;
+  after?: string;
+  limit?: number;
+  continue?: boolean;
+  found?: string[];
+  more?: boolean;
+  unordered?: boolean;
 }
 
 interface Case {
@@ -166,6 +180,7 @@ function caseTest<B>(h: ConformanceHarness<B>, c: Case): () => Promise<void> {
   return async () => {
     const backing = await h.newBacking();
     const stores = new Map<string, Store>();
+    let next = "";
     const open = async (name: string, trusted: string[]): Promise<void> => {
       const spec = c.stores[name];
       if (spec === undefined) throw new Error(`unknown store ${name}`);
@@ -210,6 +225,36 @@ function caseTest<B>(h: ConformanceHarness<B>, c: Case): () => Promise<void> {
           case "purge":
             expectCode(label, s.expect, await outcome(() => store.purge(id)));
             break;
+          case "init_index":
+          case "reindex": {
+            const indexed = asIndexStore(label, store);
+            const paths = s.paths ?? [];
+            const run =
+              s.op === "reindex"
+                ? () => indexed.reindex(paths)
+                : () => indexed.initIndex(paths);
+            expectCode(label, s.expect, await outcome(run));
+            break;
+          }
+          case "find": {
+            const indexed = asIndexStore(label, store);
+            const query = {
+              where: s.where,
+              since: s.since,
+              after: s.continue === true ? next : s.after,
+              limit: s.limit,
+            };
+            let page: Page | undefined;
+            const code = await outcome(async () => {
+              page = await indexed.find(query);
+            });
+            expectCode(label, s.expect, code);
+            if (code === "ok" && page !== undefined) {
+              checkFound(label, s, page);
+              next = page.next;
+            }
+            break;
+          }
           case "reopen":
             await open(name, s.trusted ?? c.stores[name]?.trusted ?? []);
             break;
@@ -223,6 +268,29 @@ function caseTest<B>(h: ConformanceHarness<B>, c: Case): () => Promise<void> {
   };
 }
 
+function asIndexStore(label: string, store: Store): IndexStore {
+  if (!isIndexStore(store))
+    throw new Error(`${label}: store does not implement the index extension`);
+  return store;
+}
+
+function checkFound(label: string, s: Step, page: Page): void {
+  const want = (s.found ?? []).map((name) => vectorRecord(name).capsuleId);
+  const got = [...page.ids];
+  if (s.unordered === true) {
+    want.sort();
+    got.sort();
+  }
+  if (JSON.stringify(got) !== JSON.stringify(want))
+    throw new Error(
+      `${label}: found ${JSON.stringify(got)}, want ${JSON.stringify(want)} (${(s.found ?? []).join(",")})`,
+    );
+  if ((page.next !== "") !== (s.more ?? false))
+    throw new Error(
+      `${label}: next ${JSON.stringify(page.next)}, want more=${String(s.more ?? false)}`,
+    );
+}
+
 /** One test per constructor vector (`open/<name>`) and per case. */
 export function artifactConformanceTests<B>(
   h: ConformanceHarness<B>,
@@ -234,6 +302,8 @@ export function artifactConformanceTests<B>(
   const capabilities: { [name: string]: boolean } = {
     durable: h.durable ?? false,
     shared_backing: h.sharedBacking ?? false,
+    index: h.index ?? false,
+    durable_index: h.durableIndex ?? false,
   };
   for (const c of conformanceVectors.cases) {
     const missing = (c.requires ?? []).find((r) => !capabilities[r]);

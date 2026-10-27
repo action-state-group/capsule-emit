@@ -44,6 +44,7 @@ function register<B>(name: string, harness: ConformanceHarness<B>): void {
 register("memory", {
   newBacking: () => undefined,
   open: (_b: undefined, ns, keys) => new MemoryArtifactStore(ns, keys),
+  index: true,
 });
 
 register("jsonl", {
@@ -51,6 +52,7 @@ register("jsonl", {
     join(mkdtempSync(join(tmpdir(), "artifact-jsonl-")), "a.jsonl"),
   open: (path: string, ns, keys) => new JsonlArtifactStore(path, ns, keys),
   durable: true,
+  index: true,
 });
 
 register("sqlite", {
@@ -68,6 +70,8 @@ register("sqlite", {
   },
   durable: true,
   sharedBacking: true,
+  index: true,
+  durableIndex: true,
 });
 
 // Opt-in: needs Docker, like mysql.test.ts. Enable with ARTIFACT_MYSQL_TEST=1.
@@ -96,6 +100,9 @@ describe.skipIf(!mysqlEnabled)("mysql conformance", () => {
         for (const table of [
           "capsule_store_artifacts",
           "capsule_store_capsules",
+          "capsule_store_index",
+          "capsule_store_index_records",
+          "capsule_store_index_paths",
         ])
           await pool.query(
             `DELETE FROM ${table} WHERE namespace IN ('conformance','alpha','beta')`,
@@ -105,6 +112,8 @@ describe.skipIf(!mysqlEnabled)("mysql conformance", () => {
       open: (p: mysql.Pool, ns, keys) => new MysqlArtifactStore(p, ns, keys),
       durable: true,
       sharedBacking: true,
+      index: true,
+      durableIndex: true,
     });
     expect(outcomes.filter((o) => o.status === "fail")).toEqual([]);
     expect(outcomes.some((o) => o.status === "pass")).toBe(true);
