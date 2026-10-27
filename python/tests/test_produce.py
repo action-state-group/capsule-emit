@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from capsule_emit import produce as p
+from capsule_emit.produce.digest import MAX_JSON_DEPTH
 
 SEED = bytes(range(32))
 HEX_A = "a" * 64
@@ -391,3 +392,16 @@ def test_verify_envelope_rejects():
     assert caught.value.result.findings
     with pytest.raises(p.EnvelopeVerificationError):
         p.verify_envelope(built.capsule_id, envelope[:-1] + bytes([envelope[-1] ^ 1]))
+
+
+def test_deep_json_within_the_limit_is_a_value_error_not_a_recursion_error():
+    """agent-action-capsule's canonicalizer recurses per nesting level, so
+    nesting that passes the depth check can still exhaust Python's recursion
+    limit; that is reported as ValueError, like excessive depth."""
+    value: list = []
+    for _ in range(MAX_JSON_DEPTH - 2):
+        value = [value]
+    with pytest.raises(ValueError):
+        p.digest_json(value)
+    with pytest.raises(ValueError):
+        p.build(_input(extensions=(p.Extension("deep", json.dumps(value)),)))

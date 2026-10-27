@@ -31,7 +31,7 @@ from .constants import (
     ProvenanceModeValue,
     TimeRung,
 )
-from .digest import check_json_value, decode_strict_json
+from .digest import canonical, check_json_value, decode_strict_json
 from .model import (
     BuiltPayload,
     Chain,
@@ -132,13 +132,13 @@ def build_with_binding(input: Input, binding: dict[str, Any] | None) -> BuiltPay
         payload[extension.name] = _extension_value(extension, payload)
     check_json_value(payload, "$")
 
-    capsule_id = compute_capsule_id(payload)
+    capsule_id = canonical(compute_capsule_id, payload)
     payload["capsule_id"] = capsule_id
-    result = class1(payload)
+    result = canonical(class1, payload)
     if not result.ok:
         raise Class1Error(result)
-    encoded = jcs(payload)
-    return BuiltPayload(capsule_id=capsule_id, value=json.loads(encoded), json=encoded)
+    encoded = canonical(jcs, payload)
+    return BuiltPayload(capsule_id=capsule_id, value=canonical(json.loads, encoded), json=encoded)
 
 
 def format_timestamp(timestamp: Any) -> str:
@@ -401,7 +401,7 @@ def _copy_json(value: Mapping[str, Any], what: str) -> Any:
         if not isinstance(value, dict):
             value = dict(value)
         check_json_value(value, "$")
-        return json.loads(jcs(value))
+        return canonical(json.loads, canonical(jcs, value))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{what}: {exc}") from None
 
@@ -429,15 +429,18 @@ def _extension_value(extension: Extension, payload: Mapping[str, Any]) -> Any:
 
 
 def _check_extension_numbers(value: Any, path: str) -> None:
-    if isinstance(value, bool):
-        return
-    if isinstance(value, float):
-        raise ValueError(f"float at {path}: floating-point values are forbidden in a Capsule")
-    if isinstance(value, int) and not -_MAX_SAFE_INTEGER <= value <= _MAX_SAFE_INTEGER:
-        raise ValueError(f"integer at {path} is outside the interoperable range")
-    if isinstance(value, dict):
-        for key, item in value.items():
-            _check_extension_numbers(item, f"{path}.{key}")
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            _check_extension_numbers(item, f"{path}[{index}]")
+    # Iterative, like check_json_value, so nesting up to MAX_JSON_DEPTH cannot
+    # exhaust Python's recursion limit here.
+    stack: list = [(value, path)]
+    while stack:
+        item, where = stack.pop()
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, float):
+            raise ValueError(f"float at {where}: floating-point values are forbidden in a Capsule")
+        if isinstance(item, int) and not -_MAX_SAFE_INTEGER <= item <= _MAX_SAFE_INTEGER:
+            raise ValueError(f"integer at {where} is outside the interoperable range")
+        if isinstance(item, dict):
+            stack.extend((member, f"{where}.{key}") for key, member in reversed(list(item.items())))
+        elif isinstance(item, list):
+            stack.extend((member, f"{where}[{index}]") for index, member in reversed(list(enumerate(item))))

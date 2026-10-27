@@ -5,11 +5,13 @@ decoder in ``build.go``. Canonicalization is agent-action-capsule's
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from agent_action_capsule.canonical import json_digest
 
 __all__ = ["digest_json", "MAX_JSON_DEPTH"]
+
+_T = TypeVar("_T")
 
 #: The deepest JSON nesting accepted, matching Go's decoder.
 MAX_JSON_DEPTH = 1000
@@ -22,7 +24,18 @@ def digest_json(value: Any) -> str:
     outside the interoperable range, lone surrogates and excessive depth are
     rejected with ``ValueError``; other types with ``TypeError``."""
     check_json_value(value, "$")
-    return json_digest(value)
+    return canonical(json_digest, value)
+
+
+def canonical(call: Callable[..., _T], *args: Any) -> _T:
+    """Run an agent-action-capsule canonicalization call. Its serializer
+    recurses once per nesting level, so JSON within :data:`MAX_JSON_DEPTH` can
+    still exhaust Python's recursion limit (Go accepts it); report that as the
+    same ``ValueError`` as excessive depth rather than a ``RecursionError``."""
+    try:
+        return call(*args)
+    except RecursionError:
+        raise ValueError("JSON nesting is too deep for this canonicalizer") from None
 
 
 def check_json_value(value: Any, path: str) -> None:
