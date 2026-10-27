@@ -429,3 +429,5 @@ def test_timestamp_boundaries_are_value_errors():
         with pytest.raises(ValueError):
             p.format_timestamp(bad)
     assert p.format_timestamp("0001-01-01T00:00:01Z") == "0001-01-01T00:00:01Z"
+    # Go tests IsZero before truncating to microseconds.
+    assert p.format_timestamp("0001-01-01T00:00:00.000000001Z") == "0001-01-01T00:00:00Z"

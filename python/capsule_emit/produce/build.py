@@ -148,6 +148,7 @@ def format_timestamp(timestamp: Any) -> str:
     """Render a timestamp in the UTC wire form Go and TypeScript share: whole
     seconds omit the fraction, otherwise six fractional digits. Sub-microsecond
     digits are truncated."""
+    fraction = ""
     if isinstance(timestamp, datetime):
         if timestamp.tzinfo is None or timestamp.utcoffset() is None:
             raise ValueError("timestamp must be timezone-aware")
@@ -177,8 +178,10 @@ def format_timestamp(timestamp: Any) -> str:
     else:
         raise ValueError("timestamp is required")
     # Go's zero time.Time is its "no timestamp"; the same instant is refused
-    # here so both build the same set of Capsules.
-    if utc == _GO_ZERO_TIME:
+    # here so both build the same set of Capsules. Go checks before it
+    # truncates to microseconds, so a nonzero sub-microsecond fraction is not
+    # the zero time.
+    if utc == _GO_ZERO_TIME and not fraction.strip("0"):
         raise ValueError("timestamp is required")
     text = (
         f"{utc.year:04d}-{utc.month:02d}-{utc.day:02d}T"
