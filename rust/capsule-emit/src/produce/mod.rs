@@ -157,6 +157,9 @@ fn marshal_digest_value<T: serde::Serialize + ?Sized>(value: &T) -> Result<Value
 /// that round-trip at the value's own width, without a fraction (`2`,
 /// `100000010` for the f32 nearest it), where `serde_json` writes `2.0`.
 ///
+/// A float map key is written as Go writes it, as the float's own text
+/// (`-0`, `1.5`, `1e+21`), never normalized to an integer.
+///
 /// [`serialize`] makes one pass over the caller's value: [`GoFloats`] wraps
 /// the `serde_json` serializer, rewrites each float as it arrives and
 /// forwards everything else unchanged, wrapping every nested value again.
@@ -168,7 +171,7 @@ mod floats {
         value: &T,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
-        value.serialize(GoFloats(serializer))
+        value.serialize(GoFloats(serializer, false))
     }
 
     /// What Go writes for a finite float: `Some(digits)` when the value is
@@ -199,16 +202,34 @@ mod floats {
         serializer.serialize_i128(integer)
     }
 
-    /// A serialized value wrapped so its own floats go through [`GoFloats`].
-    struct Wrap<'a, T: ?Sized>(&'a T);
-
-    impl<T: ?Sized + Serialize> Serialize for Wrap<'_, T> {
-        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            self.0.serialize(GoFloats(serializer))
+    /// The text Go writes for a float map key: the float's own text, with no
+    /// integer normalization (`-0`, `2`, `1.5`). Go uses ES6 number form:
+    /// plain decimals (`plain`, a magnitude in [1e-6, 1e21) at the float's
+    /// own width, or zero), which `Display` prints, and otherwise the
+    /// shortest mantissa with a signed exponent (`1e+21`, `1.5e-7`), which
+    /// is `{:e}` with a `+` added to a non-negative exponent.
+    pub(super) fn key_text(display: String, exponent: String, plain: bool) -> String {
+        if plain {
+            return display;
+        }
+        match exponent.split_once('e') {
+            Some((mantissa, power)) if !power.starts_with('-') => format!("{mantissa}e+{power}"),
+            _ => exponent,
         }
     }
 
-    pub(super) struct GoFloats<S>(S);
+    /// A serialized value wrapped so its own floats go through [`GoFloats`];
+    /// `true` marks a map key.
+    struct Wrap<'a, T: ?Sized>(&'a T, bool);
+
+    impl<T: ?Sized + Serialize> Serialize for Wrap<'_, T> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            self.0.serialize(GoFloats(serializer, self.1))
+        }
+    }
+
+    /// The wrapped serializer, and whether it is writing a map key.
+    pub(super) struct GoFloats<S>(S, bool);
 
     /// A compound serializer of the wrapped serializer, wrapping each element.
     pub(super) struct Compound<C>(C);
@@ -228,6 +249,12 @@ mod floats {
             if !v.is_finite() {
                 return Err(unsupported(f64::from(v)));
             }
+            if self.1 {
+                let plain = v == 0.0 || (1e-6..1e21).contains(&v.abs());
+                return self
+                    .0
+                    .serialize_str(&key_text(v.to_string(), format!("{v:e}"), plain));
+            }
             match integer_text(v.to_string(), f64::from(v.abs())) {
                 Some(digits) => write_integer(self.0, &digits),
                 None => self.0.serialize_f32(v),
@@ -236,6 +263,12 @@ mod floats {
         fn serialize_f64(self, v: f64) -> Result<S::Ok, S::Error> {
             if !v.is_finite() {
                 return Err(unsupported(v));
+            }
+            if self.1 {
+                let plain = v == 0.0 || (1e-6..1e21).contains(&v.abs());
+                return self
+                    .0
+                    .serialize_str(&key_text(v.to_string(), format!("{v:e}"), plain));
             }
             match integer_text(v.to_string(), v.abs()) {
                 Some(digits) => write_integer(self.0, &digits),
@@ -289,7 +322,7 @@ mod floats {
             self.0.serialize_none()
         }
         fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<S::Ok, S::Error> {
-            self.0.serialize_some(&Wrap(value))
+            self.0.serialize_some(&Wrap(value, self.1))
         }
         fn serialize_unit(self) -> Result<S::Ok, S::Error> {
             self.0.serialize_unit()
@@ -310,7 +343,7 @@ mod floats {
             name: &'static str,
             value: &T,
         ) -> Result<S::Ok, S::Error> {
-            self.0.serialize_newtype_struct(name, &Wrap(value))
+            self.0.serialize_newtype_struct(name, &Wrap(value, self.1))
         }
         fn serialize_newtype_variant<T: ?Sized + Serialize>(
             self,
@@ -320,7 +353,7 @@ mod floats {
             value: &T,
         ) -> Result<S::Ok, S::Error> {
             self.0
-                .serialize_newtype_variant(name, index, variant, &Wrap(value))
+                .serialize_newtype_variant(name, index, variant, &Wrap(value, self.1))
         }
         fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, S::Error> {
             self.0.serialize_seq(len).map(Compound)
@@ -376,7 +409,7 @@ mod floats {
         type Ok = C::Ok;
         type Error = C::Error;
         fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), C::Error> {
-            self.0.serialize_element(&Wrap(value))
+            self.0.serialize_element(&Wrap(value, false))
         }
         fn end(self) -> Result<C::Ok, C::Error> {
             self.0.end()
@@ -387,7 +420,7 @@ mod floats {
         type Ok = C::Ok;
         type Error = C::Error;
         fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), C::Error> {
-            self.0.serialize_element(&Wrap(value))
+            self.0.serialize_element(&Wrap(value, false))
         }
         fn end(self) -> Result<C::Ok, C::Error> {
             self.0.end()
@@ -398,7 +431,7 @@ mod floats {
         type Ok = C::Ok;
         type Error = C::Error;
         fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), C::Error> {
-            self.0.serialize_field(&Wrap(value))
+            self.0.serialize_field(&Wrap(value, false))
         }
         fn end(self) -> Result<C::Ok, C::Error> {
             self.0.end()
@@ -409,7 +442,7 @@ mod floats {
         type Ok = C::Ok;
         type Error = C::Error;
         fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), C::Error> {
-            self.0.serialize_field(&Wrap(value))
+            self.0.serialize_field(&Wrap(value, false))
         }
         fn end(self) -> Result<C::Ok, C::Error> {
             self.0.end()
@@ -420,10 +453,10 @@ mod floats {
         type Ok = C::Ok;
         type Error = C::Error;
         fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), C::Error> {
-            self.0.serialize_key(&Wrap(key))
+            self.0.serialize_key(&Wrap(key, true))
         }
         fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), C::Error> {
-            self.0.serialize_value(&Wrap(value))
+            self.0.serialize_value(&Wrap(value, false))
         }
         fn end(self) -> Result<C::Ok, C::Error> {
             self.0.end()
@@ -438,7 +471,7 @@ mod floats {
             key: &'static str,
             value: &T,
         ) -> Result<(), C::Error> {
-            self.0.serialize_field(key, &Wrap(value))
+            self.0.serialize_field(key, &Wrap(value, false))
         }
         fn skip_field(&mut self, key: &'static str) -> Result<(), C::Error> {
             self.0.skip_field(key)
@@ -456,7 +489,7 @@ mod floats {
             key: &'static str,
             value: &T,
         ) -> Result<(), C::Error> {
-            self.0.serialize_field(key, &Wrap(value))
+            self.0.serialize_field(key, &Wrap(value, false))
         }
         fn skip_field(&mut self, key: &'static str) -> Result<(), C::Error> {
             self.0.skip_field(key)
@@ -615,6 +648,73 @@ mod tests {
                 "{text}"
             );
         }
+    }
+
+    /// One map entry whose key is a native float.
+    struct FloatKey<K>(K);
+
+    impl<K: serde::Serialize> serde::Serialize for FloatKey<K> {
+        fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            use serde::ser::SerializeMap;
+            let mut map = s.serialize_map(Some(1))?;
+            map.serialize_entry(&self.0, &1)?;
+            map.end()
+        }
+    }
+
+    fn written_key<K: serde::Serialize>(key: K) -> String {
+        let value = marshal_digest_value(&FloatKey(key)).unwrap();
+        let members = value.as_object().unwrap();
+        assert_eq!(members.len(), 1);
+        members.keys().next().unwrap().clone()
+    }
+
+    /// A float map key is written as Go writes it, as the float's own text
+    /// without the integer normalization values get. Each expected key is
+    /// Go 1.27's `encoding/json/v2` output for a `map[float64]int` or
+    /// `map[float32]int` holding that key.
+    #[test]
+    fn float_map_keys_are_written_as_go_writes_them() {
+        for (key, go) in [
+            (-0.0f64, "-0"),
+            (2.0, "2"),
+            (1.5, "1.5"),
+            (1e20, "100000000000000000000"),
+            (123456789012345678901.0, "123456789012345680000"),
+            (100000010.0, "100000010"),
+            (1e-6, "0.000001"),
+            (1e21, "1e+21"),
+            (1.2345e22, "1.2345e+22"),
+            (1e-7, "1e-7"),
+            (1.5e-7, "1.5e-7"),
+        ] {
+            assert_eq!(written_key(key), go, "f64 {key:e}");
+        }
+        for (key, go) in [
+            (100000010f32, "100000010"),
+            (3e20, "300000000000000000000"),
+            (1.5, "1.5"),
+            (1e21, "1e+21"),
+            (1e-7, "1e-7"),
+        ] {
+            assert_eq!(written_key(key), go, "f32 {key:e}");
+        }
+        // The key's digest is that of Go's bytes, {"-0":1}.
+        assert_eq!(
+            digest_json(&FloatKey(-0.0f64)).unwrap(),
+            digest_json(&json!({"-0": 1})).unwrap()
+        );
+        for (key, name) in [(f64::INFINITY, "+Inf"), (f64::NAN, "NaN")] {
+            assert_eq!(
+                digest_json(&FloatKey(key)).unwrap_err().to_string(),
+                format!("marshal JSON digest input: unsupported value: {name}")
+            );
+        }
+        // A float value inside a float-keyed map is still a value.
+        assert_eq!(
+            marshal_digest_value(&FloatKey(1.5f64)).unwrap(),
+            json!({"1.5": 1})
+        );
     }
 
     /// The caller's value is serialized once: a value that changes between

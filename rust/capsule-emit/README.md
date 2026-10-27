@@ -43,8 +43,10 @@ The `verify_capsule` binary verifies one capsule and statement offline.
 and returns the same bytes, with one limit: JSON nesting is capped at 128
 levels (Go accepts 1000), so Rust refuses an input Go accepts at 129 to 1000
 levels, counting the Capsule object itself. `digest_json` writes native
-floats as Go does: an integral value below 1e21 as an integer, NaN and
-infinities refused. A `serde_json::Value` number keeps its text, so
+floats as Go does: an integral value below 1e21 as an integer (the
+shortest digits that round-trip at the float's own width), a float map key
+as the float's own text (`-0`, `1.5`, `1e+21`), NaN and infinities
+refused. A `serde_json::Value` number keeps its text, so
 `json!(2.0)` is a float, as Go's `json.Number("2.0")` is. Nothing in it writes: the caller supplies the
 action id and timestamp and keeps the Capsule and envelope it gets back.
 
