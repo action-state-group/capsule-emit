@@ -22,7 +22,7 @@ let capsule = seal(&input)?; // `capsule["capsule_id"]` is set
 
 | Module | What |
 | --- | --- |
-| `produce` | the Go and TypeScript producing calls: `build`, `received`, `carry`, `build_composition`, `seal`, `sign`, `digest_json`, `verify_capsule`, `verify_envelope`; writes nothing |
+| `produce` | the Go module's producing calls (see below); writes nothing |
 | `capsule` | `seal` a capsule; `seal_local_record` for a record that cites or observes rather than serving an exchange; the inline producer envelope |
 | `jcs` | canonicalization and `capsule_id` |
 | `cose` | COSE_Sign1 signed statements and producer envelopes |
@@ -40,7 +40,9 @@ The `verify_capsule` binary verifies one capsule and statement offline.
 ## Producing Capsules without a ledger (`produce`)
 
 `produce` offers the same calls as the Go module and the TypeScript package,
-and returns the same bytes. Nothing in it writes: the caller supplies the
+and returns the same bytes, with one limit: JSON nesting is capped at 128
+levels (Go accepts 1000), so Rust refuses an input Go accepts at 129 to 1000
+levels. Nothing in it writes: the caller supplies the
 action id and timestamp and keeps the Capsule and envelope it gets back.
 
 | Call | What |
@@ -56,6 +58,10 @@ action id and timestamp and keeps the Capsule and envelope it gets back.
 | `verify_envelope(capsule_id, bytes)` | authenticate a Producer Envelope |
 | `decode_payload(bytes)` | strict JSON decode of Capsule bytes |
 | `SigningIdentity` | `from_ed25519(key)`, or `new(signer, public_key)` for a KMS or HSM signer |
+
+Go names map to Rust as snake_case, except: `NewEd25519SigningIdentity` is
+`SigningIdentity::from_ed25519`, `NewSigningIdentity` is `SigningIdentity::new`,
+and Go's `Result` is `Sealed`.
 
 ```rust
 use capsule_emit::produce::{self, Input, SealInput, SigningIdentity};
