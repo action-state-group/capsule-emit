@@ -61,7 +61,15 @@ if (phase === "write") await store.init();
 const lines = [];
 for (const [i, step] of steps.entries()) {
   const id = step.id ?? vectors.records[step.record]?.capsule_id ?? "";
-  const subject = step.id !== undefined ? JSON.stringify(step.id) : step.record;
+  // Index steps name their paths or query in compact JSON.
+  const subject =
+    step.op === "init_index"
+      ? JSON.stringify(step.paths)
+      : step.op === "find"
+        ? JSON.stringify(step.where)
+        : step.id !== undefined
+          ? JSON.stringify(step.id)
+          : step.record;
   let line = `${i}\t${step.op} ${subject}\t`;
   if (step.op === "put") {
     const raw = vectors.records[step.record];
@@ -79,6 +87,16 @@ for (const [i, step] of steps.entries()) {
         : (await outcome(() => store.put(record)))[0];
   } else if (step.op === "purge") {
     line += (await outcome(() => store.purge(id)))[0];
+  } else if (step.op === "init_index") {
+    line += (await outcome(() => store.initIndex(step.paths)))[0];
+  } else if (step.op === "find") {
+    // The interlock's finds fit one page; IDs print comma-separated.
+    const [code, page] = await outcome(() =>
+      store.find({ where: step.where, limit: 1000 }),
+    );
+    line += code;
+    if (page !== undefined && page.ids.length > 0)
+      line += `\t${page.ids.join(",")}`;
   } else if (step.op === "get") {
     const [code, got] = await outcome(() => store.get(id));
     line += code;

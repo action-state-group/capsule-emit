@@ -8,8 +8,14 @@ import {
   storageChecksum,
   verify,
   type Record,
-  type Store,
 } from "./record.js";
+import {
+  MemoryIndex,
+  normalizePaths,
+  type IndexStore,
+  type Page,
+  type Query,
+} from "./lookup.js";
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 const ID_PATTERN = /^[0-9a-f]{64}$/u;
@@ -27,9 +33,10 @@ function clone(record: Record): Record {
 }
 
 /** Holds prepared records by Capsule ID in process memory. */
-export class MemoryArtifactStore implements Store {
+export class MemoryArtifactStore implements IndexStore {
   private readonly trusted: Uint8Array[];
   private readonly records = new Map<string, Record>();
+  private readonly lookup = new MemoryIndex();
 
   public constructor(
     public readonly namespace: string,
@@ -56,6 +63,7 @@ export class MemoryArtifactStore implements Store {
     const existing = this.records.get(prepared.capsuleId);
     if (existing === undefined) {
       this.records.set(prepared.capsuleId, prepared);
+      this.lookup.add(prepared.capsuleId, prepared.capsule);
       return;
     }
     // existing was verified with these same keys when it was admitted, and
@@ -92,5 +100,27 @@ export class MemoryArtifactStore implements Store {
       a.state === "present" ? { ...a, content: undefined, state: "purged" } : a,
     );
     this.records.set(id, purged);
+  }
+
+  /** Declares index paths and indexes the records already stored. */
+  public async initIndex(paths: readonly string[]): Promise<void> {
+    if (this.lookup.declare(paths)) this.indexAll();
+  }
+
+  /** Replaces the declared index paths and rebuilds the index. */
+  public async reindex(paths: readonly string[]): Promise<void> {
+    this.lookup.reset(normalizePaths(paths));
+    this.indexAll();
+  }
+
+  /** Returns one page of IDs matching the query, in admission order. */
+  public async find(query?: Query): Promise<Page> {
+    return this.lookup.find(query);
+  }
+
+  // Map iteration follows insertion, which is admission order.
+  private indexAll(): void {
+    for (const [id, record] of this.records)
+      this.lookup.add(id, record.capsule);
   }
 }

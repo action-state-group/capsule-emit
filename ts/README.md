@@ -358,6 +358,14 @@ implement `TxStore`, detected with `isTxStore(store)`: `putTx(tx, record)` and
 `PoolConnection` or on the better-sqlite3 `Database` itself. The older SQLite
 forms `putTx(record)` and `getTx(id)` still work and are deprecated.
 
+Every backend also implements the optional `IndexStore`, detected with
+`isIndexStore(store)`: `initIndex(paths)` declares JSON paths into the
+namespace's Capsules and indexes the records already stored, the store
+extracts their values at `put`, and `find({ where, since, after, limit })`
+returns the matching Capsule IDs in admission order with a `next` cursor.
+Admission order is not CLL order. `reindex(paths)` replaces the declaration.
+The SQL backends persist it; `jsonl` and `memory` keep it in the open store.
+
 `./artifact/conformance` runs the shared, language-neutral conformance suite
 against any `Store`, including one you write:
 

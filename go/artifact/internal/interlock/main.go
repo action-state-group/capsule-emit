@@ -33,9 +33,11 @@ import (
 )
 
 type step struct {
-	Op     string  `json:"op"`
-	Record string  `json:"record"`
-	ID     *string `json:"id"`
+	Op     string            `json:"op"`
+	Record string            `json:"record"`
+	ID     *string           `json:"id"`
+	Paths  []string          `json:"paths"`
+	Where  map[string]string `json:"where"`
 }
 
 // plan is interlock.json: steps per phase, and the trusted key names per
@@ -172,6 +174,15 @@ func run(args []string, out io.Writer) error {
 			quoted, _ := jsonv2.Marshal(*s.ID)
 			subject = string(quoted)
 		}
+		// Index steps name their paths or query in compact JSON.
+		switch s.Op {
+		case "init_index":
+			quoted, _ := jsonv2.Marshal(s.Paths)
+			subject = string(quoted)
+		case "find":
+			quoted, _ := jsonv2.Marshal(s.Where, jsonv2.Deterministic(true))
+			subject = string(quoted)
+		}
 		line := fmt.Sprintf("%d\t%s %s\t", i, s.Op, subject)
 		switch s.Op {
 		case "put":
@@ -188,6 +199,15 @@ func run(args []string, out io.Writer) error {
 			}
 		case "purge":
 			line += outcome(store.Purge(ctx, id))
+		case "init_index":
+			line += outcome(store.(artifact.IndexStore).InitIndex(ctx, s.Paths))
+		case "find":
+			// The interlock's finds fit one page; IDs print comma-separated.
+			page, err := store.(artifact.IndexStore).Find(ctx, artifact.Query{Where: s.Where, Limit: artifact.MaxFindLimit})
+			line += outcome(err)
+			if err == nil && len(page.IDs) > 0 {
+				line += "\t" + strings.Join(page.IDs, ",")
+			}
 		case "get":
 			got, err := store.Get(ctx, id)
 			line += outcome(err)

@@ -4,7 +4,8 @@
 use capsule_emit_artifact::conformance::{self, diff};
 use capsule_emit_artifact::jsonl::JsonlStore;
 use capsule_emit_artifact::{
-    decode_record, prepare, verify, Artifact, ArtifactError, Record, RetentionState, Store,
+    decode_record, prepare, verify, Artifact, ArtifactError, IndexStore, Query, Record,
+    RetentionState, Store,
 };
 
 fn vectors() -> conformance::Vectors {
@@ -13,6 +14,21 @@ fn vectors() -> conformance::Vectors {
 
 fn trusted(v: &conformance::Vectors) -> Vec<Vec<u8>> {
     vec![hex::decode(&v.keys["trusted"]).unwrap()]
+}
+
+fn id(v: &conformance::Vectors, name: &str) -> String {
+    v.record(name).unwrap().capsule_id
+}
+
+fn find_ids(store: &dyn IndexStore, pairs: &[(&str, &str)]) -> Vec<String> {
+    let query = Query {
+        r#where: pairs
+            .iter()
+            .map(|(p, v)| (p.to_string(), v.to_string()))
+            .collect(),
+        ..Query::default()
+    };
+    store.find(&query).unwrap().ids
 }
 
 fn key32(v: &conformance::Vectors) -> [u8; 32] {
@@ -144,6 +160,91 @@ fn jsonl_fails_closed_on_damaged_files() {
         .file_name()
         .to_string_lossy()
         .starts_with(".jsonl-rewrite-")));
+}
+
+/// Declaring index paths leaves out a line whose capsule_id is readable but
+/// which no longer decodes as a record; the readable records are still found,
+/// in file order, and a reopened store has no declaration until it declares.
+#[test]
+fn jsonl_index_skips_damaged_lines_and_is_per_store() {
+    let v = vectors();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.jsonl");
+    let damaged = format!("{{\"capsule_id\":\"{}\",\"capsule\":1}}\n", "ab".repeat(32));
+    std::fs::write(&path, damaged).unwrap();
+    let store = JsonlStore::new(&path, "ns", trusted(&v)).unwrap();
+    for name in ["index.b", "index.a"] {
+        store.put(&v.record(name).unwrap()).unwrap();
+    }
+    assert_eq!(
+        store.find(&Query::default()).unwrap_err().code(),
+        Some("invalid")
+    );
+    store.init_index(&["operator"]).unwrap();
+    assert_eq!(
+        find_ids(&store, &[]),
+        [id(&v, "index.b"), id(&v, "index.a")]
+    );
+    assert_eq!(
+        store.reindex(&["a", "a"]).unwrap_err().code(),
+        Some("invalid")
+    );
+    store.reindex(&["developer"]).unwrap();
+    assert_eq!(
+        find_ids(&store, &[("developer", "dev-1")]),
+        [id(&v, "index.b"), id(&v, "index.a")]
+    );
+    let reopened = JsonlStore::new(&path, "ns", trusted(&v)).unwrap();
+    assert_eq!(
+        reopened.find(&Query::default()).unwrap_err().code(),
+        Some("invalid")
+    );
+    reopened.init_index(&["operator"]).unwrap();
+    assert_eq!(
+        find_ids(&reopened, &[("operator", "op-a")]),
+        [id(&v, "index.a")]
+    );
+}
+
+/// A read error partway through `init_index` leaves no declaration behind, so
+/// the retry indexes every record instead of accepting a partial index.
+#[cfg(unix)]
+#[test]
+fn jsonl_index_retry_after_failed_read() {
+    use std::os::unix::fs::PermissionsExt;
+    let v = vectors();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.jsonl");
+    let store = JsonlStore::new(&path, "ns", trusted(&v)).unwrap();
+    store.init().unwrap();
+    store.put(&v.record("index.a").unwrap()).unwrap();
+    let mode = |m| std::fs::set_permissions(&path, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o200);
+    assert!(store.init_index(&["operator"]).is_err());
+    assert!(store.reindex(&["operator"]).is_err());
+    mode(0o644);
+    store.init_index(&["operator"]).unwrap();
+    assert_eq!(find_ids(&store, &[]), [id(&v, "index.a")]);
+}
+
+#[test]
+fn every_builtin_store_reports_the_index_extension() {
+    let v = vectors();
+    let dir = tempfile::tempdir().unwrap();
+    let jsonl = JsonlStore::new(dir.path().join("a.jsonl"), "ns", trusted(&v)).unwrap();
+    let memory = capsule_emit_artifact::memory::MemoryStore::new("ns", trusted(&v)).unwrap();
+    for store in [&jsonl as &dyn Store, &memory] {
+        let index = store.as_index_store().unwrap();
+        index.init_index(&[]).unwrap();
+        assert_eq!(
+            index.find(&Query::default()).unwrap().ids,
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            index.init_index(&["a"]).unwrap_err().code(),
+            Some("conflict")
+        );
+    }
 }
 
 #[test]
@@ -354,6 +455,140 @@ mod sqlite {
         assert!(store.get(&basic.capsule_id).is_ok());
     }
 
+    fn count(path: &std::path::Path, table: &str) -> i64 {
+        open(path)
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// A database provisioned before the index tables existed keeps accepting
+    /// put and gains the tables, and its records, on init_index.
+    #[test]
+    fn index_on_older_schema() {
+        let v = vectors();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.db");
+        let older = capsule_emit_artifact::sqlite::SCHEMA
+            .split("\n\nCREATE TABLE IF NOT EXISTS capsule_store_index_paths")
+            .next()
+            .unwrap();
+        assert!(!older.contains("capsule_store_index"));
+        open(&path).execute_batch(older).unwrap();
+        let store = SqliteStore::new(open(&path), "older", trusted(&v)).unwrap();
+        store.put(&v.record("index.a").unwrap()).unwrap();
+        store.put(&v.record("index.b").unwrap()).unwrap();
+        assert_eq!(
+            store.find(&Query::default()).unwrap_err().code(),
+            Some("invalid")
+        );
+        store.init_index(&["operator"]).unwrap();
+        assert_eq!(
+            find_ids(&store, &[("operator", "op-a")]),
+            [id(&v, "index.a")]
+        );
+        store.put(&v.record("index.c").unwrap()).unwrap();
+        assert_eq!(
+            find_ids(&store, &[("operator", "op-a")]),
+            [id(&v, "index.a"), id(&v, "index.c")]
+        );
+        // Another store on the same file sees the persisted declaration.
+        let other = SqliteStore::new(open(&path), "older", trusted(&v)).unwrap();
+        assert_eq!(other.find(&Query::default()).unwrap().ids.len(), 3);
+    }
+
+    /// Backfill leaves out a row whose Capsule bytes no longer decode, a
+    /// damaged declaration fails closed as corrupt, and reindex replaces it.
+    #[test]
+    fn index_damaged_rows() {
+        let v = vectors();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.db");
+        let store = SqliteStore::new(open(&path), "damaged", trusted(&v)).unwrap();
+        store.init().unwrap();
+        store.put(&v.record("index.a").unwrap()).unwrap();
+        store.put(&v.record("index.b").unwrap()).unwrap();
+        open(&path)
+            .execute(
+                "UPDATE capsule_store_capsules SET capsule_bytes=X'7B' WHERE capsule_id=?",
+                [id(&v, "index.a")],
+            )
+            .unwrap();
+        store.init_index(&["operator"]).unwrap();
+        assert_eq!(find_ids(&store, &[]), [id(&v, "index.b")]);
+
+        open(&path)
+            .execute(
+                "UPDATE capsule_store_index_paths SET paths='{' WHERE namespace='damaged'",
+                [],
+            )
+            .unwrap();
+        assert_eq!(
+            store.find(&Query::default()).unwrap_err().code(),
+            Some("corrupt")
+        );
+        // put fails closed too, and leaves no rows behind.
+        assert_eq!(
+            store.put(&v.record("index.c").unwrap()).unwrap_err().code(),
+            Some("corrupt")
+        );
+        assert_eq!(count(&path, "capsule_store_capsules"), 2);
+        open(&path)
+            .execute("UPDATE capsule_store_index_paths SET paths='[\"a\",\"a\"]' WHERE namespace='damaged'", [])
+            .unwrap();
+        assert_eq!(
+            store.find(&Query::default()).unwrap_err().code(),
+            Some("corrupt")
+        );
+        store.reindex(&["developer"]).unwrap();
+        assert_eq!(
+            find_ids(&store, &[("developer", "dev-1")]),
+            [id(&v, "index.b")]
+        );
+        for result in [store.init_index(&["a", "a"]), store.reindex(&["a", "a"])] {
+            assert_eq!(result.unwrap_err().code(), Some("invalid"));
+        }
+    }
+
+    /// Index rows are written in the caller's transaction: a rollback leaves
+    /// none, and a retried put indexes the record once.
+    #[test]
+    fn index_rows_follow_the_transaction() {
+        let v = vectors();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.db");
+        let store = SqliteStore::new(open(&path), "ns", trusted(&v)).unwrap();
+        store.init_index(&["fixture.tags"]).unwrap();
+        let a = v.record("index.a").unwrap();
+        let mut conn = open(&path);
+        let mut tx = conn.transaction().unwrap();
+        store.put_tx(&mut tx, &a).unwrap();
+        tx.rollback().unwrap();
+        assert_eq!(count(&path, "capsule_store_index_records"), 0);
+        assert_eq!(count(&path, "capsule_store_index"), 0);
+        store.put(&a).unwrap();
+        store.put(&a).unwrap();
+        assert_eq!(count(&path, "capsule_store_index_records"), 1);
+        assert_eq!(count(&path, "capsule_store_index"), 2);
+        let key: String = open(&path)
+            .query_row(
+                "SELECT value_sha256 FROM capsule_store_index WHERE path='fixture.tags' ORDER BY value_sha256 LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // SHA-256 of "blue".
+        assert_eq!(
+            key,
+            "16477688c0e00699c6cfa4497a3612d7e83c532062b64b250fed8908128ed548"
+        );
+        let ts: Option<i64> = open(&path)
+            .query_row("SELECT ts FROM capsule_store_index_records", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(ts.is_some());
+    }
+
     #[test]
     fn failed_put_leaves_no_rows() {
         let v = vectors();
@@ -490,6 +725,71 @@ fn mysql_locked_read_blocks_purge_and_duplicate_puts_reconcile() {
 
 /// The disposable MySQL server, or None to skip; under CI a missing variable
 /// fails instead, so a renamed variable cannot silently drop MySQL coverage.
+/// MySQL: backfill skips undecodable bytes, a damaged declaration fails
+/// closed, reindex replaces it, and a rolled-back put_tx leaves no index rows.
+#[cfg(feature = "mysql")]
+#[test]
+fn mysql_index_damaged_rows_and_transactions() {
+    use capsule_emit_artifact::mysql::MysqlStore;
+    use capsule_emit_artifact::TxStore;
+    use mysql::prelude::Queryable;
+    let Some(addr) = mysql_addr() else {
+        return;
+    };
+    let v = vectors();
+    let pool =
+        mysql::Pool::new(format!("mysql://root@{addr}/capsule_storage_test").as_str()).unwrap();
+    let store = MysqlStore::new(pool.clone(), "rust-index", trusted(&v)).unwrap();
+    store.init().unwrap();
+    let mut conn = pool.get_conn().unwrap();
+    for table in [
+        "capsule_store_artifacts",
+        "capsule_store_capsules",
+        "capsule_store_index",
+        "capsule_store_index_records",
+        "capsule_store_index_paths",
+    ] {
+        conn.query_drop(format!("DELETE FROM {table} WHERE namespace='rust-index'"))
+            .unwrap();
+    }
+    store.put(&v.record("index.a").unwrap()).unwrap();
+    store.put(&v.record("index.b").unwrap()).unwrap();
+    conn.exec_drop(
+        "UPDATE capsule_store_capsules SET capsule_bytes=X'7B' WHERE namespace='rust-index' AND capsule_id=?",
+        (id(&v, "index.a"),),
+    )
+    .unwrap();
+    store.init_index(&["operator"]).unwrap();
+    assert_eq!(find_ids(&store, &[]), [id(&v, "index.b")]);
+
+    let c = v.record("index.c").unwrap();
+    let mut tx = conn.start_transaction(mysql::TxOpts::default()).unwrap();
+    store.put_tx(&mut tx, &c).unwrap();
+    tx.rollback().unwrap();
+    assert_eq!(find_ids(&store, &[]), [id(&v, "index.b")]);
+    store.put(&c).unwrap();
+    store.put(&c).unwrap();
+    assert_eq!(
+        find_ids(&store, &[]),
+        [id(&v, "index.b"), id(&v, "index.c")]
+    );
+
+    conn.query_drop("UPDATE capsule_store_index_paths SET paths='{' WHERE namespace='rust-index'")
+        .unwrap();
+    assert_eq!(
+        store.find(&Query::default()).unwrap_err().code(),
+        Some("corrupt")
+    );
+    store.reindex(&["developer"]).unwrap();
+    assert_eq!(
+        find_ids(&store, &[("developer", "dev-2")]),
+        [id(&v, "index.c")]
+    );
+    for result in [store.init_index(&["a", "a"]), store.reindex(&["a", "a"])] {
+        assert_eq!(result.unwrap_err().code(), Some("invalid"));
+    }
+}
+
 #[cfg(feature = "mysql")]
 fn mysql_addr() -> Option<String> {
     match std::env::var("CAPSULE_STORAGE_TEST_MYSQL") {

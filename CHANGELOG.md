@@ -6,6 +6,19 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (all languages): artifact store index and find
+
+The artifact store has an optional index extension (#380). A namespace
+declares JSON paths into its Capsules with `init_index(paths)` (Go
+`InitIndex`, TypeScript `initIndex`); every backend extracts their values when
+it admits a record, and `find(where, since, after, limit)` returns the
+matching Capsule IDs in admission order, paged by an opaque cursor, without
+reading record bodies. `reindex(paths)` replaces the declaration. The SQL
+backends' `init` creates three new tables and leaves the existing two
+unchanged. Detect the extension with Go `artifact.IndexStore`, TypeScript
+`isIndexStore`, Python `capsule_emit.artifact.index.IndexStore` or the Rust
+`IndexStore` trait. See `docs/artifact-store.md`.
+
 ### Added (Python): `--period day`
 
 `--period` now accepts `day` besides `week` and `month`, so the unit set is

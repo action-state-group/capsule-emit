@@ -75,8 +75,13 @@ def run(args: list, out: TextIO) -> None:
             if "id" in step:
                 capsule_id, subject = step["id"], json.dumps(step["id"])
             else:
-                capsule_id = vectors["records"].get(step["record"], {}).get("capsule_id", "")
-                subject = step["record"]
+                capsule_id = vectors["records"].get(step.get("record", ""), {}).get("capsule_id", "")
+                subject = step.get("record", "")
+            # Index steps name their paths or query in compact JSON.
+            if step["op"] == "init_index":
+                subject = json.dumps(step["paths"], separators=(",", ":"))
+            elif step["op"] == "find":
+                subject = json.dumps(step["where"], separators=(",", ":"), sort_keys=True)
             line = f"{i}\t{step['op']} {subject}\t"
             if step["op"] == "put":
                 try:
@@ -87,6 +92,14 @@ def run(args: list, out: TextIO) -> None:
                     line += outcome(lambda r=record: store.put(r))[0]
             elif step["op"] == "purge":
                 line += outcome(lambda c=capsule_id: store.purge(c))[0]
+            elif step["op"] == "init_index":
+                line += outcome(lambda p=step["paths"]: store.init_index(p))[0]
+            elif step["op"] == "find":
+                # The interlock's finds fit one page; IDs print comma-separated.
+                code, page = outcome(lambda w=step["where"]: store.find(where=w, limit=1000))
+                line += code
+                if page is not None and page.ids:
+                    line += "\t" + ",".join(page.ids)
             elif step["op"] == "get":
                 code, got = outcome(lambda c=capsule_id: store.get(c))
                 line += code

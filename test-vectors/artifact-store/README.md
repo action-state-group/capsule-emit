@@ -22,8 +22,13 @@ and its tests fail if the copy drifts from this file.
 | `records` | Named records in the JSONL wire shape (snake_case keys, standard base64 bytes) |
 | `checksums` | `{record, storage_checksum}`: the expected storage checksum of a named record |
 | `lines` | `{record, line}`: the exact JSONL line of a named record |
+| `index_rows` | `{record, paths, stored, ts, entries}`: what the [index extension](../../docs/artifact-store.md#optional-index-extension) stores for a named record under the declared `paths`: the stored declaration, the record's time in UTC microseconds as a decimal string (empty without one), and one `{path, value_sha256}` per entry, in any order. SQL index rows written by one language must match these in every other |
 | `open` | `{name, namespace, trusted, expect}`: constructor validation, with `trusted` as raw hex keys (some deliberately not 32 bytes) |
 | `cases` | Operation sequences, described below |
+
+The `index.*` records differ in `operator`, `developer`, `timestamp` and a
+neutral `fixture` extension whose `tags` array exercises list matching; the
+index cases declare only those paths.
 
 The `padding*` records are padding records
 ([contract](../../docs/artifact-store.md#padding-records)) with fixed store
@@ -52,6 +57,9 @@ in order:
 | `get` | `id`, `result` | `get(id)`; on `ok`, compare with the named record |
 | `purge` | `id` | `purge(id)` |
 | `reopen` | optional `trusted` | Construct the store again over the same storage (with other trusted keys if given) and `init()` it |
+| `init_index` | `paths` | `init_index(paths)` ([index extension](../../docs/artifact-store.md#optional-index-extension)) |
+| `reindex` | `paths` | `reindex(paths)` |
+| `find` | optional `where`, `since`, `after`, `limit`, `continue`; `found`, `more`, `unordered` | `find` with the given query; with `continue`, `after` is the previous `find`'s `next`. On `ok`, the returned IDs must be the Capsule IDs of the records named in `found`, in that order unless `unordered`, and `next` must be non-empty exactly when `more` |
 
 `store` names the target store (default `main`). `expect` is `ok` or one of the
 contract's error codes, and the step passes only with exactly that outcome.
@@ -65,6 +73,11 @@ capabilities the backend does not declare:
   `memory`).
 - `shared_backing`: stores with different namespaces can share one storage
   (the SQL backends; a `jsonl` file holds one namespace).
+- `index`: the store implements the index extension (every built-in backend
+  except the legacy ledgers). Go detects it from the store's type; the other
+  runners take it from the harness.
+- `durable_index`: a reopened store keeps the declared index paths (the SQL
+  backends).
 
 Two further capabilities are derived from a case's steps rather than listed,
 so that a store with [capability limits](../../docs/artifact-store.md#capability-limits)
@@ -93,9 +106,11 @@ StorageChecksum and the record's JSONL line with artifacts sorted by name. A
 record the language's codec cannot represent counts as `invalid`.
 
 - `write`: each language writes to its own store (a file, or for MySQL its own
-  database). Every report must equal `interlock-write.txt`. The JSONL files, or
+  database), declaring index paths after the first record so both backfill
+  and admission index records, and ends with `find` steps. Every report must equal `interlock-write.txt`. The JSONL files, or
   the SQL schemas and rows as `.github/scripts/artifact_store_rows.py` dumps
-  them, must be byte-identical and hold five records. Timestamps compare by
+  them, must be byte-identical and hold five records. The SQL dump includes
+  the index declaration, its records in admission order and its entries. Timestamps compare by
   being NULL or in the contract's UTC form.
 - `read`, `strict` and `check`: every language works on fresh copies of every
   language's store, all pairs. `read` reports each record, then retries, a
@@ -105,6 +120,8 @@ record the language's codec cannot represent counts as `invalid`.
   payload is gone and its never-retained output unchanged. Every report must
   equal `interlock-<phase>.txt`, every copy must end in the same state, and
   existing SQL rows must keep their exact `created_at` (a retry writes nothing).
+  `read` ends by declaring the same index paths (a no-op where the copy kept
+  the writer's declaration, a rebuild where it did not) and finding records.
   The MySQL service runs in a non-UTC time zone, so a backend writing local
   time instead of UTC fails the dump's timestamp check.
 

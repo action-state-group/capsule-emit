@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/action-state-group/capsule-emit/go/artifact"
+	"github.com/action-state-group/capsule-emit/go/artifact/internal/index"
 
 	driver "github.com/go-sql-driver/mysql"
 )
@@ -22,7 +23,18 @@ var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 //go:embed schema.sql
 var schema string
 
-var _ artifact.TxStore = (*Store)(nil)
+var dialect = index.Dialect{
+	TablesExist: `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()` +
+		` AND table_name IN ('capsule_store_index_paths','capsule_store_index_records','capsule_store_index')`,
+	LockShared:   ` FOR SHARE`,
+	LockUpdate:   ` FOR UPDATE`,
+	InsertIgnore: `INSERT IGNORE INTO`,
+}
+
+var (
+	_ artifact.TxStore    = (*Store)(nil)
+	_ artifact.IndexStore = (*Store)(nil)
+)
 
 // Store is an application-importable SDK, independent of CLI profiles and CLL
 // log IDs. The caller owns the DB pool, credentials, TLS, and trusted keys.
@@ -30,6 +42,7 @@ type Store struct {
 	db        *sql.DB
 	namespace string
 	trusted   []ed25519.PublicKey
+	lookup    *index.SQL
 }
 
 // New does not connect, migrate schema, or start background workers.
@@ -38,7 +51,7 @@ func New(db *sql.DB, namespace string, trusted []ed25519.PublicKey) (*Store, err
 	if db == nil || !namePattern.MatchString(namespace) || len(trusted) == 0 {
 		return nil, artifact.ErrInvalid
 	}
-	s := &Store{db: db, namespace: namespace}
+	s := &Store{db: db, namespace: namespace, lookup: &index.SQL{Namespace: namespace, Dialect: dialect}}
 	for _, key := range trusted {
 		if len(key) != ed25519.PublicKeySize {
 			return nil, fmt.Errorf("%w: public key size", artifact.ErrInvalid)
@@ -137,7 +150,7 @@ func (s *Store) PutTx(ctx context.Context, tx *sql.Tx, record artifact.Record) e
 			return err
 		}
 	}
-	return nil
+	return s.lookup.Admit(ctx, tx, record.CapsuleID, record.Capsule)
 }
 
 // Get loads a coherent snapshot and verifies authenticity and original digests.
@@ -255,4 +268,49 @@ func finishRollback(tx *sql.Tx, err *error) {
 	if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 		*err = errors.Join(*err, rollbackErr)
 	}
+}
+
+// InitIndex provisions the tables as Init does, then declares paths for the
+// namespace and indexes its stored records. The same set again does nothing; a
+// different set is artifact.ErrConflict.
+func (s *Store) InitIndex(ctx context.Context, paths []string) error {
+	if _, err := index.NormalizePaths(paths); err != nil {
+		return err
+	}
+	if err := s.Init(ctx); err != nil {
+		return err
+	}
+	return retryDeadlock(ctx, func() error { return s.inTx(ctx, func(tx *sql.Tx) error { return s.lookup.Declare(ctx, tx, paths) }) })
+}
+
+// Reindex replaces the namespace's declared paths and rebuilds its index.
+func (s *Store) Reindex(ctx context.Context, paths []string) error {
+	if _, err := index.NormalizePaths(paths); err != nil {
+		return err
+	}
+	if err := s.Init(ctx); err != nil {
+		return err
+	}
+	return retryDeadlock(ctx, func() error { return s.inTx(ctx, func(tx *sql.Tx) error { return s.lookup.Reindex(ctx, tx, paths) }) })
+}
+
+// Find returns one page of IDs matching q in admission order.
+func (s *Store) Find(ctx context.Context, q artifact.Query) (page artifact.Page, err error) {
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		page, err = s.lookup.Find(ctx, tx, q)
+		return err
+	})
+	return page, err
+}
+
+func (s *Store) inTx(ctx context.Context, run func(*sql.Tx) error) (err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer finishRollback(tx, &err)
+	if err = run(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

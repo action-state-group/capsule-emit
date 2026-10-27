@@ -218,3 +218,56 @@ func TestSQLiteRejectsMalformedIDBeforeIO(t *testing.T) {
 	require.ErrorIs(t, err, artifact.ErrInvalid)
 	require.ErrorIs(t, store.Purge(t.Context(), "not-an-id"), artifact.ErrInvalid)
 }
+
+// A database provisioned before the index tables existed keeps accepting Put
+// and gains the tables, and its records, on InitIndex.
+func TestSQLiteIndexOnOlderSchema(t *testing.T) {
+	db := openTestDB(t)
+	for _, statement := range []string{
+		`CREATE TABLE capsule_store_capsules (namespace TEXT NOT NULL, capsule_id TEXT NOT NULL, capsule_bytes BLOB NOT NULL,
+		 producer_envelope BLOB NOT NULL, record_sha256 TEXT NOT NULL,
+		 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), PRIMARY KEY (namespace, capsule_id))`,
+		`CREATE TABLE capsule_store_artifacts (namespace TEXT NOT NULL, capsule_id TEXT NOT NULL, name TEXT NOT NULL,
+		 digest_field TEXT NOT NULL, content_bytes BLOB NULL, content_sha256 TEXT NOT NULL, retention_state TEXT NOT NULL,
+		 created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), purged_at TEXT NULL,
+		 PRIMARY KEY (namespace, capsule_id, name))`,
+	} {
+		_, err := db.Exec(statement)
+		require.NoError(t, err)
+	}
+	record, pub := testutil.Record(t, "sqlite-older-schema")
+	store, err := sqlitestore.New(db, "older", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	require.NoError(t, store.Put(t.Context(), record))
+	require.NoError(t, store.InitIndex(t.Context(), []string{"operator"}))
+	page, err := store.Find(t.Context(), artifact.Query{Where: map[string]string{"operator": "test-operator"}})
+	require.NoError(t, err)
+	assert.Equal(t, []string{record.CapsuleID}, page.IDs)
+}
+
+// Backfill leaves out a row whose Capsule bytes no longer decode, and a
+// damaged declaration fails closed.
+func TestSQLiteIndexDamagedRows(t *testing.T) {
+	db := openTestDB(t)
+	record, pub := testutil.Record(t, "sqlite-damaged")
+	store, err := sqlitestore.New(db, "damaged", []ed25519.PublicKey{pub})
+	require.NoError(t, err)
+	require.NoError(t, store.Init(t.Context()))
+	require.NoError(t, store.Put(t.Context(), record))
+	_, err = db.Exec(`UPDATE capsule_store_capsules SET capsule_bytes=X'7B' WHERE namespace='damaged'`)
+	require.NoError(t, err)
+	require.NoError(t, store.InitIndex(t.Context(), []string{"operator"}))
+	page, err := store.Find(t.Context(), artifact.Query{})
+	require.NoError(t, err)
+	assert.Empty(t, page.IDs)
+
+	_, err = db.Exec(`UPDATE capsule_store_index_paths SET paths='{' WHERE namespace='damaged'`)
+	require.NoError(t, err)
+	_, err = store.Find(t.Context(), artifact.Query{})
+	assert.ErrorIs(t, err, artifact.ErrCorrupt)
+	require.NoError(t, store.Reindex(t.Context(), []string{"developer"}), "reindex replaces a damaged declaration")
+	_, err = store.Find(t.Context(), artifact.Query{Where: map[string]string{"developer": "x"}})
+	require.NoError(t, err)
+	assert.ErrorIs(t, store.InitIndex(t.Context(), []string{"a", "a"}), artifact.ErrInvalid)
+	assert.ErrorIs(t, store.Reindex(t.Context(), []string{"a", "a"}), artifact.ErrInvalid)
+}

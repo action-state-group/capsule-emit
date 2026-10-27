@@ -6,6 +6,19 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+### Added
+
+- The optional index extension (`docs/artifact-store.md`, "Optional index
+  extension"): the `index` module's `IndexStore` trait (`init_index`,
+  `reindex`, `find`), `Query`, `Page` and limits, implemented by every
+  backend. `Store::as_index_store` detects it on a `dyn Store`; it defaults
+  to `None`. The SQLite and MySQL `SCHEMA` gains three tables
+  (`capsule_store_index_paths`, `capsule_store_index_records`,
+  `capsule_store_index`); a database provisioned without them keeps
+  working and gains them on `init_index`.
+- `conformance::run_with` with `conformance::Extensions` declares
+  `durable_index`; cases that need `index` run when the store reports it.
+
 ## 0.0.1
 
 The first version: the artifact store contract (`docs/artifact-store.md` in

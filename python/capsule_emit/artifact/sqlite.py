@@ -15,9 +15,11 @@ log in its own tables.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable, Mapping
 from typing import Any, Callable, TypeVar
 
 from ._sql import SqlArtifactStore
+from .index import DEFAULT_FIND_LIMIT, Page, normalize_paths
 from .record import InvalidError, Record, valid_id
 
 __all__ = ["SCHEMA", "SqliteArtifactStore"]
@@ -51,6 +53,29 @@ CREATE TABLE IF NOT EXISTS capsule_store_artifacts (
    OR (retention_state = 'never_retained' AND content_bytes IS NULL AND content_sha256 = '' AND purged_at IS NULL)
  )
 );
+
+CREATE TABLE IF NOT EXISTS capsule_store_index_paths (
+ namespace TEXT NOT NULL PRIMARY KEY,
+ paths TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS capsule_store_index_records (
+ seq INTEGER PRIMARY KEY AUTOINCREMENT,
+ namespace TEXT NOT NULL,
+ capsule_id TEXT NOT NULL,
+ ts INTEGER NULL,
+ UNIQUE (namespace, capsule_id)
+);
+
+CREATE INDEX IF NOT EXISTS capsule_store_index_records_ts ON capsule_store_index_records (namespace, ts);
+
+CREATE TABLE IF NOT EXISTS capsule_store_index (
+ namespace TEXT NOT NULL,
+ path TEXT NOT NULL,
+ value_sha256 TEXT NOT NULL,
+ seq INTEGER NOT NULL,
+ PRIMARY KEY (namespace, path, value_sha256, seq)
+);
 """
 
 T = TypeVar("T")
@@ -60,9 +85,15 @@ class SqliteArtifactStore(SqlArtifactStore):
     """Implements the store contract and its transactional extension
     (:meth:`put_tx`, :meth:`get_tx`, where ``tx`` is a ``sqlite3.Connection``
     with an open transaction). ``lock`` changes nothing here: SQLite already
-    serializes writers."""
+    serializes writers. Also implements the index extension
+    (:class:`capsule_emit.artifact.index.IndexStore`)."""
 
     _now = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+    _index_tables_exist = (
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN "
+        "('capsule_store_index_paths','capsule_store_index_records','capsule_store_index')"
+    )
+    _insert_ignore = "INSERT OR IGNORE INTO"
 
     def __init__(self, connection: sqlite3.Connection, namespace: str, trusted: Any) -> None:
         super().__init__(connection, namespace, trusted)
@@ -72,7 +103,7 @@ class SqliteArtifactStore(SqlArtifactStore):
         return isinstance(error, sqlite3.IntegrityError)
 
     def init(self) -> None:
-        """Creates the v1 tables if absent; existing tables are untouched. Run
+        """Creates the tables if absent; existing tables are untouched. Run
         during provisioning: unlike ``executescript``, it does not commit a
         transaction the caller has open, but the DDL becomes part of it."""
         for statement in SCHEMA.split(";"):
@@ -105,3 +136,27 @@ class SqliteArtifactStore(SqlArtifactStore):
         if not valid_id(capsule_id):
             raise InvalidError("capsule id")
         self._transaction(lambda: self._purge_tx(self._conn, capsule_id))
+
+    def init_index(self, paths: Iterable[str]) -> None:
+        """Provisions the tables as :meth:`init` does, then declares paths for
+        the namespace and indexes its stored records. The same set again does
+        nothing; a different set raises ``ConflictError``."""
+        paths = normalize_paths(paths)
+        self.init()
+        self._transaction(lambda: self._declare_tx(self._conn, paths))
+
+    def reindex(self, paths: Iterable[str]) -> None:
+        """Replaces the namespace's declared paths and rebuilds its index."""
+        paths = normalize_paths(paths)
+        self.init()
+        self._transaction(lambda: self._reindex_tx(self._conn, paths))
+
+    def find(
+        self,
+        where: Mapping[str, str] | None = None,
+        since: str | None = None,
+        after: str | None = None,
+        limit: int = DEFAULT_FIND_LIMIT,
+    ) -> Page:
+        """Returns one page of IDs matching the query in admission order."""
+        return self._transaction(lambda: self._find_tx(self._conn, where, since, after, limit))

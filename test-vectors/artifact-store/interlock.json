@@ -16,6 +16,14 @@
         "record": "basic"
       },
       {
+        "op": "init_index",
+        "paths": [
+          "operator",
+          "developer",
+          "action_type"
+        ]
+      },
+      {
         "op": "put",
         "record": "basic"
       },
@@ -110,6 +118,16 @@
       {
         "op": "purge",
         "record": "blank"
+      },
+      {
+        "op": "find",
+        "where": {
+          "action_type": "fyi"
+        }
+      },
+      {
+        "op": "find",
+        "where": {}
       }
     ],
     "read": [
@@ -188,6 +206,24 @@
       {
         "op": "put",
         "record": "rotated"
+      },
+      {
+        "op": "init_index",
+        "paths": [
+          "operator",
+          "developer",
+          "action_type"
+        ]
+      },
+      {
+        "op": "find",
+        "where": {
+          "action_type": "decide"
+        }
+      },
+      {
+        "op": "find",
+        "where": {}
       }
     ],
     "strict": [

@@ -12,12 +12,13 @@ import (
 	"sync"
 
 	"github.com/action-state-group/capsule-emit/go/artifact"
+	"github.com/action-state-group/capsule-emit/go/artifact/internal/index"
 )
 
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-var _ artifact.Store = (*Store)(nil)
+var _ artifact.IndexStore = (*Store)(nil)
 
 // Store holds prepared records by Capsule ID. It is safe for concurrent use.
 type Store struct {
@@ -25,6 +26,8 @@ type Store struct {
 	trusted   []ed25519.PublicKey
 	mu        sync.Mutex
 	records   map[string]artifact.Record
+	order     []string // Capsule IDs in admission order
+	lookup    index.Memory
 }
 
 // New validates the namespace and trusted keys. The store starts empty.
@@ -66,7 +69,8 @@ func (s *Store) Put(_ context.Context, record artifact.Record) error {
 	existing, exists := s.records[prepared.CapsuleID]
 	if !exists {
 		s.records[prepared.CapsuleID] = prepared
-		return nil
+		s.order = append(s.order, prepared.CapsuleID)
+		return s.lookup.Add(prepared.CapsuleID, prepared.Capsule)
 	}
 	// existing was verified with these same keys when it was admitted, and
 	// memory cannot be altered behind the store, so it needs no re-verification.
@@ -138,4 +142,43 @@ func clone(r artifact.Record) artifact.Record {
 		}
 	}
 	return r
+}
+
+// InitIndex declares paths and indexes the records already stored.
+func (s *Store) InitIndex(_ context.Context, paths []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fresh, err := s.lookup.Declare(paths)
+	if err != nil || !fresh {
+		return err
+	}
+	return s.indexAll()
+}
+
+// Reindex replaces the declared paths and rebuilds the index.
+func (s *Store) Reindex(_ context.Context, paths []string) error {
+	normalized, err := index.NormalizePaths(paths)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lookup.Reset(normalized)
+	return s.indexAll()
+}
+
+func (s *Store) indexAll() error {
+	for _, id := range s.order {
+		if err := s.lookup.Add(id, s.records[id].Capsule); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Find returns one page of IDs matching q in admission order.
+func (s *Store) Find(_ context.Context, q artifact.Query) (artifact.Page, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lookup.Find(q)
 }

@@ -6,6 +6,11 @@ TypeScript ``./artifact/jsonl`` stores in either direction (see
 ``docs/artifact-store.md``). The namespace is a construction-time scope and is
 not stored per line. Put appends one line; purge rewrites the file through a
 temporary file and an atomic rename. Single writer: no multi-process locking.
+
+It implements the index extension
+(:class:`capsule_emit.artifact.index.IndexStore`), keeping the declaration and
+the index in the open store only: a store opened again has none until it
+declares again.
 """
 
 from __future__ import annotations
@@ -15,8 +20,9 @@ import os
 import stat
 import tempfile
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
+from .index import DEFAULT_FIND_LIMIT, MemoryIndex, Page, normalize_paths
 from .record import (
     ConflictError,
     CorruptError,
@@ -61,9 +67,20 @@ class JsonlArtifactStore:
         self._path = os.fspath(path)
         self._lock = threading.Lock()
         self._index: dict = {}
+        # Capsule IDs by first appearance in the file, which is admission
+        # order; purge rewrites lines in place and keeps it.
+        self._order: list = []
+        # The index extension's in-memory index. Its declaration lives only in
+        # this store: a jsonl file stores records and nothing else.
+        self._lookup = MemoryIndex()
         if os.path.exists(self._path):
             with open(self._path, "rb") as f:
-                self._index = {line_id: span for line_id, span, _ in self._lines(f) if line_id is not None}
+                for line_id, span, _ in self._lines(f):
+                    if line_id is None:
+                        continue
+                    if line_id not in self._index:
+                        self._order.append(line_id)
+                    self._index[line_id] = span
 
     @property
     def namespace(self) -> str:
@@ -145,6 +162,53 @@ class JsonlArtifactStore:
             finally:
                 os.close(fd)
             self._index[prepared.capsule_id] = (size + len(prefix), len(line))
+            self._order.append(prepared.capsule_id)
+            self._lookup.add(prepared.capsule_id, prepared.capsule)
+
+    def init_index(self, paths: Iterable[str]) -> None:
+        """Creates the file as :meth:`init` does, then declares paths for this
+        store and indexes the records in the file, in file order."""
+        normalized = normalize_paths(paths)
+        self.init()
+        with self._lock:
+            if self._lookup.declared is not None:
+                self._lookup.declare(normalized)
+                return
+            self._lookup = self._rebuilt(normalized)
+
+    def reindex(self, paths: Iterable[str]) -> None:
+        """Replaces the declared paths and rebuilds the index from the file."""
+        normalized = normalize_paths(paths)
+        self.init()
+        with self._lock:
+            self._lookup = self._rebuilt(normalized)
+
+    def _rebuilt(self, normalized: list) -> MemoryIndex:
+        """A new index over every readable record, swapped in only once it is
+        complete, so a failed read leaves the previous index in place. A line
+        that no longer decodes as a record is left out; get reports it as
+        corrupt."""
+        lookup = MemoryIndex()
+        lookup.reset(normalized)
+        for capsule_id in self._order:
+            try:
+                record = self._read_at(self._index[capsule_id])
+                if record.capsule_id == capsule_id:
+                    lookup.add(capsule_id, record.capsule)
+            except CorruptError:
+                continue
+        return lookup
+
+    def find(
+        self,
+        where: Mapping[str, str] | None = None,
+        since: str | None = None,
+        after: str | None = None,
+        limit: int = DEFAULT_FIND_LIMIT,
+    ) -> Page:
+        """Returns one page of IDs matching the query in admission order."""
+        with self._lock:
+            return self._lookup.find(where, since, after, limit)
 
     def get(self, capsule_id: str) -> Record:
         if not valid_id(capsule_id):
