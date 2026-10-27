@@ -16,8 +16,10 @@ import (
 )
 
 // The produce cross-check pins Go's output for testdata/produce-cross-check/
-// input.json in expected.json. Python's capsule_emit.produce replays the same
-// input (python/tests/test_produce_interop.py) and must match byte for byte.
+// input.json in expected.json. Python's capsule_emit.produce
+// (python/tests/test_produce_interop.py) and the Rust crate's produce module
+// (rust/capsule-emit/tests/produce_interop.rs) replay the same input and must
+// match byte for byte.
 // It covers what the frozen format4-interop pack does not: Build with every
 // optional member, Carry, BuildComposition with AUDIT, sealing explicit JSON
 // null, DigestJSON values, timestamp normalization and rejected inputs.
@@ -40,6 +42,7 @@ type crossCheckRecord struct {
 	Operation    string             `json:"operation"`
 	Input        crossCheckInput    `json:"input"`
 	ArtifactUTF8 *string            `json:"artifact_utf8"`
+	ArtifactHex  *string            `json:"artifact_hex"` // artifact bytes that are not UTF-8
 	ArtifactType string             `json:"artifact_type"`
 	Payload      json.RawMessage    `json:"payload"`
 	PayloadNull  bool               `json:"payload_null"`
@@ -114,6 +117,10 @@ type crossCheckInput struct {
 	Extensions []struct {
 		Name  string          `json:"name"`
 		Value json.RawMessage `json:"value"`
+		// ValueText, when present, is the extension's exact JSON text, for
+		// values a JSON document cannot hold: empty, trailing data or a
+		// repeated member name.
+		ValueText *string `json:"value_text"`
 	} `json:"extensions"`
 }
 
@@ -230,7 +237,11 @@ func (raw crossCheckInput) toInput() (Input, error) {
 		input.ProvenanceMode = mode
 	}
 	for _, extension := range raw.Extensions {
-		input.Extensions = append(input.Extensions, Extension{Name: extension.Name, Value: extension.Value})
+		value := extension.Value
+		if extension.ValueText != nil {
+			value = json.RawMessage(*extension.ValueText)
+		}
+		input.Extensions = append(input.Extensions, Extension{Name: extension.Name, Value: value})
 	}
 	return input, nil
 }
@@ -272,9 +283,15 @@ func runCrossCheckRecord(record crossCheckRecord, identity SigningIdentity, prio
 			}
 		}
 	}
+	var artifactBytes []byte
+	if record.ArtifactHex != nil {
+		if artifactBytes, err = hex.DecodeString(*record.ArtifactHex); err != nil {
+			return Result{}, err
+		}
+	}
 	artifact := func() []byte {
 		if record.ArtifactUTF8 == nil {
-			return nil
+			return artifactBytes
 		}
 		return []byte(*record.ArtifactUTF8)
 	}

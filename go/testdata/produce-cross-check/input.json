@@ -294,6 +294,173 @@
           "record": "build_minimal_fyi"
         }
       ]
+    },
+    {
+      "name": "build_contemporaneous",
+      "operation": "build",
+      "input": {
+        "action_id": "contemporaneous/12",
+        "action_type": "fyi",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00Z",
+        "provenance_mode": {"mode": "contemporaneous"}
+      }
+    },
+    {
+      "name": "build_failed_custom_effect",
+      "operation": "build",
+      "input": {
+        "action_id": "failed/13",
+        "action_type": "fyi",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00Z",
+        "effect": {
+          "type": "custom_effect",
+          "status": "failed",
+          "irreversibility_class": "custom_class",
+          "effect_attestation": "runtime_claimed"
+        }
+      }
+    },
+    {
+      "name": "build_empty_references",
+      "operation": "build",
+      "input": {
+        "action_id": "references/14",
+        "action_type": "fyi",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00Z",
+        "references": []
+      }
+    },
+    {
+      "name": "build_backfilled_duplicates",
+      "operation": "build",
+      "input": {
+        "action_id": "duplicates/15",
+        "action_type": "fyi",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00.000001Z",
+        "chain": {
+          "parent_capsule_id": "9999999999999999999999999999999999999999999999999999999999999999",
+          "relation": "duplicates"
+        },
+        "provenance_mode": {
+          "mode": "backfilled",
+          "source_ref": {"type": "ticket", "digest_alg": "SHA-256", "digest": "abababababababababababababababababababababababababababababababab"},
+          "source_asserted_at": "2026-08-01T00:00:00Z",
+          "import_batch": "batch-2",
+          "imported_at": "2026-10-01T00:00:00Z"
+        }
+      }
+    },
+    {
+      "name": "build_negative_zero_members",
+      "operation": "build",
+      "input": {
+        "action_id": "negative-zero/16",
+        "action_type": "fyi",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00Z",
+        "references": [
+          {
+            "type": "receipt",
+            "digest_alg": "SHA-256",
+            "digest": "6666666666666666666666666666666666666666666666666666666666666666",
+            "log_coordinates": {"log_id": "log-é€", "leaf_index": 9007199254740991, "inclusion_proof": ["ab", "cd"], "nz": -0}
+          }
+        ],
+        "extensions": [
+          {"name": "settlement_note", "value": {"z": 1, "a": [true, null, "x\u0000"], "nz": -0}}
+        ]
+      }
+    },
+    {
+      "name": "received_binary",
+      "operation": "received",
+      "input": {
+        "action_id": "received/17",
+        "action_type": "decide",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00Z",
+        "disposition": {"decision": "accept", "approver": "counterparty", "human_disposed": false}
+      },
+      "artifact_hex": "00ff7b2261223a317dfe",
+      "artifact_type": "machine-mandate"
+    },
+    {
+      "name": "seal_authored_negative_zero",
+      "operation": "seal",
+      "input": {
+        "action_id": "seal/18",
+        "action_type": "decide",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00Z",
+        "disposition": {"decision": "reject", "approver": "policy", "human_disposed": false, "verdict_class": "blocked"}
+      },
+      "payload": {"task": "summarize", "ticket": 105, "nz": -0, "s": "é😀"},
+      "agent_output": ["ok", 1],
+      "model": {"provider": "example-provider", "model_id": "model-x"},
+      "runtime": "custom-runtime@v1"
+    },
+    {
+      "name": "seal_output_only",
+      "operation": "seal",
+      "input": {
+        "action_id": "seal/19",
+        "action_type": "fyi",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00Z"
+      },
+      "agent_output": "done"
+    },
+    {
+      "name": "seal_bare",
+      "operation": "seal",
+      "input": {
+        "action_id": "seal/20",
+        "action_type": "fyi",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00Z"
+      }
+    },
+    {
+      "name": "seal_runtime_only",
+      "operation": "seal",
+      "input": {
+        "action_id": "seal/21",
+        "action_type": "fyi",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00Z"
+      },
+      "runtime": "rt@2"
+    },
+    {
+      "name": "seal_nested_composition",
+      "operation": "seal",
+      "input": {
+        "action_id": "compose/22",
+        "action_type": "fyi",
+        "operator": "example-org",
+        "developer": "example-agent@v1",
+        "timestamp": "2026-10-01T08:00:00Z"
+      },
+      "members": [
+        {"slot": "did", "record": "build_full"},
+        {"slot": "who", "record": "seal_composition_all_slots"}
+      ],
+      "model": {"provider": "acme"},
+      "runtime": "composer@2"
     }
   ],
   "digests": [
@@ -344,6 +511,10 @@
     {
       "name": "empty_array",
       "value": []
+    },
+    {
+      "name": "negative_zero",
+      "value": {"b": [1, -2, {"c": "é€😀\n\""}], "a": null, "nz": -0, "t": true}
     }
   ],
   "timestamps": [
@@ -822,6 +993,35 @@
           "provider": "p"
         }
       }
-    }
+    },
+    {"name": "blank_action_id", "operation": "build", "input": {"action_id": " ", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z"}},
+    {"name": "disposition_without_decision", "operation": "build", "input": {"action_id": "x/31", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "disposition": {"decision": "", "approver": "human"}}},
+    {"name": "bad_reason_digest", "operation": "build", "input": {"action_id": "x/32", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "disposition": {"decision": "accept", "approver": "policy", "reason_digest": "ABC"}}},
+    {"name": "effect_blank_type", "operation": "build", "input": {"action_id": "x/33", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "effect": {"type": " ", "status": "planned", "irreversibility_class": "two_way"}}},
+    {"name": "effect_without_class", "operation": "build", "input": {"action_id": "x/34", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "effect": {"type": "t", "status": "planned"}}},
+    {"name": "effect_bad_request_digest", "operation": "build", "input": {"action_id": "x/35", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "effect": {"type": "t", "status": "dispatched", "irreversibility_class": "two_way", "effect_attestation": "runtime_claimed", "request_digest": "zz"}}},
+    {"name": "planned_effect_with_attestation", "operation": "build", "input": {"action_id": "x/36", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "effect": {"type": "t", "status": "planned", "irreversibility_class": "two_way", "effect_attestation": "gate_executed"}}},
+    {"name": "dispatched_with_response", "operation": "build", "input": {"action_id": "x/37", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "effect": {"type": "t", "status": "dispatched", "irreversibility_class": "two_way", "effect_attestation": "gate_executed", "response_digest": "3333333333333333333333333333333333333333333333333333333333333333"}}},
+    {"name": "dispatched_without_attestation", "operation": "build", "input": {"action_id": "x/38", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "effect": {"type": "t", "status": "dispatched", "irreversibility_class": "two_way"}}},
+    {"name": "confirmed_without_attestation", "operation": "build", "input": {"action_id": "x/39", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "effect": {"type": "t", "status": "confirmed", "irreversibility_class": "two_way", "response_digest": "3333333333333333333333333333333333333333333333333333333333333333"}}},
+    {"name": "reverted_without_attestation", "operation": "build", "input": {"action_id": "x/40", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "effect": {"type": "t", "status": "reverted", "irreversibility_class": "two_way"}}},
+    {"name": "model_empty", "operation": "build", "input": {"action_id": "x/41", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "model": {}}},
+    {"name": "model_blank_id", "operation": "build", "input": {"action_id": "x/42", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "model": {"provider": "p", "model_id": " "}}},
+    {"name": "compute_blank_runtime", "operation": "build", "input": {"action_id": "x/43", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "compute": {"runtime": " "}}},
+    {"name": "compute_bad_output_digest", "operation": "build", "input": {"action_id": "x/44", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "compute": {"agent_output_digest": "xyz"}}},
+    {"name": "chain_blank_relation", "operation": "build", "input": {"action_id": "x/45", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "chain": {"parent_capsule_id": "4444444444444444444444444444444444444444444444444444444444444444", "relation": ""}}},
+    {"name": "provenance_mode_unknown", "operation": "build", "input": {"action_id": "x/46", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "provenance_mode": {"mode": "imported"}}},
+    {"name": "provenance_source_ref_with_citation", "operation": "build", "input": {"action_id": "x/47", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "provenance_mode": {"mode": "backfilled", "source_ref": {"type": "t", "digest_alg": "SHA-256", "digest": "d", "citation_purpose": "acted_on"}}}},
+    {"name": "backfilled_blank_source_ref", "operation": "build", "input": {"action_id": "x/48", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "provenance_mode": {"mode": "backfilled", "source_ref": {"type": " ", "digest_alg": "SHA-256", "digest": "d"}}}},
+    {"name": "backfilled_unknown_time_rung", "operation": "build", "input": {"action_id": "x/49", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "provenance_mode": {"mode": "backfilled", "source_ref": {"type": "t", "digest_alg": "SHA-256", "digest": "d"}, "source_asserted_at": "a", "import_batch": "b", "imported_at": "c", "time_rung": "sundial"}}},
+    {"name": "reference_log_coordinates_float", "operation": "build", "input": {"action_id": "x/50", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "references": [{"type": "r", "digest_alg": "SHA-256", "digest": "d", "log_coordinates": {"x": 0.5}}]}},
+    {"name": "extension_twice", "operation": "build", "input": {"action_id": "x/51", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "extensions": [{"name": "note", "value": 1}, {"name": "note", "value": 2}]}},
+    {"name": "extension_unsafe_integer", "operation": "build", "input": {"action_id": "x/52", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "extensions": [{"name": "note", "value": {"a": -9007199254740992}}]}},
+    {"name": "extension_nested_float", "operation": "build", "input": {"action_id": "x/53", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "extensions": [{"name": "note", "value": {"a": [1, 2.0]}}]}},
+    {"name": "extension_empty_text", "operation": "build", "input": {"action_id": "x/54", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "extensions": [{"name": "note", "value_text": ""}]}},
+    {"name": "extension_duplicate_member", "operation": "build", "input": {"action_id": "x/55", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "extensions": [{"name": "note", "value_text": "{\"a\":1,\"a\":2}"}]}},
+    {"name": "extension_trailing_value", "operation": "build", "input": {"action_id": "x/56", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "extensions": [{"name": "note", "value_text": "{} {}"}]}},
+    {"name": "composition_with_authored_digest", "operation": "composition", "input": {"action_id": "x/57", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z", "compute": {"agent_output_digest": "8888888888888888888888888888888888888888888888888888888888888888"}}, "members": [{"slot": "who", "record": "carry"}]},
+    {"name": "seal_composition_empty", "operation": "seal", "input": {"action_id": "x/58", "action_type": "fyi", "operator": "example-org", "developer": "example-agent@v1", "timestamp": "2026-10-01T08:00:00Z"}, "members": []}
   ]
 }

@@ -66,6 +66,72 @@
       "capsule_id": "1ee307dfdc3a14e7f2a8b6a78a5fbee37d8b02d465b2ed35badaac46c1a11d3a",
       "capsule_jcs": "{\"action_id\":\"compose/11\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"1ee307dfdc3a14e7f2a8b6a78a5fbee37d8b02d465b2ed35badaac46c1a11d3a\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"composed_members\":[{\"digest\":\"3b47830b3df18626e9155a3613584dff35d322dbcf13ce0309f1855cd10d1a88\",\"digest_alg\":\"SHA-256\",\"slot\":\"did\",\"type\":\"capsule\"},{\"digest\":\"1b6ef8f637a02a32d30d32ce70d1615bcad14960f6183794e798ea47c0d4c67b\",\"digest_alg\":\"SHA-256\",\"slot\":\"audit\",\"type\":\"capsule\"}]},\"model_id\":\"model-y\"},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
       "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058201ee307dfdc3a14e7f2a8b6a78a5fbee37d8b02d465b2ed35badaac46c1a11d3a584088aeea0c55bcf8b97733842695c6495ce3708abb3aef5c80c4edaece29a26bd25c39878092123a6d035b86fc001f3d2c2a5b98d50ae4865b33edae664a68df0a"
+    },
+    {
+      "name": "build_contemporaneous",
+      "capsule_id": "443b03c49a528926f7e270188f6e451bd049e55e2546b7bf40e09c2d7ea1820d",
+      "capsule_jcs": "{\"action_id\":\"contemporaneous/12\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"443b03c49a528926f7e270188f6e451bd049e55e2546b7bf40e09c2d7ea1820d\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"operator\":\"example-org\",\"provenance_mode\":{\"mode\":\"contemporaneous\"},\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a05820443b03c49a528926f7e270188f6e451bd049e55e2546b7bf40e09c2d7ea1820d5840680afb40d90e3980909febef44568ca4097d9b96fcae67ee5e852d3ec35926e7e9cea0ca040c8d14a529594b0dc37853ab688870b8a80499bf4449a481226c0f"
+    },
+    {
+      "name": "build_failed_custom_effect",
+      "capsule_id": "314ef19133d0e0778d3d8e41844980848f2475e4e40c0bf27118101c3a5f3686",
+      "capsule_jcs": "{\"action_id\":\"failed/13\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"dispatched_unconfirmed\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"314ef19133d0e0778d3d8e41844980848f2475e4e40c0bf27118101c3a5f3686\",\"developer\":\"example-agent@v1\",\"effect\":{\"effect_attestation\":\"runtime_claimed\",\"irreversibility_class\":\"custom_class\",\"status\":\"failed\",\"type\":\"custom_effect\"},\"format_version\":\"4\",\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a05820314ef19133d0e0778d3d8e41844980848f2475e4e40c0bf27118101c3a5f36865840c125ca951fc66c9b4675d1c1309f79aa81c46101a96d9bb888c04011bf5144b7402557898493925814edc35e1cf49e15efb80a0d67887002a3a9a6b45a793d02"
+    },
+    {
+      "name": "build_empty_references",
+      "capsule_id": "6bc596d35adb2ed32bd975a2550f129c3be83fa7c33a5256db0089c574ebaa24",
+      "capsule_jcs": "{\"action_id\":\"references/14\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"6bc596d35adb2ed32bd975a2550f129c3be83fa7c33a5256db0089c574ebaa24\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"operator\":\"example-org\",\"references\":[],\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058206bc596d35adb2ed32bd975a2550f129c3be83fa7c33a5256db0089c574ebaa2458406852fbe940b263b56079cc61d667024a59821b2ca5e04b7b6f0c54104ec79b150167decd83a820bea494de9aa266e0afd15edccdd107da33f3b1bd0b11f0570b"
+    },
+    {
+      "name": "build_backfilled_duplicates",
+      "capsule_id": "4dd5afa616e80ebe23228a59fb994a938000dacec5b2f5008db5b5e99ffc9021",
+      "capsule_jcs": "{\"action_id\":\"duplicates/15\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"chained\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"4dd5afa616e80ebe23228a59fb994a938000dacec5b2f5008db5b5e99ffc9021\",\"chain\":{\"parent_capsule_id\":\"9999999999999999999999999999999999999999999999999999999999999999\",\"relation\":\"duplicates\"},\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"operator\":\"example-org\",\"provenance_mode\":{\"import_batch\":\"batch-2\",\"imported_at\":\"2026-10-01T00:00:00Z\",\"mode\":\"backfilled\",\"source_asserted_at\":\"2026-08-01T00:00:00Z\",\"source_ref\":{\"digest\":\"abababababababababababababababababababababababababababababababab\",\"digest_alg\":\"SHA-256\",\"type\":\"ticket\"}},\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00.000001Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058204dd5afa616e80ebe23228a59fb994a938000dacec5b2f5008db5b5e99ffc90215840e64d95d57b45daab9cee596e2ed582380aee807523427951ee399723b215263ab3255000f27d65888f0ac564dba215d220e73eb19f35651620b1b9efc7d5dc04"
+    },
+    {
+      "name": "build_negative_zero_members",
+      "capsule_id": "5b140b83c3ef289ed6af3e794f283b30785fef7e9b8830206328fa67af80aa96",
+      "capsule_jcs": "{\"action_id\":\"negative-zero/16\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"5b140b83c3ef289ed6af3e794f283b30785fef7e9b8830206328fa67af80aa96\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"operator\":\"example-org\",\"references\":[{\"digest\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"digest_alg\":\"SHA-256\",\"log_coordinates\":{\"inclusion_proof\":[\"ab\",\"cd\"],\"leaf_index\":9007199254740991,\"log_id\":\"log-é€\",\"nz\":0},\"type\":\"receipt\"}],\"settlement_note\":{\"a\":[true,null,\"x\\u0000\"],\"nz\":0,\"z\":1},\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058205b140b83c3ef289ed6af3e794f283b30785fef7e9b8830206328fa67af80aa965840ed8416e8bf619dba0c488a3d842d391e02e0e5b81016e667fb7f672442f58e32d7dd062cf315cad8364ec4deb06792b130687618432e5757c26d1a82bb39d40e"
+    },
+    {
+      "name": "received_binary",
+      "capsule_id": "3e6e91b7f6ac5f15982850f232b7ff0542f33da542a90211707ef2a7938f3ad7",
+      "capsule_jcs": "{\"action_id\":\"received/17\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"3e6e91b7f6ac5f15982850f232b7ff0542f33da542a90211707ef2a7938f3ad7\",\"developer\":\"example-agent@v1\",\"disposition\":{\"approver\":\"counterparty\",\"decision\":\"accept\",\"human_disposed\":false},\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"carried_artifact\":{\"digest\":\"37f21d3f390149e0bbf413b4d8d3a355e72c3582eb9ec384b62e6c292c58c8de\",\"digest_alg\":\"SHA-256\",\"type\":\"machine-mandate\"},\"carried_input_digest\":\"37f21d3f390149e0bbf413b4d8d3a355e72c3582eb9ec384b62e6c292c58c8de\"}},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058203e6e91b7f6ac5f15982850f232b7ff0542f33da542a90211707ef2a7938f3ad7584059fbc360b3d78a92ffbf42ed719e6623c715ea1bab4c3f378bfa5c3f22dbceadde3ece4648724287828e92cb9ff74d25dac728765b72015fe3b4d51205121b09"
+    },
+    {
+      "name": "seal_authored_negative_zero",
+      "capsule_id": "3a06fe508b181e1c18726404d010629693784482ae4e89529e5470bf9f0f4d35",
+      "capsule_jcs": "{\"action_id\":\"seal/18\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"3a06fe508b181e1c18726404d010629693784482ae4e89529e5470bf9f0f4d35\",\"developer\":\"example-agent@v1\",\"disposition\":{\"approver\":\"policy\",\"decision\":\"reject\",\"human_disposed\":false,\"verdict_class\":\"blocked\"},\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"agent_input_digest\":\"dc3f69bd3d5da0e7a4582dc0219ccf8725a975732bff997227dee04ae5d4c84b\",\"agent_output_digest\":\"7fb152065bc8aa833f2c3ae9275c088a263ad5aea8dde1ec17e3c9d7f10996fe\",\"runtime\":\"custom-runtime@v1\"},\"model_id\":\"model-x\",\"provider\":\"example-provider\"},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058203a06fe508b181e1c18726404d010629693784482ae4e89529e5470bf9f0f4d355840baaf10be41556077fe05bdaa51be06d9a61efbe6107878c59d2f30320bcb96215076c467d7b125af2a10b0175fd1499a277882ed3eac2c09bc70d0190130df0e"
+    },
+    {
+      "name": "seal_output_only",
+      "capsule_id": "4561bccfffec04d95569f677489abe9ae83bc93672594066f3cb9f038c6a388e",
+      "capsule_jcs": "{\"action_id\":\"seal/19\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"4561bccfffec04d95569f677489abe9ae83bc93672594066f3cb9f038c6a388e\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"agent_output_digest\":\"58bf5b5478e5d1fb7441daeff9fd1ed60a4ad5fbfabc64715cd8608f3f59f6da\"}},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058204561bccfffec04d95569f677489abe9ae83bc93672594066f3cb9f038c6a388e58405f0b1a7a90424926323dedc40008519085e752a8b84725e1d96f5e96b8125d3578196da820251273b033886409b56c5e045095e6e6d3acb998dcd88459087a0e"
+    },
+    {
+      "name": "seal_bare",
+      "capsule_id": "1e5cbbe9e330bf34888e9648b486783dd5392c309c9541deff1be83c750c0c49",
+      "capsule_jcs": "{\"action_id\":\"seal/20\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"1e5cbbe9e330bf34888e9648b486783dd5392c309c9541deff1be83c750c0c49\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058201e5cbbe9e330bf34888e9648b486783dd5392c309c9541deff1be83c750c0c4958401c83ddc92f3ac861694fdfcc0cf3b523c9046890aecd5ab8e30ead54b49d5350cf21676b582d197f62ea4d4a2920d8241c61c431bdc91363926b0cf129daeb09"
+    },
+    {
+      "name": "seal_runtime_only",
+      "capsule_id": "95c74a864c2bcd561a0a190de4c904124687411ab4a580716e0576bf3fcb42e2",
+      "capsule_jcs": "{\"action_id\":\"seal/21\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"95c74a864c2bcd561a0a190de4c904124687411ab4a580716e0576bf3fcb42e2\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"runtime\":\"rt@2\"}},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a0582095c74a864c2bcd561a0a190de4c904124687411ab4a580716e0576bf3fcb42e25840547a0e723343601175753c10986bea8312b2eca51ff44bf88099bb819e94a82aec9bb97dd0f5b020f4df1bcb2abc7bee92c85b0b10ceddcecc3e08fb93ac3207"
+    },
+    {
+      "name": "seal_nested_composition",
+      "capsule_id": "7e2007642372457b35e1d23a2d5cc0a70b21bc682d56045d4bce71a2ab2446e0",
+      "capsule_jcs": "{\"action_id\":\"compose/22\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"7e2007642372457b35e1d23a2d5cc0a70b21bc682d56045d4bce71a2ab2446e0\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"composed_members\":[{\"digest\":\"a107088160dbe355f8b9f238f0177a2972d8b04f1aadb62da94f079b862c6389\",\"digest_alg\":\"SHA-256\",\"slot\":\"who\",\"type\":\"capsule\"},{\"digest\":\"dc0658102d0db21e6845b2725e7f226120fbbc116360d6134eeb9c946541b6d3\",\"digest_alg\":\"SHA-256\",\"slot\":\"did\",\"type\":\"capsule\"}],\"runtime\":\"composer@2\"},\"provider\":\"acme\"},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058207e2007642372457b35e1d23a2d5cc0a70b21bc682d56045d4bce71a2ab2446e05840aa6aea0afac32c021c0fb4d4507005ea9dcfa2bd2cb15191ae26f991ccd4c29be37d3fd61a95a4b72b1e1be1d5d2113bf8c0831b38705ff36bbbb82b7cc67e06"
     }
   ],
   "digests": [
@@ -96,6 +162,10 @@
     {
       "name": "empty_array",
       "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "name": "negative_zero",
+      "digest": "f480c67df6c75ba1f49f727257aac6b1ce77211d00c5d02b121eccac25568888"
     }
   ],
   "timestamps": [
@@ -244,6 +314,122 @@
     {
       "name": "seal_model_on_capsule",
       "error": "SealInput model and compute metadata must use Model and Runtime fields"
+    },
+    {
+      "name": "blank_action_id",
+      "error": "action id is required"
+    },
+    {
+      "name": "disposition_without_decision",
+      "error": "disposition decision is required"
+    },
+    {
+      "name": "bad_reason_digest",
+      "error": "disposition reason digest must be 64 lowercase hex characters"
+    },
+    {
+      "name": "effect_blank_type",
+      "error": "effect type is required"
+    },
+    {
+      "name": "effect_without_class",
+      "error": "effect irreversibility class is required"
+    },
+    {
+      "name": "effect_bad_request_digest",
+      "error": "effect request digest must be 64 lowercase hex characters"
+    },
+    {
+      "name": "planned_effect_with_attestation",
+      "error": "planned effect must not carry effect attestation"
+    },
+    {
+      "name": "dispatched_with_response",
+      "error": "dispatched effect must not carry a response digest"
+    },
+    {
+      "name": "dispatched_without_attestation",
+      "error": "dispatched effect requires effect attestation"
+    },
+    {
+      "name": "confirmed_without_attestation",
+      "error": "confirmed effect requires effect attestation"
+    },
+    {
+      "name": "reverted_without_attestation",
+      "error": "reverted effect requires effect attestation"
+    },
+    {
+      "name": "model_empty",
+      "error": "model must include provider or model id"
+    },
+    {
+      "name": "model_blank_id",
+      "error": "model id must be non-empty when present"
+    },
+    {
+      "name": "compute_blank_runtime",
+      "error": "compute attestation runtime must be non-empty when present"
+    },
+    {
+      "name": "compute_bad_output_digest",
+      "error": "compute attestation agent output digest must be 64 lowercase hex characters"
+    },
+    {
+      "name": "chain_blank_relation",
+      "error": "chain relation is required"
+    },
+    {
+      "name": "provenance_mode_unknown",
+      "error": "provenance mode must be \"contemporaneous\" or \"backfilled\""
+    },
+    {
+      "name": "provenance_source_ref_with_citation",
+      "error": "provenance mode source ref must not carry citation purpose or log coordinates"
+    },
+    {
+      "name": "backfilled_blank_source_ref",
+      "error": "provenance mode source ref requires type, digest alg, and digest"
+    },
+    {
+      "name": "backfilled_unknown_time_rung",
+      "error": "provenance mode time rung must be \"self_attested\" or \"witnessed\""
+    },
+    {
+      "name": "reference_log_coordinates_float",
+      "error": "compute capsule id: float at : §5.1 forbids floating-point values in digest-bearing fields"
+    },
+    {
+      "name": "extension_twice",
+      "error": "extension \"note\" is given more than once"
+    },
+    {
+      "name": "extension_unsafe_integer",
+      "error": "integer at $.note.a is outside the interoperable range"
+    },
+    {
+      "name": "extension_nested_float",
+      "error": "float at $.note.a[1]: floating-point values are forbidden in a Capsule"
+    },
+    {
+      "name": "extension_empty_text",
+      "error": "extension \"note\" has no value"
+    },
+    {
+      "name": "extension_duplicate_member",
+      "error": "extension \"note\": duplicate object key \"a\""
+    },
+    {
+      "name": "extension_trailing_value",
+      "error": "extension \"note\": trailing JSON value"
+    },
+    {
+      "name": "composition_with_authored_digest",
+      "error": "carried or composed binding must not include agent input or output digest"
+    },
+    {
+      "name": "seal_composition_empty",
+      "error": "composition requires at least one slot member"
     }
   ]
 }
