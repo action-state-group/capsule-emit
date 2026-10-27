@@ -404,7 +404,9 @@ def test_deep_json_within_the_limit_is_a_value_error_not_a_recursion_error():
     with pytest.raises(ValueError):
         p.digest_json(value)
     with pytest.raises(ValueError):
-        p.build(_input(extensions=(p.Extension("deep", json.dumps(value)),)))
+        # Text built directly: json.dumps itself cannot encode this deep on Python 3.9.
+        deep = "[" * (MAX_JSON_DEPTH - 1) + "]" * (MAX_JSON_DEPTH - 1)
+        p.build(_input(extensions=(p.Extension("deep", deep),)))
 
 
 def test_whole_number_floats_digest_as_integers_like_go():
