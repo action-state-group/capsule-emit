@@ -25,6 +25,10 @@ and its tests fail if the copy drifts from this file.
 | `open` | `{name, namespace, trusted, expect}`: constructor validation, with `trusted` as raw hex keys (some deliberately not 32 bytes) |
 | `cases` | Operation sequences, described below |
 
+The `index.*` records differ in `operator`, `developer`, `timestamp` and a
+neutral `fixture` extension whose `tags` array exercises list matching; the
+index cases declare only those paths.
+
 The `padding*` records are padding records
 ([contract](../../docs/artifact-store.md#padding-records)) with fixed store
 nonces. Each rejected variant recomputes its own `capsule_id` and carries an
@@ -52,6 +56,9 @@ in order:
 | `get` | `id`, `result` | `get(id)`; on `ok`, compare with the named record |
 | `purge` | `id` | `purge(id)` |
 | `reopen` | optional `trusted` | Construct the store again over the same storage (with other trusted keys if given) and `init()` it |
+| `init_index` | `paths` | `init_index(paths)` ([index extension](../../docs/artifact-store.md#optional-index-extension)) |
+| `reindex` | `paths` | `reindex(paths)` |
+| `find` | optional `where`, `since`, `after`, `limit`, `continue`; `found`, `more`, `unordered` | `find` with the given query; with `continue`, `after` is the previous `find`'s `next`. On `ok`, the returned IDs must be the Capsule IDs of the records named in `found`, in that order unless `unordered`, and `next` must be non-empty exactly when `more` |
 
 `store` names the target store (default `main`). `expect` is `ok` or one of the
 contract's error codes, and the step passes only with exactly that outcome.
@@ -65,6 +72,11 @@ capabilities the backend does not declare:
   `memory`).
 - `shared_backing`: stores with different namespaces can share one storage
   (the SQL backends; a `jsonl` file holds one namespace).
+- `index`: the store implements the index extension (every built-in backend
+  except the legacy ledgers). Go detects it from the store's type; the other
+  runners take it from the harness.
+- `durable_index`: a reopened store keeps the declared index paths (the SQL
+  backends).
 
 Two further capabilities are derived from a case's steps rather than listed,
 so that a store with [capability limits](../../docs/artifact-store.md#capability-limits)

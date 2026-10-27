@@ -251,6 +251,91 @@ transaction, at most four times with bounded backoff; `put_tx` never does. A
 CLL append does not belong in the same transaction unless the CLL backend
 supports that transaction too.
 
+## Optional index extension
+
+A store may let a namespace look records up by values inside their Capsules,
+without reading record bodies. The namespace declares which JSON paths it
+indexes; the store extracts their values from the Capsule bytes when it admits
+a record, so the index is derived from stored records and never holds anything
+they do not. The store learns paths, never what they mean, and has no default
+list.
+
+| Operation | Contract |
+|---|---|
+| `init_index(paths)` | Provisions storage as `init` does, then declares `paths` for the namespace and indexes the records already stored. Declaring the same set again does nothing; a different set is `conflict` |
+| `reindex(paths)` | Replaces the declared set, which may differ, and rebuilds the index from the stored records |
+| `find(where, since, after, limit)` | Returns one page of matching Capsule IDs and a cursor for the next page (see Find) |
+
+Callers detect the extension at run time, like the transactional one: a Go
+type assertion to `artifact.IndexStore`, a TypeScript `isIndexStore` guard, a
+Python `IndexStore` protocol check (`capsule_emit.artifact.index`), a Rust
+`IndexStore` trait bound. Every built-in backend except the legacy ledgers
+implements it.
+
+### Paths and values
+
+- A path is 1 to 8 segments joined by `.`, each segment 1 to 64 characters
+  from `A-Z a-z 0-9 _ -`, at most 255 bytes in all. It names object members
+  from the Capsule's top level down: `operator`, `fixture.tags`.
+- A namespace declares at most 32 paths. The declaration is a set: order does
+  not matter, a repeated path is `invalid`, and the empty set is allowed.
+- A string value is one index entry. An array contributes one entry per
+  distinct string element. Any other value, a missing member, or a non-object
+  on the way gives no entry. A padding record is indexed like any record.
+- The record's time is its top-level `timestamp` when that is an RFC 3339
+  date-time: `YYYY-MM-DDTHH:MM:SS`, an optional `.` and 1 to 9 fraction
+  digits, then `Z` or `+HH:MM`/`-HH:MM`, upper case, ASCII digits only, with
+  valid calendar values and seconds below 60. It is converted to UTC and
+  truncated to microseconds. A record without such a timestamp has no time.
+- A record is indexed once, when first admitted. A retry, a purge and a
+  failed `put` change nothing in the index.
+
+### Find
+
+- `where` maps declared paths to strings. A record matches when, for every
+  pair, the path has an entry equal to the string. A path the namespace did
+  not declare is `invalid`. An empty `where` matches every record.
+- `since`, when given, is a date-time in the timestamp form above. Only
+  records with a time at or after it match; records without a time never do.
+  A malformed value is `invalid`.
+- `limit` is 1 to 1000 (languages default it to 100); anything else is
+  `invalid`.
+- Results are in the store's admission order: the order in which records
+  first entered the index. That is not the order of any CLL log, so no caller
+  may take a first or last record from it. Records indexed by `init_index` or
+  `reindex` are ordered by their creation time in SQL and by file order in
+  `jsonl`; records stored together may tie.
+- `next` is an opaque cursor, empty when no further match exists. Passing it
+  as `after` continues after the last returned record. A cursor is valid only
+  for the store that returned it and the same query; a malformed one is
+  `invalid`. Pages are not a snapshot: a record admitted between two calls
+  may or may not appear.
+- `find` on a namespace that declared no paths is `invalid`.
+
+### Storage
+
+- **`mysql` and `sqlite`**: `init` also creates three tables, without
+  altering the existing two: `capsule_store_index_paths` (`namespace`,
+  `paths`: the sorted set as compact JSON), `capsule_store_index_records`
+  (`seq`, an auto-increment admission number; `namespace`; `capsule_id`;
+  `ts`: the time in UTC microseconds, or NULL) and `capsule_store_index`
+  (`namespace`, `path`, `value_sha256`, `seq`). An index row keys on the
+  lowercase hex SHA-256 of the value's UTF-8 bytes, so long values fit an
+  index key; it is not a disclosure control, since the Capsule row holds the
+  same values in clear. `put` and `put_tx` write index rows in the same
+  transaction as the record. A database provisioned before these tables
+  existed keeps working and has no declaration until `init_index` runs. The
+  declaration persists, so every store opened on the namespace indexes its
+  writes.
+- **`jsonl` and `memory`** keep the declaration and the index in the open
+  store only: `init_index` builds them from the stored records, and a store
+  opened again has none until it declares again. A `jsonl` line that no
+  longer decodes as a record is left out of the index.
+
+The conformance cases that need the extension require the `index`
+capability; those that reopen a store and expect its declaration to persist
+also require `durable_index` (the SQL backends).
+
 ## Consumers
 
 A consumer that reads Capsules from a store checks `record_type`, because `get`
@@ -334,4 +419,5 @@ adds the backend.
 
 The vectors' README describes the file format, the padding cases, and the
 optional capabilities a case may require (`durable`: the backend can be reopened over the same storage;
-`shared_backing`: several namespaces can share one storage).
+`shared_backing`: several namespaces can share one storage; `index` and
+`durable_index`: see the [index extension](#optional-index-extension)).
