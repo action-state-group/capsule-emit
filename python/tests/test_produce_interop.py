@@ -35,6 +35,9 @@ _MESSAGES_DIFFER = {
     "seal_unsafe_integer_output",
     "seal_model_on_capsule",
     "witnessed_without_corroboration",
+    # Text from different canonicalizers and JSON decoders.
+    "reference_log_coordinates_float",
+    "extension_trailing_value",
 }
 
 
@@ -177,8 +180,21 @@ def _input(raw: dict[str, Any]) -> p.Input:
             runtime=c.get("runtime", ""),
         )),
         provenance_mode=provenance_mode,
-        extensions=[p.Extension(name=x["name"], value=json.dumps(x["value"])) for x in raw.get("extensions", [])],
+        extensions=[_extension(x) for x in raw.get("extensions", [])],
     )
+
+
+def _extension(raw: dict[str, Any]) -> p.Extension:
+    # value_text is exact JSON text a JSON document cannot hold (empty,
+    # trailing data, a repeated member name); value is any JSON value.
+    text = raw["value_text"] if "value_text" in raw else json.dumps(raw["value"])
+    return p.Extension(name=raw["name"], value=text)
+
+
+def _artifact(record: dict[str, Any]) -> bytes:
+    if "artifact_hex" in record:
+        return bytes.fromhex(record["artifact_hex"])
+    return record["artifact_utf8"].encode("utf-8")
 
 
 def _seal_value(record: dict[str, Any], key: str) -> Any:
@@ -209,9 +225,9 @@ def _run(record: dict[str, Any], identity: p.SigningIdentity, prior: dict[str, p
     if operation == "build":
         built = p.build(capsule)
     elif operation == "carry":
-        built = p.carry(capsule, record["artifact_utf8"].encode("utf-8"))
+        built = p.carry(capsule, _artifact(record))
     elif operation == "received":
-        built = p.received(capsule, record["artifact_utf8"].encode("utf-8"), record["artifact_type"])
+        built = p.received(capsule, _artifact(record), record["artifact_type"])
     elif operation == "composition":
         built = p.build_composition(capsule, *members)
     else:  # pragma: no cover - fixture defect

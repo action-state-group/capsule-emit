@@ -110,6 +110,19 @@ def test_decode_payload_rejects(data, message):
         p.decode_payload(data)
 
 
+def test_duplicate_key_message_quotes_the_key_as_go_does():
+    with pytest.raises(ValueError) as caught:
+        p.decode_payload(b'{"b": {"a\\"x": 1, "a\\"x": 2}}')
+    assert str(caught.value).endswith('duplicate object key "a\\"x"')
+
+
+def test_duplicate_non_ascii_key_prints_as_go_does():
+    # Go's %q leaves printable non-ASCII characters as they are.
+    with pytest.raises(ValueError) as caught:
+        p.decode_payload('{"é": 1, "é": 2}'.encode())
+    assert str(caught.value).endswith('duplicate object key "é"')
+
+
 def test_decode_payload_rejects_non_text():
     with pytest.raises(TypeError):
         p.decode_payload(12)

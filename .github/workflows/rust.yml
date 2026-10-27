@@ -9,9 +9,9 @@ name: Rust CI
 on:
   push:
     branches: [main]
-    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py", "python/**", "test-vectors/artifact-store/**", "go/artifact/*/schema.sql"]
+    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py", "python/**", "test-vectors/artifact-store/**", "go/artifact/*/schema.sql", "go/testdata/capsule-emit/format4-interop-v05/**", "go/testdata/produce-cross-check/**"]
   pull_request:
-    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py", "python/**", "test-vectors/artifact-store/**", "go/artifact/*/schema.sql"]
+    paths: ["rust/**", ".github/workflows/rust.yml", ".github/scripts/check_crate_metadata.py", "python/**", "test-vectors/artifact-store/**", "go/artifact/*/schema.sql", "go/testdata/capsule-emit/format4-interop-v05/**", "go/testdata/produce-cross-check/**"]
   workflow_dispatch:
 
 permissions:
