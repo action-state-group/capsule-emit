@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
+import {
+  conformanceVectors,
+  vectorRecord,
+} from "../../src/artifact/conformance.js";
 import { isIndexStore } from "../../src/artifact/index.js";
 import { JsonlArtifactStore } from "../../src/artifact/jsonl.js";
 import {
@@ -98,6 +102,32 @@ describe("index helpers", () => {
         purge: async () => {},
       }),
     ).toBe(false);
+  });
+});
+
+describe("index row vectors", () => {
+  interface IndexRow {
+    record: string;
+    paths: string[];
+    stored: string;
+    ts: string;
+    entries: { path: string; value_sha256: string }[];
+  }
+  const rows = (conformanceVectors as unknown as { index_rows: IndexRow[] })
+    .index_rows;
+  it("pins what the SQL backends store, across languages", () => {
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const paths = normalizePaths(row.paths);
+      expect(encodePaths(paths)).toBe(row.stored);
+      const got = extract(vectorRecord(row.record).capsule, paths);
+      expect(got.ts === undefined ? "" : String(got.ts)).toBe(row.ts);
+      const entries = got.entries
+        .map((e) => `${e.path} ${valueKey(e.value)}`)
+        .sort();
+      const want = row.entries.map((e) => `${e.path} ${e.value_sha256}`).sort();
+      expect(entries).toEqual(want);
+    }
   });
 });
 

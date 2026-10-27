@@ -426,6 +426,59 @@ impl MemoryIndex {
 mod tests {
     use super::*;
 
+    /// The pinned index rows: what the SQL backends store must agree byte for
+    /// byte across languages. Entry order is not part of a row set.
+    #[test]
+    fn index_row_vectors() {
+        use sha2::{Digest, Sha256};
+        let vectors: Value =
+            serde_json::from_str(include_str!("conformance_vectors.json")).unwrap();
+        let rows = vectors["index_rows"].as_array().unwrap();
+        assert!(!rows.is_empty());
+        for row in rows {
+            let name = row["record"].as_str().unwrap();
+            let declared: Vec<&str> = row["paths"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| p.as_str().unwrap())
+                .collect();
+            let paths = normalize_paths(&declared).unwrap();
+            assert_eq!(
+                encode_paths(&paths),
+                row["stored"].as_str().unwrap(),
+                "{name}"
+            );
+            let line = serde_json::to_vec(&vectors["records"][name]).unwrap();
+            let record = crate::decode_record(&line).unwrap();
+            let got = extract(&record.capsule, &paths).unwrap();
+            let ts = got.ts.map(|t| t.to_string()).unwrap_or_default();
+            assert_eq!(ts, row["ts"].as_str().unwrap(), "{name}");
+            let mut entries: Vec<String> = got
+                .entries
+                .iter()
+                .map(|(path, value)| {
+                    format!("{path} {}", hex::encode(Sha256::digest(value.as_bytes())))
+                })
+                .collect();
+            let mut want: Vec<String> = row["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| {
+                    format!(
+                        "{} {}",
+                        e["path"].as_str().unwrap(),
+                        e["value_sha256"].as_str().unwrap()
+                    )
+                })
+                .collect();
+            entries.sort();
+            want.sort();
+            assert_eq!(entries, want, "{name}");
+        }
+    }
+
     #[test]
     fn timestamps() {
         let ok = |s: &str| parse_timestamp(s).unwrap_or_else(|| panic!("{s}"));

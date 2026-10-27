@@ -2622,6 +2622,119 @@
       "line": "{\"capsule_id\":\"0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a\",\"capsule\":\"eyJjYXBzdWxlX2lkIjoiMGVlMzU0ZmNiNDZhMjc5NWI0ZDZiZDQ2MzczNmQ4MzJiNGI5YTI4YzllNmZiYTdjZjlhOTRiODdjODQ2MTMwYSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEifQ==\",\"producer_envelope\":\"0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCAO41T8tGonlbTWvUY3NtgytLmijJ5vunz5qUuHyEYTClhAwjMAGBfv/NK5cx8tvGM944EfCSo4RGY+BxZpN+Oz6OY8hX4pr71NePlTbNFRLvQN3iU3ij8jyvmodkMaY/evAA==\",\"artifacts\":[]}"
     }
   ],
+  "index_rows": [
+    {
+      "record": "index.a",
+      "paths": [
+        "operator",
+        "fixture.tags",
+        "fixture.level",
+        "developer",
+        "timestamp"
+      ],
+      "stored": "[\"developer\",\"fixture.level\",\"fixture.tags\",\"operator\",\"timestamp\"]",
+      "ts": "1792022400000000",
+      "entries": [
+        {
+          "path": "developer",
+          "value_sha256": "0388fb626ca89a127847443989334b8c29e17567bc03a7a2ed13effca701a4a1"
+        },
+        {
+          "path": "fixture.tags",
+          "value_sha256": "b1f51a511f1da0cd348b8f8598db32e61cb963e5fc69e2b41485bf99590ed75a"
+        },
+        {
+          "path": "fixture.tags",
+          "value_sha256": "16477688c0e00699c6cfa4497a3612d7e83c532062b64b250fed8908128ed548"
+        },
+        {
+          "path": "operator",
+          "value_sha256": "39b819c38ffb20bba694768b88e92d84df4586fdf38c3cc4a1ce3cb30c61e3d7"
+        },
+        {
+          "path": "timestamp",
+          "value_sha256": "80465736dce556494d90d4e32cbd25675d346f1ec06970db844c70b7b647e4cd"
+        }
+      ]
+    },
+    {
+      "record": "index.b",
+      "paths": [
+        "operator",
+        "fixture.tags",
+        "fixture.level",
+        "developer",
+        "timestamp"
+      ],
+      "stored": "[\"developer\",\"fixture.level\",\"fixture.tags\",\"operator\",\"timestamp\"]",
+      "ts": "1792108800000000",
+      "entries": [
+        {
+          "path": "developer",
+          "value_sha256": "0388fb626ca89a127847443989334b8c29e17567bc03a7a2ed13effca701a4a1"
+        },
+        {
+          "path": "fixture.level",
+          "value_sha256": "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed"
+        },
+        {
+          "path": "fixture.tags",
+          "value_sha256": "b1f51a511f1da0cd348b8f8598db32e61cb963e5fc69e2b41485bf99590ed75a"
+        },
+        {
+          "path": "operator",
+          "value_sha256": "7c9faeef390289841eec3bfee1ab666efcbac956a4daf3737b9042a79195859c"
+        },
+        {
+          "path": "timestamp",
+          "value_sha256": "5d30f7b375b6d715cad2d45a4e315c47a911526d08dacea65d84c0d05b9b5aa9"
+        }
+      ]
+    },
+    {
+      "record": "index.c",
+      "paths": [
+        "operator",
+        "fixture.tags",
+        "fixture.level",
+        "developer",
+        "timestamp"
+      ],
+      "stored": "[\"developer\",\"fixture.level\",\"fixture.tags\",\"operator\",\"timestamp\"]",
+      "ts": "1792195200000001",
+      "entries": [
+        {
+          "path": "developer",
+          "value_sha256": "ab6d169a59c9437d7c28350b0bee04d7c94863cacd7638659ad2c36d8541b3c2"
+        },
+        {
+          "path": "fixture.tags",
+          "value_sha256": "16477688c0e00699c6cfa4497a3612d7e83c532062b64b250fed8908128ed548"
+        },
+        {
+          "path": "operator",
+          "value_sha256": "39b819c38ffb20bba694768b88e92d84df4586fdf38c3cc4a1ce3cb30c61e3d7"
+        },
+        {
+          "path": "timestamp",
+          "value_sha256": "8ea7f68b40b7c36daff69313984d06f34bbcf2aa7027d11dbced495879bc249f"
+        }
+      ]
+    },
+    {
+      "record": "padding",
+      "paths": [
+        "operator",
+        "fixture.tags",
+        "fixture.level",
+        "developer",
+        "timestamp"
+      ],
+      "stored": "[\"developer\",\"fixture.level\",\"fixture.tags\",\"operator\",\"timestamp\"]",
+      "ts": "",
+      "entries": []
+    }
+  ],
   "open": [
     {
       "name": "minimal_namespace",

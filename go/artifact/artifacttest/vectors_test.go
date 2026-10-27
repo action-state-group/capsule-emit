@@ -2,10 +2,13 @@ package artifacttest_test
 
 import (
 	"crypto/ed25519"
+	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/action-state-group/capsule-emit/go/artifact"
 	"github.com/action-state-group/capsule-emit/go/artifact/artifacttest"
+	"github.com/action-state-group/capsule-emit/go/artifact/internal/index"
 	"github.com/action-state-group/capsule-emit/go/artifact/memory"
 	"github.com/stretchr/testify/require"
 )
@@ -71,4 +74,35 @@ func TestRunAgainstMemory(t *testing.T) {
 			return memory.New(namespace, trusted)
 		},
 	})
+}
+
+// TestIndexRowVectors checks the pinned index rows: what the SQL backends
+// store must agree byte for byte across languages. Entry order is not part of
+// a row set.
+func TestIndexRowVectors(t *testing.T) {
+	v, err := artifacttest.Load()
+	require.NoError(t, err)
+	require.NotEmpty(t, v.IndexRows)
+	for _, row := range v.IndexRows {
+		paths, err := index.NormalizePaths(row.Paths)
+		require.NoError(t, err)
+		require.Equal(t, row.Stored, index.EncodePaths(paths), row.Record)
+		got, err := index.Extract(v.Records[row.Record].Capsule, paths)
+		require.NoError(t, err)
+		ts := ""
+		if got.HasTS {
+			ts = strconv.FormatInt(got.TS, 10)
+		}
+		require.Equal(t, row.TS, ts, row.Record)
+		var entries, want []string
+		for _, e := range got.Entries {
+			entries = append(entries, e.Path+" "+index.ValueKey(e.Value))
+		}
+		for _, e := range row.Entries {
+			want = append(want, e.Path+" "+e.ValueSHA256)
+		}
+		slices.Sort(entries)
+		slices.Sort(want)
+		require.Equal(t, want, entries, row.Record)
+	}
 }

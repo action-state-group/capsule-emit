@@ -12,12 +12,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	emit "github.com/action-state-group/capsule-emit/go"
 	"github.com/action-state-group/capsule-emit/go/artifact"
+	"github.com/action-state-group/capsule-emit/go/artifact/internal/index"
 	"github.com/stretchr/testify/require"
 	"github.com/veraison/go-cose"
 )
@@ -345,6 +347,7 @@ func generate(t *testing.T) []byte {
 		v.Lines = append(v.Lines, LineVector{Record: name, Line: string(line)})
 	}
 	v.Open = openVectors(v.Keys["trusted"])
+	v.IndexRows = indexRows(t, g.records)
 	v.Cases = append(cases(g.records), indexCases(g.records)...)
 
 	data, err := jsonv2.Marshal(v, jsonv2.Deterministic(true), jsontext.WithIndent("  "))
@@ -671,4 +674,24 @@ func cases(r map[string]artifact.Record) []Case {
 				{Op: "put", Store: "beta", Record: "basic.conflict_note", Expect: "ok"},
 				{Op: "purge", Store: "beta", ID: &basic, Expect: "ok"}, get(basic, "ok", "basic.stored")}},
 	}
+}
+
+func indexRows(t *testing.T, records map[string]artifact.Record) []IndexRowVector {
+	declared := []string{"operator", "fixture.tags", "fixture.level", "developer", "timestamp"}
+	paths, err := index.NormalizePaths(declared)
+	require.NoError(t, err)
+	var rows []IndexRowVector
+	for _, name := range []string{"index.a", "index.b", "index.c", "padding"} {
+		extracted, err := index.Extract(records[name].Capsule, paths)
+		require.NoError(t, err)
+		row := IndexRowVector{Record: name, Paths: declared, Stored: index.EncodePaths(paths), Entries: []IndexEntryVector{}}
+		if extracted.HasTS {
+			row.TS = strconv.FormatInt(extracted.TS, 10)
+		}
+		for _, e := range extracted.Entries {
+			row.Entries = append(row.Entries, IndexEntryVector{Path: e.Path, ValueSHA256: index.ValueKey(e.Value)})
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }

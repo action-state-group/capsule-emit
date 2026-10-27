@@ -22,6 +22,7 @@ and its tests fail if the copy drifts from this file.
 | `records` | Named records in the JSONL wire shape (snake_case keys, standard base64 bytes) |
 | `checksums` | `{record, storage_checksum}`: the expected storage checksum of a named record |
 | `lines` | `{record, line}`: the exact JSONL line of a named record |
+| `index_rows` | `{record, paths, stored, ts, entries}`: what the [index extension](../../docs/artifact-store.md#optional-index-extension) stores for a named record under the declared `paths`: the stored declaration, the record's time in UTC microseconds as a decimal string (empty without one), and one `{path, value_sha256}` per entry, in any order. SQL index rows written by one language must match these in every other |
 | `open` | `{name, namespace, trusted, expect}`: constructor validation, with `trusted` as raw hex keys (some deliberately not 32 bytes) |
 | `cases` | Operation sequences, described below |
 

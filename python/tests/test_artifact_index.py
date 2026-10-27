@@ -371,3 +371,18 @@ def test_mysql_index_damaged_rows():
     store.reindex(["developer"])
     assert store.find(where={"developer": "dev-1"}) == Page(ids=[record("index.b").capsule_id])
     connection.close()
+
+
+def test_index_row_vectors():
+    """The pinned index rows: what the SQL backends store must agree byte for
+    byte across languages. Entry order is not part of a row set."""
+    rows = VECTORS["index_rows"]
+    assert rows
+    for row in rows:
+        paths = normalize_paths(row["paths"])
+        assert encode_paths(paths) == row["stored"], row["record"]
+        got = extract(record(row["record"]).capsule, paths)
+        assert ("" if got.ts is None else str(got.ts)) == row["ts"], row["record"]
+        entries = sorted(f"{path} {value_key(value)}" for path, value in got.entries)
+        want = sorted(f"{e['path']} {e['value_sha256']}" for e in row["entries"])
+        assert entries == want, row["record"]

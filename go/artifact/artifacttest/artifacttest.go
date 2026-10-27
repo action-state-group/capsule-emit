@@ -65,6 +65,7 @@ type Vectors struct {
 	Records   map[string]artifact.Record `json:"records"`
 	Checksums []ChecksumVector           `json:"checksums"`
 	Lines     []LineVector               `json:"lines"`
+	IndexRows []IndexRowVector           `json:"index_rows"`
 	Open      []OpenVector               `json:"open"`
 	Cases     []Case                     `json:"cases"`
 }
@@ -79,6 +80,24 @@ type ChecksumVector struct {
 type LineVector struct {
 	Record string `json:"record"`
 	Line   string `json:"line"`
+}
+
+// IndexRowVector pins what the index extension stores for a named record
+// under declared Paths, so SQL index rows written by one language are found by
+// the others: the stored declaration, the record's time (UTC microseconds in
+// decimal, empty without one) and each entry's path and value key.
+type IndexRowVector struct {
+	Record  string             `json:"record"`
+	Paths   []string           `json:"paths"`
+	Stored  string             `json:"stored"`
+	TS      string             `json:"ts"`
+	Entries []IndexEntryVector `json:"entries"`
+}
+
+// IndexEntryVector is one index row: a path and the SHA-256 of its value.
+type IndexEntryVector struct {
+	Path        string `json:"path"`
+	ValueSHA256 string `json:"value_sha256"`
 }
 
 // OpenVector checks constructor validation. Trusted holds raw hex keys.
