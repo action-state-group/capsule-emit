@@ -19,12 +19,18 @@
 //!     .collect();
 //! assert!(failures.is_empty(), "{failures:?}");
 //! ```
+//!
+//! Cases that need the index extension run when the stores `open` returns
+//! report it through [`Store::as_index_store`]; a backend whose declared
+//! index paths persist across reopening also declares
+//! [`Extensions::durable_index`] and runs the suite with [`run_with`].
 
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
 use crate::error::Result;
+use crate::index::{IndexStore, Page, Query};
 use crate::record::Record;
 use crate::store::Store;
 
@@ -75,6 +81,16 @@ impl Default for Limits {
             after_get: None,
         }
     }
+}
+
+/// Capabilities of the optional extensions that the suite cannot detect.
+/// The `index` capability needs no declaration: it is detected through
+/// [`Store::as_index_store`].
+#[derive(Debug, Clone, Default)]
+pub struct Extensions {
+    /// A store reopened over the same backing keeps the index paths declared
+    /// earlier (the SQL backends).
+    pub durable_index: bool,
 }
 
 /// The decoded vector file. See `test-vectors/artifact-store/README.md`.
@@ -138,6 +154,33 @@ pub struct Step {
     pub expect: String,
     #[serde(default)]
     pub result: Option<String>,
+    /// `init_index` and `reindex`: the paths to declare.
+    #[serde(default)]
+    pub paths: Option<Vec<String>>,
+    /// `find`: the query's equalities.
+    #[serde(default, rename = "where")]
+    pub r#where: BTreeMap<String, String>,
+    /// `find`: the query's `since`.
+    #[serde(default)]
+    pub since: Option<String>,
+    /// `find`: a literal cursor.
+    #[serde(default)]
+    pub after: Option<String>,
+    /// `find`: the page size; absent means the default.
+    #[serde(default)]
+    pub limit: Option<i64>,
+    /// `find`: continue after the previous find's `next`.
+    #[serde(default)]
+    pub r#continue: bool,
+    /// `find`: the expected record names, in order unless `unordered`.
+    #[serde(default)]
+    pub found: Vec<String>,
+    /// `find`: whether a `next` cursor is expected.
+    #[serde(default)]
+    pub more: bool,
+    /// `find`: compare `found` as a set.
+    #[serde(default)]
+    pub unordered: bool,
 }
 
 /// Decodes the bundled vectors.
@@ -261,6 +304,7 @@ fn run_case<B>(
 ) -> std::result::Result<(), String> {
     let backing = (h.new_backing)();
     let mut stores: BTreeMap<String, Box<dyn Store>> = BTreeMap::new();
+    let mut next: Option<String> = None;
     let open = |name: &str, trusted: &[String]| -> std::result::Result<Box<dyn Store>, String> {
         let spec = &c.stores[name];
         let store = (h.open)(&backing, &spec.namespace, &v.keys(trusted))
@@ -322,6 +366,35 @@ fn run_case<B>(
                 }
             }
             "purge" => expect(&label, &s.expect, &stores[&name].purge(&id))?,
+            "init_index" | "reindex" => {
+                let index = index_of(&label, stores[&name].as_ref())?;
+                let paths: Vec<&str> = s.paths.iter().flatten().map(String::as_str).collect();
+                let result = if s.op == "init_index" {
+                    index.init_index(&paths)
+                } else {
+                    index.reindex(&paths)
+                };
+                expect(&label, &s.expect, &result)?
+            }
+            "find" => {
+                let index = index_of(&label, stores[&name].as_ref())?;
+                let query = Query {
+                    r#where: s.r#where.clone(),
+                    since: s.since.clone(),
+                    after: if s.r#continue {
+                        next.clone()
+                    } else {
+                        s.after.clone()
+                    },
+                    limit: s.limit.unwrap_or(Query::default().limit),
+                };
+                let got = index.find(&query);
+                expect(&label, &s.expect, &got)?;
+                if let Ok(page) = got {
+                    check_found(&label, v, s, &page)?;
+                    next = page.next;
+                }
+            }
             "reopen" => {
                 let trusted = s
                     .trusted
@@ -334,6 +407,48 @@ fn run_case<B>(
         }
     }
     Ok(())
+}
+
+fn index_of<'a>(
+    label: &str,
+    store: &'a dyn Store,
+) -> std::result::Result<&'a dyn IndexStore, String> {
+    store
+        .as_index_store()
+        .ok_or_else(|| format!("{label}: the store does not implement IndexStore"))
+}
+
+fn check_found(label: &str, v: &Vectors, s: &Step, page: &Page) -> std::result::Result<(), String> {
+    let mut want = Vec::with_capacity(s.found.len());
+    for name in &s.found {
+        let record = v.record(name).map_err(|e| format!("{label}: {e}"))?;
+        want.push(record.capsule_id);
+    }
+    let mut got = page.ids.clone();
+    if s.unordered {
+        want.sort();
+        got.sort();
+    }
+    if got != want {
+        return Err(format!(
+            "{label}: found {got:?}, want {want:?} ({:?})",
+            s.found
+        ));
+    }
+    if page.next.is_some() != s.more {
+        return Err(format!(
+            "{label}: next {:?}, want more={}",
+            page.next, s.more
+        ));
+    }
+    Ok(())
+}
+
+/// Whether the stores `h` opens implement the index extension.
+fn indexes<B>(h: &Harness<B>, v: &Vectors) -> bool {
+    let backing = (h.new_backing)();
+    (h.open)(&backing, "probe", &v.keys(&["trusted".to_string()]))
+        .is_ok_and(|store| store.as_index_store().is_some())
 }
 
 /// The capabilities `case` needs: its `requires` plus two derived from its
@@ -373,7 +488,13 @@ pub fn run<B>(h: &Harness<B>) -> Vec<Outcome> {
 /// [`run`] for a store with capability limits: cases needing a capability the
 /// store lacks are skipped.
 pub fn run_limited<B>(h: &Harness<B>, limits: &Limits) -> Vec<Outcome> {
+    run_with(h, limits, &Extensions::default())
+}
+
+/// [`run_limited`] for a store that also declares [`Extensions`].
+pub fn run_with<B>(h: &Harness<B>, limits: &Limits, extensions: &Extensions) -> Vec<Outcome> {
     let v = vectors();
+    let mut index = None;
     let mut outcomes = Vec::new();
     for o in &v.open {
         outcomes.push(outcome(format!("open/{}", o.name), run_open(h, o)));
@@ -385,6 +506,8 @@ pub fn run_limited<B>(h: &Harness<B>, limits: &Limits) -> Vec<Outcome> {
             "shared_backing" => !h.shared_backing,
             "originals" => !limits.originals,
             "purge" => !limits.purge,
+            "index" => !*index.get_or_insert_with(|| indexes(h, &v)),
+            "durable_index" => !extensions.durable_index,
             _ => true,
         });
         if let Some(r) = missing {

@@ -14,11 +14,15 @@
 //! | MySQL 8.4 | `mysql` | `mysql` | yes |
 //!
 //! Without features the crate links no database driver. Every backend
-//! implements [`Store`]; the SQL backends also implement [`TxStore`].
+//! implements [`Store`] and the optional index extension [`IndexStore`]; the
+//! SQL backends also implement [`TxStore`].
 //! [`conformance::run`] checks any [`Store`], including your own.
 
 pub mod conformance;
 mod error;
+pub mod index;
+#[cfg(any(feature = "sqlite", feature = "mysql"))]
+mod index_sql;
 pub mod jsonl;
 pub mod memory;
 #[cfg(feature = "mysql")]
@@ -29,6 +33,7 @@ pub mod sqlite;
 mod store;
 
 pub use error::{ArtifactError, Result};
+pub use index::{IndexStore, Page, Query};
 pub use record::{
     check_config, decode_record, decode_strict_json, encode_record, is_padding, prepare, purged,
     storage_checksum, valid_id, valid_name, verify, Artifact, ArtifactVerification, Record,

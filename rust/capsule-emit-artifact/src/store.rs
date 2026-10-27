@@ -1,6 +1,7 @@
 //! The backend-neutral contract, specified in `docs/artifact-store.md`.
 
 use crate::error::Result;
+use crate::index::IndexStore;
 use crate::record::Record;
 
 /// The artifact store contract. Constructors stay per backend, because each
@@ -17,6 +18,12 @@ pub trait Store {
     fn get(&self, id: &str) -> Result<Record>;
     /// Erases a record's present originals, keeping their commitments.
     fn purge(&self, id: &str) -> Result<()>;
+    /// This store as an [`IndexStore`], when it implements the optional index
+    /// extension, so a caller holding a `dyn Store` can detect it. The default
+    /// is `None`; an [`IndexStore`] returns `Some(self)`.
+    fn as_index_store(&self) -> Option<&dyn IndexStore> {
+        None
+    }
 }
 
 /// The optional transactional extension, implemented by the SQL backends:

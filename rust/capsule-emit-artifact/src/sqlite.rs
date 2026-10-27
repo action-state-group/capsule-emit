@@ -4,10 +4,12 @@
 
 use std::sync::Mutex;
 
-use rusqlite::types::ValueRef;
-use rusqlite::{params, Connection, ErrorCode, OptionalExtension, Transaction};
+use rusqlite::types::{Value, ValueRef};
+use rusqlite::{params, params_from_iter, Connection, ErrorCode, OptionalExtension, Transaction};
 
 use crate::error::{ArtifactError, Result};
+use crate::index::{normalize_paths, IndexStore, Page, Query};
+use crate::index_sql::{Dialect, Param, SqlIndex, SqlTx};
 use crate::record::{
     check_config, from_rows, has_purged, prepare, storage_checksum, valid_id, verify, Record,
     StoredArtifact,
@@ -17,8 +19,67 @@ use crate::store::{Store, TxStore};
 /// The v1 DDL, identical to `go/artifact/sqlite/schema.sql`.
 pub const SCHEMA: &str = include_str!("sqlite_schema.sql");
 
+static DIALECT: Dialect = Dialect {
+    tables_exist: "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('capsule_store_index_paths','capsule_store_index_records','capsule_store_index')",
+    lock_shared: "",
+    lock_update: "",
+    insert_ignore: "INSERT OR IGNORE INTO",
+};
+
 fn storage(e: rusqlite::Error) -> ArtifactError {
     ArtifactError::storage(e)
+}
+
+/// A connection (or open transaction) as the index logic's [`SqlTx`].
+struct Conn<'a>(&'a Connection);
+
+fn values(params: Vec<Param>) -> impl rusqlite::Params {
+    params_from_iter(params.into_iter().map(|p| match p {
+        Param::Text(s) => Value::Text(s),
+        Param::Int(n) => Value::Integer(n),
+        Param::Null => Value::Null,
+    }))
+}
+
+impl SqlTx for Conn<'_> {
+    fn query_int(&mut self, sql: &str, params: Vec<Param>) -> Result<Option<i64>> {
+        self.0
+            .query_row(sql, values(params), |row| row.get(0))
+            .optional()
+            .map_err(storage)
+    }
+
+    fn query_text(&mut self, sql: &str, params: Vec<Param>) -> Result<Option<String>> {
+        self.0
+            .query_row(sql, values(params), |row| row.get(0))
+            .optional()
+            .map_err(storage)
+    }
+
+    fn exec(&mut self, sql: &str, params: Vec<Param>) -> Result<u64> {
+        let n = self.0.execute(sql, values(params)).map_err(storage)?;
+        Ok(n as u64)
+    }
+
+    fn last_insert_id(&mut self) -> Result<i64> {
+        Ok(self.0.last_insert_rowid())
+    }
+
+    fn query_capsules(&mut self, sql: &str, params: Vec<Param>) -> Result<Vec<(String, Vec<u8>)>> {
+        let mut statement = self.0.prepare(sql).map_err(storage)?;
+        let rows = statement
+            .query_map(values(params), |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(storage)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(storage)
+    }
+
+    fn query_seq_ids(&mut self, sql: &str, params: Vec<Param>) -> Result<Vec<(i64, String)>> {
+        let mut statement = self.0.prepare(sql).map_err(storage)?;
+        let rows = statement
+            .query_map(values(params), |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(storage)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(storage)
+    }
 }
 
 /// A SQLite store that owns its connection. Open the connection with
@@ -29,6 +90,7 @@ pub struct SqliteStore {
     conn: Mutex<Connection>,
     namespace: String,
     trusted: Vec<[u8; 32]>,
+    lookup: SqlIndex,
 }
 
 impl SqliteStore {
@@ -42,6 +104,7 @@ impl SqliteStore {
             trusted: check_config(namespace, trusted)?,
             namespace: namespace.to_string(),
             conn: Mutex::new(conn),
+            lookup: SqlIndex::new(&DIALECT, namespace),
         })
     }
 
@@ -93,7 +156,8 @@ impl SqliteStore {
                 ])
                 .map_err(storage)?;
         }
-        Ok(())
+        self.lookup
+            .admit(&mut Conn(tx), &prepared.capsule_id, &prepared.capsule)
     }
 
     fn read_on(&self, tx: &Connection, id: &str) -> Result<Record> {
@@ -143,7 +207,8 @@ impl Store for SqliteStore {
         &self.namespace
     }
 
-    /// Creates the v1 tables if absent; existing tables are untouched.
+    /// Creates the v1 tables, and the index extension's, if absent; existing
+    /// tables are untouched.
     fn init(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute_batch(SCHEMA).map_err(storage)
@@ -183,6 +248,32 @@ impl Store for SqliteStore {
             .map_err(storage)?;
             Ok(())
         })
+    }
+
+    fn as_index_store(&self) -> Option<&dyn IndexStore> {
+        Some(self)
+    }
+}
+
+/// The declaration persists in `capsule_store_index_paths`, so every store
+/// opened on the namespace indexes its writes.
+impl IndexStore for SqliteStore {
+    /// Provisions the tables as `init` does, then declares paths for the
+    /// namespace and indexes its stored records.
+    fn init_index(&self, paths: &[&str]) -> Result<()> {
+        normalize_paths(paths)?;
+        self.init()?;
+        self.with_tx(|s, tx| s.lookup.declare(&mut Conn(tx), paths))
+    }
+
+    fn reindex(&self, paths: &[&str]) -> Result<()> {
+        normalize_paths(paths)?;
+        self.init()?;
+        self.with_tx(|s, tx| s.lookup.reindex(&mut Conn(tx), paths))
+    }
+
+    fn find(&self, query: &Query) -> Result<Page> {
+        self.with_tx(|s, tx| s.lookup.find(&mut Conn(tx), query))
     }
 }
 

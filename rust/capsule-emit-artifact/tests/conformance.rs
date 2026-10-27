@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use capsule_emit_artifact::conformance::{self, Harness, Status};
+use capsule_emit_artifact::conformance::{self, Extensions, Harness, Limits, Status};
 use capsule_emit_artifact::jsonl::JsonlStore;
 use capsule_emit_artifact::memory::MemoryStore;
 use capsule_emit_artifact::{decode_record, encode_record, storage_checksum, Store};
@@ -12,8 +12,9 @@ fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn assert_conformant<B>(backend: &str, harness: &Harness<B>) {
-    let outcomes = conformance::run(harness);
+fn assert_conformant<B>(backend: &str, harness: &Harness<B>, durable_index: bool) {
+    let extensions = Extensions { durable_index };
+    let outcomes = conformance::run_with(harness, &Limits::default(), &extensions);
     let failures: Vec<_> = outcomes
         .iter()
         .filter(|o| o.status == Status::Fail)
@@ -21,6 +22,19 @@ fn assert_conformant<B>(backend: &str, harness: &Harness<B>) {
         .collect();
     assert!(failures.is_empty(), "{backend}:\n{}", failures.join("\n"));
     assert!(outcomes.iter().any(|o| o.status == Status::Pass));
+    // Every built-in backend implements the index extension, so its cases
+    // run unless they need durable_index or shared_backing the backend lacks.
+    let v = conformance::vectors();
+    for case in v.cases.iter().filter(|c| c.name.starts_with("index_")) {
+        let runs = (durable_index || !case.requires.iter().any(|r| r == "durable_index"))
+            && (harness.shared_backing || !case.requires.iter().any(|r| r == "shared_backing"));
+        let outcome = outcomes.iter().find(|o| o.name == case.name).unwrap();
+        assert_eq!(
+            outcome.status == Status::Pass,
+            runs,
+            "{backend}: {outcome:?}"
+        );
+    }
 }
 
 #[test]
@@ -35,6 +49,7 @@ fn memory_conforms() {
             durable: false,
             shared_backing: false,
         },
+        false,
     );
 }
 
@@ -56,6 +71,7 @@ fn jsonl_conforms() {
             durable: true,
             shared_backing: false,
         },
+        false,
     );
 }
 
@@ -82,6 +98,7 @@ fn sqlite_conforms() {
             durable: true,
             shared_backing: true,
         },
+        true,
     );
 }
 
@@ -116,7 +133,13 @@ fn mysql_conforms() {
                 let store = MysqlStore::new(pool.clone(), "conformance", [[0u8; 32]]).unwrap();
                 store.init().unwrap();
                 let mut conn = pool.get_conn().unwrap();
-                for table in ["capsule_store_artifacts", "capsule_store_capsules"] {
+                for table in [
+                    "capsule_store_artifacts",
+                    "capsule_store_capsules",
+                    "capsule_store_index",
+                    "capsule_store_index_records",
+                    "capsule_store_index_paths",
+                ] {
                     conn.query_drop(format!(
                         "DELETE FROM {table} WHERE namespace IN ('conformance','alpha','beta')"
                     ))
@@ -130,6 +153,7 @@ fn mysql_conforms() {
             durable: true,
             shared_backing: true,
         },
+        true,
     );
 }
 

@@ -2262,6 +2262,24 @@
       "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCB3dBfUfHmFJqlGwLJXt65r6llymQYPasexf4vJJr8Jt1hADH4UFpXSjLtDkyuv+G1mIpQjdALx9ah2GpcNH3kQIJ5tr1FAqZz10Gg3SZPGRsXpiCPvnJCH3ZTlvT/NuHF5CA==",
       "artifacts": []
     },
+    "index.a": {
+      "capsule_id": "0cc5d3aae2fec7f90f972b1487e5f34280b8aa230450c07ec940c7b94de0c732",
+      "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1pbmRleC5hIiwiYWN0aW9uX3R5cGUiOiJmeWkiLCJhc3N1cmFuY2UiOnsiYXR0ZXN0YXRpb25fbW9kZSI6InNlbGZfYXR0ZXN0ZWQiLCJlZmZlY3RfbW9kZSI6Im5vdF9hcHBsaWNhYmxlIiwibGVkZ2VyX21vZGUiOiJzdGFuZGFsb25lIn0sImNhbm9uaWNhbGl6YXRpb25faWQiOiJqY3MiLCJjYXBzdWxlX2lkIjoiMGNjNWQzYWFlMmZlYzdmOTBmOTcyYjE0ODdlNWYzNDI4MGI4YWEyMzA0NTBjMDdlYzk0MGM3Yjk0ZGUwYzczMiIsImRldmVsb3BlciI6ImRldi0xIiwiZml4dHVyZSI6eyJsZXZlbCI6MSwidGFncyI6WyJyZWQiLCJibHVlIl19LCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6ImE0MWQxNWU5MWIyOTdlZDliMTQyYjg3ZGQ5Y2FjMDkwMzI3MjA2NzljMTU5ZDdjN2YwZDcwNTIxNjlhZmRlZjkifX0sIm9wZXJhdG9yIjoib3AtYSIsInNwZWNfdmVyc2lvbiI6ImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wNSIsInRpbWVzdGFtcCI6IjIwMjYtMTAtMTVUMDA6MDA6MDBaIn0=",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCAMxdOq4v7H+Q+XKxSH5fNCgLiqIwRQwH7JQMe5TeDHMlhADAS1gG1brMA2//sKuDcmieQZ6pjTza0REX+uUFwsG7eFhY7DiSfwp5UR/7Nm3vRnJxzXuPtboRVUK7C3nwofAQ==",
+      "artifacts": []
+    },
+    "index.b": {
+      "capsule_id": "ec71277fab6c9286327ee203203785d0e87d13314a37d06768f85f2107be9c48",
+      "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1pbmRleC5iIiwiYWN0aW9uX3R5cGUiOiJmeWkiLCJhc3N1cmFuY2UiOnsiYXR0ZXN0YXRpb25fbW9kZSI6InNlbGZfYXR0ZXN0ZWQiLCJlZmZlY3RfbW9kZSI6Im5vdF9hcHBsaWNhYmxlIiwibGVkZ2VyX21vZGUiOiJzdGFuZGFsb25lIn0sImNhbm9uaWNhbGl6YXRpb25faWQiOiJqY3MiLCJjYXBzdWxlX2lkIjoiZWM3MTI3N2ZhYjZjOTI4NjMyN2VlMjAzMjAzNzg1ZDBlODdkMTMzMTRhMzdkMDY3NjhmODVmMjEwN2JlOWM0OCIsImRldmVsb3BlciI6ImRldi0xIiwiZml4dHVyZSI6eyJsZXZlbCI6Im9uZSIsInRhZ3MiOlsicmVkIl19LCJmb3JtYXRfdmVyc2lvbiI6IjQiLCJtb2RlbF9hdHRlc3RhdGlvbiI6eyJjb21wdXRlX2F0dGVzdGF0aW9uIjp7ImFnZW50X2lucHV0X2RpZ2VzdCI6IjNhODZjOWRhYThiZTlkYTEyY2U2M2EyZWE5ZTc0ZGM0YWQ4MTFkMWQwNTZhZmEwZjY3MjU3ZTMwZTY1ODAyZmMifX0sIm9wZXJhdG9yIjoib3AtYiIsInNwZWNfdmVyc2lvbiI6ImRyYWZ0LW1paC1zY2l0dC1hZ2VudC1hY3Rpb24tY2Fwc3VsZS0wNSIsInRpbWVzdGFtcCI6IjIwMjYtMTAtMTZUMDA6MDA6MDBaIn0=",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCDscSd/q2yShjJ+4gMgN4XQ6H0TMUo30Gdo+F8hB76cSFhAQWUZGK5yJeO0qBakAzU2KQc5tDPaFp1JpMyD3It5DCTUrdHmcsw7c3P4NXyd7D6Dx8D7q8WvNqJKp8CmbNKQDQ==",
+      "artifacts": []
+    },
+    "index.c": {
+      "capsule_id": "a7f0a36d8476ae99aca27e3dadd80cd942883253d7a3bcee1edd24ee26720e24",
+      "capsule": "eyJhY3Rpb25faWQiOiJjb25mb3JtYW5jZS1pbmRleC5jIiwiYWN0aW9uX3R5cGUiOiJmeWkiLCJhc3N1cmFuY2UiOnsiYXR0ZXN0YXRpb25fbW9kZSI6InNlbGZfYXR0ZXN0ZWQiLCJlZmZlY3RfbW9kZSI6Im5vdF9hcHBsaWNhYmxlIiwibGVkZ2VyX21vZGUiOiJzdGFuZGFsb25lIn0sImNhbm9uaWNhbGl6YXRpb25faWQiOiJqY3MiLCJjYXBzdWxlX2lkIjoiYTdmMGEzNmQ4NDc2YWU5OWFjYTI3ZTNkYWRkODBjZDk0Mjg4MzI1M2Q3YTNiY2VlMWVkZDI0ZWUyNjcyMGUyNCIsImRldmVsb3BlciI6ImRldi0yIiwiZml4dHVyZSI6eyJ0YWdzIjpbImJsdWUiLCJibHVlIiw3XX0sImZvcm1hdF92ZXJzaW9uIjoiNCIsIm1vZGVsX2F0dGVzdGF0aW9uIjp7ImNvbXB1dGVfYXR0ZXN0YXRpb24iOnsiYWdlbnRfaW5wdXRfZGlnZXN0IjoiN2I3NDY3YzZmYzk5NDAzZGViNjI4Y2VhZjhiNTU2YzMzM2Y5ZGUxYzczZjY0YTY2ZGM4NjE1ZmQzOTU3Yjg5ZCJ9fSwib3BlcmF0b3IiOiJvcC1hIiwic3BlY192ZXJzaW9uIjoiZHJhZnQtbWloLXNjaXR0LWFnZW50LWFjdGlvbi1jYXBzdWxlLTA1IiwidGltZXN0YW1wIjoiMjAyNi0xMC0xN1QwMDowMDowMC4wMDAwMDFaIn0=",
+      "producer_envelope": "0oRYTKMDeCNhcHBsaWNhdGlvbi9hZ2VudC1hY3Rpb24tY2Fwc3VsZS1pZARYIIqI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cASegWCCn8KNthHaumayifj2t2AzZQogyU9ejvO4e3STuJnIOJFhAE3bkd3edUg9MdnCfkgoa+2MJ3n2AhmT6qGVei6o49PuPIG2ETtoAmT9UEXGYKwCm2uO1F51agDge/T8ZivXTCg==",
+      "artifacts": []
+    },
     "padding": {
       "capsule_id": "0ee354fcb46a2795b4d6bd463736d832b4b9a28c9e6fba7cf9a94b87c846130a",
       "capsule": "eyJjYXBzdWxlX2lkIjoiMGVlMzU0ZmNiNDZhMjc5NWI0ZDZiZDQ2MzczNmQ4MzJiNGI5YTI4YzllNmZiYTdjZjlhOTRiODdjODQ2MTMwYSIsImVwaXN0ZW1pY190eXBlIjoicHJvZHVjZXJfY2xhaW0iLCJyZWNvcmRfdHlwZSI6InBhZGRpbmciLCJzdG9yZV9ub25jZSI6IjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEifQ==",
@@ -3847,6 +3865,1093 @@
           "id": "db4bfcaaab4da442f0780e8b9df70f5f63fe7692a33a8c6df23d6899511c4bd0",
           "expect": "ok",
           "result": "basic.stored"
+        }
+      ]
+    },
+    {
+      "name": "index_find_equality",
+      "description": "Find returns the records whose declared paths hold every given value, in admission order.",
+      "requires": [
+        "index"
+      ],
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "init_index",
+          "expect": "ok",
+          "paths": [
+            "operator",
+            "developer",
+            "fixture.tags",
+            "fixture.level"
+          ]
+        },
+        {
+          "op": "put",
+          "record": "index.a",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.b",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.c",
+          "expect": "ok"
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "op-a"
+          },
+          "found": [
+            "index.a",
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "op-b"
+          },
+          "found": [
+            "index.b"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "nobody"
+          }
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "fixture.tags": "red"
+          },
+          "found": [
+            "index.a",
+            "index.b"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "fixture.tags": "blue"
+          },
+          "found": [
+            "index.a",
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "fixture.tags": "red",
+            "operator": "op-a"
+          },
+          "found": [
+            "index.a"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "developer": "dev-2",
+            "fixture.tags": "blue",
+            "operator": "op-a"
+          },
+          "found": [
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "fixture.level": "one"
+          },
+          "found": [
+            "index.b"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "fixture.level": "1"
+          }
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "fixture.tags": "7"
+          }
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "found": [
+            "index.a",
+            "index.b",
+            "index.c"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "index_find_since",
+      "description": "Since is an inclusive lower bound on the top-level timestamp, compared in UTC; records without one never match it.",
+      "requires": [
+        "index"
+      ],
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "init_index",
+          "expect": "ok",
+          "paths": [
+            "operator",
+            "developer",
+            "fixture.tags",
+            "fixture.level"
+          ]
+        },
+        {
+          "op": "put",
+          "record": "padding",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.a",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.b",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.c",
+          "expect": "ok"
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "found": [
+            "padding",
+            "index.a",
+            "index.b",
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "since": "2026-10-16T00:00:00Z",
+          "found": [
+            "index.b",
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "since": "2026-10-16T02:00:00+02:00",
+          "found": [
+            "index.b",
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "since": "2026-10-15T19:00:00.5-05:00",
+          "found": [
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "since": "2026-10-15T19:00:00-05:00",
+          "found": [
+            "index.b",
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "since": "2026-10-17T00:00:00.000001Z",
+          "found": [
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "since": "2026-10-17T00:00:00.0000019Z",
+          "found": [
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "since": "2026-10-17T00:00:00.000002Z"
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "since": "2000-01-01T00:00:00Z",
+          "found": [
+            "index.a",
+            "index.b",
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "op-a"
+          },
+          "since": "2026-10-16T00:00:00Z",
+          "found": [
+            "index.c"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "index_find_paging",
+      "description": "Find pages by limit; the cursor continues after the last returned record.",
+      "requires": [
+        "index"
+      ],
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "init_index",
+          "expect": "ok",
+          "paths": [
+            "operator",
+            "developer",
+            "fixture.tags",
+            "fixture.level"
+          ]
+        },
+        {
+          "op": "put",
+          "record": "index.a",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.b",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.c",
+          "expect": "ok"
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "limit": 1,
+          "found": [
+            "index.a"
+          ],
+          "more": true
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "limit": 1,
+          "continue": true,
+          "found": [
+            "index.b"
+          ],
+          "more": true
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "limit": 1,
+          "continue": true,
+          "found": [
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "op-a"
+          },
+          "limit": 1,
+          "found": [
+            "index.a"
+          ],
+          "more": true
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "op-a"
+          },
+          "limit": 1,
+          "continue": true,
+          "found": [
+            "index.c"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "op-a"
+          },
+          "limit": 2,
+          "found": [
+            "index.a",
+            "index.c"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "index_backfill",
+      "description": "Declaring paths indexes the records already stored; retries and purges change nothing.",
+      "requires": [
+        "index"
+      ],
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "put",
+          "record": "index.a",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.b",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "basic",
+          "expect": "ok"
+        },
+        {
+          "op": "init_index",
+          "expect": "ok",
+          "paths": [
+            "operator",
+            "developer",
+            "fixture.tags",
+            "fixture.level"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "fixture.tags": "red"
+          },
+          "found": [
+            "index.a",
+            "index.b"
+          ],
+          "unordered": true
+        },
+        {
+          "op": "put",
+          "record": "index.c",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.a",
+          "expect": "ok"
+        },
+        {
+          "op": "purge",
+          "id": "db4bfcaaab4da442f0780e8b9df70f5f63fe7692a33a8c6df23d6899511c4bd0",
+          "expect": "ok"
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "found": [
+            "index.a",
+            "index.b",
+            "basic",
+            "index.c"
+          ],
+          "unordered": true
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "op-a"
+          },
+          "found": [
+            "index.a",
+            "index.c"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "index_declaration",
+      "description": "The declared paths are a set: the same set again is a no-op, another is a conflict, and reindex replaces it.",
+      "requires": [
+        "index"
+      ],
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "init_index",
+          "expect": "ok",
+          "paths": [
+            "operator",
+            "fixture.tags"
+          ]
+        },
+        {
+          "op": "put",
+          "record": "index.a",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.b",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.c",
+          "expect": "ok"
+        },
+        {
+          "op": "init_index",
+          "expect": "ok",
+          "paths": [
+            "fixture.tags",
+            "operator"
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "conflict",
+          "paths": [
+            "operator"
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "conflict",
+          "paths": [
+            "operator",
+            "fixture.tags",
+            "developer"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "where": {
+            "developer": "dev-1"
+          }
+        },
+        {
+          "op": "reindex",
+          "expect": "ok",
+          "paths": [
+            "developer"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "developer": "dev-1"
+          },
+          "found": [
+            "index.a",
+            "index.b"
+          ],
+          "unordered": true
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "where": {
+            "operator": "op-a"
+          }
+        },
+        {
+          "op": "reindex",
+          "expect": "ok",
+          "paths": []
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "found": [
+            "index.a",
+            "index.b",
+            "index.c"
+          ],
+          "unordered": true
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "where": {
+            "developer": "dev-1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "index_invalid",
+      "description": "Malformed paths, queries and cursors are invalid, and so is find before any declaration.",
+      "requires": [
+        "index"
+      ],
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "find",
+          "expect": "invalid"
+        },
+        {
+          "op": "put",
+          "record": "index.a",
+          "expect": "ok"
+        },
+        {
+          "op": "init_index",
+          "expect": "invalid",
+          "paths": [
+            ""
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "invalid",
+          "paths": [
+            "a..b"
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "invalid",
+          "paths": [
+            ".a"
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "invalid",
+          "paths": [
+            "a b"
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "invalid",
+          "paths": [
+            "a.b.c.d.e.f.g.h.i"
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "invalid",
+          "paths": [
+            "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "invalid",
+          "paths": [
+            "operator",
+            "operator"
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "invalid",
+          "paths": [
+            "p00",
+            "p01",
+            "p02",
+            "p03",
+            "p04",
+            "p05",
+            "p06",
+            "p07",
+            "p08",
+            "p09",
+            "p10",
+            "p11",
+            "p12",
+            "p13",
+            "p14",
+            "p15",
+            "p16",
+            "p17",
+            "p18",
+            "p19",
+            "p20",
+            "p21",
+            "p22",
+            "p23",
+            "p24",
+            "p25",
+            "p26",
+            "p27",
+            "p28",
+            "p29",
+            "p30",
+            "p31",
+            "p32"
+          ]
+        },
+        {
+          "op": "reindex",
+          "expect": "invalid",
+          "paths": [
+            "ä"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "invalid"
+        },
+        {
+          "op": "init_index",
+          "expect": "ok",
+          "paths": [
+            "p00",
+            "p01",
+            "p02",
+            "p03",
+            "p04",
+            "p05",
+            "p06",
+            "p07",
+            "p08",
+            "p09",
+            "p10",
+            "p11",
+            "p12",
+            "p13",
+            "p14",
+            "p15",
+            "p16",
+            "p17",
+            "p18",
+            "p19",
+            "p20",
+            "p21",
+            "p22",
+            "p23",
+            "p24",
+            "p25",
+            "p26",
+            "p27",
+            "p28",
+            "p29",
+            "p30",
+            "p31"
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "conflict",
+          "paths": [
+            "p01",
+            "p02",
+            "p03",
+            "p04",
+            "p05",
+            "p06",
+            "p07",
+            "p08",
+            "p09",
+            "p10",
+            "p11",
+            "p12",
+            "p13",
+            "p14",
+            "p15",
+            "p16",
+            "p17",
+            "p18",
+            "p19",
+            "p20",
+            "p21",
+            "p22",
+            "p23",
+            "p24",
+            "p25",
+            "p26",
+            "p27",
+            "p28",
+            "p29",
+            "p30",
+            "p31",
+            "p32"
+          ]
+        },
+        {
+          "op": "reindex",
+          "expect": "ok",
+          "paths": [
+            "a.b.c.d.e.f.g.h",
+            "operator"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "where": {
+            "developer": "dev-1"
+          }
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "op-a"
+          },
+          "found": [
+            "index.a"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "since": "2026-10-16"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "since": "2026-10-16 00:00:00Z"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "since": "2026-10-16t00:00:00z"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "since": "2026-02-30T00:00:00Z"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "since": "2026-10-16T24:00:00Z"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "since": "2026-10-16T00:00:60Z"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "since": "2026-10-16T00:00:00.Z"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "since": "2026-10-16T00:00:00.0000000001Z"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "since": "2026-10-16T00:00:00+24:00"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "since": "２０２６-10-16T00:00:00Z"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "limit": 1001
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "limit": -1
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "after": "x"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "after": "0"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "after": "01"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "after": "-1"
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "limit": 1000,
+          "found": [
+            "index.a"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "index_durable",
+      "description": "A stored declaration survives reopening, and a store that never declared paths still indexes its writes.",
+      "requires": [
+        "index",
+        "durable_index"
+      ],
+      "stores": {
+        "main": {
+          "namespace": "conformance",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "init_index",
+          "expect": "ok",
+          "paths": [
+            "operator",
+            "developer",
+            "fixture.tags",
+            "fixture.level"
+          ]
+        },
+        {
+          "op": "put",
+          "record": "index.a",
+          "expect": "ok"
+        },
+        {
+          "op": "reopen",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "record": "index.b",
+          "expect": "ok"
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "fixture.tags": "red"
+          },
+          "found": [
+            "index.a",
+            "index.b"
+          ]
+        },
+        {
+          "op": "init_index",
+          "expect": "conflict",
+          "paths": [
+            "operator"
+          ]
+        },
+        {
+          "op": "reopen",
+          "expect": "ok"
+        },
+        {
+          "op": "init_index",
+          "expect": "ok",
+          "paths": [
+            "operator",
+            "developer",
+            "fixture.tags",
+            "fixture.level"
+          ]
+        },
+        {
+          "op": "put",
+          "record": "index.c",
+          "expect": "ok"
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "op-a"
+          },
+          "found": [
+            "index.a",
+            "index.c"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "index_namespace_isolation",
+      "description": "Namespaces sharing storage keep their own declarations and indexes.",
+      "requires": [
+        "index",
+        "durable_index",
+        "shared_backing"
+      ],
+      "stores": {
+        "beta": {
+          "namespace": "beta",
+          "trusted": [
+            "trusted"
+          ]
+        },
+        "main": {
+          "namespace": "alpha",
+          "trusted": [
+            "trusted"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "op": "init_index",
+          "expect": "ok",
+          "paths": [
+            "operator"
+          ]
+        },
+        {
+          "op": "init_index",
+          "store": "beta",
+          "expect": "ok",
+          "paths": [
+            "developer"
+          ]
+        },
+        {
+          "op": "put",
+          "record": "index.a",
+          "expect": "ok"
+        },
+        {
+          "op": "put",
+          "store": "beta",
+          "record": "index.b",
+          "expect": "ok"
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "found": [
+            "index.a"
+          ]
+        },
+        {
+          "op": "find",
+          "store": "beta",
+          "expect": "ok",
+          "found": [
+            "index.b"
+          ]
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "where": {
+            "developer": "dev-1"
+          }
+        },
+        {
+          "op": "find",
+          "store": "beta",
+          "expect": "ok",
+          "where": {
+            "developer": "dev-1"
+          },
+          "found": [
+            "index.b"
+          ]
         }
       ]
     }

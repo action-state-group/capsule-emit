@@ -33,6 +33,22 @@ let stored = store.get(&record.capsule_id)?;
 store.purge(&record.capsule_id)?; // erases originals, keeps their commitments
 ```
 
+Every backend also implements the optional index extension, `IndexStore`: a
+namespace declares JSON paths into its Capsules with `init_index`, the store
+extracts their values when it admits a record, and `find` pages through the
+matching Capsule IDs. The SQL backends persist the declaration; `jsonl` and
+`memory` keep it in the open store only. `Store::as_index_store` detects the
+extension on a `dyn Store`.
+
+```rust
+use capsule_emit_artifact::{IndexStore, Query};
+
+store.init_index(&["operator", "fixture.tags"])?;
+let mut query = Query::default();
+query.r#where.insert("operator".into(), "op-a".into());
+let page = store.find(&query)?; // page.ids, then page.next as query.after
+```
+
 `conformance::run` runs the shared, language-neutral conformance suite against
 any `Store`, including one you write; `conformance::run_limited` runs it for a
 store with capability limits.

@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use crate::error::{ArtifactError, Result};
+use crate::index::{normalize_paths, IndexStore, MemoryIndex, Page, Query};
 use crate::record::{
     check_config, decode_record, encode_record, has_purged, prepare, purged, storage_checksum,
     valid_id, verify, Record,
@@ -28,7 +29,20 @@ pub struct JsonlStore {
     path: PathBuf,
     namespace: String,
     trusted: Vec<[u8; 32]>,
-    index: Mutex<HashMap<String, Span>>,
+    state: Mutex<State>,
+}
+
+/// What a [`JsonlStore`] keeps in memory, under one lock.
+#[derive(Debug, Default)]
+struct State {
+    /// `capsule_id` to its line.
+    spans: HashMap<String, Span>,
+    /// Capsule IDs by first appearance in the file, which is admission
+    /// order; purge rewrites lines in place and keeps it.
+    order: Vec<String>,
+    /// The index extension's index. Its declaration lives only in this store:
+    /// a JSONL file stores records and nothing else.
+    lookup: MemoryIndex,
 }
 
 fn peek_id(line: &[u8]) -> Option<String> {
@@ -90,7 +104,7 @@ impl JsonlStore {
     ) -> Result<Self> {
         let trusted = check_config(namespace, trusted)?;
         let path = path.as_ref().to_path_buf();
-        let mut index = HashMap::new();
+        let mut state = State::default();
         match File::open(&path) {
             Ok(file) => scan_lines(file, |line| {
                 if let Scanned::Line {
@@ -99,7 +113,10 @@ impl JsonlStore {
                     id: Some(id),
                 } = line
                 {
-                    index.insert(id, (offset, bytes.len()));
+                    if !state.spans.contains_key(&id) {
+                        state.order.push(id.clone());
+                    }
+                    state.spans.insert(id, (offset, bytes.len()));
                 }
                 Ok(())
             })
@@ -111,14 +128,44 @@ impl JsonlStore {
             path,
             namespace: namespace.to_string(),
             trusted,
-            index: Mutex::new(index),
+            state: Mutex::new(state),
         })
     }
 
-    fn index(&self) -> std::sync::MutexGuard<'_, HashMap<String, Span>> {
-        self.index
+    fn state(&self) -> std::sync::MutexGuard<'_, State> {
+        self.state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Creates an empty file if none exists. The caller holds the state lock.
+    fn create(&self) -> Result<()> {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&self.path)
+        {
+            Ok(_) => Ok(()),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(()),
+            Err(e) => Err(ArtifactError::storage(e)),
+        }
+    }
+
+    /// Adds every readable record to a freshly declared index, in file order.
+    /// A line that no longer decodes as a record is left out; `get` reports it.
+    fn index_all(&self, state: &mut State) -> Result<()> {
+        for id in &state.order {
+            let capsule = match self.read_at(id, state.spans[id]) {
+                Ok(record) => record.capsule,
+                Err(ArtifactError::Corrupt(_) | ArtifactError::Invalid(_)) => continue,
+                Err(e) => return Err(e),
+            };
+            match state.lookup.add(id, &capsule) {
+                Ok(()) | Err(ArtifactError::Corrupt(_)) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
     }
 
     fn read_at(&self, id: &str, span: Span) -> Result<Record> {
@@ -236,24 +283,16 @@ impl Store for JsonlStore {
 
     /// Creates an empty file if none exists; an existing file is untouched.
     fn init(&self) -> Result<()> {
-        let _index = self.index();
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&self.path)
-        {
-            Ok(_) => Ok(()),
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(()),
-            Err(e) => Err(ArtifactError::storage(e)),
-        }
+        let _state = self.state();
+        self.create()
     }
 
     fn put(&self, record: &Record) -> Result<()> {
         let prepared = prepare(record)?;
         verify(&prepared, &self.trusted)?;
         let checksum = storage_checksum(&prepared);
-        let mut index = self.index();
-        if let Some(&span) = index.get(&prepared.capsule_id) {
+        let mut state = self.state();
+        if let Some(&span) = state.spans.get(&prepared.capsule_id) {
             let existing = self.read_at(&prepared.capsule_id, span)?;
             verify(&existing, &self.trusted)?; // reads fail closed
             if storage_checksum(&existing) != checksum {
@@ -288,8 +327,12 @@ impl Store for JsonlStore {
         line.extend_from_slice(&record_line);
         line.push(b'\n');
         file.write_all(&line).map_err(ArtifactError::storage)?;
-        index.insert(prepared.capsule_id, (offset, record_line.len()));
-        Ok(())
+        let state = &mut *state;
+        state
+            .spans
+            .insert(prepared.capsule_id.clone(), (offset, record_line.len()));
+        state.order.push(prepared.capsule_id.clone());
+        state.lookup.add(&prepared.capsule_id, &prepared.capsule)
     }
 
     fn get(&self, id: &str) -> Result<Record> {
@@ -297,8 +340,8 @@ impl Store for JsonlStore {
             return Err(ArtifactError::Invalid("capsule id".into()));
         }
         let record = {
-            let index = self.index();
-            let span = *index.get(id).ok_or(ArtifactError::NotFound)?;
+            let state = self.state();
+            let span = *state.spans.get(id).ok_or(ArtifactError::NotFound)?;
             self.read_at(id, span)?
         };
         verify(&record, &self.trusted)?;
@@ -311,8 +354,8 @@ impl Store for JsonlStore {
         if !valid_id(id) {
             return Err(ArtifactError::Invalid("capsule id".into()));
         }
-        let mut index = self.index();
-        let span = *index.get(id).ok_or(ArtifactError::NotFound)?;
+        let mut state = self.state();
+        let span = *state.spans.get(id).ok_or(ArtifactError::NotFound)?;
         // A line that no longer decodes as a record cannot be rewritten: that
         // is corrupt here even when get would call its state invalid.
         let stored = self.read_at(id, span).map_err(|e| match e {
@@ -320,6 +363,38 @@ impl Store for JsonlStore {
             other => other,
         })?;
         let replacement = encode_record(&purged(&stored));
-        self.rewrite(&mut index, id, replacement.as_bytes())
+        self.rewrite(&mut state.spans, id, replacement.as_bytes())
+    }
+
+    fn as_index_store(&self) -> Option<&dyn IndexStore> {
+        Some(self)
+    }
+}
+
+/// The declaration and the index live in this store only: a store opened
+/// again over the same file has none until it declares again.
+impl IndexStore for JsonlStore {
+    /// Creates the file as `init` does, then declares paths for this store
+    /// and indexes the records in the file, in file order.
+    fn init_index(&self, paths: &[&str]) -> Result<()> {
+        let mut state = self.state();
+        self.create()?;
+        if state.lookup.declare(paths)? {
+            self.index_all(&mut state)?;
+        }
+        Ok(())
+    }
+
+    /// Replaces the declared paths and rebuilds the index from the file.
+    fn reindex(&self, paths: &[&str]) -> Result<()> {
+        let normalized = normalize_paths(paths)?;
+        let mut state = self.state();
+        self.create()?;
+        state.lookup.reset(normalized);
+        self.index_all(&mut state)
+    }
+
+    fn find(&self, query: &Query) -> Result<Page> {
+        self.state().lookup.find(query)
     }
 }

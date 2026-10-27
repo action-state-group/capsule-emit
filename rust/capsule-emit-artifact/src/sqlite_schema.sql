@@ -26,3 +26,26 @@ CREATE TABLE IF NOT EXISTS capsule_store_artifacts (
    OR (retention_state = 'never_retained' AND content_bytes IS NULL AND content_sha256 = '' AND purged_at IS NULL)
  )
 );
+
+CREATE TABLE IF NOT EXISTS capsule_store_index_paths (
+ namespace TEXT NOT NULL PRIMARY KEY,
+ paths TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS capsule_store_index_records (
+ seq INTEGER PRIMARY KEY AUTOINCREMENT,
+ namespace TEXT NOT NULL,
+ capsule_id TEXT NOT NULL,
+ ts INTEGER NULL,
+ UNIQUE (namespace, capsule_id)
+);
+
+CREATE INDEX IF NOT EXISTS capsule_store_index_records_ts ON capsule_store_index_records (namespace, ts);
+
+CREATE TABLE IF NOT EXISTS capsule_store_index (
+ namespace TEXT NOT NULL,
+ path TEXT NOT NULL,
+ value_sha256 TEXT NOT NULL,
+ seq INTEGER NOT NULL,
+ PRIMARY KEY (namespace, path, value_sha256, seq)
+);
