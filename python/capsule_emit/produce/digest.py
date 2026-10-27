@@ -104,7 +104,7 @@ def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict:
     result: dict = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"duplicate object key {json.dumps(key)}")
+            raise ValueError(f"duplicate object key {json.dumps(key, ensure_ascii=False)}")
         result[key] = value
     return result
 
