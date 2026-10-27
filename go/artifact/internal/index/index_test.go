@@ -58,10 +58,8 @@ func TestPathsRoundTrip(t *testing.T) {
 
 	for _, stored := range []string{`{`, `["a","a"]`, `[" "]`} {
 		_, err := DecodePaths(stored)
-		assert.Error(t, err, stored)
+		assert.ErrorIs(t, err, artifact.ErrCorrupt, stored)
 	}
-	_, err = DecodePaths(`{`)
-	assert.ErrorIs(t, err, artifact.ErrCorrupt)
 }
 
 func TestMemoryBeforeDeclaration(t *testing.T) {

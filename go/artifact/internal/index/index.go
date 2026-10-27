@@ -82,7 +82,11 @@ func DecodePaths(stored string) ([]string, error) {
 	if err := jsonv2.Unmarshal([]byte(stored), &paths); err != nil {
 		return nil, fmt.Errorf("%w: stored index paths: %v", artifact.ErrCorrupt, err)
 	}
-	return NormalizePaths(paths)
+	normalized, err := NormalizePaths(paths)
+	if err != nil {
+		return nil, fmt.Errorf("%w: stored index paths: %v", artifact.ErrCorrupt, err)
+	}
+	return normalized, nil
 }
 
 // Entry is one indexed value of one path.
