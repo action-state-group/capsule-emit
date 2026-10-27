@@ -250,11 +250,12 @@ func (s *Store) InitIndex(ctx context.Context, paths []string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previous := s.lookup
 	fresh, err := s.lookup.Declare(paths)
 	if err != nil || !fresh {
 		return err
 	}
-	return s.indexAll()
+	return s.indexAll(previous)
 }
 
 // Reindex replaces the declared paths and rebuilds the index from the file.
@@ -268,22 +269,26 @@ func (s *Store) Reindex(ctx context.Context, paths []string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previous := s.lookup
 	s.lookup.Reset(normalized)
-	return s.indexAll()
+	return s.indexAll(previous)
 }
 
 // indexAll adds every readable record to a freshly declared index. A line that
-// no longer decodes as a record is left out; Get reports it as corrupt.
-func (s *Store) indexAll() error {
+// no longer decodes as a record is left out; Get reports it as corrupt. On any
+// other error it restores previous, so a retry starts over instead of finding
+// the declaration in place over a partial index.
+func (s *Store) indexAll(previous index.Memory) error {
 	for _, id := range s.order {
 		record, err := s.readAt(s.index[id])
 		if errors.Is(err, artifact.ErrCorrupt) || (err == nil && record.CapsuleID != id) {
 			continue
 		}
-		if err != nil {
-			return err
+		if err == nil {
+			err = s.lookup.Add(id, record.Capsule)
 		}
-		if err := s.lookup.Add(id, record.Capsule); err != nil && !errors.Is(err, artifact.ErrCorrupt) {
+		if err != nil && !errors.Is(err, artifact.ErrCorrupt) {
+			s.lookup = previous
 			return err
 		}
 	}

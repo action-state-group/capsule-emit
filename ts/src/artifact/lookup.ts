@@ -5,6 +5,8 @@
 // and jsonl backends keep. It imports no storage driver.
 import { createHash } from "node:crypto";
 
+import { asJsonObject, decodeStrictJson } from "../aac/index.js";
+import type { ParsedJson } from "../aac/index.js";
 import { ArtifactError, type Store } from "./record.js";
 
 /** The most paths one namespace may declare. */
@@ -149,26 +151,28 @@ export function extract(
   capsule: Uint8Array,
   paths: readonly string[],
 ): Extracted {
-  let root: unknown;
+  let root: ParsedJson;
   try {
-    root = JSON.parse(
-      new TextDecoder("utf-8", { fatal: true }).decode(capsule),
-    );
+    // The strict decoder every language uses: duplicate members, invalid
+    // UTF-8 and trailing data are corrupt rather than resolved differently.
+    root = decodeStrictJson(capsule);
   } catch {
-    throw new ArtifactError("corrupt", "capsule is not JSON");
+    throw new ArtifactError("corrupt", "capsule is not strict JSON");
   }
-  const object = isObject(root) ? root : undefined;
+  const object = asJsonObject(root);
   const timestamp = object?.timestamp;
   const out: Extracted = {
     entries: [],
     ts: typeof timestamp === "string" ? parseTimestamp(timestamp) : undefined,
   };
   for (const path of paths) {
-    let value: unknown = object;
+    let value: ParsedJson | undefined = object;
     for (const segment of path.split(".")) {
+      const member: { [key: string]: ParsedJson } | undefined =
+        asJsonObject(value);
       value =
-        isObject(value) && Object.hasOwn(value, segment)
-          ? value[segment]
+        member !== undefined && Object.hasOwn(member, segment)
+          ? member[segment]
           : undefined;
     }
     if (typeof value === "string") out.entries.push({ path, value });
@@ -182,10 +186,6 @@ export function extract(
     }
   }
   return out;
-}
-
-function isObject(value: unknown): value is { [key: string]: unknown } {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -341,6 +341,11 @@ export class MemoryIndex {
     }
     this.reset(normalized);
     return true;
+  }
+
+  /** Whether paths were declared. */
+  public isDeclared(): boolean {
+    return this.declared;
   }
 
   /** Replaces the declaration with normalized paths and empties the index. */

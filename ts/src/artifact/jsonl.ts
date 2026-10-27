@@ -223,7 +223,7 @@ export class JsonlArtifactStore implements IndexStore {
   private index: Map<string, LineSpan>;
   // The index extension's declaration lives only in this store: a JSONL file
   // stores records and nothing else.
-  private readonly lookup = new MemoryIndex();
+  private lookup = new MemoryIndex();
 
   public constructor(
     private readonly filePath: string,
@@ -306,17 +306,17 @@ export class JsonlArtifactStore implements IndexStore {
    * and indexes the records in the file, in file order.
    */
   public async initIndex(paths: readonly string[]): Promise<void> {
-    normalizePaths(paths);
+    const normalized = normalizePaths(paths);
     await this.init();
-    if (this.lookup.declare(paths)) this.indexAll();
+    if (this.lookup.isDeclared()) this.lookup.declare(normalized);
+    else this.lookup = this.rebuilt(normalized);
   }
 
   /** Replaces the declared index paths and rebuilds the index from the file. */
   public async reindex(paths: readonly string[]): Promise<void> {
     const normalized = normalizePaths(paths);
     await this.init();
-    this.lookup.reset(normalized);
-    this.indexAll();
+    this.lookup = this.rebuilt(normalized);
   }
 
   /** Returns one page of IDs matching the query, in admission order. */
@@ -324,18 +324,22 @@ export class JsonlArtifactStore implements IndexStore {
     return this.lookup.find(query);
   }
 
-  // A line that no longer decodes as a record is left out; get reports it as
-  // corrupt.
-  private indexAll(): void {
+  // A new index over every readable record, swapped in only once complete, so
+  // a failed read leaves the previous one in place. A line that no longer
+  // decodes as a record is left out; get reports it as corrupt.
+  private rebuilt(normalized: string[]): MemoryIndex {
+    const lookup = new MemoryIndex();
+    lookup.reset(normalized);
     for (const [id, span] of this.index) {
       try {
         const record = decodeRecord(readSpan(this.filePath, span));
-        if (record.capsuleId === id) this.lookup.add(id, record.capsule);
+        if (record.capsuleId === id) lookup.add(id, record.capsule);
       } catch (error) {
         if (!(error instanceof ArtifactError && error.code === "corrupt"))
           throw error;
       }
     }
+    return lookup;
   }
 
   /** Loads a coherent snapshot and verifies authenticity and original digests. */

@@ -4366,6 +4366,24 @@
             "index.a",
             "index.c"
           ]
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "after": "9223372036854775807"
+        },
+        {
+          "op": "find",
+          "expect": "ok",
+          "where": {
+            "operator": "op-a"
+          },
+          "after": "9223372036854775807"
+        },
+        {
+          "op": "find",
+          "expect": "invalid",
+          "after": "9223372036854775808"
         }
       ]
     },

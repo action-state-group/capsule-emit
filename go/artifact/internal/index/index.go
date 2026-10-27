@@ -313,6 +313,10 @@ func (m *Memory) Find(q artifact.Query) (artifact.Page, error) {
 	if err != nil {
 		return artifact.Page{}, err
 	}
+	page := artifact.Page{IDs: []string{}}
+	if c.After >= int64(len(m.ids)) {
+		return page, nil // also keeps After+1 below from overflowing
+	}
 	var candidates []int64
 	if len(c.Where) == 0 {
 		for p := c.After + 1; p <= int64(len(m.ids)); p++ {
@@ -323,7 +327,6 @@ func (m *Memory) Find(q artifact.Query) (artifact.Page, error) {
 		start, _ := slices.BinarySearch(all, c.After+1)
 		candidates = all[start:]
 	}
-	page := artifact.Page{IDs: []string{}}
 	for _, p := range candidates {
 		if !m.matches(p, c) {
 			continue

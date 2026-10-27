@@ -11,7 +11,8 @@ Usage (target: an SQLite file, or host:port/database for MySQL):
 
 ``dump`` prints every row of one namespace in capsule_store_capsules and
 capsule_store_artifacts, ordered by key, with BLOBs in hex, so the rows each
-language writes can be compared byte for byte. The namespace column prints as
+language writes can be compared byte for byte, then the index extension's
+declaration, its records in admission order and its entries by Capsule ID. The namespace column prints as
 ``<namespace>``. Timestamps are wall-clock values, so ``created_at`` and
 ``purged_at`` print only as NULL, or as whether the value has the contract's
 UTC form (SQLite ``%Y-%m-%dT%H:%M:%fZ``; MySQL a DATETIME(6) within the last
@@ -27,6 +28,10 @@ from __future__ import annotations
 import sys
 
 TABLES = ("capsule_store_capsules", "capsule_store_artifacts")  # parents first
+# The index extension's tables. They are derived from the records, so copy
+# leaves them out (a reader's init_index rebuilds them); schema and dump
+# compare them.
+INDEX_TABLES = ("capsule_store_index_paths", "capsule_store_index_records", "capsule_store_index")
 SQLITE_UTC = "____-__-__T__:__:__.___Z"
 
 
@@ -72,7 +77,7 @@ def main(argv: list[str]) -> int:
     conn, mark = connect(kind, target)
     cursor = conn.cursor()
     if action == "schema":
-        for table in TABLES:
+        for table in TABLES + INDEX_TABLES:
             if kind == "sqlite":
                 cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,))
             else:
@@ -125,6 +130,24 @@ def main(argv: list[str]) -> int:
     )
     for row in cursor.fetchall():
         print("artifact\t<namespace>\t" + "\t".join(cell(c) for c in row))
+    # Admission numbers come from an auto-increment, so the dump shows their
+    # order, not their values, and index rows by the Capsule ID they belong to.
+    cursor.execute(f"SELECT paths FROM capsule_store_index_paths WHERE namespace={mark}", (namespace,))
+    for row in cursor.fetchall():
+        print("index_paths\t<namespace>\t" + cell(row[0]))
+    cursor.execute(
+        f"SELECT capsule_id,ts FROM capsule_store_index_records WHERE namespace={mark} ORDER BY seq", (namespace,)
+    )
+    for rank, row in enumerate(cursor.fetchall(), 1):
+        print(f"index_record\t<namespace>\t{rank}\t" + "\t".join(cell(c) for c in row))
+    cursor.execute(
+        "SELECT r.capsule_id,i.path,i.value_sha256 FROM capsule_store_index i "
+        "JOIN capsule_store_index_records r ON r.seq=i.seq "
+        f"WHERE i.namespace={mark} ORDER BY r.capsule_id,i.path,i.value_sha256",
+        (namespace,),
+    )
+    for row in cursor.fetchall():
+        print("index_entry\t<namespace>\t" + "\t".join(cell(c) for c in row))
     return 0
 
 

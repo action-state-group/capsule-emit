@@ -96,7 +96,12 @@ func (s *SQL) add(ctx context.Context, tx *sql.Tx, paths []string, id string, ca
 }
 
 // Declare runs InitIndex's declaration inside tx, after the caller provisioned
-// the tables.
+// the tables. A concurrent PutTx inserts its Capsule row before Admit reads the
+// declaration, so no record escapes: if the row exists before the backfill's
+// locking scan reaches it, the scan waits for its commit and indexes it;
+// otherwise Admit's locking read waits on the uncommitted declaration row and
+// then indexes the record itself. This needs no gap locks, so it holds under
+// READ COMMITTED too.
 func (s *SQL) Declare(ctx context.Context, tx *sql.Tx, paths []string) error {
 	normalized, err := NormalizePaths(paths)
 	if err != nil {

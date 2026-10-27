@@ -18,7 +18,7 @@ use std::path::Path;
 use capsule_emit_artifact::jsonl::JsonlStore;
 use capsule_emit_artifact::mysql::MysqlStore;
 use capsule_emit_artifact::sqlite::SqliteStore;
-use capsule_emit_artifact::{encode_record, storage_checksum, Record, Result, Store};
+use capsule_emit_artifact::{encode_record, storage_checksum, Query, Record, Result, Store};
 use serde_json::Value;
 
 fn outcome<T>(result: Result<T>) -> (String, Option<T>) {
@@ -91,12 +91,18 @@ fn main() {
                 serde_json::to_string(id).unwrap(),
             ),
             None => {
-                let name = step["record"].as_str().unwrap();
+                let name = step["record"].as_str().unwrap_or("");
                 let id = vectors["records"][name]["capsule_id"]
                     .as_str()
                     .unwrap_or("");
                 (id.to_string(), name.to_string())
             }
+        };
+        // Index steps name their paths or query in compact JSON.
+        let subject = match op {
+            "init_index" => serde_json::to_string(&step["paths"]).unwrap(),
+            "find" => serde_json::to_string(&step["where"]).unwrap(),
+            _ => subject,
         };
         let mut line = format!("{i}\t{op} {subject}\t");
         match op {
@@ -109,6 +115,34 @@ fn main() {
                 };
             }
             "purge" => line += &outcome(store.purge(&id)).0,
+            "init_index" => {
+                let paths: Vec<&str> = step["paths"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|p| p.as_str().unwrap())
+                    .collect();
+                let index = store.as_index_store().expect("index extension");
+                line += &outcome(index.init_index(&paths)).0;
+            }
+            "find" => {
+                // The interlock's finds fit one page; IDs print comma-separated.
+                let mut query = Query {
+                    limit: 1000,
+                    ..Query::default()
+                };
+                for (path, value) in step["where"].as_object().unwrap() {
+                    query
+                        .r#where
+                        .insert(path.clone(), value.as_str().unwrap().to_string());
+                }
+                let index = store.as_index_store().expect("index extension");
+                let (code, page) = outcome(index.find(&query));
+                line += &code;
+                if let Some(page) = page.filter(|p| !p.ids.is_empty()) {
+                    line += &format!("\t{}", page.ids.join(","));
+                }
+            }
             "get" => {
                 let (code, got) = outcome(store.get(&id));
                 line += &code;

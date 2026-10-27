@@ -168,29 +168,36 @@ class JsonlArtifactStore:
     def init_index(self, paths: Iterable[str]) -> None:
         """Creates the file as :meth:`init` does, then declares paths for this
         store and indexes the records in the file, in file order."""
+        normalized = normalize_paths(paths)
         self.init()
         with self._lock:
-            if self._lookup.declare(paths):
-                self._index_all()
+            if self._lookup.declared is not None:
+                self._lookup.declare(normalized)
+                return
+            self._lookup = self._rebuilt(normalized)
 
     def reindex(self, paths: Iterable[str]) -> None:
         """Replaces the declared paths and rebuilds the index from the file."""
         normalized = normalize_paths(paths)
         self.init()
         with self._lock:
-            self._lookup.reset(normalized)
-            self._index_all()
+            self._lookup = self._rebuilt(normalized)
 
-    def _index_all(self) -> None:
-        """Adds every readable record to a freshly declared index. A line that
-        no longer decodes as a record is left out; get reports it as corrupt."""
+    def _rebuilt(self, normalized: list) -> MemoryIndex:
+        """A new index over every readable record, swapped in only once it is
+        complete, so a failed read leaves the previous index in place. A line
+        that no longer decodes as a record is left out; get reports it as
+        corrupt."""
+        lookup = MemoryIndex()
+        lookup.reset(normalized)
         for capsule_id in self._order:
             try:
                 record = self._read_at(self._index[capsule_id])
                 if record.capsule_id == capsule_id:
-                    self._lookup.add(capsule_id, record.capsule)
+                    lookup.add(capsule_id, record.capsule)
             except CorruptError:
                 continue
+        return lookup
 
     def find(
         self,

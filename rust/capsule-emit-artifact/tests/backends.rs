@@ -206,6 +206,27 @@ fn jsonl_index_skips_damaged_lines_and_is_per_store() {
     );
 }
 
+/// A read error partway through `init_index` leaves no declaration behind, so
+/// the retry indexes every record instead of accepting a partial index.
+#[cfg(unix)]
+#[test]
+fn jsonl_index_retry_after_failed_read() {
+    use std::os::unix::fs::PermissionsExt;
+    let v = vectors();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.jsonl");
+    let store = JsonlStore::new(&path, "ns", trusted(&v)).unwrap();
+    store.init().unwrap();
+    store.put(&v.record("index.a").unwrap()).unwrap();
+    let mode = |m| std::fs::set_permissions(&path, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o200);
+    assert!(store.init_index(&["operator"]).is_err());
+    assert!(store.reindex(&["operator"]).is_err());
+    mode(0o644);
+    store.init_index(&["operator"]).unwrap();
+    assert_eq!(find_ids(&store, &[]), [id(&v, "index.a")]);
+}
+
 #[test]
 fn every_builtin_store_reports_the_index_extension() {
     let v = vectors();

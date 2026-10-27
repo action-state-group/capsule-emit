@@ -106,9 +106,11 @@ StorageChecksum and the record's JSONL line with artifacts sorted by name. A
 record the language's codec cannot represent counts as `invalid`.
 
 - `write`: each language writes to its own store (a file, or for MySQL its own
-  database). Every report must equal `interlock-write.txt`. The JSONL files, or
+  database), declaring index paths after the first record so both backfill
+  and admission index records, and ends with `find` steps. Every report must equal `interlock-write.txt`. The JSONL files, or
   the SQL schemas and rows as `.github/scripts/artifact_store_rows.py` dumps
-  them, must be byte-identical and hold five records. Timestamps compare by
+  them, must be byte-identical and hold five records. The SQL dump includes
+  the index declaration, its records in admission order and its entries. Timestamps compare by
   being NULL or in the contract's UTC form.
 - `read`, `strict` and `check`: every language works on fresh copies of every
   language's store, all pairs. `read` reports each record, then retries, a
@@ -118,6 +120,8 @@ record the language's codec cannot represent counts as `invalid`.
   payload is gone and its never-retained output unchanged. Every report must
   equal `interlock-<phase>.txt`, every copy must end in the same state, and
   existing SQL rows must keep their exact `created_at` (a retry writes nothing).
+  `read` ends by declaring the same index paths (a no-op where the copy kept
+  the writer's declaration, a rebuild where it did not) and finding records.
   The MySQL service runs in a non-UTC time zone, so a backend writing local
   time instead of UTC fails the dump's timestamp check.
 

@@ -386,3 +386,22 @@ def test_index_row_vectors():
         entries = sorted(f"{path} {value_key(value)}" for path, value in got.entries)
         want = sorted(f"{e['path']} {e['value_sha256']}" for e in row["entries"])
         assert entries == want, row["record"]
+
+
+def test_jsonl_index_retry_after_failed_read(tmp_path):
+    """A read error partway through init_index leaves no declaration behind, so
+    the retry indexes every record instead of accepting a partial index."""
+    path = tmp_path / "artifacts.jsonl"
+    store = JsonlArtifactStore(path, "ns", [TRUSTED])
+    store.init()
+    store.put(record("index.a"))
+    path.chmod(0o200)
+    try:
+        with pytest.raises(OSError):
+            store.init_index(["operator"])
+        with pytest.raises(OSError):
+            store.reindex(["operator"])
+    finally:
+        path.chmod(0o644)
+    store.init_index(["operator"])
+    assert store.find() == Page(ids=[record("index.a").capsule_id])

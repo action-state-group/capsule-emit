@@ -151,21 +151,25 @@ impl JsonlStore {
         }
     }
 
-    /// Adds every readable record to a freshly declared index, in file order.
-    /// A line that no longer decodes as a record is left out; `get` reports it.
-    fn index_all(&self, state: &mut State) -> Result<()> {
+    /// A new index over every readable record, in file order, which the
+    /// caller swaps in only once complete, so a failed read leaves the
+    /// previous index in place. A line that no longer decodes as a record is
+    /// left out; `get` reports it.
+    fn rebuilt(&self, state: &State, normalized: Vec<String>) -> Result<MemoryIndex> {
+        let mut lookup = MemoryIndex::default();
+        lookup.reset(normalized);
         for id in &state.order {
             let capsule = match self.read_at(id, state.spans[id]) {
                 Ok(record) => record.capsule,
                 Err(ArtifactError::Corrupt(_) | ArtifactError::Invalid(_)) => continue,
                 Err(e) => return Err(e),
             };
-            match state.lookup.add(id, &capsule) {
+            match lookup.add(id, &capsule) {
                 Ok(()) | Err(ArtifactError::Corrupt(_)) => {}
                 Err(e) => return Err(e),
             }
         }
-        Ok(())
+        Ok(lookup)
     }
 
     fn read_at(&self, id: &str, span: Span) -> Result<Record> {
@@ -377,10 +381,13 @@ impl IndexStore for JsonlStore {
     /// Creates the file as `init` does, then declares paths for this store
     /// and indexes the records in the file, in file order.
     fn init_index(&self, paths: &[&str]) -> Result<()> {
+        let normalized = normalize_paths(paths)?;
         let mut state = self.state();
         self.create()?;
-        if state.lookup.declare(paths)? {
-            self.index_all(&mut state)?;
+        if state.lookup.is_declared() {
+            state.lookup.declare(paths)?;
+        } else {
+            state.lookup = self.rebuilt(&state, normalized)?;
         }
         Ok(())
     }
@@ -390,8 +397,8 @@ impl IndexStore for JsonlStore {
         let normalized = normalize_paths(paths)?;
         let mut state = self.state();
         self.create()?;
-        state.lookup.reset(normalized);
-        self.index_all(&mut state)
+        state.lookup = self.rebuilt(&state, normalized)?;
+        Ok(())
     }
 
     fn find(&self, query: &Query) -> Result<Page> {

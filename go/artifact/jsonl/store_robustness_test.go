@@ -207,3 +207,21 @@ func TestJSONLIndexSkipsDamagedLine(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{good.CapsuleID}, page.IDs)
 }
+
+// TestJSONLIndexRetryAfterFailedRead: a read error partway through InitIndex
+// leaves no declaration behind, so the retry indexes every record instead of
+// accepting the declaration over a partial index.
+func TestJSONLIndexRetryAfterFailedRead(t *testing.T) {
+	record, pub := testutil.Record(t, "jsonl-index-retry")
+	s, path := newStore(t, "test-index-retry", []ed25519.PublicKey{pub})
+	require.NoError(t, s.Put(t.Context(), record))
+	require.NoError(t, os.Chmod(path, 0o200))
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	require.Error(t, s.InitIndex(t.Context(), []string{"operator"}))
+	require.Error(t, s.Reindex(t.Context(), []string{"operator"}))
+	require.NoError(t, os.Chmod(path, 0o644))
+	require.NoError(t, s.InitIndex(t.Context(), []string{"operator"}))
+	page, err := s.Find(t.Context(), artifact.Query{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{record.CapsuleID}, page.IDs)
+}

@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -177,5 +177,33 @@ describe("index backends", () => {
       code: "invalid",
     });
     db.close();
+  });
+});
+
+describe("index robustness", () => {
+  it("jsonl retries a failed initIndex from scratch", async () => {
+    const { record, trusted } = await makeRecord("jsonl-retry");
+    const path = join(
+      mkdtempSync(join(tmpdir(), "artifact-index-")),
+      "a.jsonl",
+    );
+    const store = new JsonlArtifactStore(path, "a", [trusted]);
+    await store.init();
+    await store.put(record);
+    chmodSync(path, 0o200);
+    try {
+      await expect(store.initIndex(["operator"])).rejects.toThrow();
+      await expect(store.reindex(["operator"])).rejects.toThrow();
+    } finally {
+      chmodSync(path, 0o644);
+    }
+    await store.initIndex(["operator"]);
+    expect((await store.find()).ids).toEqual([record.capsuleId]);
+  });
+
+  it("treats a capsule with a repeated member as corrupt", () => {
+    expect(() =>
+      extract(utf8(`{"operator":"a","operator":"b"}`), ["operator"]),
+    ).toThrow(expect.objectContaining({ code: "corrupt" }));
   });
 });

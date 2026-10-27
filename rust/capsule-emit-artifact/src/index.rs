@@ -283,15 +283,16 @@ pub(crate) fn check(query: &Query, declared: &[String]) -> Result<Checked> {
         }
         r#where.push((path.clone(), value.clone()));
     }
-    let since = match &query.since {
-        None => None,
+    // An empty since or after means not given, as in the other languages.
+    let since = match query.since.as_deref() {
+        None | Some("") => None,
         Some(s) => Some(
             parse_timestamp(s)
                 .ok_or_else(|| invalid(format!("since {s:?} is not an RFC 3339 date-time")))?,
         ),
     };
-    let after = match &query.after {
-        None => 0,
+    let after = match query.after.as_deref() {
+        None | Some("") => 0,
         Some(cursor) => match cursor.parse::<i64>() {
             Ok(n) if n >= 1 && n.to_string() == *cursor => n,
             _ => return Err(invalid("cursor")),
@@ -335,6 +336,11 @@ impl MemoryIndex {
                 Ok(true)
             }
         }
+    }
+
+    /// Whether paths were declared.
+    pub fn is_declared(&self) -> bool {
+        self.paths.is_some()
     }
 
     /// Replaces the declaration with normalized paths and empties the index.
@@ -384,6 +390,10 @@ impl MemoryIndex {
             .as_ref()
             .ok_or_else(|| invalid("no index paths declared"))?;
         let c = check(query, paths)?;
+        if c.after >= self.ids.len() as i64 {
+            // Also keeps `after + 1` below from overflowing.
+            return Ok(Page::default());
+        }
         let candidates: Vec<i64> = match c.r#where.first() {
             None => (c.after + 1..=self.ids.len() as i64).collect(),
             Some((path, value)) => {
@@ -605,7 +615,7 @@ mod tests {
             ("9223372036854775807", true),
             ("+1", false),
             (" 1", false),
-            ("", false),
+            ("0", false),
             ("9223372036854775808", false),
         ] {
             let q = Query {
@@ -623,8 +633,10 @@ mod tests {
         }
         let q = Query {
             since: Some(String::new()),
+            after: Some(String::new()),
             ..Query::default()
         };
-        assert!(check(&q, &declared).is_err());
+        let c = check(&q, &declared).unwrap();
+        assert_eq!((c.since, c.after), (None, 0));
     }
 }
