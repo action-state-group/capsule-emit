@@ -1,0 +1,249 @@
+{
+  "public_key_hex": "4fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c4",
+  "records": [
+    {
+      "name": "build_minimal_fyi",
+      "capsule_id": "3b47830b3df18626e9155a3613584dff35d322dbcf13ce0309f1855cd10d1a88",
+      "capsule_jcs": "{\"action_id\":\"fyi/1\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"3b47830b3df18626e9155a3613584dff35d322dbcf13ce0309f1855cd10d1a88\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058203b47830b3df18626e9155a3613584dff35d322dbcf13ce0309f1855cd10d1a88584088ab7bfcdc3088502543a8c1b4a1f1a99ef6ad792c0d4ff5dc963bb133fd58a440bbc492b13a14f3949e430d0701ea50013732714bd05b44970d7c1f1beb4308"
+    },
+    {
+      "name": "build_full",
+      "capsule_id": "dc0658102d0db21e6845b2725e7f226120fbbc116360d6134eeb9c946541b6d3",
+      "capsule_jcs": "{\"action_id\":\"full/2\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"confirmed\",\"ledger_mode\":\"chained\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"dc0658102d0db21e6845b2725e7f226120fbbc116360d6134eeb9c946541b6d3\",\"chain\":{\"parent_capsule_id\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"relation\":\"confirms\"},\"developer\":\"example-agent@v1\",\"disposition\":{\"approver\":\"human\",\"decision\":\"accept\",\"human_disposed\":true,\"reason_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"verdict_class\":\"executed\"},\"domain\":\"action\",\"effect\":{\"effect_attestation\":\"gate_executed\",\"external_ref\":\"pay_9001\",\"irreversibility_class\":\"one_way_consequential\",\"request_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"response_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"status\":\"confirmed\",\"type\":\"send_payment\"},\"epoch_id\":\"epoch-7\",\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"agent_input_digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"runtime\":\"runtime@2\"},\"model_id\":\"model-x\",\"provider\":\"example-provider\"},\"operator\":\"example-org\",\"provenance\":\"gate\",\"references\":[{\"citation_purpose\":\"acted_on\",\"digest\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"digest_alg\":\"SHA-256\",\"log_coordinates\":{\"inclusion_proof\":[\"1111111111111111111111111111111111111111111111111111111111111111\",\"2222222222222222222222222222222222222222222222222222222222222222\"],\"leaf_index\":7,\"log_id\":\"example-log\"},\"type\":\"capsule\"},{\"digest\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"digest_alg\":\"SHA-256\",\"type\":\"foreign-artifact\"}],\"settlement\":{\"amounts\":[1,-2,9007199254740991],\"leg\":\"terms\",\"version\":\"0\"},\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00.123456Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a05820dc0658102d0db21e6845b2725e7f226120fbbc116360d6134eeb9c946541b6d358406437b634d2f2320d97d9ad71672ec32385efcda744909df44ef1a3ff37540a881badc05c1c0175c78dfc68054cc4df82f0f64908fdd2fd9cc16b6fe64082bd04"
+    },
+    {
+      "name": "build_dispatched_epoch_opens",
+      "capsule_id": "38c3d7b989971aa41921e4e6a0438f2345f86de264c3668887d8af5ba3a48cbe",
+      "capsule_jcs": "{\"action_id\":\"dispatch/3\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"dispatched_unconfirmed\",\"ledger_mode\":\"chained\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"38c3d7b989971aa41921e4e6a0438f2345f86de264c3668887d8af5ba3a48cbe\",\"chain\":{\"parent_capsule_id\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"relation\":\"epoch_opens\"},\"developer\":\"example-agent@v1\",\"effect\":{\"effect_attestation\":\"runtime_claimed\",\"irreversibility_class\":\"two_way\",\"request_digest\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"status\":\"dispatched\",\"type\":\"write_order\"},\"epoch_id\":\"epoch-8\",\"format_version\":\"4\",\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00.000001Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a0582038c3d7b989971aa41921e4e6a0438f2345f86de264c3668887d8af5ba3a48cbe5840656991113aab10c9132bee2bdde96ae111cc28b82d81a092a87e4f55d06ef1cc9c1c2899db59d0cdd184103c00b142fe49e871988ea81977b2a22fd15361b707"
+    },
+    {
+      "name": "build_backfilled",
+      "capsule_id": "1b6ef8f637a02a32d30d32ce70d1615bcad14960f6183794e798ea47c0d4c67b",
+      "capsule_jcs": "{\"action_id\":\"backfill/4\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"1b6ef8f637a02a32d30d32ce70d1615bcad14960f6183794e798ea47c0d4c67b\",\"developer\":\"example-agent@v1\",\"disposition\":{\"approver\":\"counterparty\",\"decision\":\"reject\",\"human_disposed\":false},\"format_version\":\"4\",\"operator\":\"example-org\",\"provenance_mode\":{\"import_batch\":\"batch-1\",\"imported_at\":\"2026-10-01T08:00:00Z\",\"mode\":\"backfilled\",\"source_asserted_at\":\"2026-01-02T03:04:05Z\",\"source_ref\":{\"digest\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"digest_alg\":\"SHA-256\",\"type\":\"foreign-artifact\"},\"time_rung\":\"self_attested\"},\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058201b6ef8f637a02a32d30d32ce70d1615bcad14960f6183794e798ea47c0d4c67b5840c0282259a0939bac9e09c8550f08a25c9c2d9ecb8c0f6a2fc4f190afb9ee748aef9ef1e7830b349586c102eceea76ae3eaf9a8a4f311e1b709a33939f3d18304"
+    },
+    {
+      "name": "build_planned_effect",
+      "capsule_id": "540468220dea4de9e1d34f904ef690fb59dfa1448a15e57a13d0b66eef2527ef",
+      "capsule_jcs": "{\"action_id\":\"planned/5\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"540468220dea4de9e1d34f904ef690fb59dfa1448a15e57a13d0b66eef2527ef\",\"developer\":\"example-agent@v1\",\"effect\":{\"irreversibility_class\":\"two_way\",\"status\":\"planned\",\"type\":\"write_order\"},\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"runtime\":\"only-runtime\"}},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a05820540468220dea4de9e1d34f904ef690fb59dfa1448a15e57a13d0b66eef2527ef584018ff89e1b219cd7ea66d40f93aa7c4cfce6ee72735ebb71ee30c2c0fa6933e737240d4b2a079f33825172771935c9eba668b59c7d5476f3472de2cb8b9d89a07"
+    },
+    {
+      "name": "carry",
+      "capsule_id": "2994be7a0a68fb290a2240b21cca5eafac8fc9453af37001d56fdff948376aeb",
+      "capsule_jcs": "{\"action_id\":\"carry/6\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"2994be7a0a68fb290a2240b21cca5eafac8fc9453af37001d56fdff948376aeb\",\"developer\":\"example-agent@v1\",\"disposition\":{\"approver\":\"policy\",\"decision\":\"accept\",\"human_disposed\":false,\"verdict_class\":\"executed\"},\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"carried_artifact\":{\"digest\":\"1e6a4f4864ca6e4f1f8258d6938457fa342177de95f977cae2520b7f9cc4eecb\",\"digest_alg\":\"SHA-256\",\"type\":\"foreign-artifact\"},\"carried_input_digest\":\"1e6a4f4864ca6e4f1f8258d6938457fa342177de95f977cae2520b7f9cc4eecb\"}},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058202994be7a0a68fb290a2240b21cca5eafac8fc9453af37001d56fdff948376aeb5840489e059961b0e7ee6e2cbd5708ce98faa31fd29525fb85e46222ad261bbfa46b8f379a033d6d7bdfff81cf3f9d7eaef4200d600ef919e230b9ccde8cea16ba04"
+    },
+    {
+      "name": "received",
+      "capsule_id": "5f8ff6179dbd564791baebe898f144ffc77d566a464e848e4b8ac3cab3943730",
+      "capsule_jcs": "{\"action_id\":\"received/7\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"5f8ff6179dbd564791baebe898f144ffc77d566a464e848e4b8ac3cab3943730\",\"developer\":\"example-agent@v1\",\"disposition\":{\"approver\":\"policy\",\"decision\":\"accept\",\"human_disposed\":false,\"verdict_class\":\"executed\"},\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"carried_artifact\":{\"digest\":\"9810509fc23ada21bfce401edcbab4c0cdcdda1bba6e5ccaacae087643da1067\",\"digest_alg\":\"SHA-256\",\"type\":\"machine-mandate\"},\"carried_input_digest\":\"9810509fc23ada21bfce401edcbab4c0cdcdda1bba6e5ccaacae087643da1067\"}},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058205f8ff6179dbd564791baebe898f144ffc77d566a464e848e4b8ac3cab39437305840a43adf14a3c8007b60f7d33a80af1a415f30b87218325f234769be46ebbfc8c83ce1aece69355e491d61fb21e161d2457a146ba259350d77ad8792bfc798970e"
+    },
+    {
+      "name": "seal_null_payload",
+      "capsule_id": "00f91ac91b6b45a164a84ab0e7d2166e09d5edf21d1ccf82fe923b5a6988f54f",
+      "capsule_jcs": "{\"action_id\":\"seal/8\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"00f91ac91b6b45a164a84ab0e7d2166e09d5edf21d1ccf82fe923b5a6988f54f\",\"developer\":\"example-agent@v1\",\"disposition\":{\"approver\":\"policy\",\"decision\":\"accept\",\"human_disposed\":false,\"verdict_class\":\"executed\"},\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"agent_input_digest\":\"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b\",\"agent_output_digest\":\"dd8dd091cfaf3a7b18c554c64332941f885ebdfbcd2a90af1c02449ccec95f4f\",\"runtime\":\"rt@1\"}},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a0582000f91ac91b6b45a164a84ab0e7d2166e09d5edf21d1ccf82fe923b5a6988f54f58408c11c1c8498c2c1266d2b676f5176f2b4fd7f31bde9537cfe9e9f23fd3ec1b1d488e66072822ad775fc3d8e7a1efdc1edca54a14e835322b06ed27ee91441502"
+    },
+    {
+      "name": "seal_model_only",
+      "capsule_id": "c256c0c6244c849e06fecff5f9e0be99e2671635f013832edbb0e310471a821e",
+      "capsule_jcs": "{\"action_id\":\"seal/9\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"c256c0c6244c849e06fecff5f9e0be99e2671635f013832edbb0e310471a821e\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"model_attestation\":{\"provider\":\"example-provider\"},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a05820c256c0c6244c849e06fecff5f9e0be99e2671635f013832edbb0e310471a821e58408a6ae7464ff53362680b42b7ef5c0a977472bbb4fc713d35e2e98329db0f2e3a401a0cfcaf6d894b780ae83cc0a1c5843a94915ae252ca0b46b04a9e8037300d"
+    },
+    {
+      "name": "seal_composition_all_slots",
+      "capsule_id": "a107088160dbe355f8b9f238f0177a2972d8b04f1aadb62da94f079b862c6389",
+      "capsule_jcs": "{\"action_id\":\"compose/10\",\"action_type\":\"decide\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"a107088160dbe355f8b9f238f0177a2972d8b04f1aadb62da94f079b862c6389\",\"developer\":\"example-agent@v1\",\"disposition\":{\"approver\":\"policy\",\"decision\":\"accept\",\"human_disposed\":false,\"verdict_class\":\"executed\"},\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"composed_members\":[{\"digest\":\"2994be7a0a68fb290a2240b21cca5eafac8fc9453af37001d56fdff948376aeb\",\"digest_alg\":\"SHA-256\",\"slot\":\"who\",\"type\":\"capsule\"},{\"digest\":\"5f8ff6179dbd564791baebe898f144ffc77d566a464e848e4b8ac3cab3943730\",\"digest_alg\":\"SHA-256\",\"slot\":\"can\",\"type\":\"capsule\"},{\"digest\":\"00f91ac91b6b45a164a84ab0e7d2166e09d5edf21d1ccf82fe923b5a6988f54f\",\"digest_alg\":\"SHA-256\",\"slot\":\"did\",\"type\":\"capsule\"},{\"digest\":\"dc0658102d0db21e6845b2725e7f226120fbbc116360d6134eeb9c946541b6d3\",\"digest_alg\":\"SHA-256\",\"slot\":\"audit\",\"type\":\"capsule\"}],\"runtime\":\"composer@1\"}},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a05820a107088160dbe355f8b9f238f0177a2972d8b04f1aadb62da94f079b862c63895840d9bf4d31c73f7f576c2a75b0c1968200c4d6cc83ff5998e7869a8f88b8224ac9093e72160085932452f35a8918edc15492f16c6e0b7e10a887901620b92f3e01"
+    },
+    {
+      "name": "composition_partial",
+      "capsule_id": "1ee307dfdc3a14e7f2a8b6a78a5fbee37d8b02d465b2ed35badaac46c1a11d3a",
+      "capsule_jcs": "{\"action_id\":\"compose/11\",\"action_type\":\"fyi\",\"assurance\":{\"attestation_mode\":\"self_attested\",\"effect_mode\":\"not_applicable\",\"ledger_mode\":\"standalone\"},\"canonicalization_id\":\"jcs\",\"capsule_id\":\"1ee307dfdc3a14e7f2a8b6a78a5fbee37d8b02d465b2ed35badaac46c1a11d3a\",\"developer\":\"example-agent@v1\",\"format_version\":\"4\",\"model_attestation\":{\"compute_attestation\":{\"composed_members\":[{\"digest\":\"3b47830b3df18626e9155a3613584dff35d322dbcf13ce0309f1855cd10d1a88\",\"digest_alg\":\"SHA-256\",\"slot\":\"did\",\"type\":\"capsule\"},{\"digest\":\"1b6ef8f637a02a32d30d32ce70d1615bcad14960f6183794e798ea47c0d4c67b\",\"digest_alg\":\"SHA-256\",\"slot\":\"audit\",\"type\":\"capsule\"}]},\"model_id\":\"model-y\"},\"operator\":\"example-org\",\"spec_version\":\"draft-mih-scitt-agent-action-capsule-05\",\"timestamp\":\"2026-10-01T08:00:00Z\"}",
+      "envelope_hex": "d284584ca30378236170706c69636174696f6e2f6167656e742d616374696f6e2d63617073756c652d69640458204fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c40127a058201ee307dfdc3a14e7f2a8b6a78a5fbee37d8b02d465b2ed35badaac46c1a11d3a584088aeea0c55bcf8b97733842695c6495ce3708abb3aef5c80c4edaece29a26bd25c39878092123a6d035b86fc001f3d2c2a5b98d50ae4865b33edae664a68df0a"
+    }
+  ],
+  "digests": [
+    {
+      "name": "object_key_order",
+      "digest": "817c61badd1b1b9c92e13678e2f07664f690fd7fbcede1ea8b2d04210140267e"
+    },
+    {
+      "name": "utf16_key_order",
+      "digest": "c83cb1c85c9b097f4143ea10174a40c7f5b55e80f00b6446699e78b63b767c23"
+    },
+    {
+      "name": "string",
+      "digest": "75788475dbd9270bda11d8e415ad7830f570c66aa4f81bae51054e387a2a80ea"
+    },
+    {
+      "name": "zero",
+      "digest": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "name": "safe_integer_bounds",
+      "digest": "cbad3dd0e71e92fb3519919946bde0ab3086ddacce65983bddec595cb27c19da"
+    },
+    {
+      "name": "null",
+      "digest": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    },
+    {
+      "name": "empty_array",
+      "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  ],
+  "timestamps": [
+    {
+      "input": "2026-10-01T08:00:00Z",
+      "wire": "2026-10-01T08:00:00Z"
+    },
+    {
+      "input": "2026-10-01T08:00:00.5Z",
+      "wire": "2026-10-01T08:00:00.500000Z"
+    },
+    {
+      "input": "2026-10-01T08:00:00.000000999Z",
+      "wire": "2026-10-01T08:00:00Z"
+    },
+    {
+      "input": "2026-10-01T23:30:00.1234567-05:00",
+      "wire": "2026-10-02T04:30:00.123456Z"
+    },
+    {
+      "input": "2026-10-01T08:00:00.000001+00:00",
+      "wire": "2026-10-01T08:00:00.000001Z"
+    },
+    {
+      "input": "2026-03-01T00:30:00+01:00",
+      "wire": "2026-02-28T23:30:00Z"
+    }
+  ],
+  "rejections": [
+    {
+      "name": "action_type_act",
+      "error": "action type must be \"fyi\" or \"decide\""
+    },
+    {
+      "name": "decide_without_disposition",
+      "error": "decide action requires a disposition"
+    },
+    {
+      "name": "blank_operator",
+      "error": "operator is required"
+    },
+    {
+      "name": "planned_effect_with_request",
+      "error": "planned effect must not carry request or response digests"
+    },
+    {
+      "name": "confirmed_without_response",
+      "error": "confirmed effect requires a response digest"
+    },
+    {
+      "name": "unknown_effect_status",
+      "error": "unsupported effect status \"done\""
+    },
+    {
+      "name": "human_disposed_policy",
+      "error": "human-disposed decision requires human approver"
+    },
+    {
+      "name": "unknown_approver",
+      "error": "disposition approver must be \"human\", \"policy\", or \"counterparty\""
+    },
+    {
+      "name": "bad_chain_parent",
+      "error": "chain parent capsule id must be 64 lowercase hex characters"
+    },
+    {
+      "name": "epoch_opens_without_epoch",
+      "error": "epoch_opens chain requires epoch id"
+    },
+    {
+      "name": "backfilled_missing_companions",
+      "error": "backfilled provenance mode requires source ref, source asserted at, imported at"
+    },
+    {
+      "name": "contemporaneous_with_time_rung",
+      "error": "provenance mode source ref, source asserted at, import batch, imported at, and time rung are meaningful only when mode is \"backfilled\""
+    },
+    {
+      "name": "extension_base_member",
+      "error": "extension \"chain\" is a base-profile member"
+    },
+    {
+      "name": "extension_bad_name",
+      "error": "extension name \"Settlement\" must be lowercase letters, digits and underscores, starting with a letter"
+    },
+    {
+      "name": "extension_float",
+      "error": "float at $.settlement.a: floating-point values are forbidden in a Capsule"
+    },
+    {
+      "name": "extension_null",
+      "error": "extension \"settlement\" must not be null"
+    },
+    {
+      "name": "compute_bad_digest",
+      "error": "compute attestation agent input digest must be 64 lowercase hex characters"
+    },
+    {
+      "name": "compute_empty",
+      "error": "compute attestation must include a digest or runtime"
+    },
+    {
+      "name": "model_blank",
+      "error": "model must include provider or model id"
+    },
+    {
+      "name": "carry_with_authored_digest",
+      "error": "carried or composed binding must not include agent input or output digest"
+    },
+    {
+      "name": "carry_empty_artifact",
+      "error": "received artifact must not be empty"
+    },
+    {
+      "name": "received_blank_type",
+      "error": "received artifact type must be a non-empty string"
+    },
+    {
+      "name": "composition_empty",
+      "error": "composition requires at least one slot member"
+    },
+    {
+      "name": "composition_duplicate_slot",
+      "error": "composition duplicates who slot"
+    },
+    {
+      "name": "composition_duplicate_id",
+      "error": "composition can slot duplicates Capsule ID 2994be7a0a68fb290a2240b21cca5eafac8fc9453af37001d56fdff948376aeb from who slot"
+    },
+    {
+      "name": "seal_composition_with_payload",
+      "error": "composition Seal must not include payload or agent output"
+    },
+    {
+      "name": "seal_float_payload",
+      "error": "digest agent input: canonicalize JSON digest input: float at : §5.1 forbids floating-point values in digest-bearing fields"
+    },
+    {
+      "name": "seal_unsafe_integer_output",
+      "error": "digest agent output: canonicalize JSON digest input: unsafe integer at : outside ±9007199254740991 (§5.1)"
+    },
+    {
+      "name": "witnessed_without_corroboration",
+      "error": "built payload failed AAC Class 1: AAC Class 1 verification failed: check=9 severity=error code=provenance_time_rung_overclaim detail=provenance_mode.time_rung='witnessed' claimed without a well-formed references[] entry citing citation_purpose='corroborates_source_time' (§5.3(bis) Provenance mode)"
+    },
+    {
+      "name": "seal_model_on_capsule",
+      "error": "SealInput model and compute metadata must use Model and Runtime fields"
+    }
+  ]
+}
