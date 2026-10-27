@@ -144,304 +144,325 @@ pub fn digest_json<T: serde::Serialize + ?Sized>(value: &T) -> Result<String, Pr
 }
 
 fn marshal_digest_value<T: serde::Serialize + ?Sized>(value: &T) -> Result<Value, ProduceError> {
-    let marshal_error =
-        |e: String| ProduceError::invalid(format!("marshal JSON digest input: {e}"));
-    value
-        .serialize(floats::FiniteCheck)
-        .map_err(|e| marshal_error(e.0))?;
     let mut encoded = Vec::new();
-    value
-        .serialize(&mut serde_json::Serializer::with_formatter(
-            &mut encoded,
-            floats::GoFloats,
-        ))
-        .map_err(|e| marshal_error(e.to_string()))?;
+    floats::serialize(value, &mut serde_json::Serializer::new(&mut encoded))
+        .map_err(|e| ProduceError::invalid(format!("marshal JSON digest input: {e}")))?;
     decode_strict_json(&encoded)
         .map_err(|e| ProduceError::invalid(format!("decode JSON digest input: {e}")))
 }
 
-/// How Go's `encoding/json/v2` marshals native floats, which `serde_json`
+/// Native floats as Go's `encoding/json/v2` marshals them, which `serde_json`
 /// does differently: Go refuses NaN and infinities (`serde_json` writes
-/// `null`) and writes an integral value below 1e21 without a fraction (`2`,
-/// `-0`), where `serde_json` writes `2.0`.
+/// `null`) and writes an integral value below 1e21 as the shortest digits
+/// that round-trip at the value's own width, without a fraction (`2`,
+/// `100000010` for the f32 nearest it), where `serde_json` writes `2.0`.
+///
+/// [`serialize`] makes one pass over the caller's value: [`GoFloats`] wraps
+/// the `serde_json` serializer, rewrites each float as it arrives and
+/// forwards everything else unchanged, wrapping every nested value again.
 mod floats {
-    use serde::ser::{self, Serialize};
-    use std::io;
+    use serde::ser::{self, Error as _, Serialize, Serializer};
 
-    /// Writes finite integral floats below 1e21 as integers; larger or
-    /// fractional values keep `serde_json`'s form, which the strict decoder
-    /// then reads as a float, as it reads Go's exponent form.
-    pub(super) struct GoFloats;
-
-    fn integral(value: f64) -> bool {
-        value.fract() == 0.0 && value.abs() < 1e21
+    /// Serializes `value` into `serializer` with Go's float handling.
+    pub(super) fn serialize<T: ?Sized + Serialize, S: Serializer>(
+        value: &T,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value.serialize(GoFloats(serializer))
     }
 
-    impl serde_json::ser::Formatter for GoFloats {
-        fn write_f64<W: ?Sized + io::Write>(
-            &mut self,
-            writer: &mut W,
-            value: f64,
-        ) -> io::Result<()> {
-            if integral(value) {
-                write!(writer, "{value:.0}")
-            } else {
-                serde_json::ser::CompactFormatter.write_f64(writer, value)
-            }
-        }
-
-        fn write_f32<W: ?Sized + io::Write>(
-            &mut self,
-            writer: &mut W,
-            value: f32,
-        ) -> io::Result<()> {
-            if integral(f64::from(value)) {
-                write!(writer, "{value:.0}")
-            } else {
-                serde_json::ser::CompactFormatter.write_f32(writer, value)
-            }
-        }
+    /// What Go writes for a finite float: `Some(digits)` when the value is
+    /// integral and below 1e21, which `Display` (shortest round-trip digits,
+    /// never an exponent) prints without a fraction; `None` when the value
+    /// keeps `serde_json`'s float form, which the strict decoder then reads
+    /// as a float, as it reads Go's fraction or exponent form.
+    pub(super) fn integer_text(text: String, magnitude: f64) -> Option<String> {
+        (magnitude < 1e21 && !text.contains(['.', 'e', 'E'])).then_some(text)
     }
 
-    /// Why a value has no JSON form: a NaN or infinite float.
-    #[derive(Debug)]
-    pub(super) struct NonFinite(pub(super) String);
-
-    impl std::fmt::Display for NonFinite {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str(&self.0)
-        }
-    }
-
-    impl std::error::Error for NonFinite {}
-
-    impl ser::Error for NonFinite {
-        fn custom<T: std::fmt::Display>(message: T) -> Self {
-            Self(message.to_string())
-        }
-    }
-
-    fn check(value: f64) -> Result<(), NonFinite> {
+    fn unsupported<E: ser::Error>(value: f64) -> E {
         let name = if value.is_nan() {
             "NaN"
-        } else if value == f64::INFINITY {
+        } else if value > 0.0 {
             "+Inf"
-        } else if value == f64::NEG_INFINITY {
-            "-Inf"
         } else {
-            return Ok(());
+            "-Inf"
         };
-        Err(NonFinite(format!("unsupported value: {name}")))
+        E::custom(format!("unsupported value: {name}"))
     }
 
-    /// A serializer that writes nothing and refuses the first NaN or
-    /// infinite float anywhere in a value.
-    pub(super) struct FiniteCheck;
+    fn write_integer<S: Serializer>(serializer: S, digits: &str) -> Result<S::Ok, S::Error> {
+        // Below 1e21, so always within i128.
+        let integer: i128 = digits
+            .parse()
+            .map_err(|_| S::Error::custom("float digits are not an integer"))?;
+        serializer.serialize_i128(integer)
+    }
 
-    type Done = Result<(), NonFinite>;
+    /// A serialized value wrapped so its own floats go through [`GoFloats`].
+    struct Wrap<'a, T: ?Sized>(&'a T);
 
-    impl ser::Serializer for FiniteCheck {
-        type Ok = ();
-        type Error = NonFinite;
-        type SerializeSeq = Self;
-        type SerializeTuple = Self;
-        type SerializeTupleStruct = Self;
-        type SerializeTupleVariant = Self;
-        type SerializeMap = Self;
-        type SerializeStruct = Self;
-        type SerializeStructVariant = Self;
+    impl<T: ?Sized + Serialize> Serialize for Wrap<'_, T> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            self.0.serialize(GoFloats(serializer))
+        }
+    }
 
-        fn serialize_f32(self, v: f32) -> Done {
-            check(f64::from(v))
+    pub(super) struct GoFloats<S>(S);
+
+    /// A compound serializer of the wrapped serializer, wrapping each element.
+    pub(super) struct Compound<C>(C);
+
+    impl<S: Serializer> Serializer for GoFloats<S> {
+        type Ok = S::Ok;
+        type Error = S::Error;
+        type SerializeSeq = Compound<S::SerializeSeq>;
+        type SerializeTuple = Compound<S::SerializeTuple>;
+        type SerializeTupleStruct = Compound<S::SerializeTupleStruct>;
+        type SerializeTupleVariant = Compound<S::SerializeTupleVariant>;
+        type SerializeMap = Compound<S::SerializeMap>;
+        type SerializeStruct = Compound<S::SerializeStruct>;
+        type SerializeStructVariant = Compound<S::SerializeStructVariant>;
+
+        fn serialize_f32(self, v: f32) -> Result<S::Ok, S::Error> {
+            if !v.is_finite() {
+                return Err(unsupported(f64::from(v)));
+            }
+            match integer_text(v.to_string(), f64::from(v.abs())) {
+                Some(digits) => write_integer(self.0, &digits),
+                None => self.0.serialize_f32(v),
+            }
         }
-        fn serialize_f64(self, v: f64) -> Done {
-            check(v)
+        fn serialize_f64(self, v: f64) -> Result<S::Ok, S::Error> {
+            if !v.is_finite() {
+                return Err(unsupported(v));
+            }
+            match integer_text(v.to_string(), v.abs()) {
+                Some(digits) => write_integer(self.0, &digits),
+                None => self.0.serialize_f64(v),
+            }
         }
-        fn serialize_bool(self, _: bool) -> Done {
-            Ok(())
+
+        fn serialize_bool(self, v: bool) -> Result<S::Ok, S::Error> {
+            self.0.serialize_bool(v)
         }
-        fn serialize_i8(self, _: i8) -> Done {
-            Ok(())
+        fn serialize_i8(self, v: i8) -> Result<S::Ok, S::Error> {
+            self.0.serialize_i8(v)
         }
-        fn serialize_i16(self, _: i16) -> Done {
-            Ok(())
+        fn serialize_i16(self, v: i16) -> Result<S::Ok, S::Error> {
+            self.0.serialize_i16(v)
         }
-        fn serialize_i32(self, _: i32) -> Done {
-            Ok(())
+        fn serialize_i32(self, v: i32) -> Result<S::Ok, S::Error> {
+            self.0.serialize_i32(v)
         }
-        fn serialize_i64(self, _: i64) -> Done {
-            Ok(())
+        fn serialize_i64(self, v: i64) -> Result<S::Ok, S::Error> {
+            self.0.serialize_i64(v)
         }
-        fn serialize_i128(self, _: i128) -> Done {
-            Ok(())
+        fn serialize_i128(self, v: i128) -> Result<S::Ok, S::Error> {
+            self.0.serialize_i128(v)
         }
-        fn serialize_u8(self, _: u8) -> Done {
-            Ok(())
+        fn serialize_u8(self, v: u8) -> Result<S::Ok, S::Error> {
+            self.0.serialize_u8(v)
         }
-        fn serialize_u16(self, _: u16) -> Done {
-            Ok(())
+        fn serialize_u16(self, v: u16) -> Result<S::Ok, S::Error> {
+            self.0.serialize_u16(v)
         }
-        fn serialize_u32(self, _: u32) -> Done {
-            Ok(())
+        fn serialize_u32(self, v: u32) -> Result<S::Ok, S::Error> {
+            self.0.serialize_u32(v)
         }
-        fn serialize_u64(self, _: u64) -> Done {
-            Ok(())
+        fn serialize_u64(self, v: u64) -> Result<S::Ok, S::Error> {
+            self.0.serialize_u64(v)
         }
-        fn serialize_u128(self, _: u128) -> Done {
-            Ok(())
+        fn serialize_u128(self, v: u128) -> Result<S::Ok, S::Error> {
+            self.0.serialize_u128(v)
         }
-        fn serialize_char(self, _: char) -> Done {
-            Ok(())
+        fn serialize_char(self, v: char) -> Result<S::Ok, S::Error> {
+            self.0.serialize_char(v)
         }
-        fn serialize_str(self, _: &str) -> Done {
-            Ok(())
+        fn serialize_str(self, v: &str) -> Result<S::Ok, S::Error> {
+            self.0.serialize_str(v)
         }
-        fn serialize_bytes(self, _: &[u8]) -> Done {
-            Ok(())
+        fn serialize_bytes(self, v: &[u8]) -> Result<S::Ok, S::Error> {
+            self.0.serialize_bytes(v)
         }
-        fn serialize_none(self) -> Done {
-            Ok(())
+        fn serialize_none(self) -> Result<S::Ok, S::Error> {
+            self.0.serialize_none()
         }
-        fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Done {
-            value.serialize(self)
+        fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<S::Ok, S::Error> {
+            self.0.serialize_some(&Wrap(value))
         }
-        fn serialize_unit(self) -> Done {
-            Ok(())
+        fn serialize_unit(self) -> Result<S::Ok, S::Error> {
+            self.0.serialize_unit()
         }
-        fn serialize_unit_struct(self, _: &'static str) -> Done {
-            Ok(())
+        fn serialize_unit_struct(self, name: &'static str) -> Result<S::Ok, S::Error> {
+            self.0.serialize_unit_struct(name)
         }
-        fn serialize_unit_variant(self, _: &'static str, _: u32, _: &'static str) -> Done {
-            Ok(())
+        fn serialize_unit_variant(
+            self,
+            name: &'static str,
+            index: u32,
+            variant: &'static str,
+        ) -> Result<S::Ok, S::Error> {
+            self.0.serialize_unit_variant(name, index, variant)
         }
         fn serialize_newtype_struct<T: ?Sized + Serialize>(
             self,
-            _: &'static str,
+            name: &'static str,
             value: &T,
-        ) -> Done {
-            value.serialize(self)
+        ) -> Result<S::Ok, S::Error> {
+            self.0.serialize_newtype_struct(name, &Wrap(value))
         }
         fn serialize_newtype_variant<T: ?Sized + Serialize>(
             self,
-            _: &'static str,
-            _: u32,
-            _: &'static str,
+            name: &'static str,
+            index: u32,
+            variant: &'static str,
             value: &T,
-        ) -> Done {
-            value.serialize(self)
+        ) -> Result<S::Ok, S::Error> {
+            self.0
+                .serialize_newtype_variant(name, index, variant, &Wrap(value))
         }
-        fn serialize_seq(self, _: Option<usize>) -> Result<Self, NonFinite> {
-            Ok(self)
+        fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, S::Error> {
+            self.0.serialize_seq(len).map(Compound)
         }
-        fn serialize_tuple(self, _: usize) -> Result<Self, NonFinite> {
-            Ok(self)
+        fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, S::Error> {
+            self.0.serialize_tuple(len).map(Compound)
         }
-        fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<Self, NonFinite> {
-            Ok(self)
+        fn serialize_tuple_struct(
+            self,
+            name: &'static str,
+            len: usize,
+        ) -> Result<Self::SerializeTupleStruct, S::Error> {
+            self.0.serialize_tuple_struct(name, len).map(Compound)
         }
         fn serialize_tuple_variant(
             self,
-            _: &'static str,
-            _: u32,
-            _: &'static str,
-            _: usize,
-        ) -> Result<Self, NonFinite> {
-            Ok(self)
+            name: &'static str,
+            index: u32,
+            variant: &'static str,
+            len: usize,
+        ) -> Result<Self::SerializeTupleVariant, S::Error> {
+            self.0
+                .serialize_tuple_variant(name, index, variant, len)
+                .map(Compound)
         }
-        fn serialize_map(self, _: Option<usize>) -> Result<Self, NonFinite> {
-            Ok(self)
+        fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, S::Error> {
+            self.0.serialize_map(len).map(Compound)
         }
-        fn serialize_struct(self, _: &'static str, _: usize) -> Result<Self, NonFinite> {
-            Ok(self)
+        fn serialize_struct(
+            self,
+            name: &'static str,
+            len: usize,
+        ) -> Result<Self::SerializeStruct, S::Error> {
+            self.0.serialize_struct(name, len).map(Compound)
         }
         fn serialize_struct_variant(
             self,
-            _: &'static str,
-            _: u32,
-            _: &'static str,
-            _: usize,
-        ) -> Result<Self, NonFinite> {
-            Ok(self)
+            name: &'static str,
+            index: u32,
+            variant: &'static str,
+            len: usize,
+        ) -> Result<Self::SerializeStructVariant, S::Error> {
+            self.0
+                .serialize_struct_variant(name, index, variant, len)
+                .map(Compound)
+        }
+        fn is_human_readable(&self) -> bool {
+            self.0.is_human_readable()
         }
     }
 
-    impl ser::SerializeSeq for FiniteCheck {
-        type Ok = ();
-        type Error = NonFinite;
-        fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Done {
-            value.serialize(FiniteCheck)
+    impl<C: ser::SerializeSeq> ser::SerializeSeq for Compound<C> {
+        type Ok = C::Ok;
+        type Error = C::Error;
+        fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), C::Error> {
+            self.0.serialize_element(&Wrap(value))
         }
-        fn end(self) -> Done {
-            Ok(())
-        }
-    }
-
-    impl ser::SerializeTuple for FiniteCheck {
-        type Ok = ();
-        type Error = NonFinite;
-        fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Done {
-            value.serialize(FiniteCheck)
-        }
-        fn end(self) -> Done {
-            Ok(())
+        fn end(self) -> Result<C::Ok, C::Error> {
+            self.0.end()
         }
     }
 
-    impl ser::SerializeTupleStruct for FiniteCheck {
-        type Ok = ();
-        type Error = NonFinite;
-        fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Done {
-            value.serialize(FiniteCheck)
+    impl<C: ser::SerializeTuple> ser::SerializeTuple for Compound<C> {
+        type Ok = C::Ok;
+        type Error = C::Error;
+        fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), C::Error> {
+            self.0.serialize_element(&Wrap(value))
         }
-        fn end(self) -> Done {
-            Ok(())
-        }
-    }
-
-    impl ser::SerializeTupleVariant for FiniteCheck {
-        type Ok = ();
-        type Error = NonFinite;
-        fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Done {
-            value.serialize(FiniteCheck)
-        }
-        fn end(self) -> Done {
-            Ok(())
+        fn end(self) -> Result<C::Ok, C::Error> {
+            self.0.end()
         }
     }
 
-    impl ser::SerializeMap for FiniteCheck {
-        type Ok = ();
-        type Error = NonFinite;
-        fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Done {
-            key.serialize(FiniteCheck)
+    impl<C: ser::SerializeTupleStruct> ser::SerializeTupleStruct for Compound<C> {
+        type Ok = C::Ok;
+        type Error = C::Error;
+        fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), C::Error> {
+            self.0.serialize_field(&Wrap(value))
         }
-        fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Done {
-            value.serialize(FiniteCheck)
-        }
-        fn end(self) -> Done {
-            Ok(())
+        fn end(self) -> Result<C::Ok, C::Error> {
+            self.0.end()
         }
     }
 
-    impl ser::SerializeStruct for FiniteCheck {
-        type Ok = ();
-        type Error = NonFinite;
-        fn serialize_field<T: ?Sized + Serialize>(&mut self, _: &'static str, value: &T) -> Done {
-            value.serialize(FiniteCheck)
+    impl<C: ser::SerializeTupleVariant> ser::SerializeTupleVariant for Compound<C> {
+        type Ok = C::Ok;
+        type Error = C::Error;
+        fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), C::Error> {
+            self.0.serialize_field(&Wrap(value))
         }
-        fn end(self) -> Done {
-            Ok(())
+        fn end(self) -> Result<C::Ok, C::Error> {
+            self.0.end()
         }
     }
 
-    impl ser::SerializeStructVariant for FiniteCheck {
-        type Ok = ();
-        type Error = NonFinite;
-        fn serialize_field<T: ?Sized + Serialize>(&mut self, _: &'static str, value: &T) -> Done {
-            value.serialize(FiniteCheck)
+    impl<C: ser::SerializeMap> ser::SerializeMap for Compound<C> {
+        type Ok = C::Ok;
+        type Error = C::Error;
+        fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), C::Error> {
+            self.0.serialize_key(&Wrap(key))
         }
-        fn end(self) -> Done {
-            Ok(())
+        fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), C::Error> {
+            self.0.serialize_value(&Wrap(value))
+        }
+        fn end(self) -> Result<C::Ok, C::Error> {
+            self.0.end()
+        }
+    }
+
+    impl<C: ser::SerializeStruct> ser::SerializeStruct for Compound<C> {
+        type Ok = C::Ok;
+        type Error = C::Error;
+        fn serialize_field<T: ?Sized + Serialize>(
+            &mut self,
+            key: &'static str,
+            value: &T,
+        ) -> Result<(), C::Error> {
+            self.0.serialize_field(key, &Wrap(value))
+        }
+        fn skip_field(&mut self, key: &'static str) -> Result<(), C::Error> {
+            self.0.skip_field(key)
+        }
+        fn end(self) -> Result<C::Ok, C::Error> {
+            self.0.end()
+        }
+    }
+
+    impl<C: ser::SerializeStructVariant> ser::SerializeStructVariant for Compound<C> {
+        type Ok = C::Ok;
+        type Error = C::Error;
+        fn serialize_field<T: ?Sized + Serialize>(
+            &mut self,
+            key: &'static str,
+            value: &T,
+        ) -> Result<(), C::Error> {
+            self.0.serialize_field(key, &Wrap(value))
+        }
+        fn skip_field(&mut self, key: &'static str) -> Result<(), C::Error> {
+            self.0.skip_field(key)
+        }
+        fn end(self) -> Result<C::Ok, C::Error> {
+            self.0.end()
         }
     }
 }
@@ -570,12 +591,73 @@ mod tests {
         assert!(duplicate_key(b"{\"a").is_err());
     }
 
+    /// Integral floats below 1e21 are written as Go's `encoding/json/v2`
+    /// writes them: shortest round-trip digits at the value's own width.
+    #[test]
+    fn integral_float_text_is_go_shortest_form() {
+        // Go's encoding/json/v2 output for each value, from a Go 1.27 run.
+        for (text, magnitude, go) in [
+            (100000010f32.to_string(), 100000008.0, Some("100000010")),
+            (3e20f32.to_string(), 3e20, Some("300000000000000000000")),
+            (
+                123456789012345678901.0f64.to_string(),
+                123456789012345678901.0,
+                Some("123456789012345680000"),
+            ),
+            (1e20f64.to_string(), 1e20, Some("100000000000000000000")),
+            (1e21f64.to_string(), 1e21, None),
+            (1.5f64.to_string(), 1.5, None),
+            (1e-7f64.to_string(), 1e-7, None),
+        ] {
+            assert_eq!(
+                floats::integer_text(text.clone(), magnitude).as_deref(),
+                go,
+                "{text}"
+            );
+        }
+    }
+
+    /// The caller's value is serialized once: a value that changes between
+    /// serializations cannot pass a check and then write something else.
+    #[test]
+    fn a_value_is_serialized_once() {
+        struct Flaky(std::cell::Cell<u32>);
+        impl serde::Serialize for Flaky {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                let calls = self.0.get();
+                self.0.set(calls + 1);
+                s.serialize_f64(if calls == 0 { 0.0 } else { f64::NAN })
+            }
+        }
+        let flaky = Flaky(std::cell::Cell::new(0));
+        assert_eq!(
+            digest_json(&flaky).unwrap(),
+            digest_json(&json!(0)).unwrap()
+        );
+        assert_eq!(flaky.0.get(), 1);
+        assert_eq!(
+            digest_json(&flaky).unwrap_err().to_string(),
+            "marshal JSON digest input: unsupported value: NaN"
+        );
+    }
+
     /// Native floats are written as Go's `encoding/json/v2` writes them.
     #[test]
     fn native_floats_digest_as_go_marshals_them() {
         let digest = |text: &str| digest_json(&decode_strict_json(text.as_bytes()).unwrap());
         assert_eq!(digest_json(&2.0f64).unwrap(), digest("2").unwrap());
         assert_eq!(digest_json(&2.0f32).unwrap(), digest("2").unwrap());
+        // The f32 nearest 100000010 is exactly 100000008; Go writes the
+        // shortest digits that round-trip at 32 bits, 100000010.
+        assert_eq!(f64::from(100000010f32), 100000008.0);
+        assert_eq!(
+            digest_json(&100000010f32).unwrap(),
+            digest("100000010").unwrap()
+        );
+        assert_eq!(
+            digest_json(&16777217f32).unwrap(),
+            digest("16777216").unwrap()
+        );
         assert_eq!(digest_json(&-0.0f64).unwrap(), digest("0").unwrap());
         // Go writes 1e20 as 100000000000000000000, an unsafe integer.
         assert!(digest_json(&1e20f64)
