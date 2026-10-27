@@ -405,3 +405,27 @@ def test_deep_json_within_the_limit_is_a_value_error_not_a_recursion_error():
         p.digest_json(value)
     with pytest.raises(ValueError):
         p.build(_input(extensions=(p.Extension("deep", json.dumps(value)),)))
+
+
+def test_whole_number_floats_digest_as_integers_like_go():
+    assert p.digest_json({"x": 1.0, "y": [0.0, -0.0]}) == p.digest_json({"x": 1, "y": [0, 0]})
+    with pytest.raises(ValueError):
+        p.digest_json({"x": 1.5})
+    with pytest.raises(ValueError):
+        p.digest_json(float("nan"))
+    reference = p.Reference(type="capsule", digest_alg="SHA-256", digest=HEX_A, log_coordinates={**COORDS, "leaf_index": 3.0})
+    built = p.build(_input(references=(reference,)))
+    assert built.value["references"][0]["log_coordinates"]["leaf_index"] == 3
+
+
+def test_timestamp_boundaries_are_value_errors():
+    for bad in (
+        datetime(1, 1, 1, tzinfo=timezone.utc),
+        "0001-01-01T00:00:00Z",
+        "0001-01-01T00:00:00+01:00",
+        "9999-12-31T23:59:59-01:00",
+        datetime(9999, 12, 31, 23, 59, tzinfo=timezone(timedelta(hours=-1))),
+    ):
+        with pytest.raises(ValueError):
+            p.format_timestamp(bad)
+    assert p.format_timestamp("0001-01-01T00:00:01Z") == "0001-01-01T00:00:01Z"

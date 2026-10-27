@@ -24,7 +24,39 @@ def digest_json(value: Any) -> str:
     outside the interoperable range, lone surrogates and excessive depth are
     rejected with ``ValueError``; other types with ``TypeError``."""
     check_json_value(value, "$")
-    return canonical(json_digest, value)
+    return canonical(json_digest, integral_floats(value))
+
+
+def integral_floats(value: Any) -> Any:
+    """Copy ``value`` with each finite whole-number ``float`` as an ``int``
+    (``-0.0`` as ``0``), as Go's digest does by marshaling the value before
+    canonicalizing: ``1.0`` digests as ``1``. Other floats are kept, so the
+    canonicalizer still rejects them. Iterative, so depth costs no recursion."""
+
+    def convert(item: Any) -> Any:
+        if isinstance(item, float) and item == item and item not in (float("inf"), float("-inf")) and item.is_integer():
+            return int(item)
+        if isinstance(item, dict):
+            return {}
+        if isinstance(item, list):
+            return [None] * len(item)
+        return item
+
+    root = convert(value)
+    stack: list = [(value, root)]
+    while stack:
+        source, target = stack.pop()
+        if isinstance(source, dict):
+            members = source.items()
+        elif isinstance(source, list):
+            members = enumerate(source)
+        else:
+            continue
+        for key, member in members:
+            copy = convert(member)
+            target[key] = copy
+            stack.append((member, copy))
+    return root
 
 
 def canonical(call: Callable[..., _T], *args: Any) -> _T:

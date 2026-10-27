@@ -31,7 +31,7 @@ from .constants import (
     ProvenanceModeValue,
     TimeRung,
 )
-from .digest import canonical, check_json_value, decode_strict_json
+from .digest import canonical, check_json_value, decode_strict_json, integral_floats
 from .model import (
     BuiltPayload,
     Chain,
@@ -141,6 +141,9 @@ def build_with_binding(input: Input, binding: dict[str, Any] | None) -> BuiltPay
     return BuiltPayload(capsule_id=capsule_id, value=canonical(json.loads, encoded), json=encoded)
 
 
+_GO_ZERO_TIME = datetime(1, 1, 1, tzinfo=timezone.utc)
+
+
 def format_timestamp(timestamp: Any) -> str:
     """Render a timestamp in the UTC wire form Go and TypeScript share: whole
     seconds omit the fraction, otherwise six fractional digits. Sub-microsecond
@@ -148,7 +151,10 @@ def format_timestamp(timestamp: Any) -> str:
     if isinstance(timestamp, datetime):
         if timestamp.tzinfo is None or timestamp.utcoffset() is None:
             raise ValueError("timestamp must be timezone-aware")
-        utc = timestamp.astimezone(timezone.utc)
+        try:
+            utc = timestamp.astimezone(timezone.utc)
+        except OverflowError:
+            raise ValueError("timestamp is invalid") from None
     elif isinstance(timestamp, str):
         match = _TIMESTAMP.fullmatch(timestamp)
         if match is None:
@@ -163,9 +169,16 @@ def format_timestamp(timestamp: Any) -> str:
             hours, minutes = int(offset[1:3]), int(offset[4:6])
             if hours > 23 or minutes > 59:
                 raise ValueError("timestamp is invalid")
-            parsed -= sign * timedelta(hours=hours, minutes=minutes)
+            try:
+                parsed -= sign * timedelta(hours=hours, minutes=minutes)
+            except OverflowError:
+                raise ValueError("timestamp is invalid") from None
         utc = parsed.replace(microsecond=int(fraction.ljust(9, "0")[:6]), tzinfo=timezone.utc)
     else:
+        raise ValueError("timestamp is required")
+    # Go's zero time.Time is its "no timestamp"; the same instant is refused
+    # here so both build the same set of Capsules.
+    if utc == _GO_ZERO_TIME:
         raise ValueError("timestamp is required")
     text = (
         f"{utc.year:04d}-{utc.month:02d}-{utc.day:02d}T"
@@ -401,7 +414,7 @@ def _copy_json(value: Mapping[str, Any], what: str) -> Any:
         if not isinstance(value, dict):
             value = dict(value)
         check_json_value(value, "$")
-        return canonical(json.loads, canonical(jcs, value))
+        return canonical(json.loads, canonical(jcs, integral_floats(value)))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{what}: {exc}") from None
 
