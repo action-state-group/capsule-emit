@@ -18,6 +18,13 @@ methods are unchanged.
 | Hermes / custom loop | [hermes.md](hermes.md) | `HermesCapsuleEmitter` | call at tool boundary |
 | Google ADK | [adk.md](adk.md) | `ADKCapsuleEmitter` | tool callback / event tap |
 | Dapr Agents | [dapr_agents.md](dapr_agents.md) | `DaprAgentsCapsuleEmitter` | tool decorator + HITL gate |
+| Strands Agents | [strands.md](strands.md) | `StrandsCapsuleListener` | hook provider on `Agent(hooks=[...])` |
+| LlamaIndex | [llamaindex.md](llamaindex.md) | `LlamaIndexCapsuleListener` | span handler on the instrumentation dispatcher |
+| Agno | [agno.md](agno.md) | `AgnoCapsuleListener` | `tool_hooks` on `Agent` / `Team` / `@tool` |
+| OpenAI Agents SDK | [openai-agents.md](openai-agents.md) | `OpenAIAgentsCapsuleProcessor` / `OpenAIAgentsCapsuleHooks` | trace processor + `RunHooks` |
+| Microsoft Agent Framework | [msft-agent-framework.md](msft-agent-framework.md) | `CapsuleRunMiddleware` / `CapsuleFunctionMiddleware` | `Agent(middleware=[...])` |
+| Goose | [goose.md](goose.md) | `MCPCapsuleEmitter` | `@emitter.tool()` inside your Goose MCP extension |
+| agentgateway | [agentgateway.md](agentgateway.md) | `CapsuleEmitServicer` | ExtMcp processor on `mcpGuardrails` |
 | LiteLLM proxy | [litellm.md](litellm.md) | `LiteLLMCapsuleListener` | `config.yaml` callback (out of tree) |
 | OpenTelemetry | [../extensions/otel-correlation.md](../extensions/otel-correlation.md) | `CapsuleOTelSpanExporter` | `SpanExporter` on your `TracerProvider` |
 
