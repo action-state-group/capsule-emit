@@ -7,6 +7,8 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+## 0.0.9
+
 - **The `produce` module: the Go module's producing calls.** `build`,
   `received`, `carry`, `who`/`can`/`did`/`audit`, `build_composition`,
   `digest_json`, `sign`, `seal`, `verify_capsule`, `verify_envelope`,
