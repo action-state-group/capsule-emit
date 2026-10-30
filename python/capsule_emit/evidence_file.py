@@ -151,7 +151,11 @@ class EvidenceFileCheck:
     """The witness-receipt check. Outside ``checks``: only a failing receipt
     gates the verdict (see the module docstring)."""
     witness_receipts: list[dict[str, Any]] = field(default_factory=list)
-    """One entry per receipt: ``ts_url``, ``binding``, ``status``, ``reason``."""
+    """One entry per receipt: ``ts_url``, ``binding``, ``status``, ``reason``,
+    and AAC's checked ``registration_time`` (the ``iat`` the witness signed, in
+    seconds since the epoch, or ``None``) with ``registration_time_reason``
+    (why it is ``None``). Nothing here compares it with the checkpoint's
+    ``timestamp`` or the current time."""
 
     @property
     def ok(self) -> bool:
@@ -268,7 +272,14 @@ def check_evidence_file(
         extensions=tuple(sorted(str(k) for k in extensions)),
         witness=witness,
         witness_receipts=[
-            {"ts_url": w.ts_url, "binding": w.binding, "status": w.status, "reason": w.reason}
+            {
+                "ts_url": w.ts_url,
+                "binding": w.binding,
+                "status": w.status,
+                "reason": w.reason,
+                "registration_time": w.registration_time,
+                "registration_time_reason": w.registration_time_reason,
+            }
             for w in result.witness_receipts
         ],
     )

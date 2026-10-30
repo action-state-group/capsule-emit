@@ -15,6 +15,7 @@ import base64
 import json
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -27,8 +28,11 @@ from _stub_receipt import (  # noqa: E402
     checkpoint_dict_from_cose,
     checkpoint_entry_hash,
 )
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 from cryptography.hazmat.primitives.serialization import (  # noqa: E402
     Encoding,
+    NoEncryption,
+    PrivateFormat,
     PublicFormat,
     load_pem_public_key,
 )
@@ -158,3 +162,84 @@ def test_the_cli_shows_the_receipt(tmp_path):
     assert f"{WITNESS}: ok" in out.stdout
     out = subprocess.run([*verify, "--json"], capture_output=True, text=True)
     assert json.loads(out.stdout)["witnesses"]["status"] == "withheld"
+
+
+# --- the checked registration time (agent-action-capsule#392, capsule-emit#363) ---
+
+
+def _with_iat(bundle: dict, iat: int | None, *, key_pem: bytes | None = None) -> dict:
+    """Replace the receipt with one whose protected CWT claims carry ``iat``."""
+    from _stub_receipt import TEST_TS_PRIVATE_KEY_PEM
+    from scitt_cose import build_receipt
+
+    receipt = bundle["checkpoint"]["witnesses"][0]
+    receipt["receipt_b64"] = base64.b64encode(
+        build_receipt(
+            leaf_entry_hex=receipt["entry_hash"],
+            leaf_index=0,
+            tree_entries_hex=[receipt["entry_hash"]],
+            alg="EdDSA",
+            log_private_key_pem=key_pem or TEST_TS_PRIVATE_KEY_PEM,
+            iat=iat,
+        )
+    ).decode()
+    return bundle
+
+
+def _times(check) -> list[tuple]:
+    return [(r["registration_time"], r["registration_time_reason"]) for r in check.witness_receipts]
+
+
+def test_a_passing_receipt_reports_the_iat_the_witness_signed():
+    bundle = _witnessed()
+    # 90 seconds after the checkpoint: the time comes from the receipt, never the checkpoint.
+    stamp = json.loads(VECTOR.read_text())["checkpoint"]["timestamp"]
+    iat = int(datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()) + 90
+    check = check_evidence_file(_with_iat(bundle, iat), witness_directory=_directory())
+    assert check.witness.status == "pass"
+    assert _times(check) == [(iat, None)]
+    assert check.to_dict()["witnesses"]["receipts"][0]["registration_time"] == iat
+
+
+def test_a_receipt_without_an_iat_names_why():
+    check = check_evidence_file(_witnessed(), witness_directory=_directory())
+    assert check.witness.status == "pass"
+    assert _times(check) == [(None, "iat_absent")]
+
+
+def test_a_receipt_that_did_not_pass_reports_no_time():
+    withheld = check_evidence_file(_with_iat(_witnessed(), 1_700_000_000))
+    assert withheld.witness.status == "withheld"
+    assert _times(withheld) == [(None, "receipt_not_passed")]
+
+    other_key = Ed25519PrivateKey.generate().private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+    wrong = check_evidence_file(
+        _with_iat(_witnessed(), 1_700_000_000, key_pem=other_key), witness_directory=_directory()
+    )
+    assert wrong.verdict == "INVALID"
+    assert _times(wrong) == [(None, "receipt_not_passed")]
+
+
+def test_verify_bundle_prints_the_time_and_the_json_carries_it(tmp_path, capsys):
+    from capsule_emit.cli import main
+
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(json.dumps(_with_iat(_witnessed(), 1_700_000_000)))
+    directory = tmp_path / "dir.json"
+    directory.write_text(json.dumps(_directory()))
+    args = ["verify", "--bundle", str(bundle), "--witness-directory", str(directory)]
+    main(args)
+    out = capsys.readouterr().out
+    assert "witness-signed time 2023-11-14T22:13:20Z (not checked against the checkpoint or now)" in out
+    main([*args, "--json"])
+    receipts = json.loads(capsys.readouterr().out)["witnesses"]["receipts"]
+    assert receipts[0]["registration_time"] == 1_700_000_000 and receipts[0]["registration_time_reason"] is None
+
+
+def test_rekor_receipt_line_does_not_say_no_registration_time():
+    from capsule_emit.cli import _registration_time_line
+
+    line = _registration_time_line(
+        {"binding": "rekor", "registration_time": None, "registration_time_reason": "binding_without_iat"}
+    )
+    assert line == "Rekor entry: time not reported (binding_without_iat)"
