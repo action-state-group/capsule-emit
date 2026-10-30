@@ -7,10 +7,11 @@
 //! payload and the Capsule Go sealed over it. The test takes each Capsule's
 //! members, commits the payload's own digest as `agent_input_digest`, builds
 //! with `produce::build` and requires Go's bytes and `capsule_id`. The frozen
-//! Capsules cover fyi and decide steps (optional disposition and effect,
-//! `irreversibility_class`, absent `verdict_class`), chained and standalone
-//! records, a model attestation with no model, and top-level extension
-//! members (`deal_id`, `settlement`).
+//! Capsules cover fyi and decide steps (disposition and effect present only on
+//! decide, `irreversibility_class`), chained and standalone records, a model
+//! attestation with no model, and top-level extension members (`deal_id`,
+//! `settlement`). None leaves out `verdict_class` or carries `reason_digest`;
+//! `produce_interop.rs` checks those against Go's produce cross-check pack.
 
 use std::path::Path;
 
