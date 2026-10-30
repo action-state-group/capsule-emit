@@ -6,16 +6,18 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
-### Added (Python): a checked registration time per witness receipt
+### Added (Python): the witness-signed time per witness receipt
 
 `capsule-emit verify --bundle` prints, under each witness receipt, the time
 the witness signed (`registration_time`) or why none is reported
 (`registration_time_reason`: `receipt_not_passed`, `iat_absent`, `iat_invalid`
 or `binding_without_iat`), and the `--json` receipts carry both beside the
 existing four fields. Both come from agent-action-capsule 0.13.0, now the
-minimum; nothing here reads a receipt. The time is what the witness signed:
-it is not compared with the checkpoint's timestamp or the current time, and a
-Rekor entry reads "time not reported" rather than "no registration time".
+minimum; capsule-emit does not parse receipts itself. The time is reported
+only from a receipt that passed, and it is what the witness signed: it is not
+compared with the checkpoint's timestamp or the current time. A Rekor entry
+reads "time not reported": Rekor keeps its own `integratedTime`, which this
+check does not read.
 ([#363](https://github.com/action-state-group/capsule-emit/issues/363))
 
 ### Added (Rust): the producing calls Go and TypeScript have
@@ -78,7 +80,7 @@ is deprecated (#358); `append_to_ledger` refuses a line without a `capsule_id`
 and does not write a repeated one; and `confirms=` cites another stream's
 capsule in `references[]` rather than `chain`. `capsule_emit.verification` is
 now agent-action-capsule's verifier (#367). The package requires
-`agent-action-capsule>=0.12.0`. The TypeScript and Rust parts of the entries
+`agent-action-capsule>=0.13.0`. The TypeScript and Rust parts of the entries
 below are not released yet: they ship with the next
 `@action-state-group/capsule-emit` and `capsule-emit` crate releases, and the
 crate's release waits on #371.

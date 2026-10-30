@@ -632,7 +632,7 @@ def _registration_time_line(receipt: dict[str, Any]) -> str:
             stamp = f"{when}s since the epoch"
         return f"witness-signed time {stamp} (not checked against the checkpoint or now)"
     reason = receipt.get("registration_time_reason")
-    if receipt.get("binding") == "rekor" and reason == "binding_without_iat":
+    if reason == "binding_without_iat":  # AAC sets it only for the rekor binding
         return f"Rekor entry: time not reported ({reason})"
     return f"witness-signed time not reported ({reason})"
 
