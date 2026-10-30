@@ -16,7 +16,10 @@
 //! Envelope verification come from the agent-action-capsule crate.
 //!
 //! This module is separate from [`crate::capsule`], whose `seal` builds the
-//! exchange records the ledger keeps. Invariants (shared with Go's
+//! exchange records the ledger keeps. Seal here when a Capsule must match the
+//! one Go's `Build` seals from the same members, such as an x-deal-v0 step or
+//! report: `tests/deal_baseline_parity.rs` checks [`build`] against the
+//! Capsules Go froze in evidencebook's deal baseline vectors. Invariants (shared with Go's
 //! `go/CLAUDE.md`):
 //!
 //! - Format 4 only, `spec_version` -05, `canonicalization_id` `jcs`.
