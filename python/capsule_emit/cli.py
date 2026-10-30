@@ -63,7 +63,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 
 def _cmd_ledger_view(args: argparse.Namespace) -> int:
@@ -594,6 +596,7 @@ def _cmd_verify_bundle(args: argparse.Namespace) -> int:
         print(f"  {marks.get(check.witness.status, check.witness.status)}  {check.witness.plain}")
         for receipt in check.witness_receipts:
             print(f"               {receipt['ts_url']}: {receipt['reason']}")
+            print(f"                 {_registration_time_line(receipt)}")
         for finding in check.witness.findings:
             if not finding.startswith(("witness_unverified:", "witness_receipt_invalid:")):
                 print(f"               {finding}")
@@ -615,6 +618,23 @@ def _cmd_verify_bundle(args: argparse.Namespace) -> int:
         print(f"{len(check.missing)} cited record(s) not in the file (declared by the file)")
     print(check.verdict)
     return _VERDICT_EXIT[check.verdict]
+
+
+def _registration_time_line(receipt: dict[str, Any]) -> str:
+    """The witness-signed time of one receipt, or why none is reported. It is
+    the time the witness signed, which nothing compares with the checkpoint's
+    timestamp or the current time."""
+    when = receipt.get("registration_time")
+    if isinstance(when, int):
+        try:
+            stamp = datetime.fromtimestamp(when, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except (OverflowError, OSError, ValueError):  # an iat past the platform's date range
+            stamp = f"{when}s since the epoch"
+        return f"witness-signed time {stamp} (not checked against the checkpoint or now)"
+    reason = receipt.get("registration_time_reason")
+    if receipt.get("binding") == "rekor" and reason == "binding_without_iat":
+        return f"Rekor entry: time not reported ({reason})"
+    return f"witness-signed time not reported ({reason})"
 
 
 # VALID: everything proven. INCOMPLETE: nothing failed, something not shown.

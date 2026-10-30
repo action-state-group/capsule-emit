@@ -6,6 +6,18 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (Python): a checked registration time per witness receipt
+
+`capsule-emit verify --bundle` prints, under each witness receipt, the time
+the witness signed (`registration_time`) or why none is reported
+(`registration_time_reason`: `receipt_not_passed`, `iat_absent`, `iat_invalid`
+or `binding_without_iat`), and the `--json` receipts carry both beside the
+existing four fields. Both come from agent-action-capsule 0.13.0, now the
+minimum; nothing here reads a receipt. The time is what the witness signed:
+it is not compared with the checkpoint's timestamp or the current time, and a
+Rekor entry reads "time not reported" rather than "no registration time".
+([#363](https://github.com/action-state-group/capsule-emit/issues/363))
+
 ### Added (Rust): the producing calls Go and TypeScript have
 
 The `capsule-emit` crate has a `produce` module with the Go module's
