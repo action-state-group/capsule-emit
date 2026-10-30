@@ -80,7 +80,7 @@ is deprecated (#358); `append_to_ledger` refuses a line without a `capsule_id`
 and does not write a repeated one; and `confirms=` cites another stream's
 capsule in `references[]` rather than `chain`. `capsule_emit.verification` is
 now agent-action-capsule's verifier (#367). The package requires
-`agent-action-capsule>=0.13.0`. The TypeScript and Rust parts of the entries
+`agent-action-capsule>=0.12.0`. The TypeScript and Rust parts of the entries
 below are not released yet: they ship with the next
 `@action-state-group/capsule-emit` and `capsule-emit` crate releases, and the
 crate's release waits on #371.
