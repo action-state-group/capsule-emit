@@ -13,6 +13,10 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   `decode_payload`, `SigningIdentity` and the spec constants, with Capsule and
   Producer Envelope bytes identical to Go's; JSON nesting is capped at 128
   levels (Go: 1000). Nothing in it writes a ledger or store. Additive: `capsule::seal` and the ledger are unchanged.
+- **`produce::build` is checked against Go's x-deal-v0 Capsules** (#385).
+  Every step and report Capsule in evidencebook's deal baseline vectors
+  (vendored under `tests/vectors/evidencebook-deal/`) is rebuilt from its
+  members and payload digest, byte for byte and id for id.
 - **Breaking: the `structure` module is gone; Class 1 verification is
   agent-action-capsule's** (#366). `verify::verify_offline` takes
   `structure_ok`, `capsule_id_ok` and `chain_ok` from
