@@ -7,6 +7,8 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+## 0.0.9
+
 - **The `produce` module: the Go module's producing calls.** `build`,
   `received`, `carry`, `who`/`can`/`did`/`audit`, `build_composition`,
   `digest_json`, `sign`, `seal`, `verify_capsule`, `verify_envelope`,
@@ -40,8 +42,9 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   padding shape and the statement are checked before every write and on
   reopen. A torn tail is the backends' to repair. An entry without a record,
   or a record the store refuses, fails `open_stores`. `LedgerLine::offset` is
-  the log `seq` on this layout. New `LedgerError` variants: `MissingRecord`,
-  `Store`, `Log`, `AlreadyInLog` and `Envelope`.
+  the log `seq` on this layout. Breaking for an exhaustive `match` on
+  `LedgerError`, which is not `#[non_exhaustive]`: new variants
+  `MissingRecord`, `Store`, `Log`, `AlreadyInLog` and `Envelope`.
 - **Checkpoints in a CLL backend's state** (#341):
   `checkpoint::CheckpointState::load_log(log, log_id, cfg, signers)` folds
   leaves from any `checkpoint::CheckpointLog` (a CLL entry source with
@@ -51,7 +54,9 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   checkpoint's COSE against the MMR at its size, and signs the JSON checkpoint
   record again with the signer whose key cut it (pass archived keys after a
   rotation). The same entries give the same root as `CheckpointState::load`.
-  New `SubstrateError` variants and `CheckpointStateError::Log`.
+  Breaking for an exhaustive `match` on `SubstrateError` or
+  `CheckpointStateError` (neither is `#[non_exhaustive]`): new `SubstrateError`
+  variants and `CheckpointStateError::Log`.
 - **Witnesses on checkpoints in a CLL backend** (#346): `load_log` accepts
   `witness_urls`. Each cut gets one CLL witness row per URL (the URL is the
   `witness_id`) in the commit that persists it. The clock legs deliver each
@@ -68,8 +73,7 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   an artifact store and a CLL entry log, moved here from
   `capsule_emit_artifact::legacy` (feature `legacy`), because this crate now
   depends on `capsule-emit-artifact`. It is unchanged otherwise.
-- Depends on `capsule-emit-artifact` 0.0.1, which must be published before
-  this crate's next release.
+- Depends on `capsule-emit-artifact` 0.0.1, published on crates.io.
 
 ## 0.0.8
 
