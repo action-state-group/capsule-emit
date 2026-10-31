@@ -1,16 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the evidence request protocol's ``chain_segment`` subject — ``capsule_emit.chain_segment``
-and its wiring into ``capsule_emit.evidence_request.answer()``.
+"""Tests for ``capsule_emit.chain_segment``, the checkpoint-chain form of history.
 
-Uses ``CAPSULE_WITNESS=stub`` (zero-network, real checkpoint mechanics —
-same harness ``tests/test_evidence_request.py`` uses) so these run
+Uses ``CAPSULE_WITNESS=stub`` (zero-network, real checkpoint mechanics) so these run
 hermetically; every negative case flips exactly one thing and confirms the
 mutant is caught.
 """
 from __future__ import annotations
 
 import dataclasses
-import json
 
 import pytest
 
@@ -26,13 +23,6 @@ from capsule_emit.chain_segment import (
     ChainSegmentError,
     chain_segment,
     verify_chain_segment,
-)
-from capsule_emit.evidence_request import (
-    REASON_COVERAGE_UNSATISFIABLE,
-    REASON_REQUEST_MALFORMED,
-    Artifact,
-    Refusal,
-    answer,
 )
 from capsule_emit.ledger import read_ledger_entries
 
@@ -295,98 +285,25 @@ def test_empty_segment_is_never_ok():
     assert result.history_depth == 0
 
 
-# ---------------------------------------------------------------------------
-# evidence_request.answer() — the chain_segment subject end to end
-# ---------------------------------------------------------------------------
-
-
-def _chain_segment_request(**subject_extra) -> bytes:
-    return json.dumps({"subject": {"kind": "chain_segment", **subject_extra}, "coverage": {}}).encode()
-
-
-def test_answer_chain_segment_last(three_checkpoint_ledger):
-    ledger_path, checkpoints = three_checkpoint_ledger
-    result = answer(_chain_segment_request(last=50), ledger=ledger_path)
-    assert isinstance(result, Artifact)
-    assert result.subject_kind == "chain_segment"
-    assert len(result.bundles) == 1
-    assert len(result.bundles[0].links) == 3
-
-
-def test_answer_chain_segment_beyond_log_size_is_coverage_unsatisfiable(three_checkpoint_ledger):
-    ledger_path, checkpoints = three_checkpoint_ledger
-    request = _chain_segment_request(from_size=0, to_size=checkpoints[-1].mmr_size + 1000)
-    result = answer(request, ledger=ledger_path)
-    assert isinstance(result, Refusal)
-    assert result.reason == REASON_COVERAGE_UNSATISFIABLE
-
-
 @pytest.mark.parametrize(
-    "subject_extra",
+    "kwargs",
     [
-        {"last": 1, "from_size": 0, "to_size": 1},  # both shapes at once
         {},  # neither shape
-        {"last": 0},  # non-positive
+        {"last": 0},
         {"last": -1},
-        {"from_size": -1, "to_size": 5},  # negative
-        {"from_size": 5, "to_size": 1},  # to < from
-        {"last": "5"},  # wrong type
+        {"last": "5"},
+        {"last": True},
+        {"from_size": -1, "to_size": 5},
+        {"from_size": 0},  # one end only
     ],
 )
-def test_answer_chain_segment_malformed_subject_is_request_malformed(three_checkpoint_ledger, subject_extra):
+def test_malformed_selection_is_refused(three_checkpoint_ledger, kwargs):
     ledger_path, _checkpoints = three_checkpoint_ledger
-    result = answer(_chain_segment_request(**subject_extra), ledger=ledger_path)
-    assert isinstance(result, Refusal)
-    assert result.reason == REASON_REQUEST_MALFORMED
+    with pytest.raises(ChainSegmentError):
+        chain_segment(_entries(ledger_path), **kwargs)
 
 
-def test_answer_chain_segment_no_checkpoints_yet_is_no_such_record(tmp_path, stub_witness):
-    ledger_path = tmp_path / "ledger.jsonl"
-    seal(None, action="uncovered", operator="acme", anchor=False, ledger=ledger_path)
-    result = answer(_chain_segment_request(last=1), ledger=ledger_path)
-    assert isinstance(result, Refusal)
-    assert result.reason == REASON_COVERAGE_UNSATISFIABLE
-
-
-def test_caller_invariance_holds_for_chain_segment(three_checkpoint_ledger):
-    """ACCEPTANCE: two askers -> byte-identical, regardless of nonce."""
+def test_segment_checkpoint_is_the_last_link(three_checkpoint_ledger):
     ledger_path, checkpoints = three_checkpoint_ledger
-    now = "2026-09-05T00:00:00Z"
-    request_a = json.dumps(
-        {"subject": {"kind": "chain_segment", "last": 50}, "coverage": {}, "nonce": "n1"}
-    ).encode()
-    request_b = json.dumps(
-        {"subject": {"kind": "chain_segment", "last": 50}, "coverage": {}, "nonce": "n2"}
-    ).encode()
-    result_a = answer(request_a, ledger=ledger_path, now=now)
-    result_b = answer(request_b, ledger=ledger_path, now=now)
-    assert isinstance(result_a, Artifact) and isinstance(result_b, Artifact)
-    assert json.dumps(result_a.to_dict(), sort_keys=True) == json.dumps(result_b.to_dict(), sort_keys=True)
-
-
-def test_expected_pin_reuses_generic_resolution_against_last_checkpoint(three_checkpoint_ledger):
-    ledger_path, checkpoints = three_checkpoint_ledger
-    latest = checkpoints[-1]
-
-    correct = answer(
-        json.dumps(
-            {
-                "subject": {"kind": "chain_segment", "last": 50},
-                "coverage": {"expected_pin": {"mmr_size": latest.mmr_size, "root": latest.root}},
-            }
-        ).encode(),
-        ledger=ledger_path,
-    )
-    assert isinstance(correct, Artifact)
-
-    wrong = answer(
-        json.dumps(
-            {
-                "subject": {"kind": "chain_segment", "last": 50},
-                "coverage": {"expected_pin": {"mmr_size": latest.mmr_size, "root": "00" * 32}},
-            }
-        ).encode(),
-        ledger=ledger_path,
-    )
-    assert isinstance(wrong, Refusal)
-    assert wrong.reason == REASON_COVERAGE_UNSATISFIABLE
+    seg = chain_segment(_entries(ledger_path), last=50)
+    assert seg.checkpoint == checkpoints[-1]

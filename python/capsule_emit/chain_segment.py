@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``chain_segment()`` — the cheap form of "history" (the evidence request protocol's third subject
-kind, ``{kind: "chain_segment", from_size, to_size}`` or ``{last: N}``).
+"""``chain_segment()`` — the cheap form of "history": the checkpoint chain between two sizes
+(``from_size``, ``to_size``) or the last N checkpoints (``last``).
 
-Without this, a stranger's ``range`` ask is one full :class:`~capsule_emit
-.record_proof.RecordProof` per record — O(n) checkpoint copies, and the range cap makes
-deep history unreachable. A ``chain_segment`` answers over the checkpoint
+Without this, a per-record history is one full :class:`~capsule_emit
+.record_proof.RecordProof` per record — O(n) checkpoint copies. A ``chain_segment`` answers over the checkpoint
 CHAIN instead of individual records: cp_a..cp_b — each signed checkpoint,
 its witness receipts (already carried on ``CheckpointRecord.witnesses``),
 and ONE consistency proof per link (``prev_size -> size``) — plus
@@ -27,17 +26,16 @@ recompute+match discipline every other offline verifier in this repo
 uses): ``history_depth`` (checkpoints verified), ``continuity`` at
 checkpoint granularity (every ``prev_root`` links, every link's consistency
 proof verifies), and ``witnessed: n/m`` (receipts verify offline, no
-network). It cannot see a single record's content — that is ``record``/
-``range``'s job, the drill-down once a chain segment names something worth
-asking about.
+network). It cannot see a single record's content — that is a
+:class:`~capsule_emit.record_proof.RecordProof`'s job, the drill-down once a chain segment
+names something worth asking about.
 
 **Adjudication verdict/role split.** For leaves this module classifies as
 ``adjudication`` (:mod:`capsule_emit.adjudication`'s three verdict shapes —
 ``corroborated``, ``inconclusive``, ``contradicted:<owner_id>``), each
 checkpoint's counts are further split by ROLE relative to
 ``self_owner_id`` — the RESPONDING ledger's own signing ``key_id``, the
-same identity every checkpoint and capsule on this ledger already carries
-(see :mod:`capsule_emit.evidence_request`'s ``signer`` docs): a
+same identity every checkpoint and capsule on this ledger already carries): a
 ``contradicted:<owner_id>`` verdict is ``contradicted_self`` when
 ``owner_id`` matches this ledger's own key, else ``contradicted_other`` —
 never silently dropped, never assumed to be self without a match.
@@ -64,9 +62,8 @@ __all__ = [
 class ChainSegmentError(RuntimeError):
     """The requested segment cannot be built — an unknown boundary size, a
     size beyond the log's latest checkpoint, or no checkpoints at all.
-    Caught by :func:`capsule_emit.evidence_request.answer` and turned into
-    a ``coverage_unsatisfiable`` refusal — never a raw exception reaching a
-    requester."""
+    A caller that serves segments to others turns it into a refusal rather than
+    letting the exception reach them."""
 
 
 def _consistency_proof_to_dict(p: Any) -> dict:
@@ -142,7 +139,7 @@ class CheckpointLink:
     extends the PRIOR checkpoint IN THIS SEGMENT. ``consistency_proof`` is
     ``None`` only for the segment's own first checkpoint — the segment
     never proves anything about history before its own start boundary
-    (that is the ``record``/``range`` bundle's ``prior_checkpoint`` role,
+    (that is a record proof's ``prior_checkpoint`` role,
     not this one's)."""
 
     checkpoint: CheckpointRecord
@@ -192,11 +189,9 @@ class ChainSegment:
 
     @property
     def checkpoint(self) -> CheckpointRecord:
-        """The segment's LAST (``to``) checkpoint — what a requester's
-        ``coverage.expected_pin``/``min_freshness`` pins against, the same
-        convention :class:`capsule_emit.record_proof.RecordProof` uses for a single
-        record. This lets :mod:`capsule_emit.evidence_request`'s existing
-        pin/freshness resolution work UNCHANGED for this subject kind too."""
+        """The segment's LAST (``to``) checkpoint — what a pin or a freshness floor
+        is checked against, the same convention
+        :class:`capsule_emit.record_proof.RecordProof` uses for a single record."""
         return self.links[-1].checkpoint
 
     def to_dict(self) -> dict:
@@ -222,9 +217,7 @@ def chain_segment(
 ) -> ChainSegment:
     """Build a standalone-verifiable :class:`ChainSegment` over the
     checkpoint chain already present in ``entries`` (the caller's own raw,
-    in-append-order log entries — this module never reads a log itself; see
-    ``capsule_emit.evidence_request._build_bundles`` for the file-reading
-    caller).
+    in-append-order log entries — this module never reads a log itself).
 
     Selection is either ``last=N`` (the last ``N`` checkpoints — or fewer,
     honestly, if the log has not yet accumulated ``N``; a young log is
