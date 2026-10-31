@@ -611,7 +611,7 @@ def loop_ask(
     always in the book. Moving the file to the responder is the caller's channel.
     """
     try:
-        if min_freshness and not (min_freshness.isascii() and min_freshness.isdigit()) and not _er.is_profile_time(min_freshness):
+        if min_freshness and not (min_freshness.isascii() and min_freshness.isdigit()) and _er.parse_utc(min_freshness) is None:
             return _refuse("min_freshness is neither a log size nor an RFC 3339 UTC time")
         content = json.loads(subject_value) if subject_value else None
         subject = {subject_form: content}
