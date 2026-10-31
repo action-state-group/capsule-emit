@@ -36,8 +36,7 @@ asking about.
 ``corroborated``, ``inconclusive``, ``contradicted:<owner_id>``), each
 checkpoint's counts are further split by ROLE relative to
 ``self_owner_id`` — the RESPONDING ledger's own signing ``key_id``, the
-same identity every checkpoint and capsule on this ledger already carries
-(see :mod:`capsule_emit.evidence_request`'s ``signer`` docs): a
+same identity every checkpoint and capsule on this ledger already carries): a
 ``contradicted:<owner_id>`` verdict is ``contradicted_self`` when
 ``owner_id`` matches this ledger's own key, else ``contradicted_other`` —
 never silently dropped, never assumed to be self without a match.
@@ -64,9 +63,8 @@ __all__ = [
 class ChainSegmentError(RuntimeError):
     """The requested segment cannot be built — an unknown boundary size, a
     size beyond the log's latest checkpoint, or no checkpoints at all.
-    Caught by :func:`capsule_emit.evidence_request.answer` and turned into
-    a ``coverage_unsatisfiable`` refusal — never a raw exception reaching a
-    requester."""
+    A responder that serves this segment turns it into a ``coverage_unsatisfiable``
+    refusal — never a raw exception reaching a requester."""
 
 
 def _consistency_proof_to_dict(p: Any) -> dict:
@@ -195,8 +193,8 @@ class ChainSegment:
         """The segment's LAST (``to``) checkpoint — what a requester's
         ``coverage.expected_pin``/``min_freshness`` pins against, the same
         convention :class:`capsule_emit.record_proof.RecordProof` uses for a single
-        record. This lets :mod:`capsule_emit.evidence_request`'s existing
-        pin/freshness resolution work UNCHANGED for this subject kind too."""
+        record, so a responder's pin/freshness resolution works unchanged for a
+        segment too."""
         return self.links[-1].checkpoint
 
     def to_dict(self) -> dict:
@@ -222,9 +220,7 @@ def chain_segment(
 ) -> ChainSegment:
     """Build a standalone-verifiable :class:`ChainSegment` over the
     checkpoint chain already present in ``entries`` (the caller's own raw,
-    in-append-order log entries — this module never reads a log itself; see
-    ``capsule_emit.evidence_request._build_bundles`` for the file-reading
-    caller).
+    in-append-order log entries — this module never reads a log itself).
 
     Selection is either ``last=N`` (the last ``N`` checkpoints — or fewer,
     honestly, if the log has not yet accumulated ``N``; a young log is

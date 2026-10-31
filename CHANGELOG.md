@@ -13,6 +13,15 @@ the reply: a verified artifact, a signed refusal with its reason, or a recorded 
 NOT_CHECKED over stdio.
 ([#392](https://github.com/action-state-group/capsule-emit/issues/392))
 
+### Removed (Python): the deprecated pre-00 `capsule_emit.evidence_request`
+
+The module, its tests and its README row are gone. It spoke the pre-00 evidence request profile (`chain_segment`
+subjects, `subject.kind`, map-valued `expected_pin`) and stayed only for capsule-emit-mesh, which is being archived.
+Use `agent_action_capsule.evidence_request`, the `draft-mih-agent-evidence-request-00` implementation: it has
+`Refusal`, `sign_refusal` and `verify_refusal_offline`. `capsule_emit.chain_segment` stays (the checkpoint-chain
+builder and verifier); only its references to the removed responder were dropped.
+([#395](https://github.com/action-state-group/capsule-emit/issues/395))
+
 ### Added (Python): the Goose loop extension
 
 `examples/goose-capsule/loop_server.py` is a Goose MCP extension with a tool for each loop step whose library
