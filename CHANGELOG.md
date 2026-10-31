@@ -6,6 +6,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (Python): the Goose loop extension
+
+`examples/goose-capsule/loop_server.py` is a Goose MCP extension with a tool for each loop step whose library
+calls existed but had no tool: `loop_book` (02), `loop_admit` (04), `loop_deal_open`, `loop_deal_respond`,
+`loop_deal_push` and `loop_deal_reconcile` (05), `loop_settle` and `loop_settle_verify` (06), and `loop_join`
+and `loop_probe` (12). Steps 03, 07 and 09 have no tool and are stated as NOT_CHECKED in
+`docs/adapters/goose.md`. It moves no money and opens no connection of its own.
+([#390](https://github.com/action-state-group/capsule-emit/issues/390))
+
 ### Added (Python): the witness-signed time per witness receipt
 
 `capsule-emit verify --bundle` prints, under each witness receipt, the time
