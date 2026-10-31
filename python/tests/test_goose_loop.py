@@ -392,3 +392,43 @@ def test_book_refuses_an_ambiguous_prefix(books):
             shared += ch
     if len(shared) >= 8:  # only when the ids happen to share 8 characters
         assert "matches" in call(loop.loop_book, capsule_id=shared, ledger=buyer)["error"]
+
+
+def test_a_request_resigned_by_another_key_with_the_admitted_key_id_is_refused(books, tmp_path):
+    _, seller = books
+    req, req_file = _open_and_push(books, tmp_path)
+    forged = json.loads(Path(req_file).read_text())
+    victim = loop._capsules(books[0])
+    real_key = forged[0]["key_id"]
+    # Mallory seals the same request under her own key, then copies the admitted key_id over hers.
+    from capsule_emit.bilateral import seal_request
+    mal = seal_request("buyer-co", "x", ACTION, loop._compute(forged[0])["action_digest"],
+                       ledger=str(tmp_path / "mallory"), extra_compute={"peer": "seller-co"}).capsule
+    assert mal["key_id"] != real_key and victim
+    mal["key_id"] = real_key
+    f = tmp_path / "forged.json"
+    f.write_text(json.dumps([mal]))
+    call(loop.loop_admit, peer="buyer-co", decision="GO", peer_key_id=real_key, operator="seller-co", ledger=seller)
+    out = call(loop.loop_deal_respond, request_file=str(f), action=ACTION, terms=TERMS, operator="seller-co", ledger=seller)
+    assert out["ok"] is False and "signed" in out["error"]
+
+
+def test_admission_reports_whether_it_is_bound_to_a_key(books, tmp_path):
+    _, seller = books
+    _, req_file = _open_and_push(books, tmp_path)
+    unbound = call(loop.loop_admit, peer="buyer-co", decision="GO", operator="seller-co", ledger=seller)
+    assert unbound["binding"].startswith("unbound")
+    resp = call(loop.loop_deal_respond, request_file=req_file, action=ACTION, terms=TERMS, operator="seller-co", ledger=seller)
+    assert resp["admission_binding"].startswith("unbound")
+    key_id = json.loads(Path(req_file).read_text())[0]["key_id"]
+    bound = call(loop.loop_admit, peer="buyer-co", decision="GO", peer_key_id=key_id, operator="seller-co", ledger=seller)
+    assert bound["binding"] == "key"
+
+
+def test_probe_fails_a_record_whose_key_id_was_swapped(books, tmp_path):
+    buyer, _ = books
+    call(loop.loop_join, operator="buyer-co", ledger=buyer)
+    rec = loop._capsules(buyer)[0]
+    rec["key_id"] = "0" * 64
+    out = call(loop.loop_probe, ledger=_flat(tmp_path, [rec]))
+    assert out["ok"] is False

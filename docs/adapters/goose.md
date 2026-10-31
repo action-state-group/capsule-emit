@@ -254,8 +254,8 @@ imports the mcp 1.x `FastMCP`; the port to mcp 2.x's `MCPServer` is tracked in
 12-step loop, one tool per step verb. Each tool returns one JSON object; a refusal is `{"ok": false, ...}` and a
 step that cannot be checked says `NOT_CHECKED` with the reason. It moves no money and opens no connection of its own;
 sealing and `loop_book`'s `checkpoint_now` follow capsule-emit's witness settings like every capsule-emit call, so set
-`CAPSULE_WITNESS=off` for none. A peer admission names the peer by its operator string unless you pass `peer_key_id`,
-which binds it to the signing key the peer's capsules carry.
+`CAPSULE_WITNESS=off` for none. A peer admission names the peer by its operator string and reports `binding: unbound` unless you pass `peer_key_id`;
+with it, `loop_deal_respond` also requires the request's signature to verify under that key.
 
 | Step | Tool | Goose status |
 |---|---|---|
@@ -265,9 +265,9 @@ which binds it to the signing key the peer's capsules carry.
 | 04 Admit | `loop_admit` | maps: a peer GO or NO sealed before any deal; `loop_deal_open` and `loop_deal_respond` refuse unless the newest one is GO |
 | 05 Deal and push | `loop_deal_open`, `loop_deal_respond`, `loop_deal_push`, `loop_deal_reconcile` | maps: each side seals its half in its own book, pushes it as a file, and cites the other's |
 | 06 Settle | `loop_settle`, `loop_settle_verify` | maps for the draft's four legs; no rail is driven, the caller passes the payment reference it observed |
-| 07 Ask | none | NOT_CHECKED: Goose runs over stdio and cannot host a responder, and `evidence_request.answer()` is the deprecated pre-00 responder |
+| 07 Ask | none | NOT_CHECKED: no tool sends a -00 evidence request ([#392](https://github.com/action-state-group/capsule-emit/issues/392)), and over stdio Goose cannot answer one; `evidence_request.answer()` is the pre-00 responder |
 | 08 Verify | `capsule_verify`, `capsule-emit bundle` | maps (loop-owned) |
-| 09 Dispute | none | NOT_CHECKED: `adjudication.seal_adjudication` seals in the referee's own book, with no delivery into a party's book |
+| 09 Dispute | none | NOT_CHECKED: `adjudication.seal_adjudication` seals in the referee's own book, with no delivery into a party's book ([#393](https://github.com/action-state-group/capsule-emit/issues/393), with actionstate-muse#315) |
 | 10 Judge, 11 Report | the loop's own pack and page | maps (loop-owned) |
 | 12 Join | `loop_join`, `loop_probe` | maps for the book; the commitment (03) is absent |
 

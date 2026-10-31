@@ -70,6 +70,7 @@ from capsule_emit.bilateral import seal_action, seal_request
 from capsule_emit.ledger import NON_CAPSULE_KINDS, read_ledger_entries, read_positioned_entries
 from capsule_emit.ledger_layout import DEFAULT_STORE, LEDGER_ENV, resolve_ledger
 from capsule_emit.reconciliation import fold, reconcile
+from capsule_emit.signing import AuthorshipVerdict, verify_capsule_signature_tristate
 from capsule_emit.verification import verify_capsule
 
 _OPERATOR = os.environ.get("CAPSULE_OPERATOR", "goose-user")
@@ -136,6 +137,16 @@ def _capsule_list(path: str, what: str) -> list[dict]:
     if not isinstance(data, list) or not all(isinstance(r, dict) for r in data):
         raise ValueError(f"{what} must hold a JSON array of capsules")
     return data
+
+
+def _authentic(capsule: dict) -> bool:
+    """The capsule verifies and its signature envelope verifies under the key_id it carries.
+    verify_capsule alone never checks the producer signature, so key_id is only a claim without this."""
+    return verify_capsule(capsule).ok and verify_capsule_signature_tristate(capsule)[0] is AuthorshipVerdict.AUTHORED
+
+
+def _binding(adm: dict) -> str:
+    return "key" if adm.get("peer_key_id") else "unbound: names an operator string, not a key"
 
 
 def _action_digest(action: str, terms: Any) -> str:
@@ -221,6 +232,8 @@ def loop_probe(ledger: str | None = None) -> str:
         vr = verify_capsule(rec)
         if not vr.ok:
             failures.append({"capsule_id": rec["capsule_id"], "findings": [f.detail for f in vr.findings]})
+        elif verify_capsule_signature_tristate(rec)[0] is AuthorshipVerdict.INVALID:
+            failures.append({"capsule_id": rec["capsule_id"], "findings": ["producer signature does not verify under key_id"]})
     return _out(ok=not failures and bool(recs), step="12", checked=len(recs), failures=failures)
 
 
@@ -335,7 +348,10 @@ def loop_admit(
         )
     except Exception as exc:
         return _refuse(f"admit failed: {exc}")
-    return _out(ok=True, step="04", capsule_id=res.capsule_id, peer=peer, decision=decision)
+    return _out(
+        ok=True, step="04", capsule_id=res.capsule_id, peer=peer, decision=decision,
+        binding="key" if peer_key_id else "unbound: names an operator string, not a key",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +384,7 @@ def loop_deal_open(
         )
     except Exception as exc:
         return _refuse(f"deal open failed: {exc}")
-    return _out(ok=True, step="05", capsule_id=res.capsule_id, action_digest=digest, admission=adm["capsule_id"])
+    return _out(ok=True, step="05", capsule_id=res.capsule_id, action_digest=digest, admission=adm["capsule_id"], admission_binding=_binding(adm))
 
 
 @server.tool()
@@ -397,8 +413,8 @@ def loop_deal_respond(
     if len(reqs) != 1:
         return _refuse("the request file must hold exactly one request half")
     req = reqs[0]
-    if not verify_capsule(req).ok:
-        return _refuse("the pushed request does not verify")
+    if not _authentic(req):
+        return _refuse("the pushed request does not verify, or is not signed by the key_id it carries")
     if _compute(req).get("peer") != operator:
         return _refuse(f"the request is addressed to {_compute(req).get('peer')!r}, not {operator!r}")
     adm, err = _admitted(ledger, _party(req))
@@ -419,7 +435,7 @@ def loop_deal_respond(
         )
     except Exception as exc:
         return _refuse(f"deal respond failed: {exc}")
-    return _out(ok=True, step="05", capsule_id=res.capsule_id, action_digest=digest, cites=req["capsule_id"])
+    return _out(ok=True, step="05", capsule_id=res.capsule_id, action_digest=digest, cites=req["capsule_id"], admission_binding=_binding(adm))
 
 
 @server.tool()
@@ -458,7 +474,7 @@ def loop_deal_reconcile(peer_file: str, ledger: str | None = None) -> str:
         r for r in theirs
         if _compute(r).get("role") == "responder"
         and peer_of.get(_compute(r).get("request_capsule_id")) == _party(r)
-        and verify_capsule(r).ok
+        and _authentic(r)
     ]
     results = reconcile(
         mine, theirs,
