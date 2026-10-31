@@ -8,6 +8,7 @@ and a live anchor to a public transparency log.
 examples/goose-capsule/
 ├── demo.py     # standalone run — no Goose required, anchors live by default
 ├── server.py   # the actual MCP extension — hand this file to Goose
+├── loop_server.py  # second extension: the loop's book, admit, deal, settle and join steps as tools
 ├── contribution_demo.py  # issues-first lifecycle demo → Verification evidence comment
 ├── evidence/   # a real, live-anchored run (transcript + one sealed capsule
 │               #  + verification-comment.md from contribution_demo.py)
