@@ -3,8 +3,7 @@
 (``from_size``, ``to_size``) or the last N checkpoints (``last``).
 
 Without this, a per-record history is one full :class:`~capsule_emit
-.record_proof.RecordProof` per record — O(n) checkpoint copies, and the range cap makes
-deep history unreachable. A ``chain_segment`` answers over the checkpoint
+.record_proof.RecordProof` per record — O(n) checkpoint copies. A ``chain_segment`` answers over the checkpoint
 CHAIN instead of individual records: cp_a..cp_b — each signed checkpoint,
 its witness receipts (already carried on ``CheckpointRecord.witnesses``),
 and ONE consistency proof per link (``prev_size -> size``) — plus
@@ -27,9 +26,9 @@ recompute+match discipline every other offline verifier in this repo
 uses): ``history_depth`` (checkpoints verified), ``continuity`` at
 checkpoint granularity (every ``prev_root`` links, every link's consistency
 proof verifies), and ``witnessed: n/m`` (receipts verify offline, no
-network). It cannot see a single record's content — that is ``record``/
-``range``'s job, the drill-down once a chain segment names something worth
-asking about.
+network). It cannot see a single record's content — that is a
+:class:`~capsule_emit.record_proof.RecordProof`'s job, the drill-down once a chain segment
+names something worth asking about.
 
 **Adjudication verdict/role split.** For leaves this module classifies as
 ``adjudication`` (:mod:`capsule_emit.adjudication`'s three verdict shapes —
@@ -140,7 +139,7 @@ class CheckpointLink:
     extends the PRIOR checkpoint IN THIS SEGMENT. ``consistency_proof`` is
     ``None`` only for the segment's own first checkpoint — the segment
     never proves anything about history before its own start boundary
-    (that is the ``record``/``range`` bundle's ``prior_checkpoint`` role,
+    (that is a record proof's ``prior_checkpoint`` role,
     not this one's)."""
 
     checkpoint: CheckpointRecord
