@@ -6,12 +6,19 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (Python): `loop_ask` and `loop_ask_reply`, step 07 for the asker
+
+The Goose loop extension seals a `draft-mih-agent-evidence-request-00` request in the asker's book before writing it, and records
+the reply: a verified artifact, a signed refusal with its reason, or a recorded absence. Answering requests stays
+NOT_CHECKED over stdio.
+([#392](https://github.com/action-state-group/capsule-emit/issues/392))
+
 ### Added (Python): the Goose loop extension
 
 `examples/goose-capsule/loop_server.py` is a Goose MCP extension with a tool for each loop step whose library
 calls existed but had no tool: `loop_book` (02), `loop_admit` (04), `loop_deal_open`, `loop_deal_respond`,
 `loop_deal_push` and `loop_deal_reconcile` (05), `loop_settle` and `loop_settle_verify` (06), and `loop_join`
-and `loop_probe` (12). Steps 03, 07 and 09 have no tool and are stated as NOT_CHECKED in
+and `loop_probe` (12). Steps 03 and 09 have no tool and are stated as NOT_CHECKED in
 `docs/adapters/goose.md`. It moves no money and opens no connection of its own.
 ([#390](https://github.com/action-state-group/capsule-emit/issues/390))
 

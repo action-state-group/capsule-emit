@@ -17,7 +17,9 @@ verb, mapped one to one against the Goose column of evidence-network/loop#154:
           loop_deal_push / loop_deal_reconcile       it as a file, cites the other's)
     06    loop_settle / loop_settle_verify          maps for the draft's legs; no rail is
                                                     driven (the caller supplies the reference)
-    07    none                                      NOT_CHECKED (stdio cannot host a responder)
+    07    loop_ask / loop_ask_reply                 maps for the asker: a -00 request sealed in the asker's book
+                                                    before it is sent, the reply verified; answering
+                                                    stays NOT_CHECKED (stdio cannot host a responder)
     08    capsule_verify, capsule-emit bundle       maps (loop-owned)
     09    none                                      NOT_CHECKED (no delivery into a party's book)
     10/11 the loop's own pack and page              maps (loop-owned)
@@ -62,6 +64,7 @@ try:  # mcp >= 2 renamed FastMCP to MCPServer
 except ImportError:  # mcp < 2
     from mcp.server.fastmcp import FastMCP
 
+from agent_action_capsule import evidence_request as _er
 from agent_action_capsule.canonical import jcs
 
 from capsule_emit import read_ledger, seal
@@ -86,7 +89,7 @@ server = FastMCP(
         "Run the capsule loop's steps: loop_join starts a book, loop_book shows a "
         "record's position and checkpoint, loop_admit seals a GO/NO on a peer before "
         "any deal, loop_deal_* seal and exchange the two halves of a deal, loop_settle "
-        "seals a settlement leg. Steps 03, 07 and 09 are NOT_CHECKED for this extension."
+        "seals a settlement leg. Step 07 is asker-side only; steps 03 and 09 are NOT_CHECKED for this extension."
     ),
 )
 
@@ -559,6 +562,171 @@ def loop_settle_verify(peer_file: str = "", ledger: str | None = None) -> str:
     rep = _settlement.verify_settlements(recs)
     report = json.loads(json.dumps(dataclasses.asdict(rep), default=str))
     return _out(ok=bool(rep.conforming), step="06", legs=len(recs), report=report)
+
+
+# ---------------------------------------------------------------------------
+# 07 Ask (asker side only: Goose runs over stdio and cannot answer a request)
+# ---------------------------------------------------------------------------
+
+
+def _ask_record(ledger: str | None, request_capsule_id: str) -> dict | None:
+    """The sealed request, unless this book already holds an answer for it. A recorded absence
+    does not close it: a signed answer that arrives late is still the responder's act."""
+    recs = _capsules(ledger)
+    outcomes = [
+        _compute(r)["ask"]["outcome"] for r in recs
+        if _compute(r).get("ask", {}).get("request_capsule_id") == request_capsule_id
+    ]
+    if any(o != "recorded_absence" for o in outcomes):
+        return None
+    return next(
+        (r for r in recs if r["capsule_id"] == request_capsule_id and "request_digest" in _compute(r).get("ask", {})
+         and "outcome" not in _compute(r)["ask"]),
+        None,
+    )
+
+
+@server.tool()
+def loop_ask(
+    subject_form: str,
+    subject_value: str = "",
+    expected_pin: str = "",
+    min_freshness: str = "",
+    deadline: str = "",
+    nonce: str = "",
+    out_path: str = "",
+    operator: str = _OPERATOR,
+    developer: str = _DEVELOPER,
+    ledger: str | None = None,
+) -> str:
+    """Seal an evidence request (draft-mih-agent-evidence-request-00) in this book, then write it.
+
+    The -00 request carries no requester signature; what is signed is this book's sealed capsule of it.
+
+    *subject_form* is one of record, exchange, range, correlation, full_history, checkpoints;
+    *subject_value* is its JSON content (a digest as a JSON string, a range as ``[a, b]``,
+    a correlation id as a JSON string; empty for full_history and checkpoints). Exactly one of
+    *expected_pin* (a digest) or *min_freshness* (a log size, or an RFC 3339 UTC time) sets the
+    coverage. The request is sealed before the file is written, so a request that was sent is
+    always in the book. Moving the file to the responder is the caller's channel.
+    """
+    try:
+        if min_freshness and not (min_freshness.isascii() and min_freshness.isdigit()) and _er.parse_utc(min_freshness) is None:
+            return _refuse("min_freshness is neither a log size nor an RFC 3339 UTC time")
+        content = json.loads(subject_value) if subject_value else None
+        subject = {subject_form: content}
+        coverage: dict[str, Any] = {}
+        if expected_pin:
+            coverage["expected_pin"] = expected_pin
+        if min_freshness:
+            coverage["min_freshness"] = int(min_freshness) if min_freshness.isdigit() else min_freshness
+        wire: dict[str, Any] = {"subject": subject, "coverage": coverage}
+        if deadline:
+            wire["deadline"] = deadline
+        if nonce:
+            wire["nonce"] = nonce
+        octets = jcs(wire)
+        _er.parse_request(octets)
+    except _er.RequestError as exc:
+        return _refuse(f"not a well-formed request: {exc}")
+    except ValueError as exc:
+        return _refuse(f"subject_value is not valid JSON: {exc}")
+    if not out_path:
+        return _refuse("out_path is required: the file the request is written to")
+    digest = _er.request_digest(octets)
+    try:
+        res = seal(
+            {"request_digest": digest}, action="loop.ask", operator=operator, developer=developer,
+            extra_compute={"ask": {"request_digest": digest, "subject_form": subject_form, "deadline": deadline or None}},
+            ledger=ledger,
+        )
+    except Exception as exc:
+        return _refuse(f"ask failed: {exc}")
+    try:
+        Path(out_path).write_bytes(octets)
+    except OSError as exc:
+        return _out(ok=False, error=f"the request is sealed but the file was not written: {exc}",
+                    capsule_id=res.capsule_id, request_digest=digest)
+    return _out(ok=True, step="07", capsule_id=res.capsule_id, request_digest=digest, file=out_path,
+                coverage=coverage)
+
+
+@server.tool()
+def loop_ask_reply(
+    request_capsule_id: str,
+    request_file: str,
+    responder_key: str,
+    reply_file: str = "",
+    window_closed: bool = False,
+    artifact_out: str = "",
+    operator: str = _OPERATOR,
+    developer: str = _DEVELOPER,
+    ledger: str | None = None,
+) -> str:
+    """Record how a request ended: a verified artifact, a signed refusal, or a recorded absence.
+
+    *responder_key* is the responder's Ed25519 public key (lowercase hex) that you trust. An
+    envelope must verify under it for the bytes in *request_file*; a refusal must be signed by
+    it, answer those bytes and be conforming. With no *reply_file* nothing arrived: the outcome
+    is pending until *window_closed*, then a recorded absence. A reply that does not verify is
+    an error and seals nothing. The sealed outcome cites the request capsule; *artifact_out*
+    receives a verified artifact's octets.
+    """
+    req = _ask_record(ledger, request_capsule_id)
+    if req is None:
+        return _refuse(f"no loop_ask request {request_capsule_id!r} in this book, or it already has an answer")
+    try:
+        sent = Path(request_file).read_bytes()
+    except OSError as exc:
+        return _refuse(f"cannot read request file: {exc}")
+    digest = _er.request_digest(sent)
+    if digest != _compute(req)["ask"]["request_digest"]:
+        return _refuse("the request file is not the request that was sealed")
+    detail: dict[str, Any] = {}
+    artifact = None
+    if not reply_file:
+        outcome = _er.record_outcome("nothing", window_open=not window_closed)
+        if outcome == "pending":
+            return _out(ok=True, step="07", outcome="pending", request_digest=digest)
+        if any(_compute(r).get("ask", {}).get("request_capsule_id") == request_capsule_id for r in _capsules(ledger)):
+            return _refuse("this request already has a recorded absence")
+    else:
+        try:
+            reply_octets = Path(reply_file).read_bytes()
+            reply = _er.parse_reply(reply_octets)
+        except (OSError, _er.VerificationError) as exc:
+            return _refuse(f"the reply cannot be read: {exc}")
+        if isinstance(reply, _er.Envelope):
+            try:
+                reply.verify_for(sent, responder_key)
+            except _er.VerificationError as exc:
+                return _refuse(f"the artifact does not verify: {exc}")
+            outcome = _er.record_outcome("artifact", window_open=False, artifact_verified=True)
+            artifact = reply.artifact
+            detail = {"artifact_digest": hashlib.sha256(reply.artifact).hexdigest(), "responder": reply.responder,
+                      "reply_digest": hashlib.sha256(reply_octets).hexdigest()}
+        else:
+            if reply.key_id != responder_key or reply.request_digest != digest:
+                return _refuse("the refusal is not the trusted responder's answer to this request")
+            check = _er.check_refusal(reply.to_dict())
+            outcome = _er.record_outcome("refusal", window_open=False, refusal=check)
+            if outcome != "refusal":
+                return _refuse(f"the refusal is not accepted: {outcome}")
+            detail = {"reason": reply.reason, "responder": reply.key_id,
+                      "reply_digest": hashlib.sha256(reply_octets).hexdigest()}
+    try:
+        if artifact is not None and artifact_out:  # output, not evidence: written first so a failure seals nothing
+            Path(artifact_out).write_bytes(artifact)
+        res = seal(
+            {"request_digest": digest, "outcome": outcome}, action="loop.ask.outcome",
+            operator=operator, developer=developer,
+            extra_compute={"ask": {"request_capsule_id": request_capsule_id, "request_digest": digest,
+                                   "outcome": outcome, **detail}},
+            ledger=ledger,
+        )
+    except Exception as exc:
+        return _refuse(f"recording the outcome failed: {exc}")
+    return _out(ok=True, step="07", outcome=outcome, capsule_id=res.capsule_id, request_digest=digest, **detail)
 
 
 if __name__ == "__main__":
