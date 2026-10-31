@@ -8,7 +8,7 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ### Added (Python): `loop_ask` and `loop_ask_reply`, step 07 for the asker
 
-The Goose loop extension seals a signed `draft-mih-agent-evidence-request-00` request before writing it, and records
+The Goose loop extension seals a `draft-mih-agent-evidence-request-00` request in the asker's book before writing it, and records
 the reply: a verified artifact, a signed refusal with its reason, or a recorded absence. Answering requests stays
 NOT_CHECKED over stdio.
 ([#392](https://github.com/action-state-group/capsule-emit/issues/392))

@@ -17,7 +17,7 @@ verb, mapped one to one against the Goose column of evidence-network/loop#154:
           loop_deal_push / loop_deal_reconcile       it as a file, cites the other's)
     06    loop_settle / loop_settle_verify          maps for the draft's legs; no rail is
                                                     driven (the caller supplies the reference)
-    07    loop_ask / loop_ask_reply                 maps for the asker: a signed -00 request sealed
+    07    loop_ask / loop_ask_reply                 maps for the asker: a -00 request sealed in the asker's book
                                                     before it is sent, the reply verified; answering
                                                     stays NOT_CHECKED (stdio cannot host a responder)
     08    capsule_verify, capsule-emit bundle       maps (loop-owned)
@@ -594,7 +594,9 @@ def loop_ask(
     developer: str = _DEVELOPER,
     ledger: str | None = None,
 ) -> str:
-    """Seal a signed-evidence request (draft-mih-agent-evidence-request-00) in this book, then write it.
+    """Seal an evidence request (draft-mih-agent-evidence-request-00) in this book, then write it.
+
+    The -00 request carries no requester signature; what is signed is this book's sealed capsule of it.
 
     *subject_form* is one of record, exchange, range, correlation, full_history, checkpoints;
     *subject_value* is its JSON content (a digest as a JSON string, a range as ``[a, b]``,
