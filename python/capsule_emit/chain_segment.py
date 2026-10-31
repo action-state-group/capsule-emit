@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""``chain_segment()`` — the cheap form of "history" (the evidence request protocol's third subject
-kind, ``{kind: "chain_segment", from_size, to_size}`` or ``{last: N}``).
+"""``chain_segment()`` — the cheap form of "history": the checkpoint chain between two sizes
+(``from_size``, ``to_size``) or the last N checkpoints (``last``).
 
-Without this, a stranger's ``range`` ask is one full :class:`~capsule_emit
+Without this, a per-record history is one full :class:`~capsule_emit
 .record_proof.RecordProof` per record — O(n) checkpoint copies, and the range cap makes
 deep history unreachable. A ``chain_segment`` answers over the checkpoint
 CHAIN instead of individual records: cp_a..cp_b — each signed checkpoint,
@@ -63,8 +63,8 @@ __all__ = [
 class ChainSegmentError(RuntimeError):
     """The requested segment cannot be built — an unknown boundary size, a
     size beyond the log's latest checkpoint, or no checkpoints at all.
-    A responder that serves this segment turns it into a ``coverage_unsatisfiable``
-    refusal — never a raw exception reaching a requester."""
+    A caller that serves segments to others turns it into a refusal rather than
+    letting the exception reach them."""
 
 
 def _consistency_proof_to_dict(p: Any) -> dict:
@@ -190,11 +190,9 @@ class ChainSegment:
 
     @property
     def checkpoint(self) -> CheckpointRecord:
-        """The segment's LAST (``to``) checkpoint — what a requester's
-        ``coverage.expected_pin``/``min_freshness`` pins against, the same
-        convention :class:`capsule_emit.record_proof.RecordProof` uses for a single
-        record, so a responder's pin/freshness resolution works unchanged for a
-        segment too."""
+        """The segment's LAST (``to``) checkpoint — what a pin or a freshness floor
+        is checked against, the same convention
+        :class:`capsule_emit.record_proof.RecordProof` uses for a single record."""
         return self.links[-1].checkpoint
 
     def to_dict(self) -> dict:

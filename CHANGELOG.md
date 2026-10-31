@@ -15,7 +15,7 @@ NOT_CHECKED over stdio.
 
 ### Removed (Python): the deprecated pre-00 `capsule_emit.evidence_request`
 
-The module, its tests and its README row are gone. It spoke the pre-00 evidence request profile (`chain_segment`
+The module, its tests and its README mentions are gone. It spoke the pre-00 evidence request profile (`chain_segment`
 subjects, `subject.kind`, map-valued `expected_pin`) and stayed only for capsule-emit-mesh, which is being archived.
 Use `agent_action_capsule.evidence_request`, the `draft-mih-agent-evidence-request-00` implementation: it has
 `Refusal`, `sign_refusal` and `verify_refusal_offline`. `capsule_emit.chain_segment` stays (the checkpoint-chain

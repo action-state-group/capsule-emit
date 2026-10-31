@@ -283,3 +283,27 @@ def test_empty_segment_is_never_ok():
     result = verify_chain_segment(ChainSegment(v=1, links=()))
     assert not result.ok
     assert result.history_depth == 0
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},  # neither shape
+        {"last": 0},
+        {"last": -1},
+        {"last": "5"},
+        {"last": True},
+        {"from_size": -1, "to_size": 5},
+        {"from_size": 0},  # one end only
+    ],
+)
+def test_malformed_selection_is_refused(three_checkpoint_ledger, kwargs):
+    ledger_path, _checkpoints = three_checkpoint_ledger
+    with pytest.raises(ChainSegmentError):
+        chain_segment(_entries(ledger_path), **kwargs)
+
+
+def test_segment_checkpoint_is_the_last_link(three_checkpoint_ledger):
+    ledger_path, checkpoints = three_checkpoint_ledger
+    seg = chain_segment(_entries(ledger_path), last=50)
+    assert seg.checkpoint == checkpoints[-1]
