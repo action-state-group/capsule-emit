@@ -255,7 +255,7 @@ imports the mcp 1.x `FastMCP`; the port to mcp 2.x's `MCPServer` is tracked in
 step that cannot be checked says `NOT_CHECKED` with the reason. It moves no money and opens no connection of its own;
 sealing and `loop_book`'s `checkpoint_now` follow capsule-emit's witness settings like every capsule-emit call, so set
 `CAPSULE_WITNESS=off` for none. A peer admission names the peer by its operator string and reports `binding: unbound` unless you pass `peer_key_id`;
-with it, `loop_deal_respond` also requires the request's signature to verify under that key.
+with it, `loop_deal_respond` and `loop_deal_reconcile` also require the capsule's signing key to be that key (both always check that the signature verifies under the key the capsule carries).
 
 | Step | Tool | Goose status |
 |---|---|---|

@@ -432,3 +432,15 @@ def test_probe_fails_a_record_whose_key_id_was_swapped(books, tmp_path):
     rec["key_id"] = "0" * 64
     out = call(loop.loop_probe, ledger=_flat(tmp_path, [rec]))
     assert out["ok"] is False
+
+
+def test_reconcile_ignores_a_response_signed_by_a_key_other_than_the_admitted_one(books, tmp_path):
+    buyer, seller = books
+    req, _ = _open_and_push(books, tmp_path)
+    digest = loop._compute(loop._capsules(buyer)[-1])["action_digest"]
+    f = _forged_half(tmp_path, req, "seller-co", digest, "mallory")
+    honest = call(loop.loop_deal_reconcile, peer_file=f, ledger=buyer)
+    assert honest["fold"]["matched"] == 1  # no key bound: the operator string is all there is
+    call(loop.loop_admit, peer="seller-co", decision="GO", peer_key_id="0" * 64, operator="buyer-co", ledger=buyer)
+    bound = call(loop.loop_deal_reconcile, peer_file=f, ledger=buyer)
+    assert bound["fold"]["matched"] == 0 and bound["fold"]["requester_only"] == 1

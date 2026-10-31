@@ -350,7 +350,7 @@ def loop_admit(
         return _refuse(f"admit failed: {exc}")
     return _out(
         ok=True, step="04", capsule_id=res.capsule_id, peer=peer, decision=decision,
-        binding="key" if peer_key_id else "unbound: names an operator string, not a key",
+        binding=_binding({"peer_key_id": peer_key_id}),
     )
 
 
@@ -470,11 +470,17 @@ def loop_deal_reconcile(peer_file: str, ledger: str | None = None) -> str:
         return _refuse(str(exc))
     mine = [r for r in _capsules(ledger) if _compute(r).get("role") == "requester"]
     peer_of = {r["capsule_id"]: _compute(r).get("peer") for r in mine}
+
+    def from_admitted_peer(r: dict) -> bool:
+        adm = _admission(ledger, _party(r))
+        return not (adm or {}).get("peer_key_id") or adm["peer_key_id"] == r.get("key_id")
+
     theirs = [
         r for r in theirs
         if _compute(r).get("role") == "responder"
         and peer_of.get(_compute(r).get("request_capsule_id")) == _party(r)
         and _authentic(r)
+        and from_admitted_peer(r)
     ]
     results = reconcile(
         mine, theirs,
