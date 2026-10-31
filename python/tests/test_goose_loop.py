@@ -620,3 +620,73 @@ def test_reply_for_an_unknown_request_or_a_different_file_is_refused(books, tmp_
     (tmp_path / "x.json").write_bytes(b"{}")
     assert call(loop.loop_ask_reply, request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "x.json"),
                 responder_key="00", ledger=buyer)["ok"] is False
+
+
+def test_a_refusal_or_envelope_with_the_trusted_key_id_but_another_keys_signature_is_refused(books, tmp_path):
+    buyer, _ = books
+    trusted, mallory = _Key(1), _Key(2)
+    ask = _ask(buyer, tmp_path)
+    before = len(loop._capsules(buyer))
+    kw = dict(request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+              responder_key=trusted.key_id, ledger=buyer)
+    # a refusal: mallory's signature under the trusted key_id
+    ref = json.loads(Path(_respond(tmp_path / "ask.json", tmp_path, mallory, "ef" * 32)).read_text())
+    ref["key_id"] = trusted.key_id
+    f = tmp_path / "forged-refusal.json"
+    f.write_text(json.dumps(ref))
+    assert call(loop.loop_ask_reply, reply_file=str(f), **kw)["ok"] is False
+    # an envelope: responder rewritten to the trusted key
+    env = json.loads(Path(_respond(tmp_path / "ask.json", tmp_path, mallory, REC)).read_text())
+    env["responder"] = trusted.key_id
+    g = tmp_path / "forged-envelope.json"
+    g.write_text(json.dumps(env))
+    assert call(loop.loop_ask_reply, reply_file=str(g), **kw)["ok"] is False
+    assert len(loop._capsules(buyer)) == before
+
+
+def test_the_outcome_binds_the_reply_bytes(books, tmp_path):
+    import hashlib
+
+    buyer, _ = books
+    signer = _Key(1)
+    ask = _ask(buyer, tmp_path)
+    reply = _respond(tmp_path / "ask.json", tmp_path, signer, REC)
+    out = call(loop.loop_ask_reply, request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+               responder_key=signer.key_id, reply_file=reply, ledger=buyer)
+    assert out["reply_digest"] == hashlib.sha256(Path(reply).read_bytes()).hexdigest()
+    sealed = [r for r in loop._capsules(buyer) if r["capsule_id"] == out["capsule_id"]][0]
+    assert loop._compute(sealed)["ask"]["reply_digest"] == out["reply_digest"]
+
+
+def test_a_late_signed_answer_is_recorded_after_a_recorded_absence_but_not_twice(books, tmp_path):
+    buyer, _ = books
+    signer = _Key(1)
+    ask = _ask(buyer, tmp_path)
+    kw = dict(request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+              responder_key=signer.key_id, ledger=buyer)
+    assert call(loop.loop_ask_reply, window_closed=True, **kw)["outcome"] == "recorded_absence"
+    reply = _respond(tmp_path / "ask.json", tmp_path, signer, REC)
+    assert call(loop.loop_ask_reply, reply_file=reply, **kw)["outcome"] == "artifact_verified"
+    assert call(loop.loop_ask_reply, reply_file=reply, **kw)["ok"] is False
+
+
+def test_a_failed_artifact_write_seals_nothing_and_a_failed_request_write_reports_the_capsule(books, tmp_path):
+    buyer, _ = books
+    signer = _Key(1)
+    ask = _ask(buyer, tmp_path)
+    reply = _respond(tmp_path / "ask.json", tmp_path, signer, REC)
+    n = len(loop._capsules(buyer))
+    bad = call(loop.loop_ask_reply, request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+               responder_key=signer.key_id, reply_file=reply, artifact_out=str(tmp_path / "no" / "dir" / "a.bin"),
+               ledger=buyer)
+    assert bad["ok"] is False and len(loop._capsules(buyer)) == n
+    lost = _ask(buyer, tmp_path, out_path=str(tmp_path / "no" / "dir" / "ask.json"))
+    assert lost["ok"] is False and lost["capsule_id"] and "sealed" in lost["error"]
+
+
+def test_ask_refuses_a_min_freshness_that_is_not_a_size_or_a_time(books, tmp_path):
+    out = _ask(books[0], tmp_path, expected_pin="", min_freshness="\u00b2")
+    assert out["ok"] is False and "min_freshness" in out["error"]
+    assert _ask(books[0], tmp_path, expected_pin="", min_freshness="10")["ok"]
+    assert _ask(books[0], tmp_path, expected_pin="", min_freshness="2026-10-31T00:00:00Z",
+                out_path=str(tmp_path / "t.json"))["ok"]

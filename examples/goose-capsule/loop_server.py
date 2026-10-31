@@ -570,9 +570,14 @@ def loop_settle_verify(peer_file: str = "", ledger: str | None = None) -> str:
 
 
 def _ask_record(ledger: str | None, request_capsule_id: str) -> dict | None:
-    """The sealed request, unless this book already holds an outcome for it."""
+    """The sealed request, unless this book already holds an answer for it. A recorded absence
+    does not close it: a signed answer that arrives late is still the responder's act."""
     recs = _capsules(ledger)
-    if any(_compute(r).get("ask", {}).get("request_capsule_id") == request_capsule_id for r in recs):
+    outcomes = [
+        _compute(r)["ask"]["outcome"] for r in recs
+        if _compute(r).get("ask", {}).get("request_capsule_id") == request_capsule_id
+    ]
+    if any(o != "recorded_absence" for o in outcomes):
         return None
     return next(
         (r for r in recs if r["capsule_id"] == request_capsule_id and "request_digest" in _compute(r).get("ask", {})
@@ -606,6 +611,8 @@ def loop_ask(
     always in the book. Moving the file to the responder is the caller's channel.
     """
     try:
+        if min_freshness and not (min_freshness.isascii() and min_freshness.isdigit()) and not _er.is_profile_time(min_freshness):
+            return _refuse("min_freshness is neither a log size nor an RFC 3339 UTC time")
         content = json.loads(subject_value) if subject_value else None
         subject = {subject_form: content}
         coverage: dict[str, Any] = {}
@@ -633,9 +640,13 @@ def loop_ask(
             extra_compute={"ask": {"request_digest": digest, "subject_form": subject_form, "deadline": deadline or None}},
             ledger=ledger,
         )
-        Path(out_path).write_bytes(octets)
     except Exception as exc:
         return _refuse(f"ask failed: {exc}")
+    try:
+        Path(out_path).write_bytes(octets)
+    except OSError as exc:
+        return _out(ok=False, error=f"the request is sealed but the file was not written: {exc}",
+                    capsule_id=res.capsule_id, request_digest=digest)
     return _out(ok=True, step="07", capsule_id=res.capsule_id, request_digest=digest, file=out_path,
                 coverage=coverage)
 
@@ -663,7 +674,7 @@ def loop_ask_reply(
     """
     req = _ask_record(ledger, request_capsule_id)
     if req is None:
-        return _refuse(f"no loop_ask request {request_capsule_id!r} in this book, or it already has an outcome")
+        return _refuse(f"no loop_ask request {request_capsule_id!r} in this book, or it already has an answer")
     try:
         sent = Path(request_file).read_bytes()
     except OSError as exc:
@@ -677,9 +688,12 @@ def loop_ask_reply(
         outcome = _er.record_outcome("nothing", window_open=not window_closed)
         if outcome == "pending":
             return _out(ok=True, step="07", outcome="pending", request_digest=digest)
+        if any(_compute(r).get("ask", {}).get("request_capsule_id") == request_capsule_id for r in _capsules(ledger)):
+            return _refuse("this request already has a recorded absence")
     else:
         try:
-            reply = _er.parse_reply(Path(reply_file).read_bytes())
+            reply_octets = Path(reply_file).read_bytes()
+            reply = _er.parse_reply(reply_octets)
         except (OSError, _er.VerificationError) as exc:
             return _refuse(f"the reply cannot be read: {exc}")
         if isinstance(reply, _er.Envelope):
@@ -689,7 +703,8 @@ def loop_ask_reply(
                 return _refuse(f"the artifact does not verify: {exc}")
             outcome = _er.record_outcome("artifact", window_open=False, artifact_verified=True)
             artifact = reply.artifact
-            detail = {"artifact_digest": hashlib.sha256(reply.artifact).hexdigest(), "responder": reply.responder}
+            detail = {"artifact_digest": hashlib.sha256(reply.artifact).hexdigest(), "responder": reply.responder,
+                      "reply_digest": hashlib.sha256(reply_octets).hexdigest()}
         else:
             if reply.key_id != responder_key or reply.request_digest != digest:
                 return _refuse("the refusal is not the trusted responder's answer to this request")
@@ -697,8 +712,11 @@ def loop_ask_reply(
             outcome = _er.record_outcome("refusal", window_open=False, refusal=check)
             if outcome != "refusal":
                 return _refuse(f"the refusal is not accepted: {outcome}")
-            detail = {"reason": reply.reason, "responder": reply.key_id}
+            detail = {"reason": reply.reason, "responder": reply.key_id,
+                      "reply_digest": hashlib.sha256(reply_octets).hexdigest()}
     try:
+        if artifact is not None and artifact_out:  # output, not evidence: written first so a failure seals nothing
+            Path(artifact_out).write_bytes(artifact)
         res = seal(
             {"request_digest": digest, "outcome": outcome}, action="loop.ask.outcome",
             operator=operator, developer=developer,
@@ -706,8 +724,6 @@ def loop_ask_reply(
                                    "outcome": outcome, **detail}},
             ledger=ledger,
         )
-        if artifact is not None and artifact_out:
-            Path(artifact_out).write_bytes(artifact)
     except Exception as exc:
         return _refuse(f"recording the outcome failed: {exc}")
     return _out(ok=True, step="07", outcome=outcome, capsule_id=res.capsule_id, request_digest=digest, **detail)
