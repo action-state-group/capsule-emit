@@ -275,8 +275,8 @@ def test_settlement_refuses_malformed_payment_ref_json(books):
 
 def test_unmapped_steps_have_no_tool_and_the_doc_says_so():
     names = {n for n in dir(loop) if n.startswith("loop_")}
-    assert not {n for n in names if any(w in n for w in ("advertise", "ask", "dispute", "adjudicate"))}
-    for step in ("03", "07", "09"):
+    assert not {n for n in names if any(w in n for w in ("advertise", "dispute", "adjudicate"))}
+    for step in ("03", "09"):
         assert f"    {step}    none" in loop.__doc__
 
 
@@ -444,3 +444,179 @@ def test_reconcile_ignores_a_response_signed_by_a_key_other_than_the_admitted_on
     call(loop.loop_admit, peer="seller-co", decision="GO", peer_key_id="0" * 64, operator="buyer-co", ledger=buyer)
     bound = call(loop.loop_deal_reconcile, peer_file=f, ledger=buyer)
     assert bound["fold"]["matched"] == 0 and bound["fold"]["requester_only"] == 1
+
+
+# 07 Ask (asker side)
+
+
+class _Key:
+    """An Ed25519 test key shaped as the -00 module's Signer."""
+
+    def __init__(self, seed: int):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        self._k = Ed25519PrivateKey.from_private_bytes(bytes([seed]) * 32)
+        self.key_id = self._k.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+
+    def sign(self, body: bytes):
+        return self._k.sign(body).hex(), self.key_id
+
+
+class _Store:
+    def __init__(self, held: str):
+        self.held, self.anchor = held, __import__("agent_action_capsule.evidence_request", fromlist=["x"]).Anchor(
+            "ab" * 32, 10, "2026-10-31T00:00:00Z")
+
+    def holds_record(self, d): return d == self.held
+    def holds_correlation(self, c): return False
+    def cites_exchange(self, h): return False
+    def positional_ordering(self): return True
+    def anchors(self): return [self.anchor]
+    def derivation_forms(self, d): return None
+    def artifact(self, subject, derivation, resolution): return b'{"record":"proof"}'
+    def force_checkpoint(self, signer): pass
+
+
+def _respond(req_file, tmp_path, signer, held, name="reply.json") -> str:
+    """The responder side, in-process: -00 answer() and the profile envelope."""
+    import agent_action_capsule.evidence_request as er
+
+    octets = Path(req_file).read_bytes()
+    ans = er.answer(octets, store=_Store(held), signer=signer, now="2026-10-31T00:00:00Z")
+    if isinstance(ans, er.Refusal):
+        out = json.dumps(ans.to_dict()).encode()
+    else:
+        out = er.sign_envelope(octets, ans.subject, ans.anchor, ans.body, signer=signer,
+                               issued_at="2026-10-31T00:00:00Z").encode()
+    f = tmp_path / name
+    f.write_bytes(out)
+    return str(f)
+
+
+REC = "cd" * 32
+
+
+def _ask(buyer, tmp_path, **kw):
+    args = dict(subject_form="record", subject_value=json.dumps(REC), expected_pin="ab" * 32,
+                out_path=str(tmp_path / "ask.json"), operator="buyer-co", ledger=buyer)
+    args.update(kw)
+    return call(loop.loop_ask, **args)
+
+
+def test_ask_seals_the_request_before_writing_it_and_returns_its_digest(books, tmp_path):
+    import hashlib
+
+    buyer, _ = books
+    out = _ask(buyer, tmp_path)
+    assert out["ok"] and out["coverage"] == {"expected_pin": "ab" * 32}
+    sent = (tmp_path / "ask.json").read_bytes()
+    assert out["request_digest"] == hashlib.sha256(sent).hexdigest()
+    sealed = [r for r in loop._capsules(buyer) if r["capsule_id"] == out["capsule_id"]][0]
+    assert loop._compute(sealed)["ask"]["request_digest"] == out["request_digest"]
+
+
+def test_ask_that_cannot_be_sealed_writes_no_file(books, tmp_path):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("a file, so nothing can be created under it")
+    out = _ask(str(blocker / "book"), tmp_path)
+    assert out["ok"] is False and not (tmp_path / "ask.json").exists()
+
+
+@pytest.mark.parametrize("kw", [
+    dict(subject_form="nonsense"),
+    dict(expected_pin=""),  # neither coverage member
+    dict(expected_pin="ab" * 32, min_freshness="5"),  # both
+    dict(subject_value="{not json"),
+    dict(subject_value=json.dumps("short")),
+    dict(deadline="tomorrow"),
+    dict(out_path=""),
+])
+def test_ask_refuses_a_malformed_request_and_seals_nothing(books, tmp_path, kw):
+    buyer, _ = books
+    out = _ask(buyer, tmp_path, **kw)
+    assert out["ok"] is False and loop._capsules(buyer) == []
+
+
+def test_a_verified_artifact_is_recorded_and_saved(books, tmp_path):
+    buyer, _ = books
+    signer = _Key(1)
+    ask = _ask(buyer, tmp_path)
+    reply = _respond(tmp_path / "ask.json", tmp_path, signer, REC)
+    out = call(loop.loop_ask_reply, request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+               responder_key=signer.key_id, reply_file=reply, artifact_out=str(tmp_path / "artifact.bin"),
+               operator="buyer-co", ledger=buyer)
+    assert out["ok"] and out["outcome"] == "artifact_verified"
+    assert (tmp_path / "artifact.bin").read_bytes() == b'{"record":"proof"}'
+    again = call(loop.loop_ask_reply, request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+                 responder_key=signer.key_id, reply_file=reply, ledger=buyer)
+    assert again["ok"] is False
+
+
+def test_a_signed_refusal_is_recorded_with_its_reason(books, tmp_path):
+    buyer, _ = books
+    signer = _Key(1)
+    ask = _ask(buyer, tmp_path)
+    reply = _respond(tmp_path / "ask.json", tmp_path, signer, held="ef" * 32)  # record not held
+    out = call(loop.loop_ask_reply, request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+               responder_key=signer.key_id, reply_file=reply, operator="buyer-co", ledger=buyer)
+    assert out["ok"] and out["outcome"] == "refusal" and out["reason"] == "no_such_subject"
+
+
+def test_a_reply_from_another_key_is_an_error_and_seals_nothing(books, tmp_path):
+    buyer, _ = books
+    ask = _ask(buyer, tmp_path)
+    before = len(loop._capsules(buyer))
+    for held in (REC, "ef" * 32):  # an artifact, then a refusal
+        reply = _respond(tmp_path / "ask.json", tmp_path, _Key(2), held)
+        out = call(loop.loop_ask_reply, request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+                   responder_key=_Key(1).key_id, reply_file=reply, ledger=buyer)
+        assert out["ok"] is False
+    assert len(loop._capsules(buyer)) == before
+
+
+def test_a_reply_to_a_different_request_is_refused(books, tmp_path):
+    buyer, _ = books
+    signer = _Key(1)
+    ask = _ask(buyer, tmp_path)
+    other = _ask(buyer, tmp_path, nonce="other", out_path=str(tmp_path / "other.json"))
+    reply = _respond(tmp_path / "other.json", tmp_path, signer, REC)
+    out = call(loop.loop_ask_reply, request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+               responder_key=signer.key_id, reply_file=reply, ledger=buyer)
+    assert other["ok"] and out["ok"] is False
+
+
+def test_a_tampered_artifact_is_an_error(books, tmp_path):
+    buyer, _ = books
+    signer = _Key(1)
+    ask = _ask(buyer, tmp_path)
+    reply = Path(_respond(tmp_path / "ask.json", tmp_path, signer, REC))
+    body = json.loads(reply.read_text())
+    body["artifact"] = body["artifact"][:-2] + "AA"
+    reply.write_text(json.dumps(body))
+    out = call(loop.loop_ask_reply, request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+               responder_key=signer.key_id, reply_file=str(reply), ledger=buyer)
+    assert out["ok"] is False
+
+
+def test_silence_is_pending_then_a_recorded_absence_and_never_a_refusal(books, tmp_path):
+    buyer, _ = books
+    ask = _ask(buyer, tmp_path)
+    kw = dict(request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "ask.json"),
+              responder_key=_Key(1).key_id, operator="buyer-co", ledger=buyer)
+    pending = call(loop.loop_ask_reply, **kw)
+    assert pending["outcome"] == "pending" and len(loop._capsules(buyer)) == 1
+    closed = call(loop.loop_ask_reply, window_closed=True, **kw)
+    assert closed["outcome"] == "recorded_absence"
+    assert call(loop.loop_ask_reply, window_closed=True, **kw)["ok"] is False
+
+
+def test_reply_for_an_unknown_request_or_a_different_file_is_refused(books, tmp_path):
+    buyer, _ = books
+    ask = _ask(buyer, tmp_path)
+    assert call(loop.loop_ask_reply, request_capsule_id="f" * 64, request_file=str(tmp_path / "ask.json"),
+                responder_key="00", ledger=buyer)["ok"] is False
+    (tmp_path / "x.json").write_bytes(b"{}")
+    assert call(loop.loop_ask_reply, request_capsule_id=ask["capsule_id"], request_file=str(tmp_path / "x.json"),
+                responder_key="00", ledger=buyer)["ok"] is False

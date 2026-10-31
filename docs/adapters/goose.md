@@ -265,7 +265,7 @@ with it, `loop_deal_respond` and `loop_deal_reconcile` also require the capsule'
 | 04 Admit | `loop_admit` | maps: a peer GO or NO sealed before any deal; `loop_deal_open` and `loop_deal_respond` refuse unless the newest one is GO |
 | 05 Deal and push | `loop_deal_open`, `loop_deal_respond`, `loop_deal_push`, `loop_deal_reconcile` | maps: each side seals its half in its own book, pushes it as a file, and cites the other's |
 | 06 Settle | `loop_settle`, `loop_settle_verify` | maps for the draft's four legs; no rail is driven, the caller passes the payment reference it observed |
-| 07 Ask | none | NOT_CHECKED: no tool sends a -00 evidence request ([#392](https://github.com/action-state-group/capsule-emit/issues/392)), and over stdio Goose cannot answer one; `evidence_request.answer()` is the pre-00 responder |
+| 07 Ask | `loop_ask`, `loop_ask_reply` | maps for the asker: a signed -00 request sealed before it is written, the reply verified under the responder key you trust and recorded as `artifact_verified`, a signed `refusal` with its reason, or a `recorded_absence`; anything else is an error. Answering a request stays NOT_CHECKED: Goose runs over stdio and cannot host a responder ([#392](https://github.com/action-state-group/capsule-emit/issues/392)) |
 | 08 Verify | `capsule_verify`, `capsule-emit bundle` | maps (loop-owned) |
 | 09 Dispute | none | NOT_CHECKED: `adjudication.seal_adjudication` seals in the referee's own book, with no delivery into a party's book ([#393](https://github.com/action-state-group/capsule-emit/issues/393), with actionstate-muse#315) |
 | 10 Judge, 11 Report | the loop's own pack and page | maps (loop-owned) |
@@ -289,7 +289,7 @@ extensions:
 ```
 
 Tests: `python/tests/test_goose_loop.py` runs two nodes, each with its own book, through every tool above, and
-asserts that steps 03, 07 and 09 have no tool.
+asserts that steps 03 and 09 have no tool.
 
 ## Add it yourself
 
