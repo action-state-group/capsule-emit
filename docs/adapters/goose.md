@@ -252,7 +252,10 @@ imports the mcp 1.x `FastMCP`; the port to mcp 2.x's `MCPServer` is tracked in
 
 `examples/goose-capsule/loop_server.py` is a second Goose extension that exposes the library calls behind the
 12-step loop, one tool per step verb. Each tool returns one JSON object; a refusal is `{"ok": false, ...}` and a
-step that cannot be checked says `NOT_CHECKED` with the reason. It moves no money and opens no network connection.
+step that cannot be checked says `NOT_CHECKED` with the reason. It moves no money and opens no connection of its own;
+sealing and `loop_book`'s `checkpoint_now` follow capsule-emit's witness settings like every capsule-emit call, so set
+`CAPSULE_WITNESS=off` for none. A peer admission names the peer by its operator string unless you pass `peer_key_id`,
+which binds it to the signing key the peer's capsules carry.
 
 | Step | Tool | Goose status |
 |---|---|---|

@@ -24,8 +24,10 @@ verb, mapped one to one against the Goose column of evidence-network/loop#154:
     12    loop_join / loop_probe                    maps for the book; the commitment (03)
                                                     is absent
 
-Nothing here moves money or opens a network connection: the witness is whatever
-CAPSULE_WITNESS says, and a payment reference is a value the caller passes in.
+Nothing here moves money or opens a connection of its own. Sealing and loop_book's
+checkpoint_now follow capsule-emit's witness settings (CAPSULE_WITNESS, CAPSULE_WITNESS_URL)
+like every capsule-emit call; set CAPSULE_WITNESS=off for none. A payment reference is a
+value the caller passes in.
 
 Add to ~/.config/goose/config.yaml:
 
@@ -48,6 +50,7 @@ a step that cannot be checked says ``"NOT_CHECKED"`` and why, never a guess.
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
@@ -64,7 +67,7 @@ from agent_action_capsule.canonical import jcs
 from capsule_emit import read_ledger, seal
 from capsule_emit import settlement as _settlement
 from capsule_emit.bilateral import seal_action, seal_request
-from capsule_emit.ledger import read_positioned_entries
+from capsule_emit.ledger import NON_CAPSULE_KINDS, read_ledger_entries, read_positioned_entries
 from capsule_emit.ledger_layout import DEFAULT_STORE, LEDGER_ENV, resolve_ledger
 from capsule_emit.reconciliation import fold, reconcile
 from capsule_emit.verification import verify_capsule
@@ -109,6 +112,30 @@ def _compute(capsule: dict) -> dict:
 
 def _capsules(ledger: str | None) -> list[dict]:
     return [r for r in read_ledger(_book_path(ledger)) if r.get("capsule_id")]
+
+
+def _log_capsules(path: str) -> list[tuple[int, dict]]:
+    """Each capsule with its leaf position in the log. Checkpoint stamps and padding are
+    leaves too, so the position counts them; they are never returned as capsules."""
+    return [
+        (i, e)
+        for i, e in enumerate(read_positioned_entries(path))
+        if e.get("capsule_id") and e.get("kind") not in NON_CAPSULE_KINDS and e.get("record_type") != "padding"
+    ]
+
+
+def _read_json(path: str, what: str) -> Any:
+    try:
+        return json.loads(Path(path).read_text())
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"cannot read {what}: {exc}") from exc
+
+
+def _capsule_list(path: str, what: str) -> list[dict]:
+    data = _read_json(path, what)
+    if not isinstance(data, list) or not all(isinstance(r, dict) for r in data):
+        raise ValueError(f"{what} must hold a JSON array of capsules")
+    return data
 
 
 def _action_digest(action: str, terms: Any) -> str:
@@ -171,7 +198,7 @@ def loop_join(
         step="12",
         book=book,
         capsule_id=res.capsule_id,
-        position=len(_capsules(book)) - 1,
+        position=_log_capsules(book)[-1][0],
         commitment=f"{NOT_CHECKED}: step 03 has no publisher in this extension",
         probe="a stranger runs loop_probe on a copy of the book",
     )
@@ -183,13 +210,29 @@ def loop_probe(ledger: str | None = None) -> str:
 
     Nothing is fetched and nothing is written.
     """
-    recs = _capsules(ledger)
-    failures = []
+    path = _book_path(ledger)
+    try:
+        gaps = _unreadable(path)
+        recs = [c for _, c in _log_capsules(path)]
+    except Exception as exc:
+        return _refuse(f"book cannot be read: {exc}")
+    failures = [{"gap": g} for g in gaps]
     for rec in recs:
         vr = verify_capsule(rec)
         if not vr.ok:
             failures.append({"capsule_id": rec["capsule_id"], "findings": [f.detail for f in vr.findings]})
     return _out(ok=not failures and bool(recs), step="12", checked=len(recs), failures=failures)
+
+
+def _unreadable(path: str) -> list[str]:
+    """What a tolerant read would silently drop: archived segments and corrupt lines."""
+    gaps = [f"archived segment {e.get('segment')}" for e in read_ledger_entries(path) if e.get("kind") == "archived_segment"]
+    p = Path(path)
+    if p.is_file():
+        lines = [ln for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        if len(lines) != len(read_ledger_entries(path)):
+            gaps.append(f"{len(lines) - len(read_ledger_entries(path))} corrupt line(s)")
+    return gaps
 
 
 # ---------------------------------------------------------------------------
@@ -220,11 +263,15 @@ def loop_book(
             witness.push(path)
         except Exception as exc:
             return _refuse(f"checkpoint failed: {exc}")
-    capsules = [e for e in read_positioned_entries(path) if e.get("capsule_id")]
-    capsules = [c for c in capsules if c.get("kind") is None]
-    position = next((i for i, c in enumerate(capsules) if c["capsule_id"].startswith(capsule_id)), None)
-    if len(capsule_id) < 8 or position is None:
+    try:
+        hits = [(i, c) for i, c in _log_capsules(path) if c["capsule_id"].startswith(capsule_id)]
+    except Exception as exc:
+        return _refuse(f"book cannot be read: {exc}")
+    if len(capsule_id) < 8 or not hits:
         return _refuse(f"no record with capsule_id prefix {capsule_id!r} (minimum 8 characters) in {path}")
+    if len(hits) > 1:
+        return _refuse(f"capsule_id prefix {capsule_id!r} matches {len(hits)} records: give more characters")
+    position, record = hits[0]
     directory = None
     if witness_directory_path:
         try:
@@ -238,7 +285,7 @@ def loop_book(
     return _out(
         ok=True,
         step="02",
-        capsule_id=capsules[position]["capsule_id"],
+        capsule_id=record["capsule_id"],
         position=position,
         capsule_count=st["capsule_count"],
         checkpoint=None
@@ -258,6 +305,7 @@ def loop_admit(
     peer: str,
     decision: str,
     reason: str = "",
+    peer_key_id: str = "",
     operator: str = _OPERATOR,
     developer: str = _DEVELOPER,
     ledger: str | None = None,
@@ -266,6 +314,8 @@ def loop_admit(
 
     This is a peer admission, not the tool-call gate: loop_deal_open and
     loop_deal_respond refuse unless the newest admission sealed for the peer is GO.
+    The peer is named by its operator string; pass *peer_key_id* (the key_id its capsules
+    carry) to bind the admission to a signing key, which loop_deal_respond then requires.
     """
     decision = decision.strip().upper()
     if decision not in (GO, NO):
@@ -280,7 +330,7 @@ def loop_admit(
             operator=operator,
             developer=developer,
             verdict="executed" if decision == GO else "blocked",
-            extra_compute={"admission": {"peer": peer, "decision": decision}},
+            extra_compute={"admission": {"peer": peer, "decision": decision, **({"peer_key_id": peer_key_id} if peer_key_id else {})}},
             ledger=ledger,
         )
     except Exception as exc:
@@ -336,19 +386,26 @@ def loop_deal_respond(
     peer this node has admitted with GO.
     """
     try:
-        req = json.loads(Path(request_file).read_text())
-    except (OSError, ValueError) as exc:
-        return _refuse(f"cannot read request: {exc}")
-    if isinstance(req, list):  # a loop_deal_push file: the one request half in it
-        reqs = [r for r in req if isinstance(r, dict) and _compute(r).get("role") == "requester"]
-        if len(reqs) != 1:
-            return _refuse("the pushed file must hold exactly one request half")
-        req = reqs[0]
-    if not isinstance(req, dict) or not verify_capsule(req).ok:
+        req = _read_json(request_file, "request")
+    except ValueError as exc:
+        return _refuse(str(exc))
+    if isinstance(req, dict):
+        req = [req]
+    if not isinstance(req, list) or not all(isinstance(r, dict) for r in req):
+        return _refuse("the request file must hold a capsule or a JSON array of capsules")
+    reqs = [r for r in req if _compute(r).get("role") == "requester"]
+    if len(reqs) != 1:
+        return _refuse("the request file must hold exactly one request half")
+    req = reqs[0]
+    if not verify_capsule(req).ok:
         return _refuse("the pushed request does not verify")
+    if _compute(req).get("peer") != operator:
+        return _refuse(f"the request is addressed to {_compute(req).get('peer')!r}, not {operator!r}")
     adm, err = _admitted(ledger, _party(req))
     if err:
         return _refuse(err)
+    if adm.get("peer_key_id") and adm["peer_key_id"] != req.get("key_id"):
+        return _refuse("the request is not signed by the key this node admitted for that peer")
     try:
         digest = _action_digest(action, _json(terms, "terms"))
     except ValueError as exc:
@@ -358,7 +415,7 @@ def loop_deal_respond(
     try:
         res = seal_action(
             operator, developer, action, digest, req["capsule_id"], ledger=ledger,
-            extra_compute={"peer": _party(req), "admission_capsule_id": adm["capsule_id"]},
+            extra_compute={"peer": _party(req), "admission_capsule_id": adm["capsule_id"], "request_capsule_id": req["capsule_id"]},
         )
     except Exception as exc:
         return _refuse(f"deal respond failed: {exc}")
@@ -384,21 +441,30 @@ def loop_deal_push(capsule_ids: list[str], out_path: str, ledger: str | None = N
 
 @server.tool()
 def loop_deal_reconcile(peer_file: str, ledger: str | None = None) -> str:
-    """Compare this node's deal halves with the peer's pushed ones, by action digest.
+    """Compare this node's requests with the halves the peer pushed in answer.
 
-    Per exchange: matched, requester_only (the peer has pushed nothing for it) or
-    contradicted. Absent is not failed.
+    A response pairs with the request it cites (``request_capsule_id``) and counts only
+    when it verifies and its operator is the peer that request was addressed to. Per
+    request: matched (same action digest), contradicted (different digest) or
+    requester_only (nothing pushed for it). Absent is not failed.
     """
     try:
-        theirs = json.loads(Path(peer_file).read_text())
-    except (OSError, ValueError) as exc:
-        return _refuse(f"cannot read peer file: {exc}")
-    if not isinstance(theirs, list):
-        return _refuse("peer file must hold a JSON array of capsules")
-    key = lambda r: str(_compute(r).get("action_digest"))  # noqa: E731
+        theirs = _capsule_list(peer_file, "peer file")
+    except ValueError as exc:
+        return _refuse(str(exc))
     mine = [r for r in _capsules(ledger) if _compute(r).get("role") == "requester"]
-    theirs = [r for r in theirs if isinstance(r, dict) and verify_capsule(r).ok and _compute(r).get("role") == "responder"]
-    results = reconcile(mine, theirs, key_fn=key, digest_field="action_digest")
+    peer_of = {r["capsule_id"]: _compute(r).get("peer") for r in mine}
+    theirs = [
+        r for r in theirs
+        if _compute(r).get("role") == "responder"
+        and peer_of.get(_compute(r).get("request_capsule_id")) == _party(r)
+        and verify_capsule(r).ok
+    ]
+    results = reconcile(
+        mine, theirs,
+        key_fn=lambda r: r["capsule_id"] if _compute(r).get("role") == "requester" else str(_compute(r).get("request_capsule_id")),
+        digest_field="action_digest",
+    )
     return _out(ok=True, step="05", fold=fold(results), exchanges=[
         {"key": r.key, "state": r.state.value, "detail": r.detail} for r in results
     ])
@@ -457,15 +523,20 @@ def loop_settle(
 
 @server.tool()
 def loop_settle_verify(peer_file: str = "", ledger: str | None = None) -> str:
-    """Derive settlement states from this node's legs and, if given, the peer's pushed ones."""
-    recs = [r for r in _capsules(ledger) if _settlement.SETTLEMENT_MEMBER in json.dumps(r)]
+    """Derive settlement states from this node's legs and, if given, the peer's pushed ones.
+
+    ``ok`` is the verifier's ``conforming``. No key policy is applied, so the report does
+    not say whose keys signed the legs (``key_policy_applied`` in the report).
+    """
+    recs = [r for r in _capsules(ledger) if _settlement.SETTLEMENT_MEMBER in r]
     if peer_file:
         try:
-            recs += json.loads(Path(peer_file).read_text())
-        except (OSError, ValueError) as exc:
-            return _refuse(f"cannot read peer file: {exc}")
+            recs += _capsule_list(peer_file, "peer file")
+        except ValueError as exc:
+            return _refuse(str(exc))
     rep = _settlement.verify_settlements(recs)
-    return _out(ok=True, step="06", report=json.loads(json.dumps(rep, default=lambda o: getattr(o, "__dict__", str(o)))))
+    report = json.loads(json.dumps(dataclasses.asdict(rep), default=str))
+    return _out(ok=bool(rep.conforming), step="06", legs=len(recs), report=report)
 
 
 if __name__ == "__main__":
