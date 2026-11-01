@@ -6,6 +6,12 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+## 0.14.1 — 2026-11-01
+
+Python 0.14.1: the store-backed ledger and the import of a flat Python ledger
+into one (#399, #411). The Rust part listed below shipped in `capsule-emit`
+0.0.10 (#404).
+
 ### Added (Python): the store-backed ledger, as Rust's `Ledger::open_stores`
 
 `capsule_emit.store_backed_ledger.Ledger.open_stores(log, artifacts, indexer)` keeps the ledger in a CLL entry log and
@@ -17,6 +23,7 @@ flat Python ledger's records into one exactly as stored, never re-signed. Checkp
 not copied (the flat file keeps them), and a ledger holding a line no store record can keep, such as an unsigned
 `log()` entry or a disclosure record, refuses the import before anything is written. `linear=False` and
 `require_statements=False` open such a log: a Python flat ledger was never one chain and has no signed statements.
+Such a log opens only in Python, since Rust has neither switch.
 See `docs/store-backed-ledger.md`.
 ([#399](https://github.com/action-state-group/capsule-emit/issues/399))
 
