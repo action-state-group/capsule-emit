@@ -7,6 +7,13 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+## 0.0.11
+
+### Changed
+
+- Requires `capsule-emit-artifact` 0.0.2 (was 0.0.1), so a program using both crates gets one copy of the
+  artifact store types the ledger takes.
+
 ## 0.0.10
 
 ### Changed
