@@ -7,6 +7,8 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+## 0.0.10
+
 ### Changed
 
 - **Breaking:** requires `checkpointed-local-log` 0.4.0 (was 0.3.1) and `agent-action-capsule` 0.8.0 (was 0.4.1).
