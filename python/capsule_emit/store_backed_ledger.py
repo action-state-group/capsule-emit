@@ -4,7 +4,9 @@
 The Python port of the Rust crate's store-backed ``ledger::Ledger``
 (``Ledger::open_stores_with_indexer``, ``rust/capsule-emit/src/ledger.rs``):
 the same ledger over the two standard layers, so a log written by either
-language opens in the other.
+language with both switches below on opens in the other. Rust has no
+switches: a log holding a record admitted only with one off (an imported
+flat ledger) opens only here, with the same switches.
 
 - the CLL entry log (``cll.log.EntryStore``: jsonl, memory, sqlite or mysql)
   holds each line's 32-byte ``capsule_id``, in order;
@@ -122,6 +124,11 @@ CITATION_PURPOSE_COUNTERPARTY_HALF = "counterparty_half"
 CITATION_PURPOSE_COUNTERPARTY_INCLUSION = "counterparty_inclusion"
 
 _ENVELOPE_MEMBERS = ("signature", "key_id")
+_COSE_SIGN1_TAG = 18
+#: The protected-header labels of a signed statement (alg, crit, content
+#: type, kid, CWT claims): one may be marked critical, as Rust's verifier,
+#: which never reads ``crit``, accepts.
+_STATEMENT_LABELS = frozenset({1, 2, 3, 4, 15})
 _PADDING_MEMBERS = frozenset({"capsule_id", "record_type", "epistemic_type", "store_nonce"})
 
 
@@ -353,12 +360,21 @@ def check_statement_matches(capsule: dict, capsule_id: str, statement: bytes) ->
         except ValueError:
             return f"capsule key_id {key_hex!r} is not a valid Ed25519 public key"
         try:
-            payload = verify_sign1(bytes(statement), public_key_pem=pem).payload
+            payload = verify_sign1(
+                bytes(statement), public_key_pem=pem, understood_labels=_STATEMENT_LABELS
+            ).payload
         except Exception as exc:  # scitt_cose raises several types for a bad statement
             return f"COSE verification against the capsule's own key_id failed: {exc}"
     else:
         try:
-            payload = strict_decode(bytes(statement)).value[2]
+            message = strict_decode(bytes(statement))
+            if (
+                message.tag != _COSE_SIGN1_TAG
+                or not isinstance(message.value, (list, tuple))
+                or len(message.value) != 4
+            ):
+                return "not a parseable COSE_Sign1: not a tag-18 array of four"
+            payload = message.value[2]
         except Exception as exc:
             return f"not a parseable COSE_Sign1: {exc}"
     if not isinstance(payload, (bytes, bytearray)):
@@ -497,7 +513,8 @@ class Ledger:
         self._index_keys: set[str] = set()
         self._lines: list[LedgerLine] = []
         self._chain_head: str | None = None
-        self._lock = threading.Lock()
+        # Reentrant: pad_to_bucket holds it across its count and its appends.
+        self._lock = threading.RLock()
 
     @classmethod
     def open_stores(
@@ -780,9 +797,14 @@ class Ledger:
         envelope of ``signer`` and a signed statement from it. ``signer`` is a
         ``capsule_emit.signing`` signer with ``sign_envelope`` and
         ``sign_cose_statement`` (such as ``LocalKeypairSigner``). Returns the
-        line count. The caller holds the writer lock across the call."""
+        line count. No append from another thread lands between the padding
+        records; across processes, the caller holds the writer lock."""
         from .signing import sign_producer_envelope
 
+        with self._lock:
+            return self._pad_to_bucket(bucket, signer, issuer, sign_producer_envelope)
+
+    def _pad_to_bucket(self, bucket: int, signer: Any, issuer: str, sign_producer_envelope: Callable) -> int:
         if bucket <= 0:
             return self.entries
         missing = (bucket - self.entries % bucket) % bucket
@@ -828,15 +850,24 @@ def import_flat(
     hold the byte-identical record (a resumed import); a record ``put`` whose
     entry a crash never appended is ``put`` again, which the store accepts.
     The caller holds the writer lock of both the flat ledger and the stores.
-    A signer the artifact store does not trust stops the import at that
-    record with :class:`StoreError`; re-run once the store trusts it."""
+
+    Every record is ``put`` before any entry is appended, so a record the
+    store refuses, such as one from a signer it does not trust, raises
+    :class:`StoreError` while the log holds no new entry (records already
+    ``put`` are named by no entry, so they are not ledger lines); re-run once
+    the store trusts the key."""
     from . import ledger as _ledger
     from .legacy_ledger import LegacyLedger
 
+    if not os.path.exists(source):
+        raise FileNotFoundError(f"no flat ledger at {os.fspath(source)}")
     legacy = LegacyLedger(source)
     copy, skipped, refused = [], {}, []
     seen: dict[str, dict] = {}
     for number, obj in enumerate(_ledger.read_ledger_entries(os.fspath(source)), start=1):
+        if not isinstance(obj, dict):
+            refused.append((number, "a line that is not a JSON object"))
+            continue
         kind = obj.get("kind")
         if kind in (_ledger.CHECKPOINT_STAMP_KIND, _ledger.WITNESS_BACKFILL_KIND):
             skipped[kind] = skipped.get(kind, 0) + 1
@@ -872,18 +903,32 @@ def import_flat(
     ledger, _ = Ledger.open_stores(log, artifacts, indexer, linear=False, require_statements=False)
     report = ImportReport(skipped=skipped)
     with ledger._lock:
-        for position, (number, record) in enumerate(copy, start=1):
-            if position <= ledger.entries:
-                held = ledger._lines[position - 1].capsule_id
-                if held != record.capsule_id or encode_record(_get(artifacts, held)) != encode_record(
-                    prepare(record)
-                ):
-                    raise ImportRefusedError(
-                        f"the log's entry {position} is not flat line {number}'s record as stored: refusing to resume",
-                        [number],
-                    )
-                report.resumed += 1
-                continue
+        if ledger.entries > len(copy):
+            raise ImportRefusedError(
+                f"the log holds {ledger.entries} entries, the flat ledger {len(copy)} records: refusing to resume",
+                [],
+            )
+        # A resumed import: each entry already in the log holds its record as stored.
+        for position, (number, record) in enumerate(copy[: ledger.entries], start=1):
+            held = ledger._lines[position - 1].capsule_id
+            if held != record.capsule_id or encode_record(_get(artifacts, held)) != encode_record(
+                prepare(record)
+            ):
+                raise ImportRefusedError(
+                    f"the log's entry {position} is not flat line {number}'s record as stored: refusing to resume",
+                    [number],
+                )
+            report.resumed += 1
+        rest = copy[ledger.entries :]
+        # Every record first, then every entry: a record the store refuses
+        # (an untrusted signer) stops the import before the log holds any new
+        # entry, and a record no entry names is not a ledger line.
+        for number, record in rest:
+            try:
+                artifacts.put(record)
+            except ArtifactError as exc:
+                raise StoreError(exc, line=number, capsule_id=record.capsule_id) from exc
+        for _, record in rest:
             line = decode_strict_json(record.capsule)
             ledger._check_not_stale()
             ledger._commit(record.capsule_id, record, line, _is_padding(line))

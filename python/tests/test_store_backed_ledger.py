@@ -27,7 +27,12 @@ from capsule_emit.artifact.jsonl import JsonlArtifactStore
 from capsule_emit.artifact.memory import MemoryArtifactStore
 from capsule_emit.artifact.record import encode_record
 from capsule_emit.artifact.sqlite import SqliteArtifactStore
-from capsule_emit.ledger import CHECKPOINT_STAMP_KIND, DISCLOSURE_RECORD_KIND, append_to_ledger
+from capsule_emit.ledger import (
+    CHECKPOINT_STAMP_KIND,
+    DISCLOSURE_RECORD_KIND,
+    WITNESS_BACKFILL_KIND,
+    append_to_ledger,
+)
 from capsule_emit.legacy_ledger import LegacyLedger
 from capsule_emit.signing import LocalKeypairSigner, sign_producer_envelope
 from capsule_emit.store_backed_ledger import (
@@ -44,6 +49,8 @@ from capsule_emit.store_backed_ledger import (
     PaddingMisroutedError,
     StaleLedgerError,
     StatementInvalidError,
+    StoreError,
+    check_statement_matches,
     compute_record_id,
     import_flat,
     line_bytes,
@@ -443,3 +450,105 @@ def test_import_refuses_to_resume_over_a_different_log(flat, signer):
     _write(log, artifacts, _record(rust_line(0), statement(rust_line(0), signer)))
     with pytest.raises(ImportRefusedError):
         import_flat(flat, log, artifacts)
+
+
+def test_pad_to_bucket_is_one_run_while_other_threads_append(signer):
+    log, artifacts = memory()
+    ledger, _ = Ledger.open_stores(log, artifacts, linear=False)
+    lines = []
+    for n in range(12):
+        line = dict(rust_line(0), action_id=f"example/pad-threads/{n:04}")
+        line.pop("chain", None)
+        lines.append(resign(line, signer))
+
+    def appends():
+        for line in lines:
+            ledger.append(line, statement(line, signer))
+
+    def pads():
+        for _ in range(6):
+            ledger.pad_to_bucket(4, signer, ISSUER)
+
+    threads = [threading.Thread(target=appends), threading.Thread(target=pads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    padding = [line.padding for line in ledger.lines()]
+    # Every run of padding records ends on a bucket boundary: no append landed inside one.
+    for end in range(1, len(padding) + 1):
+        if padding[end - 1] and (end == len(padding) or not padding[end]):
+            assert end % 4 == 0
+    assert padding.count(False) == 12
+
+
+def test_import_of_a_missing_source_raises(tmp_path):
+    log, artifacts = memory()
+    with pytest.raises(FileNotFoundError):
+        import_flat(tmp_path / "nope.jsonl", log, artifacts)
+
+
+def test_import_from_an_untrusted_signer_writes_no_entry(flat):
+    log, artifacts = memory()  # trusts only the fixture key, not the Goose key
+    with pytest.raises(StoreError):
+        import_flat(flat, log, artifacts)
+    assert log.scan_entries(0, 10) == []
+    assert Ledger.open_stores(log, artifacts)[0].entries == 0
+
+
+def test_import_from_a_ledger_store_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("CAPSULE_WITNESS", "off")
+    store = tmp_path / "goose-store"
+    store.mkdir()
+    kw = {"operator": "goose-user", "anchor": False, "witness": False, "ledger": store}
+    first = seal({"join": "goose-user"}, action="loop.join", **kw)
+    seal({"ask": 1}, action="loop.request", confirms=first.capsule["capsule_id"], **kw)
+    legacy = LegacyLedger(store)
+    ids = [e.value.hex() for e in legacy.scan_entries(0, 10)]
+    from agent_action_capsule.producer_envelope import verify_producer_envelope
+
+    record = legacy.get(ids[0])
+    artifacts = MemoryArtifactStore(
+        NAMESPACE, [verify_producer_envelope(record.capsule_id, record.producer_envelope).public_key]
+    )
+    artifacts.init()
+    log = MemoryStore()
+    ledger, report = import_flat(store, log, artifacts)
+    assert [e.value.hex() for e in log.scan_entries(0, 10)] == ids
+    assert all(encode_record(artifacts.get(i)) == encode_record(legacy.get(i)) for i in ids)
+    assert report.records == 2 and ledger.chain_head == ids[1]
+
+
+def test_import_refuses_a_non_object_line_and_skips_backfills(flat, tmp_path):
+    path = tmp_path / "odd.jsonl"
+    path.write_bytes(flat.read_bytes() + b"123\n")
+    log, artifacts = _trusted_store(flat)
+    with pytest.raises(ImportRefusedError) as refused:
+        import_flat(path, log, artifacts)
+    # LegacyLedger reads the whole file as corrupt, so its records refuse too.
+    assert refused.value.lines[-1] == len(path.read_text().splitlines())
+    assert log.scan_entries(0, 10) == []
+
+    backfill = tmp_path / "backfill.jsonl"
+    backfill.write_bytes(flat.read_bytes())
+    append_to_ledger({"kind": WITNESS_BACKFILL_KIND, "capsule_id": "aa" * 32}, backfill)
+    _, report = import_flat(backfill, *_trusted_store(flat))
+    assert report.skipped[WITNESS_BACKFILL_KIND] == 1
+
+
+def test_statement_check_takes_only_cose_sign1_and_profile_critical_headers(signer):
+    import cbor2
+
+    line = {k: v for k, v in rust_line(0).items() if k != "key_id"}
+    good = statement(rust_line(0), signer)
+    message = cbor2.loads(good)
+    assert check_statement_matches(line, line["capsule_id"], good) is None
+    other_tag = cbor2.dumps(cbor2.CBORTag(98, message.value))
+    assert "COSE_Sign1" in check_statement_matches(line, line["capsule_id"], other_tag)
+    # A statement marking its content type critical verifies, as in Rust.
+    protected = cbor2.loads(message.value[0])
+    protected[2] = [3]
+    header = cbor2.dumps(protected, canonical=True)
+    to_sign = cbor2.dumps(["Signature1", header, b"", message.value[2]], canonical=True)
+    resigned = cbor2.dumps(cbor2.CBORTag(18, [header, {}, message.value[2], PRIVATE.sign(to_sign)]))
+    assert check_statement_matches(rust_line(0), line["capsule_id"], resigned) is None

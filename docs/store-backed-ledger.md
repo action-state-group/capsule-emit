@@ -14,7 +14,8 @@ layers instead of a ledger file:
 | Python | `capsule_emit.store_backed_ledger.Ledger.open_stores` / `open_stores_with_indexer` |
 
 Both write the same bytes for the same appends, so a log written in one
-language opens in the other. The pinned fixtures in
+language opens in the other, as long as it was written with Python's two
+switches (below) on. The pinned fixtures in
 [`test-vectors/store-backed-ledger/`](../test-vectors/store-backed-ledger/README.md)
 check this in both directions.
 
@@ -62,6 +63,10 @@ on by default, which is Rust's behavior:
   `require_statements=False` admits a record with no such attachment at all. A
   purged statement is refused either way, and `append` always takes one.
 
+Rust has neither switch. A log holding a record admitted only with a switch
+off, such as an imported flat ledger, opens only in Python, with the same
+switches.
+
 ## Importing a flat Python ledger
 
 `capsule_emit.store_backed_ledger.import_flat(source, log, artifacts)` copies
@@ -81,8 +86,11 @@ store-backed one opened with both switches off:
 - it is re-runnable: an entry already in the log must hold the byte-identical
   record, and a record whose entry a crash never appended is `put` again.
 
-A signer the artifact store does not trust stops the import at that record;
-run it again once the store trusts the key.
+Every record is `put` before any entry is appended. A record the store
+refuses, such as one from a signer it does not trust, stops the import while
+the log holds no new entry (a record no entry names is not a ledger line);
+run it again once the store trusts the key. A `source` that does not exist
+raises `FileNotFoundError`.
 
 ## Checkpoints
 
