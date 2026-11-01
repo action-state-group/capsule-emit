@@ -255,7 +255,8 @@ The loop's Goose extension, with a tool for each loop step, is EvidenceBook's re
 in `action-state-group/evidencebook`. This repository ships only the seal-only extension above. The
 `loop_server.py` that used to live here was retired in favour of it
 ([#400](https://github.com/action-state-group/capsule-emit/issues/400)); ledgers it wrote stay readable with
-`capsule-emit verify --store`, and there is no import.
+`capsule-emit verify --store`, and the EvidenceBook extension's `loop_import` copies such a ledger into its shelf once
+(see "Bringing an existing ledger" in its README).
 
 ## Add it yourself
 
