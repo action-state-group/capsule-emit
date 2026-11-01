@@ -6,6 +6,17 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+## 0.14.0 — 2026-10-31
+
+Python 0.14.0, a minor release with one breaking change: the deprecated pre-00
+`capsule_emit.evidence_request` is removed (#396); use
+`agent_action_capsule.evidence_request`. It also carries `capsule_emit.produce`
+(#382), `--period day` (#376), the witness-signed time per witness receipt in
+`verify --bundle` (#389), the Goose loop extension and its `loop_ask` tools
+(#391, #394), the artifact store index (#381) and the requirement on
+`checkpointed-local-log>=0.8,<0.9` (#398). The Rust and TypeScript parts listed
+below ship with their own releases.
+
 ### Changed (Python): checkpointed-local-log 0.8
 
 The package now requires `checkpointed-local-log>=0.8,<0.9` (was `>=0.7,<0.8`), so it installs beside the
