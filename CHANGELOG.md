@@ -6,6 +6,20 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (Python): the store-backed ledger, as Rust's `Ledger::open_stores`
+
+`capsule_emit.store_backed_ledger.Ledger.open_stores(log, artifacts, indexer)` keeps the ledger in a CLL entry log and
+an artifact store, as the Rust crate's `Ledger::open_stores_with_indexer` does: the same record mapping, the same
+replay and append checks, `append`, `append_padding`, `pad_to_bucket`, `lookup` and the citation index. The same
+appends give byte-identical log values and records in both languages, checked both ways by the fixtures in
+`test-vectors/store-backed-ledger/`; checkpoints come from CLL's runner on the same backend. `import_flat` copies a
+flat Python ledger's records into one exactly as stored, never re-signed. Checkpoint stamps and witness backfills are
+not copied (the flat file keeps them), and a ledger holding a line no store record can keep, such as an unsigned
+`log()` entry or a disclosure record, refuses the import before anything is written. `linear=False` and
+`require_statements=False` open such a log: a Python flat ledger was never one chain and has no signed statements.
+See `docs/store-backed-ledger.md`.
+([#399](https://github.com/action-state-group/capsule-emit/issues/399))
+
 ### Changed (Rust): `capsule-emit` moves to checkpointed-local-log 0.4.0 and agent-action-capsule 0.8.0
 
 `Ledger::open_stores_with_indexer` and `CheckpointState::load_log` now take the 0.4.0 store types, so a store-backed

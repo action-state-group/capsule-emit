@@ -187,8 +187,10 @@ Rust's `LegacyLedger` sits above `Ledger`, whose rules it keeps: every
 `Ledger::append` and `Ledger::append_padding` recomputes the line's
 `capsule_id` and checks its signed statement before writing, on the flat
 layout and the store-backed one alike, so a refused line leaves the ledger
-reopenable. A Rust ledger outside this legacy format is
-`Ledger::open_stores`, over a CLL entry log and an artifact store.
+reopenable. A ledger outside this legacy format is the
+[store-backed ledger](store-backed-ledger.md) (Rust `Ledger::open_stores`,
+Python `capsule_emit.store_backed_ledger`), over a CLL entry log and an
+artifact store; `import_flat` moves a Python ledger's records into one.
 
 ### Verification
 
