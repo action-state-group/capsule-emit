@@ -6,6 +6,14 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Removed (examples): the Goose loop extension
+
+`examples/goose-capsule/loop_server.py` and its tests are gone; the Goose loop reference is EvidenceBook's
+[`python/examples/goose`](https://github.com/action-state-group/evidencebook/tree/main/python/examples/goose), so one
+remains. The seal-only `examples/goose-capsule/server.py` stays, and ledgers the old extension wrote stay readable with
+`capsule-emit verify --store`.
+([#400](https://github.com/action-state-group/capsule-emit/issues/400))
+
 ## 0.15.0 — 2026-11-01
 
 Python 0.15.0: new records to a flat ledger are refused.
