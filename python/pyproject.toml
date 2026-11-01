@@ -42,7 +42,7 @@ dependencies = [
     # 0.6: cll.log, the entry-log interface capsule_emit.legacy_ledger implements.
     # 0.7: LedgerStore.recover() and the duplicate check before writing, which
     # capsule_emit.ledger_store's ledger store directories need.
-    "checkpointed-local-log>=0.7,<0.8",
+    "checkpointed-local-log>=0.8,<0.9",
 ]
 
 [project.optional-dependencies]
