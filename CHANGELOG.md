@@ -6,6 +6,13 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed (Python): checkpointed-local-log 0.8
+
+The package now requires `checkpointed-local-log>=0.8,<0.9` (was `>=0.7,<0.8`), so it installs beside the
+EvidenceBook Python shelf, which uses CLL 0.8's SQLite log and checkpoint runner. The Python tests pass unchanged
+on 0.8.0.
+([#398](https://github.com/action-state-group/capsule-emit/issues/398))
+
 ### Added (Python): `loop_ask` and `loop_ask_reply`, step 07 for the asker
 
 The Goose loop extension seals a `draft-mih-agent-evidence-request-00` request in the asker's book before writing it, and records

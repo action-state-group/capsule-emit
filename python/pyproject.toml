@@ -42,7 +42,9 @@ dependencies = [
     # 0.6: cll.log, the entry-log interface capsule_emit.legacy_ledger implements.
     # 0.7: LedgerStore.recover() and the duplicate check before writing, which
     # capsule_emit.ledger_store's ledger store directories need.
-    "checkpointed-local-log>=0.7,<0.8",
+    # 0.8: so capsule-emit installs beside the EvidenceBook Python shelf, which builds on
+    # CLL 0.8's SQLite log and checkpoint runner (evidencebook#254 section 6.3).
+    "checkpointed-local-log>=0.8,<0.9",
 ]
 
 [project.optional-dependencies]
