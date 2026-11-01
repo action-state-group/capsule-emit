@@ -6,6 +6,26 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed (Python, breaking): new records to a flat `ledger.jsonl` are refused from 0.15.0
+
+Python 0.15.0 is the `FLAT_WRITES_STOP` release announced in 0.14.0 (capsule-emit#358): `seal()`, `append_to_ledger()`,
+holds and every other writer raise `FlatLedgerWriteRefused` for a new record to a flat ledger, whether it was chosen by
+argument, by `CAPSULE_LEDGER` or by the old default `./ledger.jsonl`. Reading never stops: `verify --store`,
+`ledger view`, `ledger export --jsonl` and the import all still take a flat file, and checkpoint stamps, witness
+backfills and disclosure records on an existing flat ledger keep working.
+
+**To migrate**, once per ledger:
+
+```bash
+capsule-emit ledger import ledger.jsonl capsule-ledger
+```
+
+The import leaves the flat file unchanged and copies the producer key. Then seal with `ledger="capsule-ledger"`, set
+`CAPSULE_LEDGER=capsule-ledger`, or leave `ledger=` unset (the default is `./capsule-ledger/`). A ledger that repeats a
+`capsule_id` cannot be imported: keep that file for reading and seal new records to a new directory. The refusal
+message names the exact command for the ledger it refused.
+([#415](https://github.com/action-state-group/capsule-emit/issues/415))
+
 ## 0.14.1 — 2026-11-01
 
 Python 0.14.1: the store-backed ledger and the import of a flat Python ledger

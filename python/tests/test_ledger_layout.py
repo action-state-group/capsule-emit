@@ -11,6 +11,7 @@ import warnings
 
 import pytest
 
+import capsule_emit
 from capsule_emit import ledger_layout, ledger_migrate, ledger_store, push, seal
 from capsule_emit.ledger import read_ledger, read_ledger_entries
 from capsule_emit.ledger_layout import FlatLedgerWriteRefused, LedgerDeprecationWarning, resolve_ledger
@@ -25,6 +26,9 @@ def _the_real_rules(monkeypatch, tmp_path):
     monkeypatch.setattr(ledger_layout, "_allow_new_flat", False)
     monkeypatch.setattr(ledger_layout, "_warn_flat_writes", True)
     monkeypatch.setattr(ledger_layout, "_warned", set())
+    # The window tests run as the last release before the stop, whatever
+    # version is installed; the stop's own tests set 0.15.0 themselves.
+    monkeypatch.setattr(capsule_emit, "__version__", "0.14.1")
     monkeypatch.delenv("CAPSULE_LEDGER", raising=False)
     monkeypatch.chdir(tmp_path)
 
