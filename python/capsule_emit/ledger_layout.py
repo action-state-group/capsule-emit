@@ -65,7 +65,8 @@ LEDGER_ENV = "CAPSULE_LEDGER"
 FLAT_WRITES_STOP = "0.15.0"
 
 # The test suite's hooks (tests/conftest.py): its flat-ledger tests create
-# fresh flat ledgers and would warn on every one; the rule and the warning are
+# fresh flat ledgers, which ``_allow_new_flat`` also keeps from being refused
+# once the installed version reaches FLAT_WRITES_STOP, and would warn on every one; the rule and the warning are
 # tested on their own (tests/test_ledger_layout.py).
 _allow_new_flat = False
 _warn_flat_writes = True
@@ -173,6 +174,8 @@ def _installed_version() -> tuple[int, ...] | None:
 
 
 def flat_writes_stopped() -> bool:
+    if _allow_new_flat:  # the test suite's hook: the stop is tested on its own
+        return False
     installed = _installed_version()
     stop = tuple(int(part) for part in FLAT_WRITES_STOP.split("."))
     return installed is not None and installed >= stop
