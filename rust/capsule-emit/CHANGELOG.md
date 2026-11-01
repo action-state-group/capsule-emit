@@ -7,6 +7,13 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+### Changed
+
+- **Breaking:** requires `checkpointed-local-log` 0.4.0 (was 0.3.1) and `agent-action-capsule` 0.8.0 (was 0.4.1).
+  `Ledger::open_stores_with_indexer` and `CheckpointState::load_log` take CLL 0.4.0's store types, and the
+  `agent-action-capsule` types the crate re-exports come from 0.8.0, so a caller that names either crate must
+  move to the same versions. No source change in this crate.
+
 ## 0.0.9
 
 - **The `produce` module: the Go module's producing calls.** `build`,

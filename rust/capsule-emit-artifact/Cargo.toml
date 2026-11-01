@@ -24,7 +24,7 @@ sqlite = ["dep:rusqlite"]
 mysql = ["dep:mysql"]
 
 [dependencies]
-agent-action-capsule = "0.4.1"
+agent-action-capsule = "0.8.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
