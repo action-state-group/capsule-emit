@@ -25,9 +25,10 @@ defaults:
 env:
   RUST_TOOLCHAIN: "1.97.1"
   CARGO_TERM_COLOR: always
-  # capsule-emit-artifact 0.0.1 is on crates.io, so capsule-emit's publish
-  # dry run resolves it from the index.
-  DEPS_ON_CRATES_IO: "true"
+  # capsule-emit requires capsule-emit-artifact 0.0.2, which this release
+  # publishes; the capsule-emit publish dry run resolves it from the index, so
+  # it is skipped until the next change sets this back to "true".
+  DEPS_ON_CRATES_IO: "false"
 
 jobs:
   test:
