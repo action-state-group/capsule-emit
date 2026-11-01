@@ -110,7 +110,7 @@ repository:
 
 ```toml
 capsule-emit = { git = "https://github.com/action-state-group/capsule-emit" }
-cll = { package = "checkpointed-local-log", version = "0.3.1", features = ["sqlite"] }
+cll = { package = "checkpointed-local-log", version = "0.4.0", features = ["sqlite"] }
 capsule-emit-artifact = { git = "https://github.com/action-state-group/capsule-emit", features = ["sqlite"] }
 rusqlite = "0.40"
 ```
