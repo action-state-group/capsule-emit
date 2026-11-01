@@ -6,6 +6,10 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+## 0.15.0 — 2026-11-01
+
+Python 0.15.0: new records to a flat ledger are refused.
+
 ### Changed (Python, breaking): new records to a flat `ledger.jsonl` are refused from 0.15.0
 
 Python 0.15.0 is the `FLAT_WRITES_STOP` release announced in 0.14.0 (capsule-emit#358): `seal()`, `append_to_ledger()`,
