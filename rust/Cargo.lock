@@ -163,7 +163,7 @@ dependencies = [
 
 [[package]]
 name = "capsule-emit-artifact"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "agent-action-capsule",
  "base64 0.22.1",
