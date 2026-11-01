@@ -10,17 +10,16 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agent-action-capsule"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42257038df5c2e3a7a1d691f83244953ac3fd75baa60049fc09eb1032981bb8f"
+checksum = "40e21e140db3bb0773e7b00d50bc2efa5983765eb888ea97de71f85a74da944c"
 dependencies = [
  "base64 0.22.1",
  "checkpointed-local-log",
- "coset",
  "ed25519-dalek",
+ "evidence-request",
  "hex",
  "p256",
- "scitt-cose-receipt",
  "serde",
  "serde_json",
  "sha2",
@@ -197,9 +196,9 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "checkpointed-local-log"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e0849196938de287c059d1f53874c76cc6583051e4ab7327bedb0f658ffd9d2"
+checksum = "1946d9506c829e225df887be5e559278f9b3db9dcca4c91e01261824a5373fb8"
 dependencies = [
  "base64 0.22.1",
  "coset",
@@ -480,6 +479,23 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "evidence-request"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9946dd4944a44519f90ee9f01bac2b654d76f6dbaa78c93281e05fb2ed64a2f"
+dependencies = [
+ "base64 0.22.1",
+ "ciborium",
+ "ed25519-dalek",
+ "hex",
+ "k256",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -843,6 +859,19 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "k256"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6e3919bbaa2945715f0bb6d3934a173d1e9a59ac23767fbaaef277265a7411b"
+dependencies = [
+ "cfg-if",
+ "ecdsa",
+ "elliptic-curve",
+ "sha2",
+ "signature",
 ]
 
 [[package]]
@@ -1257,23 +1286,6 @@ name = "saturating"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ece8e78b2f38ec51c51f5d475df0a7187ba5111b2a28bdc761ee05b075d40a71"
-
-[[package]]
-name = "scitt-cose-receipt"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f421a6d04a661b68ffcab1d999a79564e3f4b71c188fedacceac7e95e505d5ce"
-dependencies = [
- "coset",
- "ecdsa",
- "ed25519-dalek",
- "hex",
- "p256",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 1.0.69",
-]
 
 [[package]]
 name = "sec1"
