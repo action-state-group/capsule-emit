@@ -426,12 +426,12 @@ def test_import_refuses_lines_no_store_record_keeps(flat, tmp_path):
         path.write_bytes(flat.read_bytes())
         if extra == "resigned":
             first = json.loads(flat.read_text().splitlines()[0])
-            # An old writer's second line under one capsule_id (writers refuse it now).
+            # An old writer's second, different line under one capsule_id (writers
+            # refuse it now). Flip the last hex digit so it always differs.
+            last = first["signature"][-1]
+            changed = first["signature"][:-1] + ("1" if last == "0" else "0")
             with path.open("a") as fh:
-                fh.write(
-                    json.dumps(dict(first, signature=first["signature"][:-2] + "00"), separators=(",", ":"))
-                    + "\n"
-                )
+                fh.write(json.dumps(dict(first, signature=changed), separators=(",", ":")) + "\n")
         elif extra == "log":
             unsigned_log(b"unsigned bytes", ledger=path)
         else:
