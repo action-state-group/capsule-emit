@@ -250,46 +250,13 @@ imports the mcp 1.x `FastMCP`; the port to mcp 2.x's `MCPServer` is tracked in
 
 ## Pattern C — the loop steps as tools
 
-`examples/goose-capsule/loop_server.py` is a second Goose extension that exposes the library calls behind the
-12-step loop, one tool per step verb. Each tool returns one JSON object; a refusal is `{"ok": false, ...}` and a
-step that cannot be checked says `NOT_CHECKED` with the reason. It moves no money and opens no connection of its own;
-sealing and `loop_book`'s `checkpoint_now` follow capsule-emit's witness settings like every capsule-emit call, so set
-`CAPSULE_WITNESS=off` for none. A peer admission names the peer by its operator string and reports `binding: unbound` unless you pass `peer_key_id`;
-with it, `loop_deal_respond` and `loop_deal_reconcile` also require the capsule's signing key to be that key (both always check that the signature verifies under the key the capsule carries).
-
-| Step | Tool | Goose status |
-|---|---|---|
-| 01 Seal | `capsule_record`, `@emitter.tool()` | maps |
-| 02 Book | `loop_book` | maps when a witness receipt verifies under a key you supply (`witness_directory_path`); otherwise `NOT_CHECKED` |
-| 03 Advertise | none | NOT_CHECKED: the extension publishes no commitment |
-| 04 Admit | `loop_admit` | maps: a peer GO or NO sealed before any deal; `loop_deal_open` and `loop_deal_respond` refuse unless the newest one is GO |
-| 05 Deal and push | `loop_deal_open`, `loop_deal_respond`, `loop_deal_push`, `loop_deal_reconcile` | maps: each side seals its half in its own book, pushes it as a file, and cites the other's |
-| 06 Settle | `loop_settle`, `loop_settle_verify` | maps for the draft's four legs; no rail is driven, the caller passes the payment reference it observed |
-| 07 Ask | `loop_ask`, `loop_ask_reply` | maps for the asker: a -00 request sealed in the asker's book before it is written (the -00 request itself carries no requester signature), the reply verified under the responder key you trust and recorded as `artifact_verified`, a signed `refusal` with its reason, or a `recorded_absence` (a signed answer that arrives later is still recorded as a further outcome, so read the newest outcome per request); anything else is an error. Answering a request stays NOT_CHECKED: Goose runs over stdio and cannot host a responder. A responder that serves only a proven counterparty refuses this request `not_authorized`, which evidencebook's `ReconcileAsked` ([evidencebook#206](https://github.com/action-state-group/evidencebook/issues/206), row 9) counts as REFUSED, never OMITTED. The subject is whatever the responder's profile defines: a mesh counterparty takes a `correlation` subject carrying the caller's exchange string ([#392](https://github.com/action-state-group/capsule-emit/issues/392)) |
-| 08 Verify | `capsule_verify`, `capsule-emit bundle` | maps (loop-owned) |
-| 09 Dispute | none | NOT_CHECKED: `adjudication.seal_adjudication` seals in the referee's own book, with no delivery into a party's book ([#393](https://github.com/action-state-group/capsule-emit/issues/393), with actionstate-muse#315) |
-| 10 Judge, 11 Report | the loop's own pack and page | maps (loop-owned) |
-| 12 Join | `loop_join`, `loop_probe` | maps for the book; the commitment (03) is absent |
-
-Add it to `~/.config/goose/config.yaml` beside the other extensions:
-
-```yaml
-extensions:
-  capsule_loop:
-    enabled: true
-    type: stdio
-    name: capsule_loop
-    description: "Capsule loop steps: book, admit, deal, settle, join"
-    cmd: python3
-    args: ["/path/to/examples/goose-capsule/loop_server.py"]
-    timeout: 30
-    envs:
-      CAPSULE_LEDGER: "/path/to/my-book"
-      CAPSULE_OPERATOR: "acme-co"
-```
-
-Tests: `python/tests/test_goose_loop.py` runs two nodes, each with its own book, through every tool above, and
-asserts that steps 03 and 09 have no tool.
+The loop's Goose extension, with a tool for each loop step, is EvidenceBook's reference:
+[`python/examples/goose`](https://github.com/action-state-group/evidencebook/tree/main/python/examples/goose)
+in `action-state-group/evidencebook`. This repository ships only the seal-only extension above. The
+`loop_server.py` that used to live here was retired in favour of it
+([#400](https://github.com/action-state-group/capsule-emit/issues/400)); ledgers it wrote stay readable with
+`capsule-emit verify --store`, and the EvidenceBook extension's `loop_import` copies such a ledger into its shelf once
+(see "Bringing an existing ledger" in its README).
 
 ## Add it yourself
 
