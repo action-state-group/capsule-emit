@@ -207,6 +207,14 @@ def seal(*args: Any, action: Any = _ACTION_UNSET, **kwargs: Any) -> Capsule:
     process). Any keyword the primitive accepts (``operator``,
     ``developer``, ``model``, ``effect``, ...) may be passed through.
 
+    A Pydantic v2 model (alone or inside a dict/list) is sealed as its
+    ``model_dump(mode="json")`` — serializers run, keys are field names — and
+    digests the same as that dump. Floats are still refused (§5.1): give the
+    field a ``Decimal`` (it dumps to a decimal string) or a ``str``; the error
+    names the field path. Adapters convert a model's floats themselves. A non-JSON field raises
+    ``PydanticPayloadError``. A ``set`` field dumps in an order that varies
+    between processes: use a list or a sorted-list serializer.
+
     **Dispatch is never guessed.** Raw ``bytes``/``bytearray``/``memoryview``
     are always refused — undeclared foreign bytes are ambiguous (content you
     authored, or someone else's signed artifact?) and the error names the

@@ -79,7 +79,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from agent_action_capsule.anchor import AnchorError, AnchorFuture, AnchorResult, async_anchor
-from agent_action_capsule.canonical import jcs, json_digest, normalize
+from agent_action_capsule.canonical import FloatInDigestError, jcs, json_digest, normalize
 from agent_action_capsule.contracts import (
     Disposition,
     EffectRecord,
@@ -93,6 +93,11 @@ from . import witness as _witness
 from .builder import build_capsule as _base_emit
 from .canonicalization import compute_capsule_id
 from .numbers import CANONICALIZATION_ID
+from .pydantic_payload import (  # noqa: F401 (PydanticPayloadError is re-exported)
+    PydanticPayloadError,
+    float_path,
+    plain_json,
+)
 from .relations import REGISTERED_RELATIONS
 from .signing import Signer
 from .spec_version import SPEC_VERSION
@@ -425,7 +430,37 @@ def _digest(value: Any, salt: str | None = None) -> str:
     salt suffix, so opting into ``salt_digests=True`` never reintroduces the
     pre-0.3.2 JCS/sort_keys divergence this function's own history already
     fixed.
+
+    A Pydantic v2 model (or one inside a dict/list) is first reduced to
+    ``model_dump(mode="json")``, so it digests the same as that dump; a field
+    that is not JSON raises :class:`PydanticPayloadError` rather than falling
+    to the ``str`` fallback below. A ``set``/``frozenset`` field dumps in
+    iteration order, which varies between processes, so give it a sorted-list
+    serializer or use a list.
     """
+    try:
+        plain = plain_json(value)
+    except RecursionError:
+        # Too deep to walk: hand the original to the digest layer, whose own
+        # depth limit gives the same error as without Pydantic.
+        plain = value
+    if plain is value:
+        return _digest_plain(value, salt)
+    # A model was converted. Refuse a float up front, anywhere in nested
+    # dicts, lists and tuples (sets, dataclasses and arbitrary objects are #431):
+    # left to the digest layer, a non-JSON sibling (a datetime, say) can raise
+    # TypeError first and the legacy fallback would seal the float via repr().
+    where = float_path(plain)
+    if where is not None:
+        raise FloatInDigestError(
+            f"a float at {where!r} in a payload that held a Pydantic model: "
+            "§5.1 forbids floats in digest-bearing fields, so make the field "
+            "a Decimal (it dumps to a decimal string) or a str."
+        )
+    return _digest_plain(plain, salt)
+
+
+def _digest_plain(value: Any, salt: str | None) -> str:
     try:
         if salt is None:
             return json_digest(value)
