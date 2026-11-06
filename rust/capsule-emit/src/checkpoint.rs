@@ -1270,8 +1270,8 @@ fn row_checkpoint(row: &WitnessState) -> Option<cll::checkpoint::DecodedCheckpoi
 
 /// `witness_id`'s undelivered cuts, in chain order: its rows past the last
 /// one closed (with a receipt, or as [`WITNESS_AHEAD`]), plus any row that
-/// holds it (permanent for another reason) wherever it is, so a hold set
-/// during catch-up survives a restart. Sizes grow along the chain, so size
+/// holds it (permanent for another reason, such as one another runner wrote)
+/// wherever it is, so that hold survives a restart. Sizes grow along the chain, so size
 /// order is chain order.
 fn undelivered(rows: &[WitnessState], witness_id: &str) -> VecDeque<u64> {
     let own = || rows.iter().filter(|row| row.witness_id == witness_id);
@@ -3049,6 +3049,16 @@ mod tests {
         state.tick(&signer(), &anchor).unwrap();
         assert!(state.last_checkpoint().unwrap().witnesses.is_empty());
         assert_eq!(state.pending_witness_urls, vec![witness.url.clone()]);
+        // The witness did accept it, so once it answers well the next
+        // attempt is refused as already held (409) and the witness is
+        // dropped from pending with no receipt for that cut; the next cut
+        // is delivered.
+        set(&witness.garble_receipt, false);
+        let two = write_capsule(dir.path(), "two");
+        state.checkpoint_covering(&two, &signer(), &anchor).unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+        assert!(state.pending_witness_urls.is_empty());
+        assert_eq!(state.last_checkpoint().unwrap().witnesses.len(), 1);
     }
 
     #[test]
@@ -4267,6 +4277,18 @@ mod tests {
             .last_error
             .unwrap()
             .contains("invalid receipt base64"));
+        // The witness did accept that checkpoint, so once it answers well the
+        // next pass is refused as already held (409): the row closes as
+        // witness-ahead with no receipt, and the next cut is delivered.
+        set(&witness.garble_receipt, false);
+        append_entry(log.as_ref(), "two");
+        let b = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        let ahead = row(log.as_ref(), &witness.url, a.mmr_size);
+        assert!(ahead.receipt.is_none() && is_witness_ahead(&ahead));
+        assert_eq!(b.witnesses.len(), 1);
     }
 
     #[test]

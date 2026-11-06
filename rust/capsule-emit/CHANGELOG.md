@@ -17,7 +17,9 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   JSON, whose `entry_hash_scheme` is not `legacy` (the reference witness sends it), whose position is invalid
   (`tree_size` below 1, `leaf_index` not below it), or whose receipt is not canonical base64. Each refusal is a
   failed attempt: the row (store) or the witness (flat) stays pending and is retried, and a receipt a witness
-  issued but this crate refused is no longer held as a permanent row. A witness URL with user information, a query
+  issued but this crate refused is no longer held as a permanent row. Because the witness had already accepted
+  that checkpoint, the retry is refused as already held (409): the cut ends with no receipt (the store row closes
+  as witness-ahead, the flat witness is dropped from pending) and the next cut is delivered. A witness URL with user information, a query
   or a fragment is refused by the client, so that witness is not contacted. The 409 catch-up stays here
   (checkpointed-local-log#91).
 
