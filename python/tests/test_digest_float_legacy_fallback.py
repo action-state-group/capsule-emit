@@ -167,11 +167,79 @@ def test_float_free_legacy_digests_unchanged(name):
     assert _digest(value, salt="abcd") == salted
 
 
+_ARMED = [False]
+
+
+def _hostile(base, *args):
+    """A subclass of ``base`` whose Python-level hooks all raise (the C JSON
+    encoder serialises these natively and never calls them)."""
+
+    def boom(self, *a, **k):
+        raise RuntimeError("user code ran")
+
+    ns = {
+        "__str__": boom,
+        "__repr__": boom,
+        "__format__": boom,
+        "__getattr__": boom,
+        "__eq__": boom,
+        "__ne__": boom,
+        "__bool__": boom,
+        "__getitem__": boom,
+        # hashable while the payload is built, raising once armed
+        "__hash__": lambda self: boom(self) if _ARMED[0] else base.__hash__(self),
+    }
+    return type("Hostile" + base.__name__, (base,), ns)(*args)
+
+
+class _FakeClass:
+    """An object whose __class__ lookup (what isinstance consults) runs user code."""
+
+    @property
+    def __class__(self):
+        raise RuntimeError("user code ran")
+
+
 @pytest.mark.parametrize("salt", [None, "abcd"])
-def test_key_with_raising_str_does_not_break_float_free_payload(salt):
-    value = {"h": Holder({_BadKey(): 1}), "t": (1,)}
-    # the walk itself must not raise (the digest path may still fail on such a key)
-    assert len(_digest({"h": Holder({"k": 1}), "t": (1,)}, salt=salt)) == 64
+def test_walk_runs_no_user_code(salt):
+    """The rule: the walk calls no user code (str/repr/hash/eq/getattr/iteration
+    overrides) on any path. Hostile objects in float-free payloads must digest
+    exactly as the legacy encoder (main) does."""
+    value = {
+        "t": (1,),  # forces the legacy fallback
+        "d": _hostile(dict, {"a": 1}),
+        "l": _hostile(list, [1, 2]),
+        "s": _hostile(str, "x"),
+        "tu": _hostile(tuple, (1, 2)),
+        "nested": [_hostile(dict, {"k": [1]})],
+    }
+    sortable = dict(value)
+    # JCS str()s an int subclass itself (main too), so these join the walker-only part
+    value["n"] = _hostile(int, 7)
+    value["nested2"] = [_hostile(dict, {"k": [_hostile(int, 3)]})]
+    # the legacy encoder str()s a frozenset (running its elements' repr) and cannot
+    # sort mixed keys, so those two shapes are checked on the walker alone
+    value[_hostile(int, 5)] = "int-subclass key"
+    value["in-set"] = frozenset({_hostile(int, 9)})
+    expected_raw = json.dumps(sortable, sort_keys=True, separators=(",", ":"), default=str)
+    if salt is not None:
+        expected_raw += "|" + salt
+    assert _digest(sortable, salt=salt) == hashlib.sha256(expected_raw.encode()).hexdigest()
     from capsule_emit.pydantic_payload import deep_float_path
 
-    assert deep_float_path(value) is None
+    _ARMED[0] = True
+    try:
+        assert deep_float_path(value) is None  # the whole payload, int-subclass key included
+    finally:
+        _ARMED[0] = False
+
+
+def test_walk_labels_found_float_without_formatting_hostile_keys():
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    key = _hostile(int, 1)
+    assert deep_float_path({key: [1.5]}) == "<key>[0]"
+    assert deep_float_path({"a": {"b": (0, 1.5)}}) == "a.b[1]"
+    assert deep_float_path({4: 1.5}) == "4"
+    assert deep_float_path({"a": _hostile(dict, {"x": 1.5})}) == "a.x"
+    assert deep_float_path({"o": _FakeClass(), "f": [1.5]}) == "f[0]"

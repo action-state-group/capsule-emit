@@ -104,6 +104,23 @@ def _slot_names(value: Any) -> list[str]:
     return names
 
 
+def _label_path(nodes: list[tuple[int, str, Any]], idx: int) -> str:
+    """Render a node's path from its parent links. Called only once a float is
+    found. A key is formatted only if its type is exactly ``str`` or ``int``
+    (never a subclass, whose ``__str__`` is user code); anything else is ``<key>``."""
+    parts: list[str] = []
+    while idx >= 0:
+        parent, kind, payload = nodes[idx]
+        if kind == "i":
+            parts.append(f"[{payload}]")
+        else:
+            t = type(payload)
+            parts.append("." + (str(payload) if t is int else payload if t is str else "<key>"))
+        idx = parent
+    out = "".join(reversed(parts))
+    return out[1:] if out.startswith(".") else out or "<payload>"
+
+
 def deep_float_path(root: Any) -> str | None:
     """Path of the first Python float in the standard containers of ``root``, or
     None (capsule-emit#431).
@@ -111,45 +128,66 @@ def deep_float_path(root: Any) -> str | None:
     The legacy ``default=str`` digest fallback would seal such a float through
     ``repr()``. This walks only types the payload contract already knows: dict
     (keys and values), list, tuple, set, frozenset, dataclass instances and
-    Pydantic v2 models (their dump and their own fields, since ``repr`` shows
-    fields a serializer hides). Any other object is never touched, so it keeps
-    exactly its legacy behaviour; a float held only inside such an object, such
-    as a numpy array, is a known limit. Iterative, so a deep payload cannot
-    raise ``RecursionError``; visited objects are kept alive so a recycled
-    ``id()`` cannot hide a later one.
+    Pydantic v2 models (their own fields). Any other object is never touched, so it
+    keeps exactly its legacy behaviour; a float held only inside such an object, such
+    as a numpy array, is a known limit (capsule-emit#433).
+
+    Rule: **the walk runs no user code.** It decides every type with
+    ``issubclass(type(x), ...)`` (never ``isinstance`` on the object, which can
+    consult a user ``__class__``), reads containers through the builtin
+    ``dict``/``list``/``tuple``/``set``/``frozenset`` methods (a subclass's
+    overrides are bypassed), reads fields with ``object.__getattribute__``, and
+    builds the path only after a float is found. It is iterative, so a deep
+    payload cannot raise ``RecursionError``, and keeps visited objects alive so a
+    recycled ``id()`` cannot hide a later one.
     """
     base = _model_base()
     seen: set[int] = set()
     keep: list[Any] = []
-    stack: list[tuple[Any, str]] = [(root, "")]
+    nodes: list[tuple[int, str, Any]] = []
+    stack: list[tuple[Any, int]] = [(root, -1)]
+
+    def child(value: Any, parent: int, kind: str, payload: Any) -> None:
+        nodes.append((parent, kind, payload))
+        stack.append((value, len(nodes) - 1))
+
     while stack:
-        value, path = stack.pop()
-        if isinstance(value, float):
-            return path or "<payload>"
-        is_dc = dataclasses.is_dataclass(value) and not isinstance(value, type)
+        value, idx = stack.pop()
+        t = type(value)
+        if issubclass(t, float):
+            return _label_path(nodes, idx)
+        is_dc = hasattr(t, "__dataclass_fields__")
         if value is None or id(value) in seen:
             continue
-        if isinstance(value, (str, bytes, int)) and not is_dc:
+        if issubclass(t, (str, bytes, int)) and not is_dc:
             continue
         seen.add(id(value))
         keep.append(value)
-        if isinstance(value, dict):
-            for k, v in value.items():
-                # never call a key's own __str__: it may raise on a float-free payload
-                sub = f"{path}.{k}" if isinstance(k, (str, int)) else f"{path}.<key>"
-                stack.append((k, sub))
-                stack.append((v, sub))
-        elif isinstance(value, (list, tuple, set, frozenset)):
-            for i, v in enumerate(value):
-                stack.append((v, f"{path}[{i}]"))
-        if base is not None and isinstance(value, base):
+        if issubclass(t, dict):
+            for k, v in dict.items(value):
+                nodes.append((idx, "k", k))
+                stack.append((k, len(nodes) - 1))
+                stack.append((v, len(nodes) - 1))
+        elif issubclass(t, (list, tuple, set, frozenset)):
+            it = (
+                list.__iter__ if issubclass(t, list)
+                else tuple.__iter__ if issubclass(t, tuple)
+                else set.__iter__ if issubclass(t, set)
+                else frozenset.__iter__
+            )
+            for i, v in enumerate(it(value)):
+                child(v, idx, "i", i)
+        if base is not None and issubclass(t, base):
             try:
-                stack.append((value.model_dump(mode="json"), path))
+                for k, v in dict(object.__getattribute__(value, "__dict__")).items():
+                    if type(k) is str:
+                        child(v, idx, "k", k)
             except Exception:
                 pass
-            stack.append((dict(value.__dict__), path))
         if is_dc:
-            for f in dataclasses.fields(value):
-                sub = f"{path}.{f.name}" if path else f.name
-                stack.append((getattr(value, f.name, None), sub))
+            for f in dataclasses.fields(t):
+                try:
+                    child(object.__getattribute__(value, f.name), idx, "k", f.name)
+                except Exception:
+                    pass
     return None
