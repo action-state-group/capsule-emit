@@ -9,7 +9,7 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ### Changed
 
-- **Breaking:** requires `checkpointed-local-log` 0.5.0 (was 0.4.0), and a `agent-action-capsule` release built on it.
+- **Breaking:** requires `checkpointed-local-log` 0.5.0 (was 0.4.0), and `agent-action-capsule` 0.10.0 (was 0.8.0), which is built on it.
   A store type passed to `Ledger::open_stores_with_indexer` or `CheckpointState::load_log` must implement 0.5.0's
   `WitnessStateStore`, which gained `pending_witnesses_for`.
 - Witness registration (`POST /checkpoints`, the flat and store paths) goes through checkpointed-local-log's
