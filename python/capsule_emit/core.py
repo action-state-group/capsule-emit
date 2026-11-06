@@ -474,8 +474,8 @@ def _digest_plain(value: Any, salt: str | None) -> str:
         # Non-JSON-native types (e.g. tuples, arbitrary objects) — tolerated as
         # before. FloatInDigestError is intentionally NOT caught: a raw float is
         # a spec-defined error, so _emit_capsule() fails closed at the door.
-        # A float beside a non-JSON value must be refused too (#431): default=str
-        # would otherwise seal it via repr(), which §5.1 forbids and
+        # A float beside, or inside, a non-JSON value must be refused too (#431):
+        # default=str would otherwise seal it via repr(), which §5.1 forbids and
         # verify_input_digest cannot reproduce.
         where = deep_float_path(value)
         if where is not None:

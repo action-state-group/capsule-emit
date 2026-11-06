@@ -86,14 +86,105 @@ def test_cycle_does_not_hang():
         _digest(a)
 
 
-@pytest.mark.parametrize("salt", [None, "abcd"])
-def test_float_free_legacy_digests_unchanged(salt):
-    import hashlib
-    import json
+# Digests computed on main (a91ed79), before #431: float-free legacy-fallback payloads must not move.
+_PINNED = {
+    "tuple": ({"a": (1, 2), "s": "x"},
+        "3170b93bd88ec63c7009e268cd09100dac442254c0ef05818b30fffb61894b6c",
+        "a54d0463412e7d099764ab7a51d5246871e6b1f900353a153a7ea93a6756720d"),
+    "date": ({"b": dt.date(2020, 1, 1), "n": None},
+        "5615c1c85b5307c07f7a94aefaca791f4a4acec912639ec23e26f843cb1684fe",
+        "bbe0003ab11bd98b152d2d47a268bc2ee9f901c3565f444a8db709dc158fbeab"),
+    "frozenset": ({"f": frozenset({1}), "t": (1,)},
+        "590bfdbcc41ae44af60b149f492ae2b83bf66dafaf3e22956c21d6bfb1a4c6ab",
+        "98e6ca515da8f56021476fa7fb7a98ac20dc906734867db44e37c981062c7b73"),
+}
 
-    value = {"a": (1, 2), "b": dt.date(2020, 1, 1), "s": "x", "o": Plain(3)}
-    value["o"] = "plain"  # keep the str() of the object stable across runs
-    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
-    if salt is not None:
-        raw += "|" + salt
-    assert _digest(value, salt=salt) == hashlib.sha256(raw.encode()).hexdigest()
+
+@pytest.mark.parametrize("name", _PINNED)
+def test_float_free_legacy_digests_unchanged(name):
+    value, unsalted, salted = _PINNED[name]
+    assert _digest(value) == unsalted
+    assert _digest(value, salt="abcd") == salted
+
+
+# --- review round 1 (stand-in) ---------------------------------------------
+import array  # noqa: E402
+import collections  # noqa: E402
+import enum  # noqa: E402
+import math  # noqa: E402
+import types  # noqa: E402
+
+
+class _Mangled:
+    __slots__ = ("__x",)
+
+    def __init__(self, v):
+        self.__x = v
+
+
+class _Rate(enum.Enum):
+    LOW = 0.5
+
+
+class _WithClassFloat:
+    rate = 0.5
+
+
+@pytest.mark.parametrize("salt", [None, "abcd"])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"d": collections.deque([1.5])},
+        {"a": array.array("d", [1.5])},
+        {"m": types.MappingProxyType({"x": 1.5})},
+        {"v": {"x": 1.5}.values()},
+        {"c": 1.5 + 2j},
+        {"o": _Mangled(1.5)},
+    ],
+)
+def test_more_containers_refused(payload, salt):
+    with pytest.raises(FloatInDigestError):
+        _digest(payload, salt=salt)
+
+
+@pytest.mark.parametrize("salt", [None, "abcd"])
+def test_models_refused_even_when_dump_hides_float(salt):
+    pydantic = pytest.importorskip("pydantic")
+
+    class Hidden(pydantic.BaseModel):
+        model_config = pydantic.ConfigDict(frozen=True)
+        x: float = pydantic.Field(exclude=True)
+
+    class Free(pydantic.BaseModel):
+        n: int = 1
+
+    class Ser(pydantic.BaseModel):
+        x: float
+
+        @pydantic.field_serializer("x")
+        def _s(self, v):
+            return "s"
+
+    with pytest.raises(FloatInDigestError):
+        _digest({Hidden(x=1.5)}, salt=salt)
+    with pytest.raises(FloatInDigestError):
+        _digest(Holder(Ser(x=1.5)), salt=salt)
+    # two models in a row: a recycled id() of a temporary dump must not hide the second
+    for _ in range(20):
+        with pytest.raises(FloatInDigestError):
+            _digest({"d": Holder([Free(), Ser(x=1.5)])}, salt=salt)
+
+
+def test_deep_chain_does_not_recurse():
+    chain = Plain(None)
+    for _ in range(5000):
+        chain = Plain(chain)
+    assert len(_digest({"a": (1,), "o": chain})) == 64
+
+
+def test_classes_modules_enums_are_leaves():
+    for payload in ({"c": _WithClassFloat}, {"m": math}, {"e": _Rate.LOW}):
+        payload["t"] = (1,)
+        assert len(_digest(payload)) == 64
+    with pytest.raises(FloatInDigestError):
+        _digest({"o": Plain(_WithClassFloat.rate), "t": (1,)})

@@ -6,7 +6,11 @@ model means the same thing everywhere. Pydantic is never imported here.
 """
 from __future__ import annotations
 
+import array
+import collections.abc
+import enum
 import sys
+import types
 from typing import Any
 
 __all__ = ["PydanticPayloadError", "plain_json"]
@@ -90,51 +94,65 @@ def float_path(value: Any, path: str = "") -> str | None:
     return None
 
 
-def deep_float_path(value: Any, path: str = "", _seen: set[int] | None = None) -> str | None:
-    """Path of the first float anywhere in ``value``, or None (capsule-emit#431).
+def _slot_names(value: Any) -> list[str]:
+    names: list[str] = []
+    for cls in type(value).__mro__:
+        slots = cls.__dict__.get("__slots__", ())
+        for name in (slots,) if isinstance(slots, str) else slots:
+            if name.startswith("__") and not name.endswith("__"):
+                name = f"_{cls.__name__.lstrip('_')}{name}"  # name mangling
+            names.append(name)
+    return names
 
-    Unlike :func:`float_path` this also walks sets, dataclasses, Pydantic models
-    and plain objects (their ``__dict__`` / ``__slots__``), because the legacy
-    ``default=str`` digest fallback would otherwise seal a float through
-    ``repr()`` when a non-JSON value sits beside it. Cycles are cut by id.
+
+def deep_float_path(root: Any) -> str | None:
+    """Path of the first float anywhere in ``root``, or None (capsule-emit#431).
+
+    The legacy ``default=str`` digest fallback seals any non-JSON value through
+    ``str()``/``repr()``, which shows a float held inside it. This therefore
+    walks everything such a value can hold: mappings (keys and values), sized
+    collections, ``array`` and ``complex``, Pydantic models (their dump and
+    their own attributes, since ``repr`` shows fields a serializer hides) and
+    plain objects (``__dict__`` and ``__slots__``). Classes, modules,
+    functions and enums are leaves: their ``str()`` does not show a float.
+    Iterative, so a deep payload cannot raise ``RecursionError``; every visited
+    object is kept alive so a recycled ``id()`` cannot hide a later one.
     """
-    if isinstance(value, float):
-        return path or "<payload>"
-    if value is None or isinstance(value, (str, bytes, bytearray, int, bool)):
-        return None
-    seen = _seen if _seen is not None else set()
-    if id(value) in seen:
-        return None
-    seen.add(id(value))
-    children: list[tuple[str, Any]]
-    if isinstance(value, dict):
-        children = []
-        for k, v in value.items():
-            children.append((f"{path}.{k}" if path else str(k), k))
-            children.append((f"{path}.{k}" if path else str(k), v))
-    elif isinstance(value, (list, tuple)):
-        children = [(f"{path}[{i}]", v) for i, v in enumerate(value)]
-    elif isinstance(value, (set, frozenset)):
-        children = [(f"{path}{{}}", v) for v in value]
-    else:
-        base = _model_base()
-        dumped = None
-        if base is not None and isinstance(value, base):
-            try:
-                dumped = value.model_dump(mode="json")
-            except Exception:
-                dumped = None
-        if dumped is not None:
-            return deep_float_path(dumped, path, seen)
-        attrs: dict[str, Any] = dict(getattr(value, "__dict__", None) or {})
-        for cls in type(value).__mro__:
-            slots = cls.__dict__.get("__slots__", ())
-            for name in (slots,) if isinstance(slots, str) else slots:
+    base = _model_base()
+    leaf = (str, bytes, bytearray, int, bool, type, types.ModuleType,
+            types.FunctionType, types.BuiltinFunctionType, types.MethodType, enum.Enum)
+    seen: set[int] = set()
+    keep: list[Any] = []
+    stack: list[tuple[Any, str]] = [(root, "")]
+    while stack:
+        value, path = stack.pop()
+        if isinstance(value, (float, complex)):
+            return path or "<payload>"
+        if value is None or isinstance(value, leaf) or id(value) in seen:
+            continue
+        seen.add(id(value))
+        keep.append(value)
+        if isinstance(value, array.array):
+            if value.typecode in "fd":
+                return path or "<payload>"
+        elif isinstance(value, collections.abc.Mapping):
+            for k, v in value.items():
+                sub = f"{path}.{k}" if path else str(k)
+                stack.append((k, sub))
+                stack.append((v, sub))
+        elif isinstance(value, collections.abc.Collection):
+            for i, v in enumerate(value):
+                stack.append((v, f"{path}[{i}]"))
+        else:
+            if base is not None and isinstance(value, base):
+                try:
+                    stack.append((value.model_dump(mode="json"), path))
+                except Exception:
+                    pass
+            attrs = dict(getattr(value, "__dict__", None) or {})
+            for name in _slot_names(value):
                 if hasattr(value, name):
                     attrs.setdefault(name, getattr(value, name))
-        children = [(f"{path}.{k}" if path else k, v) for k, v in attrs.items()]
-    for p, child in children:
-        found = deep_float_path(child, p, seen)
-        if found:
-            return found
+            for k, v in attrs.items():
+                stack.append((v, f"{path}.{k}" if path else k))
     return None

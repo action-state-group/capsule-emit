@@ -8,7 +8,7 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ### Fixed (python): a float beside a non-JSON value is refused
 
-`seal()` used to seal a float through `repr()` when a non-JSON value (a tuple, `datetime`, set, dataclass or other object) sat in the same `agent_input` / `agent_output`, depending on key order; §5.1 forbids that and `verify_input_digest` could not reproduce the digest. A float anywhere in such a payload (dict, list, tuple, set, dataclass, Pydantic model, plain object) now raises `FloatInDigestError`, salted or not. Float-free payloads digest exactly as before.
+`seal()` used to seal a float through `repr()` when a non-JSON value (a tuple, `datetime`, set, dataclass or other object) sat in the same `agent_input` / `agent_output`, depending on key order; §5.1 forbids that and `verify_input_digest` could not reproduce the digest. A float anywhere in such a payload (dict, list, tuple, set, dataclass, Pydantic model, plain object) now raises `FloatInDigestError`, salted or not. Classes, modules, functions and enums count as leaves; a value whose own `__str__` computes a float is out of reach. Float-free payloads digest exactly as before (pinned against the pre-change digests).
 ([#431](https://github.com/action-state-group/capsule-emit/issues/431))
 
 ### Added (go): `CanonicalizeForDigest` turns decoded JSON numbers into digest-safe values
