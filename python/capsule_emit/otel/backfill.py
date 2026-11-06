@@ -119,7 +119,8 @@ def seal_otlp_file(
         if classify_span_signal_1(facts.name or "unknown", facts.attributes) is not Classification.EFFECT:
             observed += 1
             continue
-        check_new_flat_record(resolution.path, resolution.chosen)
+        if resolution.layout == "flat":
+            check_new_flat_record(resolution.path, resolution.chosen)
         asserted_at = _rfc3339(start_ns)
         imported_at = _rfc3339(None)
         if imported_at == asserted_at:  # pragma: no cover - a span starting at this microsecond
@@ -193,15 +194,28 @@ def _documents(raw: bytes) -> list[Mapping[str, Any]]:
 
 
 def _spans(raw: bytes) -> Iterator[tuple[SpanFacts, int, int | None] | None]:
-    """One entry per span: its facts and times, or ``None`` when unusable."""
+    """One entry per span: its facts and times, or ``None`` when unusable.
+    Raises ``ValueError`` for a document that is not shaped like OTLP/JSON."""
     for doc in _documents(raw):
-        for rs in doc["resourceSpans"]:
-            if not isinstance(rs, Mapping):
-                continue
-            resource = _attrs((rs.get("resource") or {}).get("attributes"))
-            for ss in rs.get("scopeSpans") or []:
-                for span in (ss.get("spans") or []) if isinstance(ss, Mapping) else []:
-                    yield _span_facts(span, resource) if isinstance(span, Mapping) else None
+        for rs in _members(doc, "resourceSpans", "resourceSpans"):
+            resource = rs.get("resource", {})
+            if not isinstance(resource, Mapping):
+                raise ValueError('not OTLP/JSON: "resource" must be an object')
+            attributes = _attrs(resource.get("attributes"))
+            for ss in _members(rs, "scopeSpans", "scopeSpans"):
+                for span in _members(ss, "spans", "spans", objects=False):
+                    yield _span_facts(span, attributes) if isinstance(span, Mapping) else None
+
+
+def _members(parent: Mapping[str, Any], key: str, name: str, *, objects: bool = True) -> list:
+    """``parent[key]`` as a list (absent is empty), each entry an object when
+    *objects* is set; otherwise ``ValueError``."""
+    value = parent.get(key)
+    if value is None:
+        return []
+    if not isinstance(value, list) or (objects and not all(isinstance(v, Mapping) for v in value)):
+        raise ValueError(f"not OTLP/JSON: {name!r} must be a list" + (" of objects" if objects else ""))
+    return value
 
 
 def _span_facts(span: Mapping[str, Any], resource: dict[str, Any]) -> tuple[SpanFacts, int, int | None] | None:
@@ -245,9 +259,11 @@ def _id(value: Any, pattern: re.Pattern[str]) -> str | None:
 def _nanos(value: Any) -> int | None:
     """A Unix-nanosecond time, or ``None`` when absent, zero (protobuf's
     unset value), negative or past year 9999."""
+    if isinstance(value, bool):
+        return None
     try:
         ns = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return ns if 0 < ns <= _MAX_NS else None
 
@@ -260,7 +276,7 @@ def _attrs(items: Any) -> dict[str, Any]:
         if isinstance(kv, Mapping) and isinstance(kv.get("key"), str) and isinstance(kv.get("value"), Mapping):
             try:
                 out[kv["key"]] = _any_value(kv["value"])
-            except (KeyError, TypeError, ValueError):
+            except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
                 continue
     return out
 
@@ -270,10 +286,10 @@ def _any_value(value: Mapping[str, Any]) -> Any:
         return value["stringValue"]
     if "boolValue" in value and isinstance(value["boolValue"], bool):
         return value["boolValue"]
-    if "intValue" in value:
+    if "intValue" in value and not isinstance(value["intValue"], bool):
         return int(value["intValue"])
     if "doubleValue" in value:
         return float(value["doubleValue"])
     if "arrayValue" in value:
-        return [_any_value(v) for v in value["arrayValue"].get("values") or []]
+        return [_any_value(v) for v in (value["arrayValue"] or {}).get("values") or []]
     raise KeyError("unsupported OTLP value")

@@ -162,8 +162,9 @@ def test_live_exporter_records_carry_no_provenance_mode(tmp_path):
     assert SPAN_TIME_KEY not in capsule["model_attestation"]["compute_attestation"]
 
 
-def test_store_directory_ledger_seals_and_dedups(tmp_path):
+def test_store_directory_ledger_seals_and_dedups(tmp_path, monkeypatch):
     store = tmp_path / "store"
+    monkeypatch.setattr(ledger_layout, "flat_writes_stopped", lambda: True)  # a store is never the stopped layout
     path = _write(tmp_path, _effect())
     assert len(_seal(path, store).sealed) == 1
     again = _seal(path, store)
@@ -208,7 +209,7 @@ def test_all_zero_parent_is_a_root_span(tmp_path):
     assert len(report.sealed) == 1
 
 
-@pytest.mark.parametrize("start", ["0", "-5", "1000000000000000000000000000000", "abc", None])
+@pytest.mark.parametrize("start", ["0", "-5", "1000000000000000000000000000000", "abc", None, True, 1e999])
 def test_unusable_start_time_is_skipped_and_later_spans_still_seal(tmp_path, start):
     bad = dict(_effect(), spanId="00f067aa0ba902c2")
     if start is None:
@@ -257,3 +258,39 @@ def test_unsupported_attribute_types_are_left_out_not_sealed_empty(tmp_path):
         ]
     )
     assert attrs == {"c": 7}
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda d: d["resourceSpans"].append(42),
+        lambda d: d["resourceSpans"][0].update(resource="x"),
+        lambda d: d["resourceSpans"][0].update(scopeSpans=5),
+        lambda d: d["resourceSpans"][0]["scopeSpans"][0].update(spans=5),
+        lambda d: d["resourceSpans"][0]["scopeSpans"].append("x"),
+    ],
+)
+def test_misshapen_documents_raise_value_error_and_write_nothing(tmp_path, mutate):
+    doc = _export(_effect())
+    mutate(doc)
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps(doc))
+    ledger = tmp_path / "l.jsonl"
+    with pytest.raises(ValueError, match="OTLP/JSON"):
+        _seal(path, ledger)
+    assert not ledger.exists()
+
+
+def test_odd_attribute_values_do_not_abort(tmp_path):
+    from capsule_emit.otel.backfill import _attrs
+
+    attrs = _attrs(
+        [
+            {"key": "a", "value": {"arrayValue": None}},
+            {"key": "b", "value": {"arrayValue": []}},
+            {"key": "c", "value": {"intValue": 1e999}},
+            {"key": "d", "value": {"intValue": True}},
+            {"key": "e", "value": {"stringValue": "ok"}},
+        ]
+    )
+    assert attrs == {"a": [], "b": [], "e": "ok"}
