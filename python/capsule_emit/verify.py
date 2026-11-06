@@ -234,7 +234,8 @@ def verify_input_digest(
         actual = json_digest(plain_json(candidate_input))
     except (FloatInDigestError, TypeError, ValueError, RecursionError, AttributeError):
         # AttributeError: a non-string dict key breaks the digest layer's key
-        # sort (#439); "never raises" holds for any candidate.
+        # sort (#439). Only these errors are mapped: a candidate whose own
+        # methods raise something else is not covered.
         return InputDigestResult(ok=False, reason=VerifyReason.NON_CONFORMING)
 
     if stored == actual:

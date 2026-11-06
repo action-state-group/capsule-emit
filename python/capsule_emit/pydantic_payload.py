@@ -41,8 +41,9 @@ def non_string_key_error(value: Any) -> NonStringKeyError | None:
     """A :class:`NonStringKeyError` naming the first non-string dict key in the
     dicts, lists and tuples of ``value``, or None.
 
-    Run only after the digest layer failed with an ``AttributeError`` (its key
-    sort calls ``.encode``), so the digest's success path pays nothing. Like
+    Run only after the digest layer failed (an ``AttributeError`` from its key
+    sort, or the ``TypeError`` that sends a payload to the legacy fallback), so
+    the digest's success path pays nothing. Like
     :func:`deep_float_path` it runs no user code: types are decided with
     ``issubclass(type(x), ...)`` and containers are read through the builtin
     methods. It is iterative, so a deep payload cannot raise ``RecursionError``.
