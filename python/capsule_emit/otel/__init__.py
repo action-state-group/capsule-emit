@@ -9,6 +9,7 @@ collector build; the reverse-join attribute's best-effort nature) and
 from __future__ import annotations
 
 from .allowlist import DEFAULT_SEMCONV_SOURCE, RESOURCE_ATTRS, SEMCONV_ATTRS, Tier
+from .backfill import BackfillReport, seal_otlp_file
 from .block import OTEL_BLOCK_KEY, OUTCOME_CONTEXT_KEY, build_otel_block, build_outcome_context_block
 from .processor import (
     REVERSE_JOIN_ATTRIBUTE,
@@ -34,4 +35,6 @@ __all__ = [
     "process_span_facts",
     "stamp_reverse_join",
     "classify_span_signal_1",
+    "BackfillReport",
+    "seal_otlp_file",
 ]

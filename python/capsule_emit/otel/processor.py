@@ -49,6 +49,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace.export import SpanExportResult
 
+from agent_action_capsule.contracts import ProvenanceMode
+
 from ..adapters._base import CapsuleEmitterBase
 from ..connector import Classification
 from ..core import EmitResult
@@ -135,6 +137,8 @@ def process_span_facts(
     semconv_source: str = DEFAULT_SEMCONV_SOURCE,
     outcome_context_baggage_keys: frozenset[str] = frozenset(),
     admit_conditional: frozenset[str] = frozenset(),
+    provenance_mode: ProvenanceMode | None = None,
+    extra_compute: Mapping[str, Any] | None = None,
 ) -> EmitResult | None:
     """Classify *facts*, and seal a capsule iff it classifies ``EFFECT``.
 
@@ -163,6 +167,11 @@ def process_span_facts(
     *admit_conditional* is passed through to
     :func:`capsule_emit.otel.block.build_otel_block`: the conditional semconv
     rows the deployment has checked and admits.
+
+    *provenance_mode* and *extra_compute* are for the backfill importer
+    (:func:`capsule_emit.otel.backfill.seal_otlp_file`); the live exporter
+    never sets either. *extra_compute* members are added beside the
+    ``org.agentactioncapsule.otel`` block and never replace it.
     """
     name = facts.name or "unknown"
     classification = classify_span_signal_1(name, facts.attributes or {})
@@ -188,10 +197,10 @@ def process_span_facts(
         warnings.warn(f"capsule-emit otel: malformed span identifiers for {name!r}: {exc}", RuntimeWarning, stacklevel=2)
         return None
 
-    extra_compute: dict[str, Any] = {OTEL_BLOCK_KEY: otel_block}
+    compute_members: dict[str, Any] = {**(extra_compute or {}), OTEL_BLOCK_KEY: otel_block}
     outcome_context = build_outcome_context_block(facts.baggage, allowed_keys=outcome_context_baggage_keys)
     if outcome_context:
-        extra_compute[OUTCOME_CONTEXT_KEY] = outcome_context
+        compute_members[OUTCOME_CONTEXT_KEY] = outcome_context
 
     emitter = CapsuleEmitterBase(operator=operator, developer=developer, ledger=ledger, anchor=anchor)
     status = "failed" if facts.status_is_error else "confirmed"
@@ -203,7 +212,8 @@ def process_span_facts(
             effect={"type": action_label, "status": status},
             runtime="otel",
             action_type="fyi",
-            extra_compute=extra_compute,
+            extra_compute=compute_members,
+            provenance_mode=provenance_mode,
         )
     except Exception as exc:  # noqa: BLE001 -- adapter boundary: never break the host's export path
         warnings.warn(f"capsule-emit otel: seal failed for span {name!r}: {exc}", RuntimeWarning, stacklevel=2)
