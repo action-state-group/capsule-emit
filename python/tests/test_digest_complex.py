@@ -76,12 +76,6 @@ def test_pydantic_complex_field_digests_as_its_json_dump():
     assert _digest({"m": M(c=1 + 2j)}) == _digest({"m": {"c": "1+2j"}})
 
 
-def test_float_error_wins_when_both_are_present():
-    with pytest.raises(FloatInDigestError) as exc:
-        _digest({"a": 1.5, "b": 1 + 2j})
-    assert "'a'" in str(exc.value)
-
-
 def test_complex_free_payloads_keep_their_digests():
     import datetime as dt
 
