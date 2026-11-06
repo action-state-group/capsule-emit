@@ -423,7 +423,10 @@ def _digest(value: Any, salt: str | None = None) -> str:
 
     Non-JSON-native types the legacy encoder tolerated via ``default=str``
     (e.g. tuples, arbitrary objects) still fall back to the legacy sorted-key
-    encoding, so those emitters do not break at seal time.
+    encoding, so those emitters do not break at seal time. A float inside the
+    standard containers of such a payload (dict, list, tuple, set, frozenset,
+    dataclass, Pydantic model) is still refused; a float held only inside any other
+    object (a numpy array, say) is not inspected and is sealed via ``repr()``.
 
     When *salt* is given, it is folded into the exact JCS pre-image bytes
     (``jcs_bytes + b"|" + salt``) before hashing — the salted digest is over

@@ -8,13 +8,8 @@ model means the same thing everywhere. Pydantic is never imported here.
 """
 from __future__ import annotations
 
-import array
-import collections.abc
-import enum
-import functools
-import numbers
+import dataclasses
 import sys
-import types
 from typing import Any
 
 __all__ = ["PydanticPayloadError", "plain_json"]
@@ -109,116 +104,54 @@ def _slot_names(value: Any) -> list[str]:
     return names
 
 
-def _dtype_has_float(dtype: Any, depth: int = 0) -> bool | None:
-    """True if a numpy-style dtype holds a float/complex (also inside structured
-    fields and sub-arrays), False if it provably holds none and no object field,
-    None if it holds an object field (the elements must then be walked)."""
-    kind = getattr(dtype, "kind", None)
-    if kind in ("f", "c"):
-        return True
-    if kind == "O":
-        return None
-    if depth > 8:
-        return None
-    result: bool | None = False
-    fields = getattr(dtype, "fields", None)
-    if fields:
-        for entry in fields.values():
-            sub = _dtype_has_float(entry[0], depth + 1)
-            if sub:
-                return True
-            if sub is None:
-                result = None
-    sub_dtype = getattr(dtype, "subdtype", None)
-    if sub_dtype:
-        sub = _dtype_has_float(sub_dtype[0], depth + 1)
-        if sub:
-            return True
-        if sub is None:
-            result = None
-    return result
-
-
-def _dtype_verdict(value: Any) -> str | None:
-    """"float", "clean" (no float, nothing to walk) or None (not an array, or has
-    object fields). Any failure reading ``dtype`` means "not an array"."""
-    try:
-        dtype = getattr(value, "dtype", None)
-        if dtype is None or not isinstance(getattr(dtype, "kind", None), str):
-            return None
-        has = _dtype_has_float(dtype)
-    except Exception:
-        return None
-    if has:
-        return "float"
-    return "clean" if has is False else None
-
-
 def deep_float_path(root: Any) -> str | None:
-    """Path of the first float anywhere in ``root``, or None (capsule-emit#431).
+    """Path of the first Python float in the standard containers of ``root``, or
+    None (capsule-emit#431).
 
-    The legacy ``default=str`` digest fallback seals any non-JSON value through
-    ``str()``/``repr()``, which shows a float held inside it. This therefore
-    walks everything such a value can hold: mappings (keys and values), sized
-    collections, ``array`` and ``complex``, Pydantic models (their dump and
-    their own attributes, since ``repr`` shows fields a serializer hides) and
-    plain objects (``__dict__`` and ``__slots__``). Classes, modules,
-    functions and enums are leaves: their ``str()`` does not show a float.
-    Iterative, so a deep payload cannot raise ``RecursionError``; every visited
-    object is kept alive so a recycled ``id()`` cannot hide a later one.
+    The legacy ``default=str`` digest fallback would seal such a float through
+    ``repr()``. This walks only types the payload contract already knows: dict
+    (keys and values), list, tuple, set, frozenset, dataclass instances and
+    Pydantic v2 models (their dump and their own fields, since ``repr`` shows
+    fields a serializer hides). Any other object is never touched, so it keeps
+    exactly its legacy behaviour; a float held only inside such an object, such
+    as a numpy array, is a known limit. Iterative, so a deep payload cannot
+    raise ``RecursionError``; visited objects are kept alive so a recycled
+    ``id()`` cannot hide a later one.
     """
     base = _model_base()
-    leaf = (str, bytes, bytearray, int, bool, range, type, types.ModuleType,
-            types.FunctionType, types.BuiltinFunctionType, types.MethodType, enum.Enum)
     seen: set[int] = set()
     keep: list[Any] = []
     stack: list[tuple[Any, str]] = [(root, "")]
     while stack:
         value, path = stack.pop()
-        if isinstance(value, (float, complex)) or (
-            isinstance(value, numbers.Real) and not isinstance(value, numbers.Rational)
-        ):
+        if isinstance(value, float):
             return path or "<payload>"
-        if value is None or isinstance(value, leaf) or id(value) in seen:
+        if isinstance(value, (str, bytes, int)) or value is None or id(value) in seen:
             continue
-        seen.add(id(value))
-        keep.append(value)
-        # numpy-style arrays (no numpy import): decide by dtype, not by element.
-        verdict = _dtype_verdict(value)
-        if verdict == "float":
-            return path or "<payload>"
-        if verdict == "clean":
-            continue
-        try:
-            if isinstance(value, array.array):
-                if value.typecode in "fd":
-                    return path or "<payload>"
-            elif isinstance(value, collections.abc.Mapping):
-                for k, v in list(value.items()):
-                    sub = f"{path}.{k}" if path else str(k)
-                    stack.append((k, sub))
-                    stack.append((v, sub))
-            elif isinstance(value, collections.abc.Collection):
-                for i, v in enumerate(list(value)):
-                    stack.append((v, f"{path}[{i}]"))
-        except Exception:  # a collection whose iteration fails: str() never iterates it
-            pass
-        if isinstance(value, slice):
-            stack.extend([(value.start, path), (value.stop, path), (value.step, path)])
-        elif isinstance(value, BaseException):
-            stack.append((value.args, f"{path}.args"))
-        elif isinstance(value, functools.partial):
-            stack.append((value.args, f"{path}.args"))
-            stack.append((value.keywords, f"{path}.keywords"))
-        if base is not None and isinstance(value, base):
+        if isinstance(value, dict):
+            seen.add(id(value))
+            keep.append(value)
+            for k, v in value.items():
+                sub = f"{path}.{k}" if path else str(k)
+                stack.append((k, sub))
+                stack.append((v, sub))
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            seen.add(id(value))
+            keep.append(value)
+            for i, v in enumerate(value):
+                stack.append((v, f"{path}[{i}]"))
+        elif base is not None and isinstance(value, base):
+            seen.add(id(value))
+            keep.append(value)
             try:
                 stack.append((value.model_dump(mode="json"), path))
             except Exception:
                 pass
-        attrs = dict(getattr(value, "__dict__", None) or {})
-        for name in _slot_names(value):
-            if hasattr(value, name):
-                attrs.setdefault(name, getattr(value, name))
-        for k, v in attrs.items():
-            stack.append((v, f"{path}.{k}" if path else k))
+            stack.append((dict(value.__dict__), path))
+        elif dataclasses.is_dataclass(value) and not isinstance(value, type):
+            seen.add(id(value))
+            keep.append(value)
+            for f in dataclasses.fields(value):
+                sub = f"{path}.{f.name}" if path else f.name
+                stack.append((getattr(value, f.name, None), sub))
     return None
