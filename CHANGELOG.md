@@ -6,9 +6,14 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed (python): a builtin `complex` is refused like a float
+
+`seal()` used to seal a builtin `complex` as its `repr()` (`"(1+2j)"`) through `default=str`, while a numpy complex was already refused. A complex is two floats, so §5.1's reason for refusing floats applies unchanged. A `complex` (or a subclass) anywhere in a dict, list, tuple, set, frozenset or dataclass, bare or beside a Pydantic model, now raises `FloatInDigestError` naming the path as floats do (`a.b[0]`), salted or not. `verify_input_digest` already returned NON_CONFORMING for such a candidate, and a test now pins it so seal and verify cannot disagree. **Digests that move:** only payloads that hold a builtin `complex`, which raise instead of sealing; their old digests were over `repr()`. Complex-free payloads keep their digests, and already-sealed capsules do not change (write-side refusal). Convert the value to a decimal string, or two decimal strings, first. A Pydantic complex field is not refused: `model_dump(mode="json")` makes it a string before the walk, and a model digests as its dump.
+([#437](https://github.com/action-state-group/capsule-emit/issues/437))
+
 ### Fixed (python): the float walk no longer runs a metaclass `__getattr__`
 
-The legacy-fallback float walk decided "is a dataclass" with `hasattr`/`dataclasses.fields` on the payload's type, which runs a metaclass `__getattr__`; the walk must run no user code. It now reads `__dataclass_fields__` from the class `__dict__`s along the MRO. A dataclass field shadowed by a data descriptor (a property or a descriptor default) is not read, since reading it runs the descriptor: a float held only there is a known limit, not refused. Other payloads keep their digests. Builtin `complex` still seals as its `repr()`, as before; whether to refuse it is a separate decision recorded on the issue.
+The legacy-fallback float walk decided "is a dataclass" with `hasattr`/`dataclasses.fields` on the payload's type, which runs a metaclass `__getattr__`; the walk must run no user code. It now reads `__dataclass_fields__` from the class `__dict__`s along the MRO. A dataclass field shadowed by a data descriptor (a property or a descriptor default) is not read, since reading it runs the descriptor: a float held only there is a known limit, not refused. Other payloads keep their digests. Builtin `complex` was left sealing as its `repr()` here; it is refused in the entry above (#437).
 ([#435](https://github.com/action-state-group/capsule-emit/issues/435))
 
 ### Fixed (python): a float beside a non-JSON value is refused

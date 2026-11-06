@@ -485,7 +485,7 @@ def _digest_plain(value: Any, salt: str | None) -> str:
         if where is not None:
             raise FloatInDigestError(
                 f"a float at {where!r} in the payload: §5.1 forbids floats in "
-                "digest-bearing fields, so make it a Decimal or a str (a numpy array: "
+                "digest-bearing fields (a complex is two floats), so make it a Decimal or a str (a numpy array: "
                 "a list of decimal strings)."
             ) from None
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)

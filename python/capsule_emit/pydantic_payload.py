@@ -79,7 +79,7 @@ def plain_json(value: Any) -> Any:
 def float_path(value: Any, path: str = "") -> str | None:
     """Path of the first float in an already-dumped payload (``order.score``,
     ``[0].x``), or None; used only to make the float error actionable."""
-    if isinstance(value, float):
+    if isinstance(value, (float, complex)):
         return path or "<payload>"
     if isinstance(value, dict):
         for k, v in value.items():
@@ -224,7 +224,7 @@ def _numpy_float(value: Any, t: type) -> bool:
 
 
 def deep_float_path(root: Any) -> str | None:
-    """Path of the first Python float in the standard containers of ``root``, or
+    """Path of the first Python float or complex in the standard containers of ``root``, or
     None (capsule-emit#431).
 
     The legacy ``default=str`` digest fallback would seal such a float through
@@ -261,7 +261,8 @@ def deep_float_path(root: Any) -> str | None:
     while stack:
         value, idx = stack.pop()
         t = type(value)
-        if issubclass(t, float) or _numpy_float(value, t):
+        # A builtin complex is two floats (capsule-emit#437), refused like one.
+        if issubclass(t, (float, complex)) or _numpy_float(value, t):
             return _label_path(nodes, idx)
         dc_fields = _dataclass_fields(t)
         if value is None or id(value) in seen:
