@@ -95,6 +95,7 @@ from .canonicalization import compute_capsule_id
 from .numbers import CANONICALIZATION_ID
 from .pydantic_payload import (  # noqa: F401 (PydanticPayloadError is re-exported)
     PydanticPayloadError,
+    deep_float_path,
     float_path,
     plain_json,
 )
@@ -422,7 +423,10 @@ def _digest(value: Any, salt: str | None = None) -> str:
 
     Non-JSON-native types the legacy encoder tolerated via ``default=str``
     (e.g. tuples, arbitrary objects) still fall back to the legacy sorted-key
-    encoding, so those emitters do not break at seal time.
+    encoding, so those emitters do not break at seal time. A float inside the
+    standard containers of such a payload (dict, list, tuple, set, frozenset,
+    dataclass, Pydantic model) is still refused; a float held only inside any other
+    object (a numpy array, say) is not inspected and is sealed via ``repr()``.
 
     When *salt* is given, it is folded into the exact JCS pre-image bytes
     (``jcs_bytes + b"|" + salt``) before hashing — the salted digest is over
@@ -446,10 +450,9 @@ def _digest(value: Any, salt: str | None = None) -> str:
         plain = value
     if plain is value:
         return _digest_plain(value, salt)
-    # A model was converted. Refuse a float up front, anywhere in nested
-    # dicts, lists and tuples (sets, dataclasses and arbitrary objects are #431):
-    # left to the digest layer, a non-JSON sibling (a datetime, say) can raise
-    # TypeError first and the legacy fallback would seal the float via repr().
+    # A model was converted. Refuse a float up front, anywhere in nested dicts,
+    # lists and tuples, with a message that names the model case; any other
+    # payload is guarded by the walk in the legacy fallback below (#431).
     where = float_path(plain)
     if where is not None:
         raise FloatInDigestError(
@@ -473,6 +476,15 @@ def _digest_plain(value: Any, salt: str | None) -> str:
         # Non-JSON-native types (e.g. tuples, arbitrary objects) — tolerated as
         # before. FloatInDigestError is intentionally NOT caught: a raw float is
         # a spec-defined error, so _emit_capsule() fails closed at the door.
+        # A float beside, or inside, a non-JSON value must be refused too (#431):
+        # default=str would otherwise seal it via repr(), which §5.1 forbids and
+        # verify_input_digest cannot reproduce.
+        where = deep_float_path(value)
+        if where is not None:
+            raise FloatInDigestError(
+                f"a float at {where!r} in the payload: §5.1 forbids floats in "
+                "digest-bearing fields, so make it a Decimal or a str."
+            ) from None
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
         if salt is not None:
             raw = raw + "|" + salt
