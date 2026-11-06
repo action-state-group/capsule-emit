@@ -105,3 +105,37 @@ def test_pydantic_model_inside_a_dataclass_is_refused_for_a_complex_field():
     with pytest.raises(FloatInDigestError) as exc:
         _digest(Box(M(c=1 + 2j)))
     assert "'v.c'" in str(exc.value)
+
+
+class _RaisingMeta(type):
+    armed = False
+
+    def __getattr__(cls, name):
+        if _RaisingMeta.armed:
+            raise RuntimeError(f"metaclass __getattr__ ran for {name}")
+        raise AttributeError(name)
+
+
+class _WithMeta(metaclass=_RaisingMeta):
+    pass
+
+
+def test_complex_walk_runs_no_metaclass_code():
+    _RaisingMeta.armed = True
+    try:
+        with pytest.raises(FloatInDigestError):
+            _digest({"a": _WithMeta(), "b": [_WithMeta], "c": 1 + 2j})
+    finally:
+        _RaisingMeta.armed = False
+
+
+def test_exempt_pydantic_complex_field_verifies_against_its_seal():
+    pydantic = pytest.importorskip("pydantic")
+
+    class M(pydantic.BaseModel):
+        c: complex
+
+    model = M(c=1 + 2j)
+    capsule = {"model_attestation": {"compute_attestation": {"agent_input_digest": _digest(model)}}}
+    result = verify_input_digest(capsule, model)
+    assert result.ok and result.reason is VerifyReason.VERIFIED
