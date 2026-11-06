@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from capsule_emit import read_ledger
+from capsule_emit import ledger_layout, read_ledger
 from capsule_emit.otel import seal_otlp_file
 from capsule_emit.otel.backfill import SPAN_TIME_KEY
 from capsule_emit.otel.block import OTEL_BLOCK_KEY
@@ -41,7 +41,7 @@ def _export(*spans: dict) -> dict:
     }
 
 
-def _write(tmp_path, *spans, name="trace.json") -> tuple:
+def _write(tmp_path, *spans, name="trace.json"):
     path = tmp_path / name
     path.write_text(json.dumps(_export(*spans)))
     return path
@@ -129,7 +129,7 @@ def test_jsonl_export_and_span_without_ids(tmp_path):
     path = tmp_path / "t.jsonl"
     bad = dict(_effect(), spanId="nope")
     path.write_text(json.dumps(_export(_effect())) + "\n" + json.dumps(_export(bad)) + "\n")
-    with pytest.warns(RuntimeWarning, match="without hex"):
+    with pytest.warns(RuntimeWarning, match="without valid"):
         report = _seal(path, tmp_path / "l.jsonl")
     assert len(report.sealed) == 1 and report.skipped_invalid == 1
 
@@ -160,3 +160,100 @@ def test_live_exporter_records_carry_no_provenance_mode(tmp_path):
     (capsule,) = read_ledger(ledger)
     assert "provenance_mode" not in capsule
     assert SPAN_TIME_KEY not in capsule["model_attestation"]["compute_attestation"]
+
+
+def test_store_directory_ledger_seals_and_dedups(tmp_path):
+    store = tmp_path / "store"
+    path = _write(tmp_path, _effect())
+    assert len(_seal(path, store).sealed) == 1
+    again = _seal(path, store)
+    assert again.sealed == () and again.skipped_duplicate == 1
+    assert len(read_ledger(store)) == 1
+
+
+def test_flat_ledger_refused_once_flat_writes_stop(tmp_path, monkeypatch):
+    flat = tmp_path / "old.jsonl"
+    _seal(_write(tmp_path, _effect()), flat)
+    monkeypatch.setattr(ledger_layout, "_allow_new_flat", False)
+    monkeypatch.setattr(ledger_layout, "flat_writes_stopped", lambda: True)
+    other = _write(tmp_path, dict(_effect(), spanId="00f067aa0ba902c1"), name="t2.json")
+    with pytest.raises(ledger_layout.FlatLedgerWriteRefused):
+        _seal(other, flat)
+    assert len(read_ledger(flat)) == 1
+
+
+def test_seal_failure_is_reported_as_failed_not_observation(tmp_path, monkeypatch):
+    from capsule_emit import core
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(core, "_append_capsule", boom)
+    with pytest.warns(RuntimeWarning, match="seal failed"):
+        report = _seal(_write(tmp_path, _effect()), tmp_path / "l.jsonl")
+    assert report.failed == 1 and report.skipped_observation == 0 and report.sealed == ()
+
+
+def test_uppercase_ids_are_accepted_and_dedup_across_case(tmp_path):
+    ledger = tmp_path / "l.jsonl"
+    upper = dict(_effect(), traceId=TRACE.upper(), spanId="00F067AA0BA902B7")
+    assert len(_seal(_write(tmp_path, upper), ledger).sealed) == 1
+    report = _seal(_write(tmp_path, _effect(), name="t2.json"), ledger)
+    assert report.skipped_duplicate == 1 and report.sealed == ()
+
+
+def test_all_zero_parent_is_a_root_span(tmp_path):
+    ledger = tmp_path / "l.jsonl"
+    report = _seal(_write(tmp_path, dict(_effect(), parentSpanId="0" * 16)), ledger)
+    assert len(report.sealed) == 1
+
+
+@pytest.mark.parametrize("start", ["0", "-5", "1000000000000000000000000000000", "abc", None])
+def test_unusable_start_time_is_skipped_and_later_spans_still_seal(tmp_path, start):
+    bad = dict(_effect(), spanId="00f067aa0ba902c2")
+    if start is None:
+        del bad["startTimeUnixNano"]
+    else:
+        bad["startTimeUnixNano"] = start
+    with pytest.warns(RuntimeWarning):
+        report = _seal(_write(tmp_path, bad, _effect()), tmp_path / "l.jsonl")
+    assert report.skipped_invalid == 1 and len(report.sealed) == 1
+
+
+def test_end_before_start_is_left_out_of_span_time(tmp_path):
+    ledger = tmp_path / "l.jsonl"
+    _seal(_write(tmp_path, dict(_effect(), endTimeUnixNano="5")), ledger)
+    (capsule,) = read_ledger(ledger)
+    assert "end" not in capsule["model_attestation"]["compute_attestation"][SPAN_TIME_KEY]
+
+
+def test_malformed_later_document_writes_nothing(tmp_path):
+    path = tmp_path / "t.jsonl"
+    path.write_text(json.dumps(_export(_effect())) + "\n" + '{"nope": 1}\n')
+    ledger = tmp_path / "l.jsonl"
+    with pytest.raises(ValueError, match="resourceSpans"):
+        _seal(path, ledger)
+    assert not ledger.exists() or read_ledger(ledger) == []
+
+
+def test_odd_span_entries_do_not_abort(tmp_path):
+    path = tmp_path / "t.json"
+    doc = _export(_effect())
+    doc["resourceSpans"][0]["scopeSpans"][0]["spans"].insert(0, None)
+    path.write_text(json.dumps(doc))
+    report = _seal(path, tmp_path / "l.jsonl")
+    assert len(report.sealed) == 1 and report.skipped_invalid == 1
+
+
+def test_unsupported_attribute_types_are_left_out_not_sealed_empty(tmp_path):
+    from capsule_emit.otel.backfill import _attrs
+
+    attrs = _attrs(
+        [
+            {"key": "a", "value": {"bytesValue": "AAAA"}},
+            {"key": "b", "value": {"intValue": "x"}},
+            {"key": "c", "value": {"intValue": "7"}},
+            {"key": "d", "value": {"arrayValue": {"values": [{"stringValue": "s"}, {"kvlistValue": {}}]}}},
+        ]
+    )
+    assert attrs == {"c": 7}
