@@ -277,8 +277,7 @@ class _Pseudo:
     iv: InitVar[float] = 2.5
 
 
-@pytest.mark.parametrize("salt", [None, "abcd"])
-def test_metaclass_getattr_never_runs(salt):
+def test_metaclass_getattr_never_runs():
     from capsule_emit.pydantic_payload import deep_float_path
 
     _RaisingMeta.armed = True
@@ -295,3 +294,68 @@ def test_dataclass_classvar_and_initvar_are_not_walked():
     from capsule_emit.pydantic_payload import deep_float_path
 
     assert deep_float_path({"d": _Pseudo()}) is None
+
+
+class _HostileGetattribute(type):
+    """Any attribute read on the class (``__mro__``, ``__dict__``) raises once armed."""
+
+    armed = False
+
+    def __getattribute__(cls, name):
+        if _HostileGetattribute.armed:
+            raise RuntimeError(f"metaclass __getattribute__ ran for {name}")
+        return super().__getattribute__(name)
+
+
+@dataclass
+class _DcHostileAttr(metaclass=_HostileGetattribute):
+    x: object = None
+
+
+def test_metaclass_getattribute_never_runs():
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    plain = _HostileGetattribute("P", (), {})
+    _HostileGetattribute.armed = True
+    try:
+        assert deep_float_path({"a": plain(), "f": [1.5]}) == "f[0]"
+        assert deep_float_path({"d": _DcHostileAttr(x=1.5)}) == "d.x"
+    finally:
+        _HostileGetattribute.armed = False
+
+
+class _Desc:
+    ran = False
+
+    def __get__(self, obj, owner=None):
+        _Desc.ran = True
+        return 1.5
+
+    def __set__(self, obj, value):  # a data descriptor: it wins over the instance dict
+        pass
+
+
+@dataclass
+class _DescField:
+    x: object = _Desc()
+    y: object = None
+
+
+@dataclass(slots=True)
+class _SlotsDc:
+    x: object = None
+
+
+class _NotAField:
+    __dataclass_fields__ = {"a": 1}  # a dict, but not made of dataclasses.Field
+
+
+def test_walk_skips_descriptor_fields_and_odd_dataclass_fields():
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    d = _DescField(y=1.5)
+    _Desc.ran = False  # the dataclass __init__ itself reads the default once
+    assert deep_float_path({"d": d}) == "d.y"
+    assert not _Desc.ran
+    assert deep_float_path({"d": _SlotsDc(x=1.5)}) == "d.x"
+    assert deep_float_path({"o": _NotAField(), "f": [1.5]}) == "f[0]"

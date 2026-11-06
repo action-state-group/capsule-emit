@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+import types
 from typing import Any
 
 __all__ = ["PydanticPayloadError", "plain_json"]
@@ -93,18 +94,44 @@ def float_path(value: Any, path: str = "") -> str | None:
     return None
 
 
+_MRO = type.__dict__["__mro__"]
+_CLASS_DICT = type.__dict__["__dict__"]
+_FIELD_TYPE = dataclasses.Field.__dict__["_field_type"]
+
+
+def _class_lookup(t: type, name: str) -> Any:
+    """``name`` from the class ``__dict__``s along the MRO of *t*, or ``_MISSING``.
+    ``getattr``/``hasattr`` on a type would run a metaclass ``__getattr__`` or
+    ``__getattribute__``, which is user code (capsule-emit#435)."""
+    for c in _MRO.__get__(t):
+        d = _CLASS_DICT.__get__(c)
+        if name in d:
+            return d[name]
+    return _MISSING
+
+
+_MISSING = object()
+
+
 def _dataclass_fields(t: type) -> dict[str, Any] | None:
     """The ``__dataclass_fields__`` mapping of *t*, or None when *t* is not a
-    dataclass (capsule-emit#435). Looks only in the class ``__dict__``s along the
-    MRO, read through ``type.__dict__["__mro__"]``: ``hasattr``/``getattr`` on a
-    type would run a metaclass ``__getattr__``, which is user code. A dataclass
-    copies its bases' fields into its own mapping, so the nearest hit is complete."""
-    mro, class_dict = type.__dict__["__mro__"], type.__dict__["__dict__"]
-    for c in mro.__get__(t):
-        found = class_dict.__get__(c).get("__dataclass_fields__")
-        if found is not None:
-            return found if type(found) is dict else None
-    return None
+    dataclass. A dataclass copies its bases' fields into its own mapping, so the
+    nearest hit is complete."""
+    found = _class_lookup(t, "__dataclass_fields__")
+    return found if type(found) is dict else None
+
+
+def _runs_descriptor(t: type, name: str) -> bool:
+    """True when reading ``name`` from an instance of *t* could run a descriptor's
+    ``__get__`` (a class attribute whose type defines one, other than a ``__slots__``
+    member). Such a field is not read: a known limit."""
+    attr = _class_lookup(t, name)
+    if attr is _MISSING:
+        return False
+    at = type(attr)
+    if at is types.MemberDescriptorType:
+        return False
+    return any("__get__" in _CLASS_DICT.__get__(c) for c in _MRO.__get__(at))
 
 
 def _label_path(nodes: list[tuple[int, str, Any]], idx: int) -> str:
@@ -188,7 +215,9 @@ def deep_float_path(root: Any) -> str | None:
     consult a user ``__class__``), reads containers through the builtin
     ``dict``/``list``/``tuple``/``set``/``frozenset`` methods (a subclass's
     overrides are bypassed), reads fields with ``object.__getattribute__``, and
-    builds the path only after a float is found. It is iterative, so a deep
+    builds the path only after a float is found. Dataclass-ness is read from the class
+    ``__dict__``s along the MRO, and a dataclass field backed by a descriptor
+    (a class attribute whose type defines ``__get__``) is skipped, a known limit. It is iterative, so a deep
     payload cannot raise ``RecursionError``, and keeps visited objects alive so a
     recycled ``id()`` cannot hide a later one.
     """
@@ -237,10 +266,12 @@ def deep_float_path(root: Any) -> str | None:
                 pass
         if dc_fields is not None:
             for name, f in dict.items(dc_fields):
-                # ClassVar and InitVar pseudo-fields are not instance fields.
-                if object.__getattribute__(f, "_field_type") is not dataclasses._FIELD:
-                    continue
                 try:
+                    # ClassVar and InitVar pseudo-fields are not instance fields.
+                    if type(f) is not dataclasses.Field or _FIELD_TYPE.__get__(f) is not dataclasses._FIELD:
+                        continue
+                    if type(name) is not str or _runs_descriptor(t, name):
+                        continue
                     child(object.__getattribute__(value, name), idx, "k", name)
                 except Exception:
                     pass
