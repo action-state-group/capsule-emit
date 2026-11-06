@@ -137,7 +137,8 @@ def _field_value(value: Any, t: type, name: str) -> Any:
     cannot be read without running user code (capsule-emit#435).
 
     Reads the instance ``__dict__`` through the interpreter's own ``__dict__`` slot
-    and a ``__slots__`` member through its member descriptor. A field shadowed by a
+    a ``__slots__`` member through its member descriptor, and a plain class attribute
+    (an ``init=False`` default) as is. A field shadowed by a
     data descriptor (a property, or a descriptor default) is not read: reading it
     would run its ``__get__``. A known limit, like the other unwalked objects."""
     attr = _class_lookup(t, name)
@@ -146,10 +147,16 @@ def _field_value(value: Any, t: type, name: str) -> Any:
     if attr is not _MISSING and _is_data_descriptor(attr):
         return _MISSING
     slot = _class_lookup(t, "__dict__")
-    if type(slot) is not types.GetSetDescriptorType:
+    if type(slot) is types.GetSetDescriptorType:
+        d = slot.__get__(value)
+        if type(d) is dict and name in d:
+            return d[name]
+    # Not stored on the instance (``field(default=..., init=False)`` lives on the
+    # class): a plain class attribute runs no code; a non-data descriptor's
+    # ``__get__`` would, so that one is not read.
+    if attr is _MISSING or any("__get__" in _CLASS_DICT.__get__(c) for c in _MRO.__get__(type(attr))):
         return _MISSING
-    d = slot.__get__(value)
-    return d[name] if type(d) is dict and name in d else _MISSING
+    return attr
 
 
 def _label_path(nodes: list[tuple[int, str, Any]], idx: int) -> str:
@@ -232,7 +239,8 @@ def deep_float_path(root: Any) -> str | None:
     ``issubclass(type(x), ...)`` (never ``isinstance`` on the object, which can
     consult a user ``__class__``), reads containers through the builtin
     ``dict``/``list``/``tuple``/``set``/``frozenset`` methods (a subclass's
-    overrides are bypassed), reads fields with ``object.__getattribute__``, and
+    overrides are bypassed), reads Pydantic fields with ``object.__getattribute__`` and dataclass fields with
+    :func:`_field_value`, and
     builds the path only after a float is found. Dataclass-ness is read from the class
     ``__dict__``s along the MRO, and a dataclass field backed by a descriptor
     (a property, or a class attribute whose type defines ``__set__``) is skipped, a

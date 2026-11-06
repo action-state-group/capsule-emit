@@ -397,3 +397,25 @@ def test_walk_skips_descriptor_fields_and_odd_dataclass_fields():
     assert deep_float_path({"d": _FuncDefault()}) is None
 
     assert deep_float_path({"w": _SubField(x=1.5)}) == "w.x"  # a Field subclass entry
+
+
+@dataclass
+class _InitFalse:
+    rate: object = dataclasses.field(default=1.5, init=False)
+
+
+@dataclass
+class _InitFalseTuple:
+    rate: object = dataclasses.field(default=(1.5,), init=False)
+
+
+class _InitFalseChild(_InitFalse):
+    pass
+
+
+def test_init_false_class_level_default_is_walked():
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    assert deep_float_path({"a": _InitFalse()}) == "a.rate"
+    assert deep_float_path({"a": _InitFalseTuple()}) == "a.rate[0]"
+    assert deep_float_path({"a": _InitFalseChild()}) == "a.rate"
