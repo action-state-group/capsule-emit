@@ -186,12 +186,9 @@ Each record is marked `provenance_mode: {mode: "backfilled"}` with `time_rung: "
 | `source_asserted_at` | the span's start time, to the microsecond |
 | `import_batch` | SHA-256 of the file's bytes |
 | `imported_at` | the time of sealing, never the span's time |
-| `compute_attestation["ext.otel.span_time"]` | `{start, end, asserted_by: "source"}`, beside the `org.agentactioncapsule.otel` block, not inside it |
+| `compute_attestation["ext.otel.span_time"]` | `{start, end, asserted_by: "source"}` (`end` only when the span has one), beside the `org.agentactioncapsule.otel` block, not inside it |
 
-**What this does not prove.** The span times are what the source file says. The record does not
-show when the action happened: nothing here is evidence of capture time, and the verifier
-reports the rung as `self_attested`. The rung can only be `witnessed` with a
-`corroborates_source_time` reference from a witness, which a file import cannot supply.
+**What this does not prove.** The span start and end times are what the source file says (`asserted_by: "source"`, rung `self_attested`); nothing attests them, and the record is not evidence that the span ran at that time. The time a backfilled record can show is when it was sealed: `imported_at`, and, with witnessing on, the witness receipt on the checkpoint that includes the record, which shows the record existed by then. Only live sealing records the time of capture. The rung could be `witnessed` only with a `corroborates_source_time` reference from a witness, which a file import cannot supply.
 
 **Re-running.** `imported_at` changes on every run, so capsule IDs differ. Before sealing a
 span the importer looks for its `source_ref` in the target ledger and skips it if found, so
