@@ -1,0 +1,117 @@
+{
+  "format_version": "1",
+  "description": "Decoded-JSON numbers through canonicalize_for_digest (Python capsule_emit.numbers) and emit.CanonicalizeForDigest (Go), then the AAC JSON-DIGEST. 'error' cases have no digest representation and must fail in both.",
+  "generator": "test-vectors/number-canonicalization/generate.py (Python reference)",
+  "cases": [
+    {
+      "name": "fraction",
+      "input_json": "{\"temperature\":0.5}",
+      "digest": "f5205e795f9a4b56c1a324fb4ea290a6f6ec33b42bdb5d0789238a82d8c8aa5d"
+    },
+    {
+      "name": "integer_valued_float",
+      "input_json": "{\"v\":42.0}",
+      "digest": "76423fdd43f65946147c91ad5727812de95071afcc5dba4cdc858bb4ae59ca4a"
+    },
+    {
+      "name": "integer_token_preserved",
+      "input_json": "{\"n\":1,\"x\":1.0}",
+      "digest": "0b77968b9ea0ede517074fbc166318f349b51662d246e5c742f05dfccc61feb3"
+    },
+    {
+      "name": "exp_1e21",
+      "input_json": "{\"v\":1e21}",
+      "digest": "8be24c3954df51388899dbd9279af22f4297ef8143706211e4ad53275f9ca00d"
+    },
+    {
+      "name": "exp_1e20_integer_layout",
+      "input_json": "{\"v\":1e20}",
+      "digest": "704880de5ede45b9714796529ec4df8a10b4c1fbbaf7795eaac1c4a404a615cb"
+    },
+    {
+      "name": "small_1e-5",
+      "input_json": "{\"v\":1e-5}",
+      "digest": "a78d6a84ec17e3246e6b1f9774a5c5488f1b872d4c1f611cb7bc4df2f22bd3fc"
+    },
+    {
+      "name": "small_1e-7_scientific",
+      "input_json": "{\"v\":1e-7}",
+      "digest": "0b2ed2b30d6d9fdb8a1d99089598110de17d60a7e5223c2a5c948dbd48f278fb"
+    },
+    {
+      "name": "negative_zero_float",
+      "input_json": "{\"v\":-0.0}",
+      "digest": "f270d4a46431e231d67aab6fde843e1b5f7102130684dfdb3945a22dd1ada272"
+    },
+    {
+      "name": "negative_zero_integer",
+      "input_json": "{\"v\":-0}",
+      "digest": "ec4f95abcb4e2e3dbe856c3eb2f81995eacb3823d40aa2e78ed4c5e1798f664d"
+    },
+    {
+      "name": "negative_fraction",
+      "input_json": "{\"v\":-1.25}",
+      "digest": "9f8fe5fc05d13428e28246d56d80c417bfb93caa99572c533fad81605277f472"
+    },
+    {
+      "name": "float_that_is_not_exact",
+      "input_json": "{\"v\":0.1}",
+      "digest": "31497d2d7673edf78d205af0f914859c83e584c854e47206d5adac9a02bff808"
+    },
+    {
+      "name": "max_binary64",
+      "input_json": "{\"v\":1.7976931348623157e308}",
+      "digest": "8e08e80daa04e0d5a9d5b9b87611519386d92c3426a4207d96f7e04044a93d05"
+    },
+    {
+      "name": "min_subnormal",
+      "input_json": "{\"v\":5e-324}",
+      "digest": "eefd59f7bca94cdf5fac8187db569a6735b3237c1d979184ae09c722f4c5fec2"
+    },
+    {
+      "name": "exponent_spelling_integer_valued",
+      "input_json": "{\"v\":1E3}",
+      "digest": "9815888598405fd12d313658b88e3706366dc22be89d1230b0210d839c1b510f"
+    },
+    {
+      "name": "nested",
+      "input_json": "{\"a\":[{\"b\":[0.5,{\"c\":2.5e-3}]},3,\"x\",true,null]}",
+      "digest": "3b35bb19252bef1488ebce07488eb4973cd31b550d4bdc6b22585eed64d9cea4"
+    },
+    {
+      "name": "safe_integer_max",
+      "input_json": "{\"v\":9007199254740991}",
+      "digest": "210e9afd5b97d46616c53c7bc51eb7349d44183691bb0866ae2ef6a2b798823f"
+    },
+    {
+      "name": "safe_integer_min",
+      "input_json": "{\"v\":-9007199254740991}",
+      "digest": "c2ea5f6b1454b15d240e65c086c55e7ffe95ad3b7387924490e0067544ac56d5"
+    },
+    {
+      "name": "bare_float",
+      "input_json": "0.75",
+      "digest": "cd25d98bc46f0904843e380f823836869892bb1dcf0acdacd0c681ad94a0f3b1"
+    },
+    {
+      "name": "large_integer_float_form",
+      "input_json": "{\"v\":9007199254740993.0}",
+      "digest": "829dabd68b27052f5069e16da10567eb66a352b9be80b49fb5c4a42243913818"
+    },
+    {
+      "name": "large_integer_unsafe",
+      "input_json": "{\"v\":9007199254740992}",
+      "error": true
+    },
+    {
+      "name": "large_integer_beyond_int64",
+      "input_json": "{\"v\":123456789012345678901234567890}",
+      "error": true
+    },
+    {
+      "name": "float_overflow",
+      "input_json": "{\"v\":1e999}",
+      "error": true
+    }
+  ]
+}
