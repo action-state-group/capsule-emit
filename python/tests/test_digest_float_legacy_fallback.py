@@ -232,6 +232,18 @@ def test_numpy_scalar_refused():
         _digest({"x": np.float32(1.5), "t": (1,)})
 
 
+def test_numpy_zero_d_float_refused_and_big_int_array_is_fast():
+    np = pytest.importorskip("numpy")
+    import time
+
+    for arr in (np.array(1.5), np.array(1.5, dtype="float32"), np.array([1.5])):
+        with pytest.raises(FloatInDigestError):
+            _digest({"a": arr, "t": (1,)})
+    start = time.monotonic()
+    assert len(_digest({"a": np.arange(10**7), "t": (1,)})) == 64
+    assert time.monotonic() - start < 2
+
+
 def test_iteration_failure_and_big_range_do_not_break_float_free_payloads():
     assert len(_digest({"b": _BadIter(), "t": (1,)})) == 64
     assert len(_digest({"r": range(10**10), "t": (1,)})) == 64

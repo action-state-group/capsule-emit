@@ -138,6 +138,13 @@ def deep_float_path(root: Any) -> str | None:
             continue
         seen.add(id(value))
         keep.append(value)
+        # numpy-style arrays (no numpy import): a float/complex dtype is a float;
+        # any other non-object dtype holds no float and str() only summarises it.
+        kind = getattr(getattr(value, "dtype", None), "kind", None)
+        if kind in ("f", "c"):
+            return path or "<payload>"
+        if isinstance(kind, str) and kind != "O":
+            continue
         try:
             if isinstance(value, array.array):
                 if value.typecode in "fd":
