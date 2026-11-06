@@ -2,7 +2,7 @@ package emit
 
 import (
 	"encoding/json"
-	"errors"
+	"encoding/json/jsontext"
 	"fmt"
 	"math"
 	"regexp"
@@ -13,8 +13,9 @@ import (
 // maxSafeInteger is the largest integer token DigestJSON accepts (2^53 - 1).
 const maxSafeInteger = 1<<53 - 1
 
-// CanonicalizeForDigest returns value with every binary64 number replaced by
-// its RFC 8785 section 3.2.2.3 decimal string, so the result is accepted by
+// CanonicalizeForDigest returns value with every non-integer number (a fraction
+// or exponent token, a float64 or a float32) replaced by its RFC 8785 section
+// 3.2.2.3 decimal string, so the result is accepted by
 // DigestJSON. It is the Go twin of Python's
 // capsule_emit.numbers.canonicalize_for_digest: the same input gives the same
 // digest in both (see test-vectors/number-canonicalization).
@@ -29,6 +30,7 @@ const maxSafeInteger = 1<<53 - 1
 // Go integer types. The conversion is deterministic:
 //
 //   - A json.Number with a fraction or exponent, a float64 or a float32
+//     (widened to binary64 first, so float32(0.1) is "0.10000000149011612")
 //     becomes a string: 0.5 -> "0.5", 1.0 -> "1", 1e21 -> "1e+21",
 //     -0.0 -> "0" (RFC 8785 Appendix B).
 //   - An integer token (json.Number without a fraction or exponent, or a Go
@@ -140,17 +142,14 @@ func canonicalizeNumber(n json.Number, path string) (any, error) {
 	}
 	f, err := strconv.ParseFloat(token, 64)
 	if err != nil {
-		var numErr *strconv.NumError
-		if errors.As(err, &numErr) && errors.Is(numErr.Err, strconv.ErrRange) && math.IsInf(f, 0) {
-			return nil, fmt.Errorf("number %s overflows binary64 and has no digest representation%s", token, fieldHint(path))
-		}
-		return nil, fmt.Errorf("number %q is not a JSON number%s: %w", token, fieldHint(path), err) // unreachable after the grammar check
+		// The grammar check leaves only ErrRange (overflow to an infinity).
+		return nil, fmt.Errorf("number %s overflows binary64 and has no digest representation%s", token, fieldHint(path))
 	}
 	return float64ToJCS(f, path)
 }
 
 // float64ToJCS serializes v per RFC 8785 section 3.2.2.3 (ECMA-262
-// 7.1.12.1 Number::toString). Callers embed the result as a JSON string.
+// 7.1.12.1 Number::toString), naming the field for NaN and infinities.
 func float64ToJCS(v float64, path string) (string, error) {
 	if v == 0 {
 		return "0", nil // also -0.0, RFC 8785 Appendix B
@@ -161,45 +160,8 @@ func float64ToJCS(v float64, path string) (string, error) {
 	if math.IsInf(v, 0) {
 		return "", fmt.Errorf("Infinity cannot appear in a digest-bearing field%s", fieldHint(path))
 	}
-	negative := v < 0
-	if negative {
-		v = -v
-	}
-	// 'e' with precision -1 is the shortest decimal that round-trips: the same
-	// digit set as ECMA-262 step 5. Re-layout follows steps 6-10.
-	repr := strconv.FormatFloat(v, 'e', -1, 64) // d[.ddd]e[+-]XX
-	mant, expStr, _ := strings.Cut(repr, "e")
-	exp, err := strconv.Atoi(expStr)
-	if err != nil {
-		return "", fmt.Errorf("format %v: %w", v, err)
-	}
-	digits := strings.Replace(mant, ".", "", 1)
-	k := len(digits)
-	n := exp + 1 // decimal point position relative to the digit string
-
-	var body string
-	switch {
-	case k <= n && n <= 21:
-		body = digits + strings.Repeat("0", n-k)
-	case 0 < n && n <= 21:
-		body = digits[:n] + "." + digits[n:]
-	case -6 < n && n <= 0:
-		body = "0." + strings.Repeat("0", -n) + digits
-	default:
-		e := n - 1
-		sign := "+"
-		if e < 0 {
-			sign = "-"
-			e = -e
-		}
-		if k == 1 {
-			body = digits + "e" + sign + strconv.Itoa(e)
-		} else {
-			body = digits[:1] + "." + digits[1:] + "e" + sign + strconv.Itoa(e)
-		}
-	}
-	if negative {
-		return "-" + body, nil
-	}
-	return body, nil
+	// jsontext.AppendFloat is documented as identical to RFC 8785 section
+	// 3.2.2.3 for 64-bit precision (and to ECMA-262 7.1.12.1), apart from -0,
+	// which is handled above. Callers embed the result as a JSON string.
+	return string(jsontext.AppendFloat(nil, v, 64)), nil
 }

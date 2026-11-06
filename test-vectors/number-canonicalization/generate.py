@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # Regenerate: python test-vectors/number-canonicalization/generate.py test-vectors/number-canonicalization/vectors.json
 import json
 import sys
