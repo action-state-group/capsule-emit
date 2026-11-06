@@ -425,8 +425,10 @@ def _digest(value: Any, salt: str | None = None) -> str:
     (e.g. tuples, arbitrary objects) still fall back to the legacy sorted-key
     encoding, so those emitters do not break at seal time. A float inside the
     standard containers of such a payload (dict, list, tuple, set, frozenset,
-    dataclass, Pydantic model) is still refused; a float held only inside any other
-    object (a numpy array, say) is not inspected and is sealed via ``repr()``.
+    dataclass, Pydantic model) is still refused, and so is a numpy array or scalar
+    with a float or complex dtype (decided by dtype alone, no element is read). A
+    float held only inside any other object, or in an object-dtype array, is not
+    inspected and is sealed via ``repr()``.
 
     When *salt* is given, it is folded into the exact JCS pre-image bytes
     (``jcs_bytes + b"|" + salt``) before hashing — the salted digest is over

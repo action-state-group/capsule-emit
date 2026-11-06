@@ -121,6 +121,45 @@ def _label_path(nodes: list[tuple[int, str, Any]], idx: int) -> str:
     return out[1:] if out.startswith(".") else out or "<payload>"
 
 
+def _numpy_float(value: Any, t: type) -> bool:
+    """True when *value* is a numpy array or scalar whose dtype holds floats
+    (capsule-emit#433).
+
+    Runs only if the caller already imported numpy (a numpy object cannot exist
+    otherwise; this never imports it). Like the rest of the walk it runs no user
+    code: the type is decided with ``issubclass(t, ...)``, and ``dtype`` and
+    ``size`` are read through numpy's own class descriptors, so a subclass's
+    overrides, ``__getattr__``, ``__array__`` and ``__class__`` never run. It
+    reads no element, so a huge array costs the same as a small one. An array
+    with no element (``size == 0``) holds no float. Object arrays are not
+    walked: their elements are arbitrary objects, a documented limit.
+    """
+    np = sys.modules.get("numpy")
+    if np is None:
+        return False
+    try:
+        if issubclass(t, np.ndarray):
+            cls = np.ndarray
+            if not cls.size.__get__(value):
+                return False
+        elif issubclass(t, np.generic):
+            cls = np.generic
+        else:
+            return False
+        todo = [cls.dtype.__get__(value)]
+        while todo:
+            dt = todo.pop()
+            if dt.kind in "fc":
+                return True
+            if dt.subdtype is not None:
+                todo.append(dt.subdtype[0])
+            if dt.fields:
+                todo.extend(field[0] for field in dt.fields.values())
+    except Exception:
+        return False
+    return False
+
+
 def deep_float_path(root: Any) -> str | None:
     """Path of the first Python float in the standard containers of ``root``, or
     None (capsule-emit#431).
@@ -128,9 +167,10 @@ def deep_float_path(root: Any) -> str | None:
     The legacy ``default=str`` digest fallback would seal such a float through
     ``repr()``. This walks only types the payload contract already knows: dict
     (keys and values), list, tuple, set, frozenset, dataclass instances and
-    Pydantic v2 models (their own fields). Any other object is never touched, so it
-    keeps exactly its legacy behaviour; a float held only inside such an object, such
-    as a numpy array, is a known limit (capsule-emit#433).
+    Pydantic v2 models (their own fields), plus numpy arrays and scalars by dtype
+    alone (:func:`_numpy_float`, capsule-emit#433). Any other object is never
+    touched, so it keeps exactly its legacy behaviour; a float held only inside such
+    an object, or in an object-dtype numpy array, is a known limit.
 
     Rule: **the walk runs no user code.** It decides every type with
     ``issubclass(type(x), ...)`` (never ``isinstance`` on the object, which can
@@ -154,7 +194,7 @@ def deep_float_path(root: Any) -> str | None:
     while stack:
         value, idx = stack.pop()
         t = type(value)
-        if issubclass(t, float):
+        if issubclass(t, float) or _numpy_float(value, t):
             return _label_path(nodes, idx)
         is_dc = hasattr(t, "__dataclass_fields__")
         if value is None or id(value) in seen:
