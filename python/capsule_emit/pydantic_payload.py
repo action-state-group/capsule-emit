@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+import types
 from typing import Any
 
 __all__ = ["PydanticPayloadError", "plain_json"]
@@ -93,15 +94,69 @@ def float_path(value: Any, path: str = "") -> str | None:
     return None
 
 
-def _slot_names(value: Any) -> list[str]:
-    names: list[str] = []
-    for cls in type(value).__mro__:
-        slots = cls.__dict__.get("__slots__", ())
-        for name in (slots,) if isinstance(slots, str) else slots:
-            if name.startswith("__") and not name.endswith("__"):
-                name = f"_{cls.__name__.lstrip('_')}{name}"  # name mangling
-            names.append(name)
-    return names
+_MRO = type.__dict__["__mro__"]
+_CLASS_DICT = type.__dict__["__dict__"]
+_FIELD_TYPE = dataclasses.Field.__dict__["_field_type"]
+
+
+def _class_lookup(t: type, name: str) -> Any:
+    """``name`` from the class ``__dict__``s along the MRO of *t*, or ``_MISSING``.
+    ``getattr``/``hasattr`` on a type would run a metaclass ``__getattr__`` or
+    ``__getattribute__``, which is user code (capsule-emit#435)."""
+    for c in _MRO.__get__(t):
+        d = _CLASS_DICT.__get__(c)
+        if name in d:
+            return d[name]
+    return _MISSING
+
+
+_MISSING = object()
+
+
+def _dataclass_fields(t: type) -> dict[str, Any] | None:
+    """The ``__dataclass_fields__`` mapping of *t*, or None when *t* is not a
+    dataclass. A dataclass copies its bases' fields into its own mapping, so the
+    nearest hit is complete."""
+    found = _class_lookup(t, "__dataclass_fields__")
+    return found if type(found) is dict else None
+
+
+def _is_data_descriptor(attr: Any) -> bool:
+    """True when the type of *attr* defines ``__set__`` or ``__delete__``, so the
+    attribute takes priority over the instance ``__dict__`` and reading it would run
+    its ``__get__``. Looked up in the type's ``__dict__``s, not with ``hasattr``."""
+    for c in _MRO.__get__(type(attr)):
+        d = _CLASS_DICT.__get__(c)
+        if "__set__" in d or "__delete__" in d:
+            return True
+    return False
+
+
+def _field_value(value: Any, t: type, name: str) -> Any:
+    """The stored value of dataclass field *name* on *value*, or ``_MISSING`` when it
+    cannot be read without running user code (capsule-emit#435).
+
+    Reads the instance ``__dict__`` through the interpreter's own ``__dict__`` slot
+    a ``__slots__`` member through its member descriptor, and a plain class attribute
+    (an ``init=False`` default) as is. A field shadowed by a
+    data descriptor (a property, or a descriptor default) is not read: reading it
+    would run its ``__get__``. A known limit, like the other unwalked objects."""
+    attr = _class_lookup(t, name)
+    if type(attr) is types.MemberDescriptorType:
+        return attr.__get__(value)
+    if attr is not _MISSING and _is_data_descriptor(attr):
+        return _MISSING
+    slot = _class_lookup(t, "__dict__")
+    if type(slot) is types.GetSetDescriptorType:
+        d = slot.__get__(value)
+        if type(d) is dict and name in d:
+            return d[name]
+    # Not stored on the instance (``field(default=..., init=False)`` lives on the
+    # class): a plain class attribute runs no code; a non-data descriptor's
+    # ``__get__`` would, so that one is not read.
+    if attr is _MISSING or any("__get__" in _CLASS_DICT.__get__(c) for c in _MRO.__get__(type(attr))):
+        return _MISSING
+    return attr
 
 
 def _label_path(nodes: list[tuple[int, str, Any]], idx: int) -> str:
@@ -184,8 +239,12 @@ def deep_float_path(root: Any) -> str | None:
     ``issubclass(type(x), ...)`` (never ``isinstance`` on the object, which can
     consult a user ``__class__``), reads containers through the builtin
     ``dict``/``list``/``tuple``/``set``/``frozenset`` methods (a subclass's
-    overrides are bypassed), reads fields with ``object.__getattribute__``, and
-    builds the path only after a float is found. It is iterative, so a deep
+    overrides are bypassed), reads Pydantic fields with ``object.__getattribute__`` and dataclass fields with
+    :func:`_field_value`, and
+    builds the path only after a float is found. Dataclass-ness is read from the class
+    ``__dict__``s along the MRO, and a dataclass field backed by a descriptor
+    (a property, or a class attribute whose type defines ``__set__``) is skipped, a
+    known limit. It is iterative, so a deep
     payload cannot raise ``RecursionError``, and keeps visited objects alive so a
     recycled ``id()`` cannot hide a later one.
     """
@@ -204,10 +263,10 @@ def deep_float_path(root: Any) -> str | None:
         t = type(value)
         if issubclass(t, float) or _numpy_float(value, t):
             return _label_path(nodes, idx)
-        is_dc = hasattr(t, "__dataclass_fields__")
+        dc_fields = _dataclass_fields(t)
         if value is None or id(value) in seen:
             continue
-        if issubclass(t, (str, bytes, int)) and not is_dc:
+        if issubclass(t, (str, bytes, int)) and dc_fields is None:
             continue
         seen.add(id(value))
         keep.append(value)
@@ -232,10 +291,15 @@ def deep_float_path(root: Any) -> str | None:
                         child(v, idx, "k", k)
             except Exception:
                 pass
-        if is_dc:
-            for f in dataclasses.fields(t):
+        if dc_fields is not None:
+            for name, f in dict.items(dc_fields):
                 try:
-                    child(object.__getattribute__(value, f.name), idx, "k", f.name)
+                    # ClassVar and InitVar pseudo-fields are not instance fields.
+                    if not issubclass(type(f), dataclasses.Field) or _FIELD_TYPE.__get__(f) is not dataclasses._FIELD:
+                        continue
+                    found = _field_value(value, t, name) if type(name) is str else _MISSING
+                    if found is not _MISSING:
+                        child(found, idx, "k", name)
                 except Exception:
                     pass
     return None

@@ -6,6 +6,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed (python): the float walk no longer runs a metaclass `__getattr__`
+
+The legacy-fallback float walk decided "is a dataclass" with `hasattr`/`dataclasses.fields` on the payload's type, which runs a metaclass `__getattr__`; the walk must run no user code. It now reads `__dataclass_fields__` from the class `__dict__`s along the MRO. A dataclass field shadowed by a data descriptor (a property or a descriptor default) is not read, since reading it runs the descriptor: a float held only there is a known limit, not refused. Other payloads keep their digests. Builtin `complex` still seals as its `repr()`, as before; whether to refuse it is a separate decision recorded on the issue.
+([#435](https://github.com/action-state-group/capsule-emit/issues/435))
+
 ### Fixed (python): a float beside a non-JSON value is refused
 
 `seal()` used to seal a float through `repr()` when a non-JSON value (a tuple, `datetime`, set, dataclass or other object) sat in the same `agent_input` / `agent_output`, depending on key order; §5.1 forbids that and `verify_input_digest` could not reproduce the digest. A float anywhere in a dict, list, tuple, set, frozenset, dataclass or Pydantic model within such a payload now raises `FloatInDigestError`, salted or not. Any other object is never inspected and seals exactly as before; a numpy array holding a float is refused by dtype (see the next entry). Float-free payloads digest exactly as before (pinned against the pre-change digests).

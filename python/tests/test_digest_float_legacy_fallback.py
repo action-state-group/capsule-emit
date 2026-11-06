@@ -9,10 +9,12 @@ object keeps its legacy behaviour untouched.
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
+from typing import ClassVar
 
 import pytest
 from agent_action_capsule.canonical import FloatInDigestError
@@ -236,3 +238,184 @@ def test_walk_labels_found_float_without_formatting_hostile_keys():
     assert deep_float_path({4: 1.5}) == "4"
     assert deep_float_path({"a": _hostile(dict, {"x": 1.5})}) == "a.x"
     assert deep_float_path({"o": _FakeClass(), "f": [1.5]}) == "f[0]"
+
+
+class _RaisingMeta(type):
+    """A metaclass whose ``__getattr__`` raises once armed (the ``@dataclass``
+    decorator itself probes the class, so it is armed after class creation): the
+    walk must decide dataclass-ness without reaching it (capsule-emit#435)."""
+
+    armed = False
+
+    def __getattr__(cls, name):
+        if _RaisingMeta.armed:
+            raise RuntimeError(f"metaclass __getattr__ ran for {name}")
+        raise AttributeError(name)
+
+
+class _PlainWithMeta(metaclass=_RaisingMeta):
+    pass
+
+
+@dataclass
+class _DcWithMeta(metaclass=_RaisingMeta):
+    x: object = None
+
+
+@dataclass
+class _Parent:
+    p: object = None
+
+
+class _Child(_Parent):  # not itself decorated; inherits the fields
+    pass
+
+
+@dataclass
+class _Pseudo:
+    a: int = 1
+    cv: ClassVar[float] = 1.5
+    iv: InitVar[float] = 2.5
+
+
+def test_metaclass_getattr_never_runs():
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    _RaisingMeta.armed = True
+    try:
+        assert deep_float_path({"a": _PlainWithMeta(), "b": [_PlainWithMeta]}) is None
+        assert deep_float_path({"d": _DcWithMeta(x=1.5)}) == "d.x"
+        assert deep_float_path({"c": _Child(p=1.5)}) == "c.p"
+        assert deep_float_path({"a": _PlainWithMeta(), "f": [1.5]}) == "f[0]"
+    finally:
+        _RaisingMeta.armed = False
+
+
+def test_dataclass_classvar_and_initvar_are_not_walked():
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    assert deep_float_path({"d": _Pseudo()}) is None
+
+
+class _HostileGetattribute(type):
+    """Any attribute read on the class (``__mro__``, ``__dict__``) raises once armed."""
+
+    armed = False
+
+    def __getattribute__(cls, name):
+        if _HostileGetattribute.armed:
+            raise RuntimeError(f"metaclass __getattribute__ ran for {name}")
+        return super().__getattribute__(name)
+
+
+@dataclass
+class _DcHostileAttr(metaclass=_HostileGetattribute):
+    x: object = None
+
+
+def test_metaclass_getattribute_never_runs():
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    plain = _HostileGetattribute("P", (), {})
+    _HostileGetattribute.armed = True
+    try:
+        assert deep_float_path({"a": plain(), "f": [1.5]}) == "f[0]"
+        assert deep_float_path({"d": _DcHostileAttr(x=1.5)}) == "d.x"
+    finally:
+        _HostileGetattribute.armed = False
+
+
+class _Desc:
+    ran = False
+
+    def __get__(self, obj, owner=None):
+        _Desc.ran = True
+        return 1.5
+
+    def __set__(self, obj, value):  # a data descriptor: it wins over the instance dict
+        pass
+
+
+@dataclass
+class _DescField:
+    x: object = _Desc()
+    y: object = None
+
+
+@dataclass
+class _SlotsDc:
+    __slots__ = ("x",)  # not slots=True, which needs Python 3.10
+    x: object
+
+
+def _plain_default(): ...
+
+
+@dataclass
+class _FuncDefault:
+    cb: object = _plain_default  # a function default: a non-data descriptor
+
+
+class _MyField(dataclasses.Field):
+    __slots__ = ()
+
+
+@dataclass
+class _SubField:
+    x: object = None
+
+
+_SubField.__dataclass_fields__["x"].__class__ = _MyField
+
+
+class _EvilEntry:
+    ran = False
+
+    @property
+    def _field_type(self):
+        _EvilEntry.ran = True
+        raise RuntimeError("user code ran")
+
+
+class _NotAField:
+    __dataclass_fields__ = {"a": 1, "b": _EvilEntry()}  # a dict, but not of dataclasses.Field
+
+
+def test_walk_skips_descriptor_fields_and_odd_dataclass_fields():
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    d = _DescField(y=1.5)
+    _Desc.ran = False  # the dataclass __init__ itself reads the default once
+    assert deep_float_path({"d": d}) == "d.y"
+    assert not _Desc.ran
+    assert deep_float_path({"d": _SlotsDc(x=1.5)}) == "d.x"
+    assert deep_float_path({"o": _NotAField()}) is None
+    assert not _EvilEntry.ran
+    # a function default is a non-data descriptor: the instance value still counts
+    assert deep_float_path({"d": _FuncDefault(cb=1.5)}) == "d.cb"
+    assert deep_float_path({"d": _FuncDefault(cb=[1.5])}) == "d.cb[0]"
+    assert deep_float_path({"d": _FuncDefault()}) is None
+
+    assert deep_float_path({"w": _SubField(x=1.5)}) == "w.x"  # a Field subclass entry
+
+
+@dataclass
+class _InitFalse:
+    rate: object = dataclasses.field(default=1.5, init=False)
+
+
+@dataclass
+class _InitFalseTuple:
+    rate: object = dataclasses.field(default=(1.5,), init=False)
+
+
+class _InitFalseChild(_InitFalse):
+    pass
+
+
+def test_init_false_class_level_default_is_walked():
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    assert deep_float_path({"a": _InitFalse()}) == "a.rate"
+    assert deep_float_path({"a": _InitFalseTuple()}) == "a.rate[0]"
+    assert deep_float_path({"a": _InitFalseChild()}) == "a.rate"
