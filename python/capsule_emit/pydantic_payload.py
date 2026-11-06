@@ -13,7 +13,7 @@ import sys
 import types
 from typing import Any
 
-__all__ = ["PydanticPayloadError", "plain_json"]
+__all__ = ["NonStringKeyError", "PydanticPayloadError", "non_string_key_error", "plain_json"]
 
 
 class PydanticPayloadError(ValueError):
@@ -22,6 +22,51 @@ class PydanticPayloadError(ValueError):
     Raised instead of guessing a value for it (no ``str()`` fallback); the
     message names the model and carries Pydantic's own reason.
     """
+
+
+class NonStringKeyError(ValueError):
+    """A dict in a digest-bearing payload has a key that is not a string.
+
+    JSON object keys are strings and the JCS digest sorts them as such, so
+    ``seal()`` refuses the payload rather than coerce ``1`` to ``"1"`` (which
+    would seal a different value than the caller passed); ``verify_input_digest``
+    reports NON_CONFORMING for it (capsule-emit#439).
+    """
+
+
+def non_string_key_error(value: Any) -> NonStringKeyError | None:
+    """A :class:`NonStringKeyError` naming the first non-string dict key in the
+    dicts, lists and tuples of ``value``, or None.
+
+    Run only after the digest layer failed with an ``AttributeError`` (its key
+    sort calls ``.encode``), so the digest's success path pays nothing. Like
+    :func:`deep_float_path` it runs no user code: types are decided with
+    ``issubclass(type(x), ...)`` and containers are read through the builtin
+    methods. It is iterative, so a deep payload cannot raise ``RecursionError``.
+    """
+    seen: set[int] = set()
+    stack: list[tuple[Any, str]] = [(value, "")]
+    while stack:
+        v, path = stack.pop()
+        t = type(v)
+        if id(v) in seen:
+            continue
+        if issubclass(t, dict):
+            seen.add(id(v))
+            for k, item in dict.items(v):
+                if not issubclass(type(k), str):
+                    where = f"{path}.<key>" if path else "<key>"
+                    return NonStringKeyError(
+                        f"a {type(k).__name__} dict key at {where!r}: JSON object keys are "
+                        "strings, so make every key a str before sealing or verifying."
+                    )
+                stack.append((item, f"{path}.{str.__str__(k)}" if path else str.__str__(k)))
+        elif issubclass(t, (list, tuple)):
+            seen.add(id(v))
+            it = list.__iter__ if issubclass(t, list) else tuple.__iter__
+            for i, item in enumerate(it(v)):
+                stack.append((item, f"{path}[{i}]"))
+    return None
 
 
 def _model_base() -> type | None:

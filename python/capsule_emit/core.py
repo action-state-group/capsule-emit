@@ -97,6 +97,7 @@ from .pydantic_payload import (  # noqa: F401 (PydanticPayloadError is re-export
     PydanticPayloadError,
     deep_float_path,
     float_path,
+    non_string_key_error,
     plain_json,
 )
 from .relations import REGISTERED_RELATIONS
@@ -475,6 +476,12 @@ def _digest_plain(value: Any, salt: str | None) -> str:
         # fallback branch below on those inputs.
         canonical_bytes = jcs(normalize(value))
         return hashlib.sha256(canonical_bytes + b"|" + salt.encode("utf-8")).hexdigest()
+    except AttributeError:
+        # The digest layer's key sort calls .encode on a non-string dict key.
+        err = non_string_key_error(value)
+        if err is None:
+            raise
+        raise err from None
     except TypeError:
         # Non-JSON-native types (e.g. tuples, arbitrary objects) — tolerated as
         # before. FloatInDigestError is intentionally NOT caught: a raw float is
@@ -489,6 +496,11 @@ def _digest_plain(value: Any, salt: str | None) -> str:
                 "digest-bearing fields (a complex is two floats), so make it a Decimal or a str (a numpy array: "
                 "a list of decimal strings)."
             ) from None
+        # json.dumps would coerce a non-string key to its text (1 -> "1"), sealing
+        # a different value than the caller passed (#439).
+        err = non_string_key_error(value)
+        if err is not None:
+            raise err from None
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
         if salt is not None:
             raw = raw + "|" + salt
