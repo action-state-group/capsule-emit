@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -108,10 +109,15 @@ func TestCanonicalizeForDigestErrorsNameTheField(t *testing.T) {
 		"unsafe int token": {map[string]any{"x": json.Number("9007199254740992")}, `x`},
 		"huge int token":   {map[string]any{"x": json.Number("123456789012345678901234567890")}, `x`},
 		"unsafe int64":     {map[string]any{"x": int64(1 << 60)}, `x`},
-		"unsafe int":       {map[string]any{"x": int(-1 << 60)}, `x`},
 		"unsafe uint64":    {map[string]any{"x": uint64(1 << 60)}, `x`},
-		"unsafe uint":      {map[string]any{"x": uint(1 << 60)}, `x`},
 		"malformed":        {map[string]any{"x": json.Number("1.2.3")}, `x`},
+		"leading plus":     {map[string]any{"x": json.Number("+1")}, `x`},
+		"leading zero":     {map[string]any{"x": json.Number("01")}, `x`},
+		"bare fraction":    {map[string]any{"x": json.Number(".5")}, `x`},
+		"trailing dot":     {map[string]any{"x": json.Number("1.")}, `x`},
+		"hex float":        {map[string]any{"x": json.Number("0x1.8p1")}, `x`},
+		"word":             {map[string]any{"x": json.Number("NaN")}, `x`},
+		"empty":            {map[string]any{"x": json.Number("")}, `x`},
 		"slice element":    {[]any{json.Number("1e999")}, `[0]`},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -123,6 +129,19 @@ func TestCanonicalizeForDigestErrorsNameTheField(t *testing.T) {
 	_, err := CanonicalizeForDigest(math.NaN())
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "field:")
+}
+
+func TestCanonicalizeForDigestNativeIntegerWidths(t *testing.T) {
+	big := int64(1) << 60 // runtime values: constant conversion would not compile on 32-bit
+	if strconv.IntSize == 64 {
+		_, err := CanonicalizeForDigest(int(big))
+		require.Error(t, err)
+		_, err = CanonicalizeForDigest(uint(big))
+		require.Error(t, err)
+	}
+	got, err := CanonicalizeForDigest(uint(5))
+	require.NoError(t, err)
+	assert.Equal(t, uint64(5), got)
 }
 
 func TestFloat64ToJCS(t *testing.T) {

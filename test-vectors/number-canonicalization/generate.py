@@ -1,6 +1,9 @@
 # Regenerate: python test-vectors/number-canonicalization/generate.py test-vectors/number-canonicalization/vectors.json
-import json, sys
+import json
+import sys
+
 from agent_action_capsule.canonical import json_digest
+
 from capsule_emit.numbers import canonicalize_for_digest
 
 cases = [
@@ -41,4 +44,6 @@ doc = {
  "generator": "test-vectors/number-canonicalization/generate.py (Python reference)",
  "cases": out,
 }
-json.dump(doc, open(sys.argv[1], "w"), indent=2); open(sys.argv[1],"a").write("\n")
+with open(sys.argv[1], "w") as fh:
+    json.dump(doc, fh, indent=2)
+    fh.write("\n")

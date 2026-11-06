@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -116,8 +117,16 @@ func checkSafeUnsigned(v uint64, path string) (any, error) {
 	return v, nil
 }
 
+// jsonNumberToken is the RFC 8259 number grammar. strconv accepts more (a
+// leading "+", leading zeros, ".5", "1.", hex floats), so a token is checked
+// before parsing rather than laundered into a valid value.
+var jsonNumberToken = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
+
 func canonicalizeNumber(n json.Number, path string) (any, error) {
 	token := string(n)
+	if !jsonNumberToken.MatchString(token) {
+		return nil, fmt.Errorf("number %q is not a JSON number%s", token, fieldHint(path))
+	}
 	if !strings.ContainsAny(token, ".eE") {
 		// Integer token: keep it inside the safe range, normalize -0.
 		parsed, err := strconv.ParseInt(token, 10, 64)
@@ -135,7 +144,7 @@ func canonicalizeNumber(n json.Number, path string) (any, error) {
 		if errors.As(err, &numErr) && errors.Is(numErr.Err, strconv.ErrRange) && math.IsInf(f, 0) {
 			return nil, fmt.Errorf("number %s overflows binary64 and has no digest representation%s", token, fieldHint(path))
 		}
-		return nil, fmt.Errorf("number %q is not a JSON number%s: %w", token, fieldHint(path), err)
+		return nil, fmt.Errorf("number %q is not a JSON number%s: %w", token, fieldHint(path), err) // unreachable after the grammar check
 	}
 	return float64ToJCS(f, path)
 }
