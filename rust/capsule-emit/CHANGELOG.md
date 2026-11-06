@@ -13,9 +13,13 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   A store type passed to `Ledger::open_stores_with_indexer` or `CheckpointState::load_log` must implement 0.5.0's
   `WitnessStateStore`, which gained `pending_witnesses_for`.
 - Witness registration (`POST /checkpoints`, the flat and store paths) goes through checkpointed-local-log's
-  `HttpWitnessClient`. It checks the checkpoint's signature before sending, and refuses a response whose
-  `entry_hash_scheme` is not `legacy`; a receipt it refuses holds that witness, as an unstorable receipt did.
-  The 409 catch-up stays here (checkpointed-local-log#91).
+  `HttpWitnessClient`. It verifies the checkpoint's signature before sending and refuses a response that is not
+  JSON, whose `entry_hash_scheme` is not `legacy` (the reference witness sends it), whose position is invalid
+  (`tree_size` below 1, `leaf_index` not below it), or whose receipt is not canonical base64. Each refusal is a
+  failed attempt: the row (store) or the witness (flat) stays pending and is retried, and a receipt a witness
+  issued but this crate refused is no longer held as a permanent row. A witness URL with user information, a query
+  or a fragment is refused by the client, so that witness is not contacted. The 409 catch-up stays here
+  (checkpointed-local-log#91).
 
 ### Removed
 

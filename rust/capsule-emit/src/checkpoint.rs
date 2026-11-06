@@ -1304,7 +1304,8 @@ fn row_error(why: &str) -> String {
 /// row's checkpoint (see [`WITNESS_BACKFILL_FILE`]) is kept with a warning.
 /// The CLL client has already refused what a row cannot hold (a receipt that
 /// is not canonical base64, an empty or oversized one, a bad `entry_hash` or
-/// position), as [`SubmitError::Rejected`].
+/// position), as [`SubmitError::Rejected`]: an ordinary failed attempt, which
+/// leaves the row due and is retried with the cadence.
 fn receipt_for(row: &WitnessState, receipt: &Receipt) -> WitnessReceiptState {
     use sha2::{Digest, Sha256};
     let hash = &receipt.entry_hash;
@@ -1414,16 +1415,6 @@ impl RowDelivery<'_> {
                     queue.pop_front();
                     recorded = true;
                 }
-                // The witness answered 2xx with a receipt the client refuses.
-                // It has accepted the checkpoint, so a retry would only be
-                // refused as already held: close the row and hold the
-                // witness, visibly.
-                Err(SubmitError::Rejected(why)) => {
-                    let why = format!("the witness's receipt cannot be stored: {why}");
-                    eprintln!("[checkpoint] {id} at size {size}: {why}; holding the witness");
-                    self.commit(&row, None, true, Some(row_error(&why)));
-                    return recorded;
-                }
                 Err(err) => match continuity_refusal(&err) {
                     Some((accepted, root)) if accepted >= size => {
                         if !self.holds(accepted, &root) {
@@ -1448,7 +1439,7 @@ impl RowDelivery<'_> {
                     }
                     Some((accepted, root)) if !caught_up => {
                         caught_up = true;
-                        match self.catch_up(&row, accepted, &root, queue) {
+                        match self.catch_up(&row, accepted, &root) {
                             Ok(sent) => eprintln!(
                                 "[checkpoint] caught {id} up from size {accepted} with {sent} \
                                  earlier checkpoint(s); resending size {size}"
@@ -1592,13 +1583,7 @@ impl RowDelivery<'_> {
     /// in order, read from the witness rows; record each receipt on this
     /// witness's own row where that row is still open (a closed row keeps
     /// its state). Returns how many were sent.
-    fn catch_up(
-        &self,
-        row: &WitnessState,
-        accepted: u64,
-        root: &str,
-        queue: &mut VecDeque<u64>,
-    ) -> Result<usize, String> {
+    fn catch_up(&self, row: &WitnessState, accepted: u64, root: &str) -> Result<usize, String> {
         let not_held = || {
             format!(
                 "the witness accepted a checkpoint at size {accepted} with root {root}, which \
@@ -1630,24 +1615,12 @@ impl RowDelivery<'_> {
         }
         let mut sent = 0;
         for (size, cose, own) in between.iter().rev() {
-            let own = own.as_ref().filter(|r| r.receipt.is_none() && !r.permanent);
-            let resp = match self.client.submit(cose) {
-                Ok(resp) => resp,
-                // As in `run`: a receipt a row cannot hold closes the row.
-                // The closed row now holds the witness: it goes back to the
-                // front of the queue, ahead of the cut being sent.
-                Err(SubmitError::Rejected(why)) if own.is_some() => {
-                    let why = format!("the witness's receipt cannot be stored: {why}");
-                    self.commit(own.unwrap(), None, true, Some(row_error(&why)));
-                    if !queue.contains(size) {
-                        queue.push_front(*size);
-                    }
-                    return Err(format!("size {size}: {why}"));
-                }
-                Err(e) => return Err(format!("sending size {size}: {e}")),
-            };
+            let resp = self
+                .client
+                .submit(cose)
+                .map_err(|e| format!("sending size {size}: {e}"))?;
             sent += 1;
-            let Some(own) = own else {
+            let Some(own) = own.as_ref().filter(|r| r.receipt.is_none() && !r.permanent) else {
                 continue;
             };
             // A row that moved under this state stops the pass.
@@ -3064,6 +3037,21 @@ mod tests {
     }
 
     #[test]
+    fn a_receipt_the_client_refuses_leaves_the_witness_pending() {
+        let witness = continuity_witness(None);
+        set(&witness.garble_receipt, true);
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&witness.url)).unwrap();
+        let anchor = AnchorClient::new(&witness.url);
+        let one = write_capsule(dir.path(), "one");
+        state.checkpoint_covering(&one, &signer(), &anchor).unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+        assert!(state.last_checkpoint().unwrap().witnesses.is_empty());
+        assert_eq!(state.pending_witness_urls, vec![witness.url.clone()]);
+    }
+
+    #[test]
     fn a_witness_that_missed_push_cuts_is_caught_up_in_order() {
         let witness = continuity_witness(None);
         let dir = tempfile::tempdir().unwrap();
@@ -4143,7 +4131,7 @@ mod tests {
     }
 
     #[test]
-    fn store_a_row_closed_during_catch_up_holds_the_witness_across_reopen() {
+    fn store_a_refused_receipt_during_catch_up_leaves_the_row_open() {
         let witness = continuity_witness(None);
         let log = memory_log();
         let mut state = load_store(log.clone(), &[&witness.url]);
@@ -4183,7 +4171,8 @@ mod tests {
         let mut state = load_store(log.clone(), &[&witness.url]);
 
         // D: the witness is still at A, so catch-up sends B, whose receipt
-        // cannot be stored. B is closed and holds the witness: D is not sent.
+        // the client refuses. B stays open (a failed attempt, not a hold)
+        // and D is not recorded.
         set(&witness.garble_receipt, true);
         append_entry(log.as_ref(), "four");
         let d = state
@@ -4191,16 +4180,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(*witness.accepted.lock().unwrap(), vec![a.mmr_size, b]);
-        let held = row(log.as_ref(), &witness.url, b);
-        assert!(held.permanent && !is_witness_ahead(&held));
-        let sent = hits(&witness);
-        set(&witness.garble_receipt, false);
-        state.tick(&signer(), &anchor_unused()).unwrap();
-        assert_eq!(hits(&witness), sent, "the held row stops the next pass");
-        drop(state);
-        let mut state = load_store(log.clone(), &[&witness.url]);
-        state.tick(&signer(), &anchor_unused()).unwrap();
-        assert_eq!(hits(&witness), sent, "and the next process's");
+        let open = row(log.as_ref(), &witness.url, b);
+        assert!(!open.permanent && open.receipt.is_none());
         assert!(row(log.as_ref(), &witness.url, d.mmr_size)
             .receipt
             .is_none());
@@ -4265,7 +4246,7 @@ mod tests {
     }
 
     #[test]
-    fn store_a_receipt_a_row_cannot_hold_closes_the_row_and_holds_the_witness() {
+    fn store_a_receipt_a_row_cannot_hold_is_a_failed_attempt_not_a_hold() {
         let witness = continuity_witness(None);
         set(&witness.garble_receipt, true);
         let log = memory_log();
@@ -4276,18 +4257,16 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(a.witnesses.is_empty());
-        let closed = row(log.as_ref(), &witness.url, a.mmr_size);
-        assert!(closed.permanent && closed.receipt.is_none());
-        assert!(!is_witness_ahead(&closed));
-        assert!(closed
+        // The CLL client refuses the receipt; the row stays due with the
+        // reason, and the witness is not held (a refusal is not always the
+        // witness's: an oversized 503 reads the same).
+        let failed = row(log.as_ref(), &witness.url, a.mmr_size);
+        assert!(!failed.permanent && failed.receipt.is_none());
+        assert_eq!(failed.attempts, 1);
+        assert!(failed
             .last_error
             .unwrap()
             .contains("invalid receipt base64"));
-        // The witness is held: neither this row nor a later cut is sent.
-        set(&witness.garble_receipt, false);
-        append_entry(log.as_ref(), "two");
-        state.reconnect(&signer(), &anchor_unused()).unwrap();
-        assert_eq!(hits(&witness), 1);
     }
 
     #[test]
