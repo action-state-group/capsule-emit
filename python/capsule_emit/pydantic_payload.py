@@ -88,3 +88,53 @@ def float_path(value: Any, path: str = "") -> str | None:
             if found:
                 return found
     return None
+
+
+def deep_float_path(value: Any, path: str = "", _seen: set[int] | None = None) -> str | None:
+    """Path of the first float anywhere in ``value``, or None (capsule-emit#431).
+
+    Unlike :func:`float_path` this also walks sets, dataclasses, Pydantic models
+    and plain objects (their ``__dict__`` / ``__slots__``), because the legacy
+    ``default=str`` digest fallback would otherwise seal a float through
+    ``repr()`` when a non-JSON value sits beside it. Cycles are cut by id.
+    """
+    if isinstance(value, float):
+        return path or "<payload>"
+    if value is None or isinstance(value, (str, bytes, bytearray, int, bool)):
+        return None
+    seen = _seen if _seen is not None else set()
+    if id(value) in seen:
+        return None
+    seen.add(id(value))
+    children: list[tuple[str, Any]]
+    if isinstance(value, dict):
+        children = []
+        for k, v in value.items():
+            children.append((f"{path}.{k}" if path else str(k), k))
+            children.append((f"{path}.{k}" if path else str(k), v))
+    elif isinstance(value, (list, tuple)):
+        children = [(f"{path}[{i}]", v) for i, v in enumerate(value)]
+    elif isinstance(value, (set, frozenset)):
+        children = [(f"{path}{{}}", v) for v in value]
+    else:
+        base = _model_base()
+        dumped = None
+        if base is not None and isinstance(value, base):
+            try:
+                dumped = value.model_dump(mode="json")
+            except Exception:
+                dumped = None
+        if dumped is not None:
+            return deep_float_path(dumped, path, seen)
+        attrs: dict[str, Any] = dict(getattr(value, "__dict__", None) or {})
+        for cls in type(value).__mro__:
+            slots = cls.__dict__.get("__slots__", ())
+            for name in (slots,) if isinstance(slots, str) else slots:
+                if hasattr(value, name):
+                    attrs.setdefault(name, getattr(value, name))
+        children = [(f"{path}.{k}" if path else k, v) for k, v in attrs.items()]
+    for p, child in children:
+        found = deep_float_path(child, p, seen)
+        if found:
+            return found
+    return None

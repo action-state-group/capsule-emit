@@ -95,6 +95,7 @@ from .canonicalization import compute_capsule_id
 from .numbers import CANONICALIZATION_ID
 from .pydantic_payload import (  # noqa: F401 (PydanticPayloadError is re-exported)
     PydanticPayloadError,
+    deep_float_path,
     float_path,
     plain_json,
 )
@@ -473,6 +474,15 @@ def _digest_plain(value: Any, salt: str | None) -> str:
         # Non-JSON-native types (e.g. tuples, arbitrary objects) — tolerated as
         # before. FloatInDigestError is intentionally NOT caught: a raw float is
         # a spec-defined error, so _emit_capsule() fails closed at the door.
+        # A float beside a non-JSON value must be refused too (#431): default=str
+        # would otherwise seal it via repr(), which §5.1 forbids and
+        # verify_input_digest cannot reproduce.
+        where = deep_float_path(value)
+        if where is not None:
+            raise FloatInDigestError(
+                f"a float at {where!r} in the payload: §5.1 forbids floats in "
+                "digest-bearing fields, so make it a Decimal or a str."
+            ) from None
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
         if salt is not None:
             raw = raw + "|" + salt
