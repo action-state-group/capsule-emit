@@ -4,12 +4,9 @@
 //!   (`/v1/digest`) and check its durable status
 //!   (`/v1/inclusion/{capsule_id}`), with the same request and response
 //!   shapes as the Python reference's registration client.
-//! - [`AnchorClient::post_checkpoint_cose`]: register a checkpoint
-//!   (`POST /checkpoints`, COSE only, `Content-Type:
-//!   application/cll-checkpoint+cbor`, response `{entry_hash, receipt_b64,
-//!   leaf_index, tree_size}`), the checkpointed-local-log reference's wire
-//!   contract. [`crate::checkpoint`] uses this route for witness
-//!   registration.
+//! - Checkpoint registration (`POST /checkpoints`) is not here:
+//!   [`crate::checkpoint`] sends it through checkpointed-local-log's
+//!   `cll::witness_delivery::HttpWitnessClient`.
 //!
 //! Deliberately **not** wired into `capsule::seal` or `ledger::append`: the
 //! caller decides when and whether to anchor, and a failed anchor call never
@@ -165,26 +162,6 @@ impl AnchorClient {
         }
     }
 
-    /// `POST /checkpoints {COSE_Sign1 bytes}` -- registers a checkpoint's
-    /// COSE-wire statement (`cll::checkpoint::checkpoint_to_cose`'s output)
-    /// with the Transparency Service. COSE-only: never a plain JSON
-    /// `CheckpointRecord` body (a transparency service registers the signed
-    /// statement, never an unsigned body) — never the
-    /// `/v1/digest` route `post_digest` uses for a single capsule digest.
-    pub fn post_checkpoint_cose(
-        &self,
-        checkpoint_cose: &[u8],
-    ) -> Result<CheckpointWitnessResponse, AnchorError> {
-        let url = format!("{}/checkpoints", self.base_url.trim_end_matches('/'));
-        json_response(
-            self.agent
-                .post(&url)
-                .set("Content-Type", cll::checkpoint::CLL_CHECKPOINT_CONTENT_TYPE)
-                .set("Accept", "application/json")
-                .send_bytes(checkpoint_cose),
-        )
-    }
-
     /// `GET /anchor/authority-pubkey` -- the raw 32-byte Ed25519 authority
     /// public key (hex) + its `key_id`, for out-of-band pinning and for
     /// verifying receipts offline via `scitt_cose.verify_receipt`.
@@ -201,18 +178,6 @@ impl AnchorClient {
 pub struct AuthorityPubkey {
     pub pubkey_hex: String,
     pub key_id: String,
-}
-
-/// Response shape from `POST /checkpoints` -- matches
-/// `cll.checkpoint.emit.register_checkpoint`'s parse of the same route
-/// field-for-field (`ts_url` is never part of the response; the caller
-/// already knows which URL it dispatched to).
-#[derive(Debug, Clone, Deserialize)]
-pub struct CheckpointWitnessResponse {
-    pub entry_hash: String,
-    pub receipt_b64: String,
-    pub leaf_index: i64,
-    pub tree_size: i64,
 }
 
 #[cfg(test)]
@@ -277,7 +242,7 @@ mod tests {
             Err(AnchorError::Status { status: 302, .. }) => {}
             other => panic!("expected the 302 as an error, got {other:?}"),
         }
-        match client.post_checkpoint_cose(b"cose") {
+        match client.check_inclusion(&"0".repeat(64)) {
             Err(AnchorError::Status { status: 302, .. }) => {}
             other => panic!("expected the 302 as an error, got {other:?}"),
         }
