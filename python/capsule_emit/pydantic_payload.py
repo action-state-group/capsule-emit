@@ -77,7 +77,7 @@ def plain_json(value: Any) -> Any:
 
 
 def float_path(value: Any, path: str = "") -> str | None:
-    """Path of the first float in an already-dumped payload (``order.score``,
+    """Path of the first float or complex in an already-dumped payload (``order.score``,
     ``[0].x``), or None; used only to make the float error actionable."""
     if isinstance(value, (float, complex)):
         return path or "<payload>"

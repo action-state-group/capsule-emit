@@ -77,8 +77,9 @@ def test_pydantic_complex_field_digests_as_its_json_dump():
 
 
 def test_float_error_wins_when_both_are_present():
-    with pytest.raises(FloatInDigestError):
+    with pytest.raises(FloatInDigestError) as exc:
         _digest({"a": 1.5, "b": 1 + 2j})
+    assert "'a'" in str(exc.value)
 
 
 def test_complex_free_payloads_keep_their_digests():
@@ -97,3 +98,16 @@ def test_verify_input_digest_refuses_the_same_candidate(name):
     result = verify_input_digest(capsule, value)
     assert not result.ok
     assert result.reason is VerifyReason.NON_CONFORMING
+
+
+def test_pydantic_model_inside_a_dataclass_is_refused_for_a_complex_field():
+    """A model nested in a dataclass or set is not dumped before the walk, so its
+    complex field is refused (the changelog states the container split)."""
+    pydantic = pytest.importorskip("pydantic")
+
+    class M(pydantic.BaseModel):
+        c: complex
+
+    with pytest.raises(FloatInDigestError) as exc:
+        _digest(Box(M(c=1 + 2j)))
+    assert "'v.c'" in str(exc.value)

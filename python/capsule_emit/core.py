@@ -425,7 +425,8 @@ def _digest(value: Any, salt: str | None = None) -> str:
     (e.g. tuples, arbitrary objects) still fall back to the legacy sorted-key
     encoding, so those emitters do not break at seal time. A float inside the
     standard containers of such a payload (dict, list, tuple, set, frozenset,
-    dataclass, Pydantic model) is still refused, and so is a numpy array or scalar
+    dataclass, Pydantic model) is still refused, a builtin ``complex`` (two floats)
+    is refused the same way, and so is a numpy array or scalar
     with a float or complex dtype (decided by dtype alone, no element is read). A
     float held only inside any other object, or in an object-dtype array or field, is not
     inspected and is sealed via ``repr()``.
@@ -459,8 +460,8 @@ def _digest(value: Any, salt: str | None = None) -> str:
     if where is not None:
         raise FloatInDigestError(
             f"a float at {where!r} in a payload that held a Pydantic model: "
-            "§5.1 forbids floats in digest-bearing fields, so make the field "
-            "a Decimal (it dumps to a decimal string) or a str."
+            "§5.1 forbids floats in digest-bearing fields (a complex is two floats), "
+            "so make the field a Decimal (it dumps to a decimal string) or a str."
         )
     return _digest_plain(plain, salt)
 
@@ -478,7 +479,7 @@ def _digest_plain(value: Any, salt: str | None) -> str:
         # Non-JSON-native types (e.g. tuples, arbitrary objects) — tolerated as
         # before. FloatInDigestError is intentionally NOT caught: a raw float is
         # a spec-defined error, so _emit_capsule() fails closed at the door.
-        # A float beside, or inside, a non-JSON value must be refused too (#431):
+        # A float or builtin complex beside, or inside, a non-JSON value must be refused too (#431, #437):
         # default=str would otherwise seal it via repr(), which §5.1 forbids and
         # verify_input_digest cannot reproduce.
         where = deep_float_path(value)
