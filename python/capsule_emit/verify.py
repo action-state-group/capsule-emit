@@ -210,7 +210,7 @@ def verify_input_digest(
     """
     from agent_action_capsule.canonical import FloatInDigestError, json_digest
 
-    from .pydantic_payload import non_string_key_error, plain_json
+    from .pydantic_payload import plain_json
 
     # Strict tier: token-form check from raw bytes. Accept/reject only — this
     # block returns before json_digest is ever called below, so it can never
@@ -232,12 +232,9 @@ def verify_input_digest(
         # A Pydantic v2 model candidate is compared as its JSON dump, the same
         # reduction seal() applied; PydanticPayloadError is a ValueError.
         actual = json_digest(plain_json(candidate_input))
-    except (FloatInDigestError, TypeError, ValueError, RecursionError):
-        return InputDigestResult(ok=False, reason=VerifyReason.NON_CONFORMING)
-    except AttributeError:
-        # A non-string dict key breaks the digest layer's key sort (#439).
-        if non_string_key_error(candidate_input) is None:
-            raise
+    except (FloatInDigestError, TypeError, ValueError, RecursionError, AttributeError):
+        # AttributeError: a non-string dict key breaks the digest layer's key
+        # sort (#439); "never raises" holds for any candidate.
         return InputDigestResult(ok=False, reason=VerifyReason.NON_CONFORMING)
 
     if stored == actual:

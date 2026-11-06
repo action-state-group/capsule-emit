@@ -23,6 +23,8 @@ from typing import Any
 
 from agent_action_capsule.canonical import FloatInDigestError, json_digest
 
+from .pydantic_payload import non_string_key_error
+
 # disclosures member name -> digest field within
 # capsule["model_attestation"]["compute_attestation"]
 DISCLOSURE_ELIGIBLE_FIELDS = {
@@ -71,6 +73,12 @@ def build_disclosure_envelope(
         return {"capsule": capsule, "disclosures": disclosures}
     try:
         return _build(capsule, disclosures)
+    except AttributeError as exc:
+        # A non-string dict key breaks the digest layer's key sort (#439).
+        key_err = non_string_key_error(disclosures)
+        if key_err is None:
+            raise
+        raise DisclosureError(f"disclosure value cannot be canonicalized: {key_err}") from exc
     except ValueError as exc:
         code, _, member = str(exc).partition(": ")
         digest_field = DISCLOSURE_ELIGIBLE_FIELDS.get(member, member)

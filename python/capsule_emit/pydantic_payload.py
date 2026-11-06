@@ -24,6 +24,9 @@ class PydanticPayloadError(ValueError):
     """
 
 
+_TYPE_NAME = type.__dict__["__name__"]
+
+
 class NonStringKeyError(ValueError):
     """A dict in a digest-bearing payload has a key that is not a string.
 
@@ -57,7 +60,7 @@ def non_string_key_error(value: Any) -> NonStringKeyError | None:
                 if not issubclass(type(k), str):
                     where = f"{path}.<key>" if path else "<key>"
                     return NonStringKeyError(
-                        f"a {type(k).__name__} dict key at {where!r}: JSON object keys are "
+                        f"a {_TYPE_NAME.__get__(type(k))} dict key at {where!r}: JSON object keys are "
                         "strings, so make every key a str before sealing or verifying."
                     )
                 stack.append((item, f"{path}.{str.__str__(k)}" if path else str.__str__(k)))

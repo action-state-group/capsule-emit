@@ -60,3 +60,34 @@ def test_string_keys_unchanged():
     digest = _digest(value)
     capsule = {"model_attestation": {"compute_attestation": {"agent_input_digest": digest}}}
     assert verify_input_digest(capsule, value).reason is VerifyReason.VERIFIED
+
+
+def test_key_type_with_hostile_metaclass_runs_no_user_code():
+    class Meta(type):
+        def __getattribute__(cls, name):
+            if name == "__name__":
+                raise RuntimeError("metaclass ran")
+            return super().__getattribute__(name)
+
+    class Key(metaclass=Meta):
+        pass
+
+    with pytest.raises(NonStringKeyError):
+        _digest({Key(): 1})
+    assert verify_input_digest(CAPSULE, {Key(): 1}).reason is VerifyReason.NON_CONFORMING
+
+
+def test_str_subclass_key_with_raising_encode_does_not_escape_verify():
+    class K(str):
+        def encode(self, *a, **k):
+            raise AttributeError("encode")
+
+    assert verify_input_digest(CAPSULE, {K("a"): 1}).reason is VerifyReason.NON_CONFORMING
+
+
+def test_disclosure_envelope_reports_a_typed_error():
+    from capsule_emit.disclosure import DisclosureError, build_disclosure_envelope
+
+    capsule = {"model_attestation": {"compute_attestation": {"agent_input_digest": "0" * 64}}}
+    with pytest.raises(DisclosureError, match="dict key"):
+        build_disclosure_envelope(capsule, agent_input={1: "x"})

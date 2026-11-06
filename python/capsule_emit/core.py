@@ -93,7 +93,8 @@ from . import witness as _witness
 from .builder import build_capsule as _base_emit
 from .canonicalization import compute_capsule_id
 from .numbers import CANONICALIZATION_ID
-from .pydantic_payload import (  # noqa: F401 (PydanticPayloadError is re-exported)
+from .pydantic_payload import (  # noqa: F401 (PydanticPayloadError and NonStringKeyError are re-exported)
+    NonStringKeyError,
     PydanticPayloadError,
     deep_float_path,
     float_path,
