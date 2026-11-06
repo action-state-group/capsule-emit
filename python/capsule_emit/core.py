@@ -80,7 +80,13 @@ from typing import Any, Literal
 
 from agent_action_capsule.anchor import AnchorError, AnchorFuture, AnchorResult, async_anchor
 from agent_action_capsule.canonical import jcs, json_digest, normalize
-from agent_action_capsule.contracts import Disposition, EffectRecord, InvariantError, ReferenceEntry
+from agent_action_capsule.contracts import (
+    Disposition,
+    EffectRecord,
+    InvariantError,
+    ProvenanceMode,
+    ReferenceEntry,
+)
 
 from . import signing as _signing
 from . import witness as _witness
@@ -613,6 +619,7 @@ def _emit_capsule_at(
     signing_key_path: str | os.PathLike | None = None,
     references: tuple[ReferenceEntry, ...] | None = None,
     payload_members: dict[str, Any] | None = None,
+    provenance_mode: ProvenanceMode | None = None,
 ) -> EmitResult:
     """Emit a sealed, optionally anchored Agent Action Capsule.
 
@@ -909,6 +916,7 @@ def _emit_capsule_at(
         chain_relation=chain_relation,
         disposition=disposition,
         references=references,
+        provenance_mode=provenance_mode,
         tool_name=action,
     )
 

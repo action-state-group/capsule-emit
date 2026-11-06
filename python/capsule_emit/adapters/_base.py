@@ -24,6 +24,8 @@ import os
 from collections import deque
 from typing import Any
 
+from agent_action_capsule.contracts import ProvenanceMode
+
 from capsule_emit.core import EmitResult, _emit_capsule
 from capsule_emit.numbers import canonicalize_for_digest
 
@@ -115,6 +117,7 @@ class CapsuleEmitterBase:
         action_type: str | None = None,
         runtime: str | None = None,
         extra_compute: dict[str, Any] | None = None,
+        provenance_mode: ProvenanceMode | None = None,
     ) -> EmitResult:
         """Emit one capsule for a completed tool call.
 
@@ -128,6 +131,9 @@ class CapsuleEmitterBase:
         moves. NaN/±Infinity have no JCS representation and raise
         ``FloatInDigestError`` from here; listeners catch it at their boundary
         and degrade loudly rather than breaking the host application.
+
+        ``provenance_mode`` is passed to the capsule unchanged; only a
+        backfill importer sets it, never a live adapter.
         """
         result = _emit_capsule(
             action=action,
@@ -151,6 +157,7 @@ class CapsuleEmitterBase:
             action_type=action_type,
             runtime=runtime,
             extra_compute=extra_compute,
+            provenance_mode=provenance_mode,
         )
         self._last = result
         self._results.append(result)

@@ -169,3 +169,31 @@ span, not in the Capsule.
 This extension defines no verification behavior beyond the base profile's. The block's
 presence, absence, or content never changes a Capsule's Class 1/2 verdict — a verifier that
 does not implement this extension ignores it entirely.
+
+## Backfill — sealing spans from an exported OTLP trace file
+
+`capsule_emit.otel.seal_otlp_file(path, operator=..., developer=..., ledger=...)` seals the
+spans of an OTLP/JSON export (one document, or one per line) that were recorded before
+capsule-emit was installed. It runs each span through the same classification, allow-list and
+sealing as the live exporter, so only `effect` spans are sealed. The live exporter's behavior
+is unchanged.
+
+Each record is marked `provenance_mode: {mode: "backfilled"}` with `time_rung: "self_attested"`:
+
+| Field | Value |
+|---|---|
+| `source_ref` | `{type: "otel-span", digest_alg: "SHA-256", digest}` over the raw trace ID and span ID bytes |
+| `source_asserted_at` | the span's start time, to the microsecond |
+| `import_batch` | SHA-256 of the file's bytes |
+| `imported_at` | the time of sealing, never the span's time |
+| `compute_attestation["ext.otel.span_time"]` | `{start, end, asserted_by: "source"}`, beside the `org.agentactioncapsule.otel` block, not inside it |
+
+**What this does not prove.** The span times are what the source file says. The record does not
+show when the action happened: nothing here is evidence of capture time, and the verifier
+reports the rung as `self_attested`. The rung can only be `witnessed` with a
+`corroborates_source_time` reference from a witness, which a file import cannot supply.
+
+**Re-running.** `imported_at` changes on every run, so capsule IDs differ. Before sealing a
+span the importer looks for its `source_ref` in the target ledger and skips it if found, so
+running the same file twice adds nothing. A span the live exporter already sealed has no
+`source_ref` and is not detected, so do not backfill a trace that was also exported live.
