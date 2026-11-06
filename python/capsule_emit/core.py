@@ -427,7 +427,7 @@ def _digest(value: Any, salt: str | None = None) -> str:
     standard containers of such a payload (dict, list, tuple, set, frozenset,
     dataclass, Pydantic model) is still refused, and so is a numpy array or scalar
     with a float or complex dtype (decided by dtype alone, no element is read). A
-    float held only inside any other object, or in an object-dtype array, is not
+    float held only inside any other object, or in an object-dtype array or field, is not
     inspected and is sealed via ``repr()``.
 
     When *salt* is given, it is folded into the exact JCS pre-image bytes
@@ -485,7 +485,8 @@ def _digest_plain(value: Any, salt: str | None) -> str:
         if where is not None:
             raise FloatInDigestError(
                 f"a float at {where!r} in the payload: §5.1 forbids floats in "
-                "digest-bearing fields, so make it a Decimal or a str."
+                "digest-bearing fields, so make it a Decimal or a str (a numpy array: "
+                "a list of decimal strings)."
             ) from None
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
         if salt is not None:

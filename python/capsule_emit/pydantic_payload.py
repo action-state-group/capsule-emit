@@ -132,18 +132,25 @@ def _numpy_float(value: Any, t: type) -> bool:
     overrides, ``__getattr__``, ``__array__`` and ``__class__`` never run. It
     reads no element, so a huge array costs the same as a small one. An array
     with no element (``size == 0``) holds no float. Object arrays are not
-    walked: their elements are arbitrary objects, a documented limit.
+    walked (an object dtype, or an object field of a structured dtype): their
+    elements are arbitrary objects, a documented limit.
     """
     np = sys.modules.get("numpy")
     if np is None:
         return False
     try:
-        if issubclass(t, np.ndarray):
-            cls = np.ndarray
+        # Read the classes from the module dict: attribute access on a lazily
+        # loaded numpy module would import it during a seal.
+        ns = object.__getattribute__(np, "__dict__")
+        ndarray, generic = ns.get("ndarray"), ns.get("generic")
+        if ndarray is None or generic is None:
+            return False
+        if issubclass(t, ndarray):
+            cls = ndarray
             if not cls.size.__get__(value):
                 return False
-        elif issubclass(t, np.generic):
-            cls = np.generic
+        elif issubclass(t, generic):
+            cls = generic
         else:
             return False
         todo = [cls.dtype.__get__(value)]
@@ -151,7 +158,8 @@ def _numpy_float(value: Any, t: type) -> bool:
             dt = todo.pop()
             if dt.kind in "fc":
                 return True
-            if dt.subdtype is not None:
+            if dt.subdtype is not None and all(dt.subdtype[1]):
+                # A zero-length subarray (shape with a 0) holds no element.
                 todo.append(dt.subdtype[0])
             if dt.fields:
                 todo.extend(field[0] for field in dt.fields.values())
@@ -170,7 +178,7 @@ def deep_float_path(root: Any) -> str | None:
     Pydantic v2 models (their own fields), plus numpy arrays and scalars by dtype
     alone (:func:`_numpy_float`, capsule-emit#433). Any other object is never
     touched, so it keeps exactly its legacy behaviour; a float held only inside such
-    an object, or in an object-dtype numpy array, is a known limit.
+    an object, or in an object-dtype numpy array or field, is a known limit.
 
     Rule: **the walk runs no user code.** It decides every type with
     ``issubclass(type(x), ...)`` (never ``isinstance`` on the object, which can

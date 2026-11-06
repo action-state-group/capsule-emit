@@ -34,18 +34,49 @@ np = pytest.importorskip("numpy")
         lambda: np.zeros(2, dtype=[("n", "i4"), ("s", [("y", "f4")])]),
         lambda: np.zeros(2, dtype=[("n", "i4"), ("v", "f8", (3,))]),
         lambda: np.ma.array([1.5]),
+        lambda: np.zeros(1, dtype=[("n", "i4"), ("x", "f8")])[0],
         lambda: np.float32(1.5),
         lambda: np.complex128(1 + 2j),
     ],
 )
 def test_float_in_numpy_is_refused(arr, salt):
     for value in (
+        {"a": arr()},
+        arr(),
         {"a": arr(), "t": (1,)},
         {"a": [arr()], "t": (1,)},
         [{"deep": {"x": (arr(),)}}],
     ):
         with pytest.raises(FloatInDigestError):
             _digest(value, salt=salt)
+
+
+def test_object_dtype_float_is_a_known_limit():
+    for arr in (
+        np.array([1.5], dtype=object),
+        np.array([(1.5,)], dtype=[("o", "O")]),
+    ):
+        value = {"a": arr, "t": (1,)}
+        raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+        assert _digest(value) == hashlib.sha256(raw.encode()).hexdigest()
+
+
+def test_lazy_numpy_module_is_not_imported(monkeypatch):
+    import sys
+    import types
+
+    reads = []
+
+    class Lazy(types.ModuleType):
+        def __getattr__(self, name):
+            reads.append(name)  # a real lazy module would import numpy here
+            raise AttributeError(name)
+
+    monkeypatch.setitem(sys.modules, "numpy", Lazy("numpy"))
+    value = {"t": (1,), "a": 1}
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    assert _digest(value) == hashlib.sha256(raw.encode()).hexdigest()
+    assert reads == []
 
 
 def test_error_names_the_path():
@@ -69,13 +100,15 @@ def test_subclass_overrides_never_run():
 
 
 def test_huge_array_is_not_read():
-    big = np.broadcast_to(np.float64(1.5), (10**6, 10**4))  # 80 TB if materialized
+    big = np.broadcast_to(np.float64(1.5), (10**6, 10**4))  # 80 GB if materialized
     with pytest.raises(FloatInDigestError):
         _digest({"a": big, "t": (1,)})
 
 
 def test_no_float_dtype_no_refusal():
     for arr in (
+        np.zeros(1, dtype=[("n", "i4"), ("e", "f8", (0,))]),
+        np.zeros(1, dtype=[("n", "i4"), ("e", "f8", (2, 0))]),
         np.array([1, 2]),
         np.array([True]),
         np.array(["x"]),
