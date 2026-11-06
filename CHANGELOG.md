@@ -8,8 +8,13 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ### Fixed (python): a float beside a non-JSON value is refused
 
-`seal()` used to seal a float through `repr()` when a non-JSON value (a tuple, `datetime`, set, dataclass or other object) sat in the same `agent_input` / `agent_output`, depending on key order; §5.1 forbids that and `verify_input_digest` could not reproduce the digest. A float anywhere in a dict, list, tuple, set, frozenset, dataclass or Pydantic model within such a payload now raises `FloatInDigestError`, salted or not. Any other object is never inspected and seals exactly as before, so a float held only inside one (for example a numpy array, whose `repr()` shows its elements) is still sealed through `repr()`: a known limit, tracked separately. Float-free payloads digest exactly as before (pinned against the pre-change digests).
+`seal()` used to seal a float through `repr()` when a non-JSON value (a tuple, `datetime`, set, dataclass or other object) sat in the same `agent_input` / `agent_output`, depending on key order; §5.1 forbids that and `verify_input_digest` could not reproduce the digest. A float anywhere in a dict, list, tuple, set, frozenset, dataclass or Pydantic model within such a payload now raises `FloatInDigestError`, salted or not. Any other object is never inspected and seals exactly as before; a numpy array holding a float is refused by dtype (see the next entry). Float-free payloads digest exactly as before (pinned against the pre-change digests).
 ([#431](https://github.com/action-state-group/capsule-emit/issues/431))
+
+### Fixed (python): a float held in a numpy array or scalar is refused
+
+`seal()` used to seal a numpy array or scalar with a float or complex dtype (0-d, float16 to longdouble, structured and subarray fields included) through `repr()`, which §5.1 forbids and `verify_input_digest` cannot reproduce. It now raises `FloatInDigestError`, decided by dtype alone: no element is read and no user code runs, so a huge array costs the same as a small one. Float-free payloads digest exactly as before (integer, boolean and string arrays, empty float arrays, object arrays and non-float numpy scalars, pinned against the pre-change digests); only payloads that were already outside §5.1 change, from sealed to refused. Convert the array to a list of decimal strings first. An object-dtype array, or an object field of a structured one, is still not inspected: a known limit.
+([#433](https://github.com/action-state-group/capsule-emit/issues/433))
 
 ### Added (go): `CanonicalizeForDigest` turns decoded JSON numbers into digest-safe values
 

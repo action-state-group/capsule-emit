@@ -139,13 +139,6 @@ def test_foreign_objects_keep_legacy_behaviour(salt):
     assert _digest(value, salt=salt) == hashlib.sha256(raw.encode()).hexdigest()
 
 
-def test_numpy_array_with_floats_is_a_known_limit():
-    np = pytest.importorskip("numpy")
-    value = {"a": np.array([1.5]), "t": (1,)}
-    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
-    assert _digest(value) == hashlib.sha256(raw.encode()).hexdigest()
-
-
 # Digests computed on main (a91ed79), before #431: float-free legacy-fallback payloads must not move.
 _PINNED = {
     "tuple": ({"a": (1, 2), "s": "x"},
