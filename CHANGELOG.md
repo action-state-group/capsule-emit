@@ -11,6 +11,15 @@ All notable changes to `capsule-emit` are documented here. The format follows
 `emit.CanonicalizeForDigest` is the Go twin of Python's `canonicalize_for_digest`. A float in decoded tool arguments, such as `{"temperature":0.5}`, becomes its RFC 8785 decimal string so `DigestJSON` accepts it; integer tokens stay integers; NaN, infinities, binary64 overflow and integers outside ±(2^53−1) return an error naming the field. `DigestJSON` stays strict. Shared Python/Go vectors in `test-vectors/number-canonicalization` pin the same digest in both languages.
 ([#428](https://github.com/action-state-group/capsule-emit/issues/428))
 
+### Added (python): `seal()` accepts Pydantic v2 models
+
+A Pydantic v2 model passed to `seal()` (or inside a dict or list payload) is digested as its
+`model_dump(mode="json")`, so no manual serialisation is needed and the digest equals that dump's. The core stays strict
+about §5.1: a float field still raises `FloatInDigestError` (its message names the field path and the fix: a `Decimal` or `str` field), custom serializers and field names follow `model_dump(mode="json")`, and a field that is not JSON raises
+`capsule_emit.core.PydanticPayloadError` instead of being sealed as `str(value)`. `verify_input_digest` compares a model candidate as its dump. Adapters now dump a model payload the same way before their float-to-string conversion, so a model with a float field seals through an adapter, and a model's digest through an adapter moves from the old `str()` fallback to its JSON dump. Pydantic remains an optional
+dependency; v1 models are unchanged.
+([#426](https://github.com/action-state-group/capsule-emit/issues/426))
+
 ### Added (python): `seal_otlp_file` backfills from an exported OTLP trace file
 
 `capsule_emit.otel.seal_otlp_file` seals the `effect` spans of an OTLP/JSON export through the live exporter's own

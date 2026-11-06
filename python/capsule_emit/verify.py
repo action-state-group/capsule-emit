@@ -210,6 +210,8 @@ def verify_input_digest(
     """
     from agent_action_capsule.canonical import FloatInDigestError, json_digest
 
+    from .pydantic_payload import plain_json
+
     # Strict tier: token-form check from raw bytes. Accept/reject only — this
     # block returns before json_digest is ever called below, so it can never
     # alter what gets digested (see module docstring, "accept/reject only").
@@ -227,8 +229,10 @@ def verify_input_digest(
         return InputDigestResult(ok=False, reason=VerifyReason.DIGEST_MISMATCH)
 
     try:
-        actual = json_digest(candidate_input)
-    except (FloatInDigestError, TypeError, ValueError):
+        # A Pydantic v2 model candidate is compared as its JSON dump, the same
+        # reduction seal() applied; PydanticPayloadError is a ValueError.
+        actual = json_digest(plain_json(candidate_input))
+    except (FloatInDigestError, TypeError, ValueError, RecursionError):
         return InputDigestResult(ok=False, reason=VerifyReason.NON_CONFORMING)
 
     if stored == actual:

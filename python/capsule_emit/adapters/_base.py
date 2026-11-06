@@ -14,7 +14,9 @@ rather than failing the seal. §5.1 still forbids raw floats in digest-bearing
 fields — nothing is loosened; the adapter now does the deterministic
 serialization the rule requires, at the one place every adapter passes
 through. The core ``seal()``/``received()`` surface is deliberately left
-strict: a direct caller owns its data and should hear about a float, while an
+strict about floats: a direct caller owns its data and should hear about one (a
+Pydantic v2 model is accepted there as its ``model_dump(mode="json")``, but a
+float field in it still raises), while an
 adapter is handed whatever a third-party framework decoded and cannot ask it
 for decimal strings.
 """
@@ -28,6 +30,7 @@ from agent_action_capsule.contracts import ProvenanceMode
 
 from capsule_emit.core import EmitResult, _emit_capsule
 from capsule_emit.numbers import canonicalize_for_digest
+from capsule_emit.pydantic_payload import plain_json
 
 __all__ = ["CapsuleEmitterBase"]
 
@@ -139,8 +142,8 @@ class CapsuleEmitterBase:
             action=action,
             operator=self._operator,
             developer=self._developer,
-            agent_input=canonicalize_for_digest(tool_input, field="agent_input"),
-            agent_output=canonicalize_for_digest(tool_output, field="agent_output"),
+            agent_input=canonicalize_for_digest(plain_json(tool_input), field="agent_input"),
+            agent_output=canonicalize_for_digest(plain_json(tool_output), field="agent_output"),
             verdict=verdict,
             effect=effect,
             confirms=prior_capsule_id,
