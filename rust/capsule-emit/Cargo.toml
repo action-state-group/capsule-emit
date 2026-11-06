@@ -23,8 +23,8 @@ path = "src/bin/verify_capsule.rs"
 # `agent-action-capsule`; it turns on serde_json's `arbitrary_precision` (see
 # `src/jcs.rs`). `cll` is the
 # checkpoint substrate.
-agent-action-capsule = "0.8.0"
-cll = { package = "checkpointed-local-log", version = "0.4.0" }
+agent-action-capsule = "0.10.0"
+cll = { package = "checkpointed-local-log", version = "0.5.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 coset = "0.4"
@@ -45,9 +45,9 @@ capsule-emit-artifact = { version = "0.0.2", path = "../capsule-emit-artifact" }
 
 [dev-dependencies]
 tempfile = "3"
-cll = { package = "checkpointed-local-log", version = "0.4.0", features = ["sqlite"] }
+cll = { package = "checkpointed-local-log", version = "0.5.0", features = ["sqlite"] }
 capsule-emit-artifact = { version = "0.0.2", path = "../capsule-emit-artifact", features = ["sqlite"] }
 # The Evidence Bundle producer, to check that a store-backed log is a CLL
 # backend it reads.
-agent-action-capsule = { version = "0.8.0", features = ["strict"] }
+agent-action-capsule = { version = "0.10.0", features = ["strict"] }
 rusqlite = { version = "0.40", features = ["bundled"] }

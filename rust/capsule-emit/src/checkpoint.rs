@@ -31,13 +31,14 @@
 //! `tests/evidencebook_parity.rs` pins the output byte for byte, with and
 //! without padding.
 
-use crate::anchor::{AnchorClient, AnchorError};
+use crate::anchor::AnchorClient;
 use crate::substrate::{record_id_from_hex, CllSubstrate, RECORD_ID_LEN};
 pub use crate::substrate::{
     verify_inclusion, CheckpointLog, CheckpointRecord, CheckpointSignError, CheckpointSigner,
     CheckpointWitness, InclusionProof, OpenReport, SubstrateError,
 };
 use cll::log::{Timestamp, WitnessReceiptState, WitnessState, MAX_REASON_BYTES, MAX_SCAN_LIMIT};
+use cll::witness_delivery::{HttpWitnessClient, Receipt, SubmitError, Submitter};
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -1269,8 +1270,8 @@ fn row_checkpoint(row: &WitnessState) -> Option<cll::checkpoint::DecodedCheckpoi
 
 /// `witness_id`'s undelivered cuts, in chain order: its rows past the last
 /// one closed (with a receipt, or as [`WITNESS_AHEAD`]), plus any row that
-/// holds it (permanent for another reason) wherever it is, so a hold set
-/// during catch-up survives a restart. Sizes grow along the chain, so size
+/// holds it (permanent for another reason, such as one another runner wrote)
+/// wherever it is, so that hold survives a restart. Sizes grow along the chain, so size
 /// order is chain order.
 fn undelivered(rows: &[WitnessState], witness_id: &str) -> VecDeque<u64> {
     let own = || rows.iter().filter(|row| row.witness_id == witness_id);
@@ -1298,48 +1299,16 @@ fn row_error(why: &str) -> String {
     why[..end].to_string()
 }
 
-/// `resp` as a witness row's receipt. Kept as the witness returned it, like
+/// `receipt` as a witness row's receipt. Kept as the witness returned it, like
 /// the flat path's inline receipt: one whose `entry_hash` is not bound to the
 /// row's checkpoint (see [`WITNESS_BACKFILL_FILE`]) is kept with a warning.
-/// An error means a CLL row cannot hold it: `receipt_b64` that is not
-/// canonical standard base64 (the strict decoder accepts nothing else, so a
-/// stored receipt reads back byte for byte), an empty or oversized receipt,
-/// an `entry_hash` that is not 64 lowercase hex digits, or a position CLL
-/// refuses.
-fn receipt_for(
-    row: &WitnessState,
-    resp: &crate::anchor::CheckpointWitnessResponse,
-) -> Result<WitnessReceiptState, String> {
-    use base64::Engine;
+/// The CLL client has already refused what a row cannot hold (a receipt that
+/// is not canonical base64, an empty or oversized one, a bad `entry_hash` or
+/// position), as [`SubmitError::Rejected`]: an ordinary failed attempt, which
+/// leaves the row due and is retried with the cadence.
+fn receipt_for(row: &WitnessState, receipt: &Receipt) -> WitnessReceiptState {
     use sha2::{Digest, Sha256};
-    let hash = &resp.entry_hash;
-    if hash.len() != 64 || !hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
-        return Err(format!(
-            "its entry_hash {hash:?} is not 64 lowercase hex digits"
-        ));
-    }
-    let b64 = base64::engine::general_purpose::STANDARD;
-    let bytes = b64
-        .decode(&resp.receipt_b64)
-        .map_err(|e| format!("its receipt_b64 is not base64: {e}"))?;
-    if bytes.is_empty() {
-        return Err("its receipt is empty".into());
-    }
-    if bytes.len() > cll::log::MAX_WITNESS_RESPONSE_BYTES {
-        return Err(format!(
-            "its receipt is {} bytes, over CLL's {}",
-            bytes.len(),
-            cll::log::MAX_WITNESS_RESPONSE_BYTES
-        ));
-    }
-    for (name, position) in [
-        ("leaf_index", resp.leaf_index),
-        ("tree_size", resp.tree_size),
-    ] {
-        if position < 0 || position.unsigned_abs() > cll::log::MAX_PORTABLE_INTEGER {
-            return Err(format!("its {name} {position} is out of CLL's range"));
-        }
-    }
+    let hash = &receipt.entry_hash;
     let size = row.checkpoint_size;
     let bound = row_checkpoint(row).and_then(|cp| {
         let digest = hex::decode(cp.to_checkpoint_record().digest()).ok()?;
@@ -1352,13 +1321,26 @@ fn receipt_for(
             row.witness_id
         );
     }
-    Ok(WitnessReceiptState {
-        bytes,
+    WitnessReceiptState {
+        bytes: receipt.bytes.clone(),
         entry_hash: Some(hash.clone()),
-        entry_hash_scheme: Some("legacy".into()),
-        leaf_index: Some(resp.leaf_index),
-        tree_size: Some(resp.tree_size),
-    })
+        entry_hash_scheme: Some(receipt.entry_hash_scheme.clone()),
+        leaf_index: Some(receipt.leaf_index),
+        tree_size: Some(receipt.tree_size),
+    }
+}
+
+/// `receipt` as the checkpoint record's witness entry for `ts_url`.
+fn witness_from_receipt(ts_url: &str, receipt: &Receipt) -> CheckpointWitness {
+    use base64::Engine;
+    CheckpointWitness {
+        ts_url: ts_url.to_string(),
+        entry_hash: receipt.entry_hash.clone(),
+        receipt_b64: base64::engine::general_purpose::STANDARD.encode(&receipt.bytes),
+        leaf_index: receipt.leaf_index,
+        tree_size: receipt.tree_size,
+        is_stub: false,
+    }
 }
 
 /// A row's receipt as the checkpoint record's witness entry: the same value
@@ -1380,7 +1362,7 @@ fn witness_from_row(row: &WitnessState) -> Option<CheckpointWitness> {
 struct RowDelivery<'a> {
     backend: &'a dyn CheckpointLog,
     witness_id: &'a str,
-    client: AnchorClient,
+    client: HttpWitnessClient,
     cadence_seconds: u64,
     /// The latest checkpoint, which a 409 may name.
     latest: Option<&'a CheckpointRecord>,
@@ -1425,25 +1407,14 @@ impl RowDelivery<'_> {
                 );
                 return recorded;
             }
-            match self.client.post_checkpoint_cose(&row.checkpoint) {
-                Ok(resp) => match receipt_for(&row, &resp) {
-                    Ok(receipt) => {
-                        if !self.commit(&row, Some(receipt), false, None) {
-                            return recorded;
-                        }
-                        queue.pop_front();
-                        recorded = true;
-                    }
-                    Err(why) => {
-                        // The witness has accepted the checkpoint, so a retry
-                        // would only be refused as already held: close the
-                        // row and hold the witness, visibly.
-                        let why = format!("the witness's receipt cannot be stored: {why}");
-                        eprintln!("[checkpoint] {id} at size {size}: {why}; holding the witness");
-                        self.commit(&row, None, true, Some(row_error(&why)));
+            match self.client.submit(&row.checkpoint) {
+                Ok(resp) => {
+                    if !self.commit(&row, Some(receipt_for(&row, &resp)), false, None) {
                         return recorded;
                     }
-                },
+                    queue.pop_front();
+                    recorded = true;
+                }
                 Err(err) => match continuity_refusal(&err) {
                     Some((accepted, root)) if accepted >= size => {
                         if !self.holds(accepted, &root) {
@@ -1468,7 +1439,7 @@ impl RowDelivery<'_> {
                     }
                     Some((accepted, root)) if !caught_up => {
                         caught_up = true;
-                        match self.catch_up(&row, accepted, &root, queue) {
+                        match self.catch_up(&row, accepted, &root) {
                             Ok(sent) => eprintln!(
                                 "[checkpoint] caught {id} up from size {accepted} with {sent} \
                                  earlier checkpoint(s); resending size {size}"
@@ -1612,13 +1583,7 @@ impl RowDelivery<'_> {
     /// in order, read from the witness rows; record each receipt on this
     /// witness's own row where that row is still open (a closed row keeps
     /// its state). Returns how many were sent.
-    fn catch_up(
-        &self,
-        row: &WitnessState,
-        accepted: u64,
-        root: &str,
-        queue: &mut VecDeque<u64>,
-    ) -> Result<usize, String> {
+    fn catch_up(&self, row: &WitnessState, accepted: u64, root: &str) -> Result<usize, String> {
         let not_held = || {
             format!(
                 "the witness accepted a checkpoint at size {accepted} with root {root}, which \
@@ -1652,30 +1617,15 @@ impl RowDelivery<'_> {
         for (size, cose, own) in between.iter().rev() {
             let resp = self
                 .client
-                .post_checkpoint_cose(cose)
+                .submit(cose)
                 .map_err(|e| format!("sending size {size}: {e}"))?;
             sent += 1;
             let Some(own) = own.as_ref().filter(|r| r.receipt.is_none() && !r.permanent) else {
                 continue;
             };
-            // As in `run`: a receipt a row cannot hold closes the row, and a
-            // row that moved under this state stops the pass.
-            match receipt_for(own, &resp) {
-                Ok(receipt) => {
-                    if !self.commit(own, Some(receipt), false, None) {
-                        return Err(format!("could not record the receipt for size {size}"));
-                    }
-                }
-                Err(why) => {
-                    // The closed row now holds the witness: it goes back to
-                    // the front of the queue, ahead of the cut being sent.
-                    let why = format!("the witness's receipt cannot be stored: {why}");
-                    self.commit(own, None, true, Some(row_error(&why)));
-                    if !queue.contains(size) {
-                        queue.push_front(*size);
-                    }
-                    return Err(format!("size {size}: {why}"));
-                }
+            // A row that moved under this state stops the pass.
+            if !self.commit(own, Some(receipt_for(own, &resp)), false, None) {
+                return Err(format!("could not record the receipt for size {size}"));
             }
         }
         Ok(sent)
@@ -1706,7 +1656,13 @@ impl CheckpointState {
             let delivery = RowDelivery {
                 backend: backend.as_ref(),
                 witness_id,
-                client: client_for(witness_id),
+                client: match client_for(witness_id) {
+                    Ok(client) => client,
+                    Err(why) => {
+                        eprintln!("[checkpoint] cannot reach witness {witness_id}: {why}");
+                        continue;
+                    }
+                },
                 cadence_seconds: self.cfg.cadence_seconds,
                 latest,
                 all_witness_ids: row_witness_ids,
@@ -1743,8 +1699,8 @@ impl CheckpointState {
 
 /// The client registering with the witness at `ts_url`: that URL, verbatim
 /// (no alias, no rewriting).
-fn client_for(ts_url: &str) -> AnchorClient {
-    AnchorClient::new(ts_url)
+fn client_for(ts_url: &str) -> Result<HttpWitnessClient, String> {
+    HttpWitnessClient::new(ts_url).map_err(|e| e.to_string())
 }
 
 /// Attempt registration with each of `ts_urls`, appending any success onto
@@ -1781,9 +1737,18 @@ fn register_with(
         // Each witness is reached through its own client, at exactly the
         // URL the operator configured: a request for one witness never goes
         // to another, and none goes to a witness that is not configured.
-        let client = client_for(ts_url);
+        let client = match client_for(ts_url) {
+            Ok(client) => client,
+            Err(why) => {
+                eprintln!(
+                    "[checkpoint] cannot register with {ts_url} (staying self-checkpointed): {why}"
+                );
+                still_pending.push(ts_url.clone());
+                continue;
+            }
+        };
         let client_ref = &client;
-        let mut result = client_ref.post_checkpoint_cose(cose);
+        let mut result = client_ref.submit(cose);
         if let Err(err) = &result {
             if let Some((accepted_size, accepted_root)) = continuity_refusal(err) {
                 if accepted_size >= cp.mmr_size {
@@ -1823,7 +1788,7 @@ fn register_with(
                              {sent} earlier checkpoint(s); resending size {}",
                             cp.mmr_size
                         );
-                        result = client_ref.post_checkpoint_cose(cose);
+                        result = client_ref.submit(cose);
                     }
                     Err(reason) => eprintln!(
                         "[checkpoint] could not catch {ts_url} up from size {accepted_size}: {reason}"
@@ -1833,16 +1798,7 @@ fn register_with(
             }
         }
         match result {
-            Ok(resp) => {
-                cp.witnesses.push(CheckpointWitness {
-                    ts_url: ts_url.clone(),
-                    entry_hash: resp.entry_hash,
-                    receipt_b64: resp.receipt_b64,
-                    leaf_index: resp.leaf_index,
-                    tree_size: resp.tree_size,
-                    is_stub: false,
-                });
-            }
+            Ok(resp) => cp.witnesses.push(witness_from_receipt(ts_url, &resp)),
             Err(err) => {
                 eprintln!(
                     "[checkpoint] checkpoint registration with {ts_url} failed (staying \
@@ -1858,8 +1814,8 @@ fn register_with(
 /// The witness's own last-accepted `(mmr_size, root)` from a 409
 /// continuity refusal (`{"detail": {"last_accepted_mmr_size",
 /// "last_accepted_root", ...}}`), or `None` for any other error.
-fn continuity_refusal(err: &AnchorError) -> Option<(u64, String)> {
-    let AnchorError::Status { status: 409, body } = err else {
+fn continuity_refusal(err: &SubmitError) -> Option<(u64, String)> {
+    let SubmitError::Http { status: 409, body } = err else {
         return None;
     };
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
@@ -1882,7 +1838,7 @@ fn log_holds_checkpoint(checkpoints_path: &Path, size: u64, root: &str) -> bool 
 /// `(accepted_size, accepted_root)` and before `up_to_size`, in order,
 /// stopping at the first failure. Returns how many were sent.
 fn catch_up_witness(
-    client: &AnchorClient,
+    client: &HttpWitnessClient,
     ts_url: &str,
     checkpoints_path: &Path,
     up_to_size: u64,
@@ -1914,7 +1870,7 @@ fn catch_up_witness(
         })?;
         let cose = hex::decode(cose_hex).map_err(|e| e.to_string())?;
         let resp = client
-            .post_checkpoint_cose(&cose)
+            .submit(&cose)
             .map_err(|e| format!("sending size {}: {e}", line.record.mmr_size))?;
         sent += 1;
         // The witness now holds this earlier checkpoint too: keep its
@@ -1922,14 +1878,7 @@ fn catch_up_witness(
         let backfill = WitnessBackfill {
             mmr_size: line.record.mmr_size,
             root: line.record.root.clone(),
-            witness: CheckpointWitness {
-                ts_url: ts_url.to_string(),
-                entry_hash: resp.entry_hash,
-                receipt_b64: resp.receipt_b64,
-                leaf_index: resp.leaf_index,
-                tree_size: resp.tree_size,
-                is_stub: false,
-            },
+            witness: witness_from_receipt(ts_url, &resp),
         };
         if let Err(err) = append_witness_backfill(checkpoints_path, &backfill) {
             eprintln!(
@@ -2930,6 +2879,7 @@ mod tests {
                     (
                         "200 OK",
                         json!({"receipt_b64": receipt, "entry_hash": entry_hash,
+                               "entry_hash_scheme": "legacy",
                                "leaf_index": 0, "tree_size": 1})
                         .to_string(),
                     )
@@ -3063,7 +3013,10 @@ mod tests {
             "https://anchor.agentactioncapsule.org",
             "https://witness.example/base/",
         ] {
-            assert_eq!(client_for(url).base_url(), url);
+            assert_eq!(
+                client_for(url).unwrap().endpoint(),
+                format!("{}/checkpoints", url.trim_end_matches('/'))
+            );
         }
         // A witness configured with a trailing slash is reached at its own
         // address, and its receipt is filed under the URL exactly as
@@ -3081,6 +3034,31 @@ mod tests {
         let latest = state.last_checkpoint().unwrap();
         assert_eq!(latest.witnesses.len(), 1);
         assert_eq!(latest.witnesses[0].ts_url, configured);
+    }
+
+    #[test]
+    fn a_receipt_the_client_refuses_leaves_the_witness_pending() {
+        let witness = continuity_witness(None);
+        set(&witness.garble_receipt, true);
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, _) =
+            CheckpointState::load(dir.path(), "test-log", witnessed_cfg(&witness.url)).unwrap();
+        let anchor = AnchorClient::new(&witness.url);
+        let one = write_capsule(dir.path(), "one");
+        state.checkpoint_covering(&one, &signer(), &anchor).unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+        assert!(state.last_checkpoint().unwrap().witnesses.is_empty());
+        assert_eq!(state.pending_witness_urls, vec![witness.url.clone()]);
+        // The witness did accept it, so once it answers well the next
+        // attempt is refused as already held (409) and the witness is
+        // dropped from pending with no receipt for that cut; the next cut
+        // is delivered.
+        set(&witness.garble_receipt, false);
+        let two = write_capsule(dir.path(), "two");
+        state.checkpoint_covering(&two, &signer(), &anchor).unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+        assert!(state.pending_witness_urls.is_empty());
+        assert_eq!(state.last_checkpoint().unwrap().witnesses.len(), 1);
     }
 
     #[test]
@@ -3466,25 +3444,25 @@ mod tests {
                                      "last_accepted_root": "ef"}})
         .to_string();
         assert_eq!(
-            continuity_refusal(&AnchorError::Status {
+            continuity_refusal(&SubmitError::Http {
                 status: 409,
                 body: body.clone()
             }),
             Some((7, "ef".to_string()))
         );
         assert_eq!(
-            continuity_refusal(&AnchorError::Status { status: 400, body }),
+            continuity_refusal(&SubmitError::Http { status: 400, body }),
             None
         );
         assert_eq!(
-            continuity_refusal(&AnchorError::Status {
+            continuity_refusal(&SubmitError::Http {
                 status: 409,
                 body: "nope".into()
             }),
             None
         );
         assert_eq!(
-            continuity_refusal(&AnchorError::Transport("down".into())),
+            continuity_refusal(&SubmitError::Transport("down".into())),
             None
         );
     }
@@ -4078,6 +4056,15 @@ mod tests {
             self.inner.pending_witnesses(now, limit)
         }
 
+        fn pending_witnesses_for(
+            &self,
+            id: &str,
+            now: Timestamp,
+            limit: usize,
+        ) -> cll::log::Result<Vec<WitnessState>> {
+            self.inner.pending_witnesses_for(id, now, limit)
+        }
+
         fn get_witness(&self, id: &str, size: u64) -> cll::log::Result<Option<WitnessState>> {
             self.inner.get_witness(id, size)
         }
@@ -4154,7 +4141,7 @@ mod tests {
     }
 
     #[test]
-    fn store_a_row_closed_during_catch_up_holds_the_witness_across_reopen() {
+    fn store_a_refused_receipt_during_catch_up_leaves_the_row_open() {
         let witness = continuity_witness(None);
         let log = memory_log();
         let mut state = load_store(log.clone(), &[&witness.url]);
@@ -4194,7 +4181,8 @@ mod tests {
         let mut state = load_store(log.clone(), &[&witness.url]);
 
         // D: the witness is still at A, so catch-up sends B, whose receipt
-        // cannot be stored. B is closed and holds the witness: D is not sent.
+        // the client refuses. B stays open (a failed attempt, not a hold)
+        // and D is not recorded.
         set(&witness.garble_receipt, true);
         append_entry(log.as_ref(), "four");
         let d = state
@@ -4202,16 +4190,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(*witness.accepted.lock().unwrap(), vec![a.mmr_size, b]);
-        let held = row(log.as_ref(), &witness.url, b);
-        assert!(held.permanent && !is_witness_ahead(&held));
-        let sent = hits(&witness);
-        set(&witness.garble_receipt, false);
-        state.tick(&signer(), &anchor_unused()).unwrap();
-        assert_eq!(hits(&witness), sent, "the held row stops the next pass");
-        drop(state);
-        let mut state = load_store(log.clone(), &[&witness.url]);
-        state.tick(&signer(), &anchor_unused()).unwrap();
-        assert_eq!(hits(&witness), sent, "and the next process's");
+        let open = row(log.as_ref(), &witness.url, b);
+        assert!(!open.permanent && open.receipt.is_none());
         assert!(row(log.as_ref(), &witness.url, d.mmr_size)
             .receipt
             .is_none());
@@ -4243,78 +4223,40 @@ mod tests {
     }
 
     #[test]
-    fn store_a_receipt_is_kept_as_returned_unless_a_row_cannot_hold_it() {
-        let row_for = |receipt_b64: &str, entry_hash: &str| {
-            let resp = crate::anchor::CheckpointWitnessResponse {
-                receipt_b64: receipt_b64.into(),
-                entry_hash: entry_hash.into(),
-                leaf_index: 0,
-                tree_size: 1,
-            };
-            let r = WitnessState {
-                witness_id: "w".into(),
-                checkpoint_size: 1,
-                checkpoint: vec![1],
-                attempts: 0,
-                next_attempt_at: Timestamp::now(),
-                receipt: None,
-                permanent: false,
-                last_error: None,
-            };
-            receipt_for(&r, &resp)
+    fn store_a_receipt_is_kept_as_returned() {
+        let r = WitnessState {
+            witness_id: "w".into(),
+            checkpoint_size: 1,
+            checkpoint: vec![1],
+            attempts: 0,
+            next_attempt_at: Timestamp::now(),
+            receipt: None,
+            permanent: false,
+            last_error: None,
         };
-        let hash = "ab".repeat(32);
-        assert!(
-            row_for("c3R1Yg==", &hash).is_ok(),
-            "unbound is kept, as inline"
-        );
-        assert!(row_for("not base64!", &hash)
-            .unwrap_err()
-            .contains("base64"));
-        assert!(row_for("", &hash).unwrap_err().contains("empty"));
-        {
-            use base64::Engine;
-            let huge = base64::engine::general_purpose::STANDARD.encode(vec![
-                0u8;
-                cll::log::MAX_WITNESS_RESPONSE_BYTES
-                    + 1
-            ]);
-            assert!(row_for(&huge, &hash).unwrap_err().contains("over CLL"));
-        }
-        assert!(
-            row_for("YQ", &hash).unwrap_err().contains("base64"),
-            "unpadded"
-        );
-        let resp = |leaf_index: i64| {
-            let r = WitnessState {
-                witness_id: "w".into(),
-                checkpoint_size: 1,
-                checkpoint: vec![1],
-                attempts: 0,
-                next_attempt_at: Timestamp::now(),
-                receipt: None,
-                permanent: false,
-                last_error: None,
-            };
-            receipt_for(
-                &r,
-                &crate::anchor::CheckpointWitnessResponse {
-                    receipt_b64: "c3R1Yg==".into(),
-                    entry_hash: hash.clone(),
-                    leaf_index,
-                    tree_size: 1,
-                },
-            )
+        let receipt = Receipt {
+            bytes: b"stub".to_vec(),
+            entry_hash: "ab".repeat(32),
+            entry_hash_scheme: "legacy".into(),
+            leaf_index: 0,
+            tree_size: 1,
         };
-        assert!(resp(-1).unwrap_err().contains("leaf_index"));
-        assert!(resp(i64::MAX).unwrap_err().contains("out of CLL's range"));
-        assert!(row_for("c3R1Yg==", &"AB".repeat(32))
-            .unwrap_err()
-            .contains("lowercase hex"));
+        // An entry_hash not bound to the row's checkpoint is kept, as inline.
+        let kept = receipt_for(&r, &receipt);
+        assert_eq!(kept.bytes, b"stub");
+        assert_eq!(
+            kept.entry_hash.as_deref(),
+            Some(receipt.entry_hash.as_str())
+        );
+        assert_eq!(kept.entry_hash_scheme.as_deref(), Some("legacy"));
+        assert_eq!((kept.leaf_index, kept.tree_size), (Some(0), Some(1)));
+        let witness = witness_from_receipt("https://w.example", &receipt);
+        assert_eq!(witness.receipt_b64, "c3R1Yg==");
+        assert_eq!(witness.ts_url, "https://w.example");
     }
 
     #[test]
-    fn store_a_receipt_a_row_cannot_hold_closes_the_row_and_holds_the_witness() {
+    fn store_a_receipt_a_row_cannot_hold_is_a_failed_attempt_not_a_hold() {
         let witness = continuity_witness(None);
         set(&witness.garble_receipt, true);
         let log = memory_log();
@@ -4325,15 +4267,28 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(a.witnesses.is_empty());
-        let closed = row(log.as_ref(), &witness.url, a.mmr_size);
-        assert!(closed.permanent && closed.receipt.is_none());
-        assert!(!is_witness_ahead(&closed));
-        assert!(closed.last_error.unwrap().contains("not base64"));
-        // The witness is held: neither this row nor a later cut is sent.
+        // The CLL client refuses the receipt; the row stays due with the
+        // reason, and the witness is not held (a refusal is not always the
+        // witness's: an oversized 503 reads the same).
+        let failed = row(log.as_ref(), &witness.url, a.mmr_size);
+        assert!(!failed.permanent && failed.receipt.is_none());
+        assert_eq!(failed.attempts, 1);
+        assert!(failed
+            .last_error
+            .unwrap()
+            .contains("invalid receipt base64"));
+        // The witness did accept that checkpoint, so once it answers well the
+        // next pass is refused as already held (409): the row closes as
+        // witness-ahead with no receipt, and the next cut is delivered.
         set(&witness.garble_receipt, false);
         append_entry(log.as_ref(), "two");
-        state.reconnect(&signer(), &anchor_unused()).unwrap();
-        assert_eq!(hits(&witness), 1);
+        let b = state
+            .reconnect(&signer(), &anchor_unused())
+            .unwrap()
+            .unwrap();
+        let ahead = row(log.as_ref(), &witness.url, a.mmr_size);
+        assert!(ahead.receipt.is_none() && is_witness_ahead(&ahead));
+        assert_eq!(b.witnesses.len(), 1);
     }
 
     #[test]

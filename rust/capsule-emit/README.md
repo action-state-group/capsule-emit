@@ -147,7 +147,9 @@ key, so it must be 1 to 191 bytes of `[A-Za-z0-9._:/-]`. A witnessed log
 moving from the flat layout must seed the CLL state with its last checkpoint
 or start a new log id; otherwise its witnesses refuse the first checkpoint.
 Each receipt reads back with the value the witness issued, and a receipt
-that a CLL row cannot store holds that witness. `last_checkpoint().witnesses`
+that the CLL client refuses leaves that cut pending and is retried; the
+witness has already accepted it, so the retry is refused as already held and the
+cut ends with no receipt. `last_checkpoint().witnesses`
 lists receipts in `witness_urls` order and only for configured witnesses,
 where the flat layout uses arrival order. On SQLite the cost of each
 checkpoint still grows with the log's history
