@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Reduce Pydantic v2 models in a payload to their JSON dump (capsule-emit#426).
+"""Payload helpers for the digest layer: Pydantic v2 models reduced to their
+JSON dump (capsule-emit#426), and the float walk that guards the legacy
+``default=str`` fallback (capsule-emit#431).
 
 Shared by the core digest, ``verify_input_digest`` and the adapter base so a
 model means the same thing everywhere. Pydantic is never imported here.
@@ -9,6 +11,8 @@ from __future__ import annotations
 import array
 import collections.abc
 import enum
+import functools
+import numbers
 import sys
 import types
 from typing import Any
@@ -119,40 +123,51 @@ def deep_float_path(root: Any) -> str | None:
     object is kept alive so a recycled ``id()`` cannot hide a later one.
     """
     base = _model_base()
-    leaf = (str, bytes, bytearray, int, bool, type, types.ModuleType,
+    leaf = (str, bytes, bytearray, int, bool, range, type, types.ModuleType,
             types.FunctionType, types.BuiltinFunctionType, types.MethodType, enum.Enum)
     seen: set[int] = set()
     keep: list[Any] = []
     stack: list[tuple[Any, str]] = [(root, "")]
     while stack:
         value, path = stack.pop()
-        if isinstance(value, (float, complex)):
+        if isinstance(value, (float, complex)) or (
+            isinstance(value, numbers.Real) and not isinstance(value, numbers.Rational)
+        ):
             return path or "<payload>"
         if value is None or isinstance(value, leaf) or id(value) in seen:
             continue
         seen.add(id(value))
         keep.append(value)
-        if isinstance(value, array.array):
-            if value.typecode in "fd":
-                return path or "<payload>"
-        elif isinstance(value, collections.abc.Mapping):
-            for k, v in value.items():
-                sub = f"{path}.{k}" if path else str(k)
-                stack.append((k, sub))
-                stack.append((v, sub))
-        elif isinstance(value, collections.abc.Collection):
-            for i, v in enumerate(value):
-                stack.append((v, f"{path}[{i}]"))
-        else:
-            if base is not None and isinstance(value, base):
-                try:
-                    stack.append((value.model_dump(mode="json"), path))
-                except Exception:
-                    pass
-            attrs = dict(getattr(value, "__dict__", None) or {})
-            for name in _slot_names(value):
-                if hasattr(value, name):
-                    attrs.setdefault(name, getattr(value, name))
-            for k, v in attrs.items():
-                stack.append((v, f"{path}.{k}" if path else k))
+        try:
+            if isinstance(value, array.array):
+                if value.typecode in "fd":
+                    return path or "<payload>"
+            elif isinstance(value, collections.abc.Mapping):
+                for k, v in list(value.items()):
+                    sub = f"{path}.{k}" if path else str(k)
+                    stack.append((k, sub))
+                    stack.append((v, sub))
+            elif isinstance(value, collections.abc.Collection):
+                for i, v in enumerate(list(value)):
+                    stack.append((v, f"{path}[{i}]"))
+        except Exception:  # a collection whose iteration fails: str() never iterates it
+            pass
+        if isinstance(value, slice):
+            stack.extend([(value.start, path), (value.stop, path), (value.step, path)])
+        elif isinstance(value, BaseException):
+            stack.append((value.args, f"{path}.args"))
+        elif isinstance(value, functools.partial):
+            stack.append((value.args, f"{path}.args"))
+            stack.append((value.keywords, f"{path}.keywords"))
+        if base is not None and isinstance(value, base):
+            try:
+                stack.append((value.model_dump(mode="json"), path))
+            except Exception:
+                pass
+        attrs = dict(getattr(value, "__dict__", None) or {})
+        for name in _slot_names(value):
+            if hasattr(value, name):
+                attrs.setdefault(name, getattr(value, name))
+        for k, v in attrs.items():
+            stack.append((v, f"{path}.{k}" if path else k))
     return None

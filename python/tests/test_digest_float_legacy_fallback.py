@@ -6,7 +6,13 @@ which §5.1 forbids and ``verify_input_digest`` cannot reproduce.
 """
 from __future__ import annotations
 
+import array
+import collections.abc
 import datetime as dt
+import enum
+import functools
+import math
+import types
 from dataclasses import dataclass
 
 import pytest
@@ -107,14 +113,6 @@ def test_float_free_legacy_digests_unchanged(name):
     assert _digest(value, salt="abcd") == salted
 
 
-# --- review round 1 (stand-in) ---------------------------------------------
-import array  # noqa: E402
-import collections  # noqa: E402
-import enum  # noqa: E402
-import math  # noqa: E402
-import types  # noqa: E402
-
-
 class _Mangled:
     __slots__ = ("__x",)
 
@@ -188,3 +186,52 @@ def test_classes_modules_enums_are_leaves():
         assert len(_digest(payload)) == 64
     with pytest.raises(FloatInDigestError):
         _digest({"o": Plain(_WithClassFloat.rate), "t": (1,)})
+
+
+@dataclass
+class Batch:
+    items: list
+    rate: float
+
+    def __iter__(self):
+        return iter(self.items)
+
+    def __len__(self):
+        return len(self.items)
+
+    def __contains__(self, x):
+        return x in self.items
+
+
+class _BadIter(collections.abc.Sequence):
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, i):
+        raise RuntimeError("closed")
+
+
+@pytest.mark.parametrize("salt", [None, "abcd"])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"b": Batch([1], 1.5)},
+        {"e": ValueError(1.5)},
+        {"p": functools.partial(print, 1.5)},
+        {"s": slice(1.5)},
+    ],
+)
+def test_collection_attrs_exceptions_partials_refused(payload, salt):
+    with pytest.raises(FloatInDigestError):
+        _digest(payload, salt=salt)
+
+
+def test_numpy_scalar_refused():
+    np = pytest.importorskip("numpy")
+    with pytest.raises(FloatInDigestError):
+        _digest({"x": np.float32(1.5), "t": (1,)})
+
+
+def test_iteration_failure_and_big_range_do_not_break_float_free_payloads():
+    assert len(_digest({"b": _BadIter(), "t": (1,)})) == 64
+    assert len(_digest({"r": range(10**10), "t": (1,)})) == 64

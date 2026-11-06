@@ -447,10 +447,9 @@ def _digest(value: Any, salt: str | None = None) -> str:
         plain = value
     if plain is value:
         return _digest_plain(value, salt)
-    # A model was converted. Refuse a float up front, anywhere in nested
-    # dicts, lists and tuples (sets, dataclasses and arbitrary objects are #431):
-    # left to the digest layer, a non-JSON sibling (a datetime, say) can raise
-    # TypeError first and the legacy fallback would seal the float via repr().
+    # A model was converted. Refuse a float up front, anywhere in nested dicts,
+    # lists and tuples, with a message that names the model case; any other
+    # payload is guarded by the walk in the legacy fallback below (#431).
     where = float_path(plain)
     if where is not None:
         raise FloatInDigestError(
