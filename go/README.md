@@ -406,6 +406,36 @@ well-formed JSON value or that carries `null` at the top, a duplicate key, a
 float, or an integer outside the interoperable range. It does not interpret
 the member: validating it under its own document is the caller's job.
 
+### Numbers from decoded tool arguments
+
+`DigestJSON` stays strict, so `{"temperature":0.5}` is rejected. When you own
+the data, send fractional quantities as strings. When a framework hands you
+whatever it decoded (an MCP tool argument, say) and you cannot ask it for
+decimal strings, pass the decoded value through `CanonicalizeForDigest` first,
+the Go twin of Python's `capsule_emit.numbers.canonicalize_for_digest`. Decode
+with `Decoder.UseNumber` so numbers arrive as `json.Number`.
+
+```go
+dec := json.NewDecoder(bytes.NewReader(rawArguments))
+dec.UseNumber()
+var args any
+if err := dec.Decode(&args); err != nil {
+	return err
+}
+canonical, err := emit.CanonicalizeForDigest(args) // {"temperature":"0.5"}
+if err != nil {
+	return err // NaN, infinity, binary64 overflow, or an integer outside +/-(2^53-1)
+}
+digest, err := emit.DigestJSON(canonical)
+```
+
+Numbers with a fraction or exponent become their RFC 8785 section 3.2.2.3
+decimal string (`0.5` -> `"0.5"`, `1.0` -> `"1"`, `1e21` -> `"1e+21"`, `-0.0` ->
+`"0"`); integer tokens stay integers, so `1` and `1.0` digest differently. A
+value with no representation returns an error naming the field; the helper
+never guesses a string. Python and Go share
+[test vectors](../test-vectors/number-canonicalization/README.md).
+
 ## Development
 
 `DigestJSON` keeps JCS negative-zero normalization. Python's optional strict

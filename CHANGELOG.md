@@ -6,6 +6,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (go): `CanonicalizeForDigest` turns decoded JSON numbers into digest-safe values
+
+`emit.CanonicalizeForDigest` is the Go twin of Python's `canonicalize_for_digest`. A float in decoded tool arguments, such as `{"temperature":0.5}`, becomes its RFC 8785 decimal string so `DigestJSON` accepts it; integer tokens stay integers; NaN, infinities, binary64 overflow and integers outside ±(2^53−1) return an error naming the field. `DigestJSON` stays strict. Shared Python/Go vectors in `test-vectors/number-canonicalization` pin the same digest in both languages.
+([#428](https://github.com/action-state-group/capsule-emit/issues/428))
+
 ### Added (python): `seal_otlp_file` backfills from an exported OTLP trace file
 
 `capsule_emit.otel.seal_otlp_file` seals the `effect` spans of an OTLP/JSON export through the live exporter's own
