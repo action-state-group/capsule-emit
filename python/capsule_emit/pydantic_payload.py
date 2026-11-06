@@ -93,15 +93,18 @@ def float_path(value: Any, path: str = "") -> str | None:
     return None
 
 
-def _slot_names(value: Any) -> list[str]:
-    names: list[str] = []
-    for cls in type(value).__mro__:
-        slots = cls.__dict__.get("__slots__", ())
-        for name in (slots,) if isinstance(slots, str) else slots:
-            if name.startswith("__") and not name.endswith("__"):
-                name = f"_{cls.__name__.lstrip('_')}{name}"  # name mangling
-            names.append(name)
-    return names
+def _dataclass_fields(t: type) -> dict[str, Any] | None:
+    """The ``__dataclass_fields__`` mapping of *t*, or None when *t* is not a
+    dataclass (capsule-emit#435). Looks only in the class ``__dict__``s along the
+    MRO, read through ``type.__dict__["__mro__"]``: ``hasattr``/``getattr`` on a
+    type would run a metaclass ``__getattr__``, which is user code. A dataclass
+    copies its bases' fields into its own mapping, so the nearest hit is complete."""
+    mro, class_dict = type.__dict__["__mro__"], type.__dict__["__dict__"]
+    for c in mro.__get__(t):
+        found = class_dict.__get__(c).get("__dataclass_fields__")
+        if found is not None:
+            return found if type(found) is dict else None
+    return None
 
 
 def _label_path(nodes: list[tuple[int, str, Any]], idx: int) -> str:
@@ -204,10 +207,10 @@ def deep_float_path(root: Any) -> str | None:
         t = type(value)
         if issubclass(t, float) or _numpy_float(value, t):
             return _label_path(nodes, idx)
-        is_dc = hasattr(t, "__dataclass_fields__")
+        dc_fields = _dataclass_fields(t)
         if value is None or id(value) in seen:
             continue
-        if issubclass(t, (str, bytes, int)) and not is_dc:
+        if issubclass(t, (str, bytes, int)) and dc_fields is None:
             continue
         seen.add(id(value))
         keep.append(value)
@@ -232,10 +235,13 @@ def deep_float_path(root: Any) -> str | None:
                         child(v, idx, "k", k)
             except Exception:
                 pass
-        if is_dc:
-            for f in dataclasses.fields(t):
+        if dc_fields is not None:
+            for name, f in dict.items(dc_fields):
+                # ClassVar and InitVar pseudo-fields are not instance fields.
+                if object.__getattribute__(f, "_field_type") is not dataclasses._FIELD:
+                    continue
                 try:
-                    child(object.__getattribute__(value, f.name), idx, "k", f.name)
+                    child(object.__getattribute__(value, name), idx, "k", name)
                 except Exception:
                     pass
     return None

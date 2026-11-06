@@ -12,7 +12,8 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
+from typing import ClassVar
 
 import pytest
 from agent_action_capsule.canonical import FloatInDigestError
@@ -236,3 +237,61 @@ def test_walk_labels_found_float_without_formatting_hostile_keys():
     assert deep_float_path({4: 1.5}) == "4"
     assert deep_float_path({"a": _hostile(dict, {"x": 1.5})}) == "a.x"
     assert deep_float_path({"o": _FakeClass(), "f": [1.5]}) == "f[0]"
+
+
+class _RaisingMeta(type):
+    """A metaclass whose ``__getattr__`` raises once armed (the ``@dataclass``
+    decorator itself probes the class, so it is armed after class creation): the
+    walk must decide dataclass-ness without reaching it (capsule-emit#435)."""
+
+    armed = False
+
+    def __getattr__(cls, name):
+        if _RaisingMeta.armed:
+            raise RuntimeError(f"metaclass __getattr__ ran for {name}")
+        raise AttributeError(name)
+
+
+class _PlainWithMeta(metaclass=_RaisingMeta):
+    pass
+
+
+@dataclass
+class _DcWithMeta(metaclass=_RaisingMeta):
+    x: object = None
+
+
+@dataclass
+class _Parent:
+    p: object = None
+
+
+class _Child(_Parent):  # not itself decorated; inherits the fields
+    pass
+
+
+@dataclass
+class _Pseudo:
+    a: int = 1
+    cv: ClassVar[float] = 1.5
+    iv: InitVar[float] = 2.5
+
+
+@pytest.mark.parametrize("salt", [None, "abcd"])
+def test_metaclass_getattr_never_runs(salt):
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    _RaisingMeta.armed = True
+    try:
+        assert deep_float_path({"a": _PlainWithMeta(), "b": [_PlainWithMeta]}) is None
+        assert deep_float_path({"d": _DcWithMeta(x=1.5)}) == "d.x"
+        assert deep_float_path({"c": _Child(p=1.5)}) == "c.p"
+        assert deep_float_path({"a": _PlainWithMeta(), "f": [1.5]}) == "f[0]"
+    finally:
+        _RaisingMeta.armed = False
+
+
+def test_dataclass_classvar_and_initvar_are_not_walked():
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    assert deep_float_path({"d": _Pseudo()}) is None
