@@ -197,24 +197,26 @@ def _spans(raw: bytes) -> Iterator[tuple[SpanFacts, int, int | None] | None]:
     """One entry per span: its facts and times, or ``None`` when unusable.
     Raises ``ValueError`` for a document that is not shaped like OTLP/JSON."""
     for doc in _documents(raw):
-        for rs in _members(doc, "resourceSpans", "resourceSpans"):
-            resource = rs.get("resource", {})
+        for rs in _members(doc, "resourceSpans"):
+            resource = rs.get("resource")
+            if resource is None:
+                resource = {}
             if not isinstance(resource, Mapping):
                 raise ValueError('not OTLP/JSON: "resource" must be an object')
             attributes = _attrs(resource.get("attributes"))
-            for ss in _members(rs, "scopeSpans", "scopeSpans"):
-                for span in _members(ss, "spans", "spans", objects=False):
+            for ss in _members(rs, "scopeSpans"):
+                for span in _members(ss, "spans", objects=False):
                     yield _span_facts(span, attributes) if isinstance(span, Mapping) else None
 
 
-def _members(parent: Mapping[str, Any], key: str, name: str, *, objects: bool = True) -> list:
+def _members(parent: Mapping[str, Any], key: str, *, objects: bool = True) -> list:
     """``parent[key]`` as a list (absent is empty), each entry an object when
     *objects* is set; otherwise ``ValueError``."""
     value = parent.get(key)
     if value is None:
         return []
     if not isinstance(value, list) or (objects and not all(isinstance(v, Mapping) for v in value)):
-        raise ValueError(f"not OTLP/JSON: {name!r} must be a list" + (" of objects" if objects else ""))
+        raise ValueError(f"not OTLP/JSON: {key!r} must be a list" + (" of objects" if objects else ""))
     return value
 
 

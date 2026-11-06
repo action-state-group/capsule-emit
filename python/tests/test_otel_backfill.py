@@ -294,3 +294,11 @@ def test_odd_attribute_values_do_not_abort(tmp_path):
         ]
     )
     assert attrs == {"a": [], "b": [], "e": "ok"}
+
+
+def test_null_resource_is_accepted(tmp_path):
+    doc = _export(_effect())
+    doc["resourceSpans"][0]["resource"] = None
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps(doc))
+    assert len(_seal(path, tmp_path / "l.jsonl").sealed) == 1
