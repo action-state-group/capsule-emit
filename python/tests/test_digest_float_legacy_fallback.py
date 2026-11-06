@@ -26,8 +26,27 @@ class Box:
 
 
 @dataclass
+class Bag(set):
+    score: float = 0.0
+
+
+class _BadKey:
+    def __str__(self):
+        raise RuntimeError("boom")
+
+    def __repr__(self):
+        return "badkey"
+
+
+@dataclass
 class Holder:
     inner: object
+
+
+def _bag(score):
+    b = Bag([1])
+    b.score = score
+    return b
 
 
 SHAPES = {
@@ -41,6 +60,7 @@ SHAPES = {
     "dataclass_in_set": {Box(1.5)},
     "nested_dataclass": {"h": Holder(Holder(Box(1.5)))},
     "float_in_list_in_tuple": {"a": ([{"k": 1.5}],), "b": dt.date(2020, 1, 1)},
+    "dataclass_set_subclass": {"b": _bag(1.5)},
     "float_dict_key_in_tuple": {"t": ({1.5: "a"},)},
 }
 
@@ -145,3 +165,13 @@ def test_float_free_legacy_digests_unchanged(name):
     value, unsalted, salted = _PINNED[name]
     assert _digest(value) == unsalted
     assert _digest(value, salt="abcd") == salted
+
+
+@pytest.mark.parametrize("salt", [None, "abcd"])
+def test_key_with_raising_str_does_not_break_float_free_payload(salt):
+    value = {"h": Holder({_BadKey(): 1}), "t": (1,)}
+    # the walk itself must not raise (the digest path may still fail on such a key)
+    assert len(_digest({"h": Holder({"k": 1}), "t": (1,)}, salt=salt)) == 64
+    from capsule_emit.pydantic_payload import deep_float_path
+
+    assert deep_float_path(value) is None

@@ -126,31 +126,29 @@ def deep_float_path(root: Any) -> str | None:
         value, path = stack.pop()
         if isinstance(value, float):
             return path or "<payload>"
-        if isinstance(value, (str, bytes, int)) or value is None or id(value) in seen:
+        is_dc = dataclasses.is_dataclass(value) and not isinstance(value, type)
+        if value is None or id(value) in seen:
             continue
+        if isinstance(value, (str, bytes, int)) and not is_dc:
+            continue
+        seen.add(id(value))
+        keep.append(value)
         if isinstance(value, dict):
-            seen.add(id(value))
-            keep.append(value)
             for k, v in value.items():
-                sub = f"{path}.{k}" if path else str(k)
+                # never call a key's own __str__: it may raise on a float-free payload
+                sub = f"{path}.{k}" if isinstance(k, (str, int)) else f"{path}.<key>"
                 stack.append((k, sub))
                 stack.append((v, sub))
         elif isinstance(value, (list, tuple, set, frozenset)):
-            seen.add(id(value))
-            keep.append(value)
             for i, v in enumerate(value):
                 stack.append((v, f"{path}[{i}]"))
-        elif base is not None and isinstance(value, base):
-            seen.add(id(value))
-            keep.append(value)
+        if base is not None and isinstance(value, base):
             try:
                 stack.append((value.model_dump(mode="json"), path))
             except Exception:
                 pass
             stack.append((dict(value.__dict__), path))
-        elif dataclasses.is_dataclass(value) and not isinstance(value, type):
-            seen.add(id(value))
-            keep.append(value)
+        if is_dc:
             for f in dataclasses.fields(value):
                 sub = f"{path}.{f.name}" if path else f.name
                 stack.append((getattr(value, f.name, None), sub))
