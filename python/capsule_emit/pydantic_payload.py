@@ -121,17 +121,35 @@ def _dataclass_fields(t: type) -> dict[str, Any] | None:
     return found if type(found) is dict else None
 
 
-def _runs_descriptor(t: type, name: str) -> bool:
-    """True when reading ``name`` from an instance of *t* could run a descriptor's
-    ``__get__`` (a class attribute whose type defines one, other than a ``__slots__``
-    member). Such a field is not read: a known limit."""
+def _is_data_descriptor(attr: Any) -> bool:
+    """True when the type of *attr* defines ``__set__`` or ``__delete__``, so the
+    attribute takes priority over the instance ``__dict__`` and reading it would run
+    its ``__get__``. Looked up in the type's ``__dict__``s, not with ``hasattr``."""
+    for c in _MRO.__get__(type(attr)):
+        d = _CLASS_DICT.__get__(c)
+        if "__set__" in d or "__delete__" in d:
+            return True
+    return False
+
+
+def _field_value(value: Any, t: type, name: str) -> Any:
+    """The stored value of dataclass field *name* on *value*, or ``_MISSING`` when it
+    cannot be read without running user code (capsule-emit#435).
+
+    Reads the instance ``__dict__`` through the interpreter's own ``__dict__`` slot
+    and a ``__slots__`` member through its member descriptor. A field shadowed by a
+    data descriptor (a property, or a descriptor default) is not read: reading it
+    would run its ``__get__``. A known limit, like the other unwalked objects."""
     attr = _class_lookup(t, name)
-    if attr is _MISSING:
-        return False
-    at = type(attr)
-    if at is types.MemberDescriptorType:
-        return False
-    return any("__get__" in _CLASS_DICT.__get__(c) for c in _MRO.__get__(at))
+    if type(attr) is types.MemberDescriptorType:
+        return attr.__get__(value)
+    if attr is not _MISSING and _is_data_descriptor(attr):
+        return _MISSING
+    slot = _class_lookup(t, "__dict__")
+    if type(slot) is not types.GetSetDescriptorType:
+        return _MISSING
+    d = slot.__get__(value)
+    return d[name] if type(d) is dict and name in d else _MISSING
 
 
 def _label_path(nodes: list[tuple[int, str, Any]], idx: int) -> str:
@@ -217,7 +235,8 @@ def deep_float_path(root: Any) -> str | None:
     overrides are bypassed), reads fields with ``object.__getattribute__``, and
     builds the path only after a float is found. Dataclass-ness is read from the class
     ``__dict__``s along the MRO, and a dataclass field backed by a descriptor
-    (a class attribute whose type defines ``__get__``) is skipped, a known limit. It is iterative, so a deep
+    (a property, or a class attribute whose type defines ``__set__``) is skipped, a
+    known limit. It is iterative, so a deep
     payload cannot raise ``RecursionError``, and keeps visited objects alive so a
     recycled ``id()`` cannot hide a later one.
     """
@@ -268,11 +287,11 @@ def deep_float_path(root: Any) -> str | None:
             for name, f in dict.items(dc_fields):
                 try:
                     # ClassVar and InitVar pseudo-fields are not instance fields.
-                    if type(f) is not dataclasses.Field or _FIELD_TYPE.__get__(f) is not dataclasses._FIELD:
+                    if not issubclass(type(f), dataclasses.Field) or _FIELD_TYPE.__get__(f) is not dataclasses._FIELD:
                         continue
-                    if type(name) is not str or _runs_descriptor(t, name):
-                        continue
-                    child(object.__getattribute__(value, name), idx, "k", name)
+                    found = _field_value(value, t, name) if type(name) is str else _MISSING
+                    if found is not _MISSING:
+                        child(found, idx, "k", name)
                 except Exception:
                     pass
     return None

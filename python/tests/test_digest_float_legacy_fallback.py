@@ -9,6 +9,7 @@ object keeps its legacy behaviour untouched.
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import hashlib
 import json
@@ -341,13 +342,43 @@ class _DescField:
     y: object = None
 
 
-@dataclass(slots=True)
+@dataclass
 class _SlotsDc:
+    __slots__ = ("x",)  # not slots=True, which needs Python 3.10
+    x: object
+
+
+def _plain_default(): ...
+
+
+@dataclass
+class _FuncDefault:
+    cb: object = _plain_default  # a function default: a non-data descriptor
+
+
+class _MyField(dataclasses.Field):
+    __slots__ = ()
+
+
+@dataclass
+class _SubField:
     x: object = None
 
 
+_SubField.__dataclass_fields__["x"].__class__ = _MyField
+
+
+class _EvilEntry:
+    ran = False
+
+    @property
+    def _field_type(self):
+        _EvilEntry.ran = True
+        raise RuntimeError("user code ran")
+
+
 class _NotAField:
-    __dataclass_fields__ = {"a": 1}  # a dict, but not made of dataclasses.Field
+    __dataclass_fields__ = {"a": 1, "b": _EvilEntry()}  # a dict, but not of dataclasses.Field
 
 
 def test_walk_skips_descriptor_fields_and_odd_dataclass_fields():
@@ -358,4 +389,11 @@ def test_walk_skips_descriptor_fields_and_odd_dataclass_fields():
     assert deep_float_path({"d": d}) == "d.y"
     assert not _Desc.ran
     assert deep_float_path({"d": _SlotsDc(x=1.5)}) == "d.x"
-    assert deep_float_path({"o": _NotAField(), "f": [1.5]}) == "f[0]"
+    assert deep_float_path({"o": _NotAField()}) is None
+    assert not _EvilEntry.ran
+    # a function default is a non-data descriptor: the instance value still counts
+    assert deep_float_path({"d": _FuncDefault(cb=1.5)}) == "d.cb"
+    assert deep_float_path({"d": _FuncDefault(cb=[1.5])}) == "d.cb[0]"
+    assert deep_float_path({"d": _FuncDefault()}) is None
+
+    assert deep_float_path({"w": _SubField(x=1.5)}) == "w.x"  # a Field subclass entry
