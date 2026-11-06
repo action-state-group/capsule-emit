@@ -12,8 +12,7 @@ All notable changes to `capsule-emit` are documented here. The format follows
 classification, allow-list and sealing. Each record is `provenance_mode: backfilled` with `time_rung: self_attested`,
 `source_ref` over the trace and span IDs, the span's start as `source_asserted_at`, the file digest as `import_batch`,
 the real seal time as `imported_at`, and the span's start and end in `ext.otel.span_time`. A re-run skips spans whose
-`source_ref` the ledger already holds. The live exporter is unchanged. Span times are the source's assertion, not proof
-of capture time. See [the OTel extension doc](docs/extensions/otel-correlation.md#backfill--sealing-spans-from-an-exported-otlp-trace-file).
+`source_ref` the ledger already holds. The live exporter is unchanged. Span times are the source's assertion and are not attested; the record's time evidence is its seal time (`imported_at`, plus the witness receipt when witnessing is on). Only live sealing records the time of capture. See [the OTel extension doc](docs/extensions/otel-correlation.md#backfill--sealing-spans-from-an-exported-otlp-trace-file).
 (#377)
 
 ### Removed (examples): the Goose loop extension
