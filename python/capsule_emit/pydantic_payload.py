@@ -109,6 +109,51 @@ def _slot_names(value: Any) -> list[str]:
     return names
 
 
+def _dtype_has_float(dtype: Any, depth: int = 0) -> bool | None:
+    """True if a numpy-style dtype holds a float/complex (also inside structured
+    fields and sub-arrays), False if it provably holds none and no object field,
+    None if it holds an object field (the elements must then be walked)."""
+    kind = getattr(dtype, "kind", None)
+    if kind in ("f", "c"):
+        return True
+    if kind == "O":
+        return None
+    if depth > 8:
+        return None
+    result: bool | None = False
+    fields = getattr(dtype, "fields", None)
+    if fields:
+        for entry in fields.values():
+            sub = _dtype_has_float(entry[0], depth + 1)
+            if sub:
+                return True
+            if sub is None:
+                result = None
+    sub_dtype = getattr(dtype, "subdtype", None)
+    if sub_dtype:
+        sub = _dtype_has_float(sub_dtype[0], depth + 1)
+        if sub:
+            return True
+        if sub is None:
+            result = None
+    return result
+
+
+def _dtype_verdict(value: Any) -> str | None:
+    """"float", "clean" (no float, nothing to walk) or None (not an array, or has
+    object fields). Any failure reading ``dtype`` means "not an array"."""
+    try:
+        dtype = getattr(value, "dtype", None)
+        if dtype is None or not isinstance(getattr(dtype, "kind", None), str):
+            return None
+        has = _dtype_has_float(dtype)
+    except Exception:
+        return None
+    if has:
+        return "float"
+    return "clean" if has is False else None
+
+
 def deep_float_path(root: Any) -> str | None:
     """Path of the first float anywhere in ``root``, or None (capsule-emit#431).
 
@@ -138,12 +183,11 @@ def deep_float_path(root: Any) -> str | None:
             continue
         seen.add(id(value))
         keep.append(value)
-        # numpy-style arrays (no numpy import): a float/complex dtype is a float;
-        # any other non-object dtype holds no float and str() only summarises it.
-        kind = getattr(getattr(value, "dtype", None), "kind", None)
-        if kind in ("f", "c"):
+        # numpy-style arrays (no numpy import): decide by dtype, not by element.
+        verdict = _dtype_verdict(value)
+        if verdict == "float":
             return path or "<payload>"
-        if isinstance(kind, str) and kind != "O":
+        if verdict == "clean":
             continue
         try:
             if isinstance(value, array.array):

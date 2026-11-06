@@ -244,6 +244,31 @@ def test_numpy_zero_d_float_refused_and_big_int_array_is_fast():
     assert time.monotonic() - start < 2
 
 
+def test_numpy_structured_dtypes():
+    np = pytest.importorskip("numpy")
+    for arr in (
+        np.array([(1, 1.5)], dtype=[("i", "i4"), ("f", "f8")]),
+        np.array([(1, 1.5)], dtype=[("i", "i4"), ("f", "f8")])[0],
+        np.zeros(1, dtype=[("a", "f8", (2,))]),
+    ):
+        with pytest.raises(FloatInDigestError):
+            _digest({"a": arr, "t": (1,)})
+    ints = np.array([(1, 2)], dtype=[("i", "i4"), ("j", "i4")])
+    assert len(_digest({"a": ints, "t": (1,)})) == 64
+
+
+class _Lazy:
+    def __getattr__(self, name):
+        raise RuntimeError("no context")
+
+    def __str__(self):
+        return "lazy"
+
+
+def test_raising_getattr_does_not_break_float_free_payload():
+    assert len(_digest({"o": _Lazy(), "t": (1,)})) == 64
+
+
 def test_iteration_failure_and_big_range_do_not_break_float_free_payloads():
     assert len(_digest({"b": _BadIter(), "t": (1,)})) == 64
     assert len(_digest({"r": range(10**10), "t": (1,)})) == 64
