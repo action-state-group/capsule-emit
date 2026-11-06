@@ -232,7 +232,10 @@ def verify_input_digest(
         # A Pydantic v2 model candidate is compared as its JSON dump, the same
         # reduction seal() applied; PydanticPayloadError is a ValueError.
         actual = json_digest(plain_json(candidate_input))
-    except (FloatInDigestError, TypeError, ValueError, RecursionError):
+    except (FloatInDigestError, TypeError, ValueError, RecursionError, AttributeError):
+        # AttributeError: a non-string dict key breaks the digest layer's key
+        # sort (#439). Only these errors are mapped: a candidate whose own
+        # methods raise something else is not covered.
         return InputDigestResult(ok=False, reason=VerifyReason.NON_CONFORMING)
 
     if stored == actual:
