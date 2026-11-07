@@ -132,3 +132,29 @@ def test_revealing_a_record_with_no_retained_original_builds_nothing(stores):
     day_1 = _record("day-1").capsule_id
     with pytest.raises(MeshLedgerError, match="no retained payload original"):
         build_store_bundle(log, artifacts, root=day_1, interval_from=1, reveal=[day_1])
+
+
+def test_revealing_an_unknown_id_builds_nothing(stores):
+    _, log, artifacts = stores
+    _checkpoint(log)
+    with pytest.raises(MeshLedgerError, match="no record to reveal"):
+        build_store_bundle(log, artifacts, root=_record("day-1").capsule_id, interval_from=1, reveal=["0" * 64])
+
+
+def test_a_record_with_a_purged_original_is_refused_before_anything_is_written(stores):
+    ledger, log, _ = stores
+    purged = Artifact("signed-statement", "purged", "", None, hashlib.sha256(b"x").hexdigest())
+    before = len(list(log.scan_entries(0, 100)))
+    with pytest.raises(ResultRefused, match="purged"):
+        append_result(dataclasses.replace(_record("result"), artifacts=[*_record("result").artifacts, purged]), ledger)
+    assert len(list(log.scan_entries(0, 100))) == before
+
+
+def test_a_failing_backend_error_is_not_reported_as_a_refused_result(stores):
+    from capsule_emit.store_backed_ledger import StaleLedgerError
+
+    ledger, log, artifacts = stores
+    other, _ = Ledger.open_stores(log, artifacts, linear=False, require_statements=False)
+    assert append_result(_record("result"), other).appended  # a second writer appends behind this ledger's back
+    with pytest.raises(StaleLedgerError):
+        append_result(_record("result"), ledger)

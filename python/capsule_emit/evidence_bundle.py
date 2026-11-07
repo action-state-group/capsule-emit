@@ -37,7 +37,7 @@ from cll.log import CllState, Entry
 from cll.log import CorruptError as LogCorruptError
 from cll.log.engine import check_scan
 
-from .artifact.record import InvalidError, NotFoundError, Record, valid_id
+from .artifact.record import ArtifactError, InvalidError, NotFoundError, Record, valid_id
 from .legacy_ledger import _EPOCH, _cll_state_at, _line_time, checked_record
 
 __all__ = ["MeshLedgerError", "MeshLedgerLog", "build_store_bundle"]
@@ -273,17 +273,23 @@ def build_store_bundle(
     """
     from agent_action_capsule.bundle import build_evidence_bundle, proof_source_from_cll
 
-    from .artifact.record import PAYLOAD_DIGEST, PRESENT, decode_strict_json
+    from .artifact.record import PAYLOAD_DIGEST, PRESENT, _StrictJSONError, decode_strict_json
 
     disclosures: dict = {}
     for capsule_id in reveal:
-        record = artifacts.get(capsule_id)
+        try:
+            record = artifacts.get(capsule_id)
+        except ArtifactError as exc:
+            raise MeshLedgerError(f"{capsule_id}: no record to reveal: {exc}") from exc
         held = [a for a in record.artifacts if a.name == "payload"]
         if len(held) != 1 or held[0].state != PRESENT or held[0].content is None or held[0].binding != PAYLOAD_DIGEST:
             raise MeshLedgerError(
                 f"{capsule_id}: no retained payload original bound by agent_input_digest to reveal"
             )
-        disclosures[capsule_id] = {"agent_input": decode_strict_json(bytes(held[0].content))}
+        try:
+            disclosures[capsule_id] = {"agent_input": decode_strict_json(bytes(held[0].content))}
+        except _StrictJSONError as exc:
+            raise MeshLedgerError(f"{capsule_id}: the retained payload is not JSON: {exc}") from exc
     return build_evidence_bundle(
         proof_source_from_cll(log, artifacts),
         root=root,

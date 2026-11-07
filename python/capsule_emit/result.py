@@ -151,7 +151,15 @@ def append_result(
     if not cited:
         raise ResultRefused("a Result cites no record (no acted_on reference)")
 
-    from .store_backed_ledger import Ledger, LedgerError
+    from .store_backed_ledger import (
+        AlreadyInLogError,
+        AppendChainMismatchError,
+        EnvelopeError,
+        Ledger,
+        MissingCapsuleIdError,
+        PaddingMisroutedError,
+        StatementInvalidError,
+    )
 
     if isinstance(ledger, Ledger):
         missing = [digest for digest in cited if not ledger.contains(digest)]
@@ -159,7 +167,18 @@ def append_result(
             raise ResultRefused(_missing(missing, "the ledger"))
         try:
             seq, appended = ledger.append_record(record)
-        except (LedgerError, ArtifactError) as exc:
+        except (
+            AlreadyInLogError,
+            AppendChainMismatchError,
+            EnvelopeError,
+            MissingCapsuleIdError,
+            PaddingMisroutedError,
+            StatementInvalidError,
+            ArtifactError,  # the record's own admission checks (prepare): limits, a purged original
+        ) as exc:
+            # The ledger refused this record. StaleLedgerError, StoreError and
+            # LogError (a second writer, a failing backend) propagate, as the
+            # flat ledger's lock errors do.
             raise ResultRefused(f"the ledger refused the Result: {exc}") from exc
         return ResultAppend(record.capsule_id, seq, appended)
 

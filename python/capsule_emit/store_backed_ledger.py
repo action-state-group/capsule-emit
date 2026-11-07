@@ -832,7 +832,8 @@ class Ledger:
             statements = [a for a in stored.artifacts if a.name == STATEMENT and not a.binding]
             if statements and statements[0].content is not None:
                 _check_statement(line_no, {**parsed, "key_id": verified.public_key.hex()}, capsule_id, statements[0].content)
-            elif self._require_statements:
+            elif statements or self._require_statements:
+                # A purged attachment is refused either way: a reopen refuses it.
                 raise _statement_missing(line_no, capsule_id)
             self._check_not_stale()
             line = {**parsed, "signature": bytes(record.producer_envelope).hex(), "key_id": verified.public_key.hex()}
