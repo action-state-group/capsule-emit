@@ -774,6 +774,76 @@ class Ledger:
                 )
             self._write_line(capsule_id, capsule, signed_statement, False)
 
+    def append_record(self, record: Record) -> tuple[int, bool]:
+        """Append a sealed record with the originals it carries, which the
+        artifact store retains as given (a Result's ``payload`` document, for
+        one): returns its 1-based position and whether this call wrote it
+        (``False``: the ledger already held this record). The capsule is
+        stored in the ledger's line form; the producer envelope must verify
+        over its id and the id must recompute. A record with no
+        :data:`STATEMENT` attachment needs ``require_statements=False``; one
+        with it is checked as :meth:`append` checks it. A record that is not
+        the head's child is refused unless the ledger is ``linear=False``.
+        Refuses a padding record and a different record under a held id."""
+        from agent_action_capsule.producer_envelope import verify_producer_envelope
+
+        capsule_id = record.capsule_id
+        try:
+            parsed = decode_strict_json(bytes(record.capsule))
+        except _StrictJSONError as exc:
+            raise MissingCapsuleIdError(f"record JSON error: {exc}", capsule_id=capsule_id) from exc
+        if not isinstance(parsed, dict) or parsed.get("capsule_id") != capsule_id:
+            raise MissingCapsuleIdError("the capsule has no capsule_id naming the record", capsule_id=capsule_id)
+        if _is_padding(parsed):
+            raise PaddingMisroutedError("refusing to append: a padding record goes through append_padding")
+        if any(name in parsed for name in _ENVELOPE_MEMBERS):
+            raise EnvelopeError(
+                f"capsule_id {capsule_id}: signature and key_id are not capsule members", capsule_id=capsule_id
+            )
+        verified = verify_producer_envelope(capsule_id, bytes(record.producer_envelope))
+        if not verified.ok or verified.public_key is None:
+            raise EnvelopeError(
+                f"capsule_id {capsule_id}: producer envelope: the envelope does not verify over the capsule_id",
+                capsule_id=capsule_id,
+            )
+        stored = prepare(
+            Record(capsule_id, line_bytes(parsed), bytes(record.producer_envelope), list(record.artifacts))
+        )
+        with self._lock:
+            line_no = len(self._lines) + 1
+            _recompute(line_no, parsed, capsule_id)
+            if self.contains(capsule_id):
+                held = self._get_record(capsule_id, line_no)
+                if (held.capsule, held.producer_envelope) != (stored.capsule, stored.producer_envelope) or [
+                    (a.name, a.state, a.binding, a.content) for a in held.artifacts
+                ] != [(a.name, a.state, a.binding, a.content) for a in stored.artifacts]:
+                    raise AlreadyInLogError(
+                        f"capsule_id {capsule_id} is already in the ledger as a different record",
+                        capsule_id=capsule_id,
+                    )
+                return self._index[capsule_id], False
+            parent = _parent(parsed)
+            if self._linear and parent != self._chain_head:
+                raise AppendChainMismatchError(
+                    f"refusing to append: capsule's chain.parent_capsule_id {parent!r} does not match ledger head "
+                    f"{self._chain_head!r}",
+                    capsule_id=capsule_id,
+                )
+            statements = [a for a in stored.artifacts if a.name == STATEMENT and not a.binding]
+            if statements and statements[0].content is not None:
+                _check_statement(line_no, {**parsed, "key_id": verified.public_key.hex()}, capsule_id, statements[0].content)
+            elif self._require_statements:
+                raise _statement_missing(line_no, capsule_id)
+            self._check_not_stale()
+            line = {**parsed, "signature": bytes(record.producer_envelope).hex(), "key_id": verified.public_key.hex()}
+            return self._commit(capsule_id, stored, line, False), True
+
+    def _get_record(self, capsule_id: str, line_no: int) -> Record:
+        try:
+            return self._artifacts.get(capsule_id)
+        except ArtifactError as exc:
+            raise StoreError(exc, line=line_no, capsule_id=capsule_id) from exc
+
     def append_padding(self, record: dict, signed_statement: bytes) -> None:
         """Append one padding record and its signed statement. The head does
         not move and the record is not indexed."""
