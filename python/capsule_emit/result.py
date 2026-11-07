@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .artifact.record import (
+    PAYLOAD_DIGEST,
     PRESENT,
     ArtifactError,
     Record,
@@ -42,7 +43,7 @@ from .artifact.record import (
 )
 from .artifact.record import verify as verify_record
 
-__all__ = ["ResultAppend", "ResultRefused", "append_result"]
+__all__ = ["ResultAppend", "ResultRefused", "append_result", "append_result_file"]
 
 #: The ``result_version`` of the Result document (Evidence Result v0).
 RESULT_VERSION = "evidence-result-v0"
@@ -67,13 +68,13 @@ class ResultAppend:
     appended: bool
 
 
-def _payload(record: Record, capsule: dict):
+def _payload(record: Record) -> dict:
     """The Result document the record carries, checked against the capsule."""
     originals = [a for a in record.artifacts if a.name == PAYLOAD]
     if len(originals) != 1 or originals[0].state != PRESENT or originals[0].content is None:
         raise ResultRefused(f"a Result record carries its document as one retained {PAYLOAD!r} original")
-    if not originals[0].binding:
-        raise ResultRefused(f"the {PAYLOAD!r} original is not bound to the capsule by a digest")
+    if originals[0].binding != PAYLOAD_DIGEST:
+        raise ResultRefused(f"the {PAYLOAD!r} original is not bound by the capsule's agent_input_digest")
     try:
         document = decode_strict_json(bytes(originals[0].content))
     except _StrictJSONError as exc:
@@ -97,13 +98,10 @@ def _acted_on(capsule: dict) -> list:
 def append_result(
     record: Record,
     ledger: str | os.PathLike | None = None,
-    *,
-    wait: bool = False,
-    timeout: float | None = None,
 ) -> ResultAppend:
     """Append the sealed Result ``record`` to ``ledger`` (a ledger store
     directory; the default ledger when ``None``, as :func:`capsule_emit.seal`
-    resolves it). Raises :class:`ResultRefused` for a record that is not a
+    resolves it; its own trust and lock settings apply). Raises :class:`ResultRefused` for a record that is not a
     sealed Result or cites a record the ledger lacks; the ledger errors
     (``LedgerLockedError``, ...) propagate. Idempotent."""
     from . import ledger_layout as _layout
@@ -127,7 +125,7 @@ def append_result(
         verify_record(record, [envelope.public_key])
     except ArtifactError as exc:
         raise ResultRefused(f"the record does not verify: {exc}") from exc
-    _payload(record, capsule)
+    _payload(record)
 
     path = _layout.resolve_ledger(ledger).path
     if not Path(path).exists():
@@ -144,8 +142,15 @@ def append_result(
             + "; append them first"
         )
 
-    stored = dataclasses.replace(record, artifacts=[])
-    result = target.put_entry(stored)
+    # The id is over the capsule's value, not its bytes: capsulectl writes raw
+    # UTF-8 and escapes < > &, which the ledger's line form does not.
+    from .legacy_ledger import _line_form
+
+    stored = dataclasses.replace(record, artifacts=[], capsule=_line_form(capsule).encode("ascii"))
+    try:
+        result = target.put_entry(stored)
+    except ArtifactError as exc:
+        raise ResultRefused(f"the ledger refused the Result: {exc}") from exc
     return ResultAppend(record.capsule_id, result.entry.seq, result.outcome == "inserted")
 
 
@@ -156,11 +161,11 @@ def _load(path: str | os.PathLike) -> Record:
         return decode_record(fh.read())
 
 
-def append_result_file(path: str | os.PathLike, ledger: str | os.PathLike | None = None, **kwargs) -> ResultAppend:
+def append_result_file(path: str | os.PathLike, ledger: str | os.PathLike | None = None) -> ResultAppend:
     """:func:`append_result` for the record file ``capsulectl result build
     --capsule-out`` writes."""
     try:
         record = _load(path)
     except (OSError, ArtifactError, ValueError, json.JSONDecodeError) as exc:
         raise ResultRefused(f"{path}: not an artifact record file: {exc}") from exc
-    return append_result(record, ledger, **kwargs)
+    return append_result(record, ledger)

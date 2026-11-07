@@ -56,6 +56,15 @@ def test_appends_the_result_after_its_citations_and_again_writes_nothing(store):
     assert stored.capsule == result.capsule and stored.producer_envelope == result.producer_envelope
 
 
+def test_appends_a_capsule_serialized_other_than_the_ledger_line_form(store):
+    """capsulectl is Go: same value, other bytes (here indented; in the field raw UTF-8 and \\u003c)."""
+    result = _record("result")
+    reformatted = json.dumps(json.loads(result.capsule), indent=2, ensure_ascii=False).encode()
+    assert reformatted != result.capsule
+    assert append_result(dataclasses.replace(result, capsule=reformatted), store).appended
+    assert LegacyLedger(store).get(result.capsule_id).capsule == result.capsule
+
+
 def test_appends_from_the_capsulectl_file(store):
     done = append_result_file(VECTORS / "result.record.json", store)
     assert done.appended and done.seq == 3
@@ -87,6 +96,18 @@ def _tampered_document(change):
         (dataclasses.replace(_record("result"), producer_envelope=_record("day-1").producer_envelope), "Producer Envelope"),
         (dataclasses.replace(_record("result"), capsule=_record("day-1").capsule), "capsule id mismatch"),
         (_record("day-1"), "is not an evidence-result-v0 document"),
+        (
+            dataclasses.replace(
+                _record("result"),
+                artifacts=[
+                    dataclasses.replace(
+                        _record("result").artifacts[0],
+                        binding="model_attestation.compute_attestation.agent_output_digest",
+                    )
+                ],
+            ),
+            "does not verify|agent_input_digest",
+        ),
     ],
 )
 def test_refuses_what_is_not_a_sealed_result_and_writes_nothing(store, record, message):
