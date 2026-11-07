@@ -81,6 +81,14 @@ def test_the_result_original_is_retained_and_the_bundle_discloses_it_when_named(
     ]
 
     plain = build_store_bundle(log, artifacts, root=result.capsule_id, interval_from=1, closure_depth=1)
+    # Naming no record gives today's bytes: exactly what the producer builds with no overlay.
+    from agent_action_capsule.bundle import build_evidence_bundle, proof_source_from_cll
+    from agent_action_capsule.canonical import jcs
+
+    direct = build_evidence_bundle(
+        proof_source_from_cll(log, artifacts), root=result.capsule_id, interval_from=1, closure_depth=1
+    )
+    assert jcs(plain) == jcs(direct)
     assert "disclosures" not in plain or not plain["disclosures"]
     assert [d.status for d in verify_bundle(plain, strict=True).disclosures if d.capsule_id == result.capsule_id] == [
         "withheld"
