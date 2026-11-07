@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -37,10 +37,10 @@ from cll.log import CllState, Entry
 from cll.log import CorruptError as LogCorruptError
 from cll.log.engine import check_scan
 
-from .artifact.record import InvalidError, NotFoundError, Record, valid_id
+from .artifact.record import ArtifactError, InvalidError, NotFoundError, Record, valid_id
 from .legacy_ledger import _EPOCH, _cll_state_at, _line_time, checked_record
 
-__all__ = ["MeshLedgerError", "MeshLedgerLog"]
+__all__ = ["MeshLedgerError", "MeshLedgerLog", "build_store_bundle"]
 
 _CHECKPOINT_KIND = "mmr_checkpoint"
 _PADDING = "padding"
@@ -244,3 +244,57 @@ class MeshLedgerLog:
 
     def close(self) -> None:
         """Nothing to release: the files were read when the log was opened."""
+
+
+def build_store_bundle(
+    log: Any,
+    artifacts: Any,
+    *,
+    root: str,
+    interval_from: int | None,
+    closure_depth: int = 1,
+    include: Sequence[str] = (),
+    reveal: Sequence[str] = (),
+) -> dict:
+    """An Evidence Bundle over a store-backed ledger: ``log`` is its CLL backend
+    (``scan_entries`` and ``load_cll``, with a signed checkpoint) and
+    ``artifacts`` its artifact store, as :class:`capsule_emit.store_backed_ledger.
+    Ledger` was opened on them. ``root``, ``interval_from``, ``closure_depth``
+    and ``include`` are ``agent_action_capsule.bundle.build_evidence_bundle``'s.
+
+    ``reveal`` names the records whose retained ``payload`` original goes into
+    the bundle as the record's disclosed ``agent_input``, which is how a Result
+    capsule appended by :func:`capsule_emit.result.append_result` reaches the
+    Result page (capsule-emit#443). Nothing is revealed that the caller does not
+    name: the default bundle withholds every original. A named record must
+    retain a ``payload`` original that its capsule binds by
+    ``agent_input_digest``, else :class:`MeshLedgerError` (nothing is built);
+    the bundle verifier checks the digest again.
+    """
+    from agent_action_capsule.bundle import build_evidence_bundle, proof_source_from_cll
+
+    from .artifact.record import PAYLOAD_DIGEST, PRESENT, _StrictJSONError, decode_strict_json
+
+    disclosures: dict = {}
+    for capsule_id in reveal:
+        try:
+            record = artifacts.get(capsule_id)
+        except ArtifactError as exc:
+            raise MeshLedgerError(f"{capsule_id}: no record to reveal: {exc}") from exc
+        held = [a for a in record.artifacts if a.name == "payload"]
+        if len(held) != 1 or held[0].state != PRESENT or held[0].content is None or held[0].binding != PAYLOAD_DIGEST:
+            raise MeshLedgerError(
+                f"{capsule_id}: no retained payload original bound by agent_input_digest to reveal"
+            )
+        try:
+            disclosures[capsule_id] = {"agent_input": decode_strict_json(bytes(held[0].content))}
+        except _StrictJSONError as exc:
+            raise MeshLedgerError(f"{capsule_id}: the retained payload is not JSON: {exc}") from exc
+    return build_evidence_bundle(
+        proof_source_from_cll(log, artifacts),
+        root=root,
+        include=include,
+        interval_from=interval_from,
+        closure_depth=closure_depth,
+        disclosures=disclosures or None,
+    )

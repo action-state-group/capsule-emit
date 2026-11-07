@@ -18,10 +18,16 @@ What is checked, before anything is written:
 - the citations: every ``acted_on`` reference the capsule makes is a record
   this ledger already holds, so a bundle rooted on the Result carries them.
 
-A ledger keeps no originals, so the ``payload`` original is checked and then
-left out of the stored line, as for every record a ledger holds; the capsule
-(its references, its payload digest) is what is appended. Appending the same
-Result again writes nothing.
+Where the original goes depends on the target. A ledger store directory (the
+flat ``ledger.jsonl`` layout) keeps no originals, so the ``payload`` original is
+checked and then left out of the stored line, as for every record such a ledger
+holds; the capsule (its references, its payload digest) is what is appended.
+A store-backed :class:`capsule_emit.store_backed_ledger.Ledger` (a CLL entry log
+and an artifact store: jsonl, memory, sqlite, mysql) retains the original beside
+the capsule, so :func:`capsule_emit.evidence_bundle.build_store_bundle` can
+carry it as the root's disclosed ``agent_input`` and the Result page renders
+from the bundle (capsule-emit#443). Appending the same Result again writes
+nothing.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .artifact.record import (
     PAYLOAD_DIGEST,
@@ -42,6 +49,9 @@ from .artifact.record import (
     valid_id,
 )
 from .artifact.record import verify as verify_record
+
+if TYPE_CHECKING:
+    from .store_backed_ledger import Ledger
 
 __all__ = ["ResultAppend", "ResultRefused", "append_result", "append_result_file"]
 
@@ -84,6 +94,14 @@ def _payload(record: Record) -> dict:
     return document
 
 
+def _missing(missing: list, where: str) -> str:
+    return (
+        f"{where} does not hold {len(missing)} record(s) the Result cites (acted_on): "
+        + ", ".join(missing)
+        + "; append them first"
+    )
+
+
 def _acted_on(capsule: dict) -> list:
     cited = []
     for ref in capsule.get("references") or []:
@@ -97,11 +115,14 @@ def _acted_on(capsule: dict) -> list:
 
 def append_result(
     record: Record,
-    ledger: str | os.PathLike | None = None,
+    ledger: str | os.PathLike | Ledger | None = None,
 ) -> ResultAppend:
-    """Append the sealed Result ``record`` to ``ledger`` (a ledger store
-    directory; the default ledger when ``None``, as :func:`capsule_emit.seal`
-    resolves it; its own trust and lock settings apply). Raises :class:`ResultRefused` for a record that is not a
+    """Append the sealed Result ``record`` to ``ledger``: a ledger store
+    directory (the default ledger when ``None``, as :func:`capsule_emit.seal`
+    resolves it; its own trust and lock settings apply; the original is not
+    kept), or an open store-backed ``Ledger`` (the original is retained; see
+    :meth:`Ledger.append_record` for the chain and statement rules the ledger
+    was opened with). Raises :class:`ResultRefused` for a record that is not a
     sealed Result or cites a record the ledger lacks; the ledger errors
     (``LedgerLockedError``, ...) propagate. Idempotent."""
     from . import ledger_layout as _layout
@@ -126,21 +147,48 @@ def append_result(
     except ArtifactError as exc:
         raise ResultRefused(f"the record does not verify: {exc}") from exc
     _payload(record)
+    cited = _acted_on(capsule)
+    if not cited:
+        raise ResultRefused("a Result cites no record (no acted_on reference)")
+
+    from .store_backed_ledger import (
+        AlreadyInLogError,
+        AppendChainMismatchError,
+        EnvelopeError,
+        Ledger,
+        MissingCapsuleIdError,
+        PaddingMisroutedError,
+        StatementInvalidError,
+    )
+
+    if isinstance(ledger, Ledger):
+        missing = [digest for digest in cited if not ledger.contains(digest)]
+        if missing:
+            raise ResultRefused(_missing(missing, "the ledger"))
+        try:
+            seq, appended = ledger.append_record(record)
+        except (
+            AlreadyInLogError,
+            AppendChainMismatchError,
+            EnvelopeError,
+            MissingCapsuleIdError,
+            PaddingMisroutedError,
+            StatementInvalidError,
+            ArtifactError,  # the record's own admission checks (prepare): limits, a purged original
+        ) as exc:
+            # The ledger refused this record. StaleLedgerError, StoreError and
+            # LogError (a second writer, a failing backend) propagate, as the
+            # flat ledger's lock errors do.
+            raise ResultRefused(f"the ledger refused the Result: {exc}") from exc
+        return ResultAppend(record.capsule_id, seq, appended)
 
     path = _layout.resolve_ledger(ledger).path
     if not Path(path).exists():
         raise ResultRefused(f"no ledger at {path}; the records the Result cites must be in it")
     target = shared(path)
-    cited = _acted_on(capsule)
-    if not cited:
-        raise ResultRefused("a Result cites no record (no acted_on reference)")
     missing = [digest for digest in cited if not target._holds(bytes.fromhex(digest))]
     if missing:
-        raise ResultRefused(
-            f"the ledger {path} does not hold {len(missing)} record(s) the Result cites (acted_on): "
-            + ", ".join(missing)
-            + "; append them first"
-        )
+        raise ResultRefused(_missing(missing, f"the ledger {path}"))
 
     # The id is over the capsule's value, not its bytes: capsulectl writes raw
     # UTF-8 and escapes < > &, which the ledger's line form does not.
