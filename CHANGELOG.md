@@ -6,6 +6,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (python): `append_result` and `capsule-emit ledger append-result` append a sealed Evidence Result capsule
+
+A Result is built and sealed by `capsulectl result build`; capsule-emit only appends it (it builds and seals no Result). `append_result(record, ledger)` (`capsule_emit.result`) and `capsule-emit ledger append-result RECORD [--ledger STORE]` take the artifact record `capsulectl result build --capsule-out` writes, check it and append it to a ledger store: the seal and Producer Envelope verify, the `payload` original is an `evidence-result-v0` document bound by the capsule's `agent_input_digest`, and every `acted_on` reference is a record the ledger already holds (append those first). Appending the same Result again writes nothing. A ledger keeps no originals, so the document itself is checked and not stored. Then `capsule-emit bundle STORE --record RESULT_ID --closure-depth 1 --interval-from 1` writes a bundle rooted on the Result that verifies VALID under strict verification, tested against a Result sealed by capsulectl (`test-vectors/capsulectl-result/`).
+([#355](https://github.com/action-state-group/capsule-emit/issues/355))
+
 ### Changed (python): a non-string dict key is refused with `NonStringKeyError`
 
 JSON object keys are strings. `seal()` raised a bare `AttributeError` (from the digest layer's key sort) for a dict with an `int`, `float`, `complex`, `None` or tuple key, and `verify_input_digest` raised it too, breaking its never-raises contract. `seal()` now raises `NonStringKeyError` (a `ValueError`, importable from `capsule_emit.pydantic_payload`) naming the path, salted or not; `verify_input_digest` returns NON_CONFORMING; `build_disclosure_envelope` raises `DisclosureError`. The check covers dicts inside dicts, lists and tuples. **Payloads that now raise:** besides the ones that already failed, a payload that holds a tuple or another non-JSON value and also an `int`-keyed dict used to seal through `json.dumps`, which turned the key `1` into `"1"`; it is now refused, and its old digest moves to none. Payloads with string keys keep their digests and already-sealed capsules do not change. Convert every key to a `str` first.
