@@ -96,18 +96,6 @@ def _tampered_document(change):
         (dataclasses.replace(_record("result"), producer_envelope=_record("day-1").producer_envelope), "Producer Envelope"),
         (dataclasses.replace(_record("result"), capsule=_record("day-1").capsule), "capsule id mismatch"),
         (_record("day-1"), "is not an evidence-result-v0 document"),
-        (
-            dataclasses.replace(
-                _record("result"),
-                artifacts=[
-                    dataclasses.replace(
-                        _record("result").artifacts[0],
-                        binding="model_attestation.compute_attestation.agent_output_digest",
-                    )
-                ],
-            ),
-            "does not verify|agent_input_digest",
-        ),
     ],
 )
 def test_refuses_what_is_not_a_sealed_result_and_writes_nothing(store, record, message):
@@ -115,6 +103,20 @@ def test_refuses_what_is_not_a_sealed_result_and_writes_nothing(store, record, m
     with pytest.raises(ResultRefused, match=message):
         append_result(record, store)
     assert _ids(store) == before
+
+
+def test_the_document_must_be_bound_by_agent_input_digest():
+    """A record whose document is bound by another digest field (checked directly:
+    a validly sealed such record needs a re-sealed capsule)."""
+    from capsule_emit.result import _payload
+
+    result = _record("result")
+    other = dataclasses.replace(
+        result.artifacts[0], binding="model_attestation.compute_attestation.agent_output_digest"
+    )
+    with pytest.raises(ResultRefused, match="agent_input_digest"):
+        _payload(dataclasses.replace(result, artifacts=[other]))
+    assert _payload(result)["result_version"] == "evidence-result-v0"
 
 
 def test_refuses_a_file_that_is_not_a_record(store, tmp_path):
