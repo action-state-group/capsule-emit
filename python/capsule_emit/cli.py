@@ -104,6 +104,19 @@ def _cmd_ledger_show(args: argparse.Namespace) -> int:
     return 0 if found else 1
 
 
+def _cmd_ledger_append_result(args: argparse.Namespace) -> int:
+    from .result import ResultRefused, append_result_file
+
+    try:
+        done = append_result_file(args.record, args.ledger)
+    except (ResultRefused, OSError) as exc:
+        print(f"ledger append-result: {exc}", file=sys.stderr)
+        return 1
+    verb = "appended" if done.appended else "already in the ledger:"
+    print(f"{verb} Result {done.capsule_id} at position {done.seq}")
+    return 0
+
+
 def _cmd_ledger_import(args: argparse.Namespace) -> int:
     from .ledger_migrate import ImportRefused, import_ledger
 
@@ -213,6 +226,17 @@ def _build_parser() -> argparse.ArgumentParser:
     exp.add_argument("--jsonl", action="store_true", required=True, help="JSON lines (the one format)")
     exp.add_argument("store", help="path to the ledger store directory")
     exp.add_argument("-o", "--out", help="write to this file instead of stdout")
+
+    # ledger append-result
+    app = ledger_sub.add_parser(
+        "append-result",
+        help="append a sealed Evidence Result capsule (capsulectl result build --capsule-out) to a ledger store",
+    )
+    app.add_argument("record", help="the sealed Result's artifact record file")
+    app.add_argument(
+        "--ledger",
+        help="the ledger store directory (default: as seal() resolves it); the records the Result cites must be in it",
+    )
 
     # verify
     verify_p = sub.add_parser("verify", help="verify capsules")
@@ -1189,6 +1213,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_ledger_view(args)
         if args.ledger_cmd == "show":
             return _cmd_ledger_show(args)
+        if args.ledger_cmd == "append-result":
+            return _cmd_ledger_append_result(args)
         if args.ledger_cmd == "import":
             return _cmd_ledger_import(args)
         if args.ledger_cmd == "export":
