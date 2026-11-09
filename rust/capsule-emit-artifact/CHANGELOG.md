@@ -6,6 +6,12 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+## 0.0.3
+
+### Changed
+
+- Requires `agent-action-capsule` 0.10.0 (was 0.8.0). No source change in this crate.
+
 ## 0.0.2
 
 ### Changed
