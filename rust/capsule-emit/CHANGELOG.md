@@ -7,11 +7,13 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+## 0.0.12
+
 ### Changed
 
 - **Breaking:** requires `checkpointed-local-log` 0.5.0 (was 0.4.0), and `agent-action-capsule` 0.10.0 (was 0.8.0), which is built on it.
-  A store type passed to `Ledger::open_stores_with_indexer` or `CheckpointState::load_log` must implement 0.5.0's
-  `WitnessStateStore`, which gained `pending_witnesses_for`.
+  A store type passed to `CheckpointState::load_log` must implement 0.5.0's `WitnessStateStore`, which gained
+  `pending_witnesses_for`; one passed to `Ledger::open_stores_with_indexer` needs only `EntryStore`.
 - Witness registration (`POST /checkpoints`, the flat and store paths) goes through checkpointed-local-log's
   `HttpWitnessClient`. It verifies the checkpoint's signature before sending and refuses a response that is not
   JSON, whose `entry_hash_scheme` is not `legacy` (the reference witness sends it), whose position is invalid
@@ -22,6 +24,10 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   as witness-ahead, the flat witness is dropped from pending) and the next cut is delivered. A witness URL with user information, a query
   or a fragment is refused by the client, so that witness is not contacted. The 409 catch-up stays here
   (checkpointed-local-log#91).
+- Requires `capsule-emit-artifact` 0.0.3 (was 0.0.2), so a program using both crates gets one copy of the artifact
+  store types, on `agent-action-capsule` 0.10.0.
+- README: the store-backed ledger snippet now lists the published crates (`capsule-emit` 0.0.12, `capsule-emit-artifact` 0.0.3,
+  `checkpointed-local-log` 0.5.0) instead of git dependencies and `checkpointed-local-log` 0.4.0.
 
 ### Removed
 
