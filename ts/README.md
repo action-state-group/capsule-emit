@@ -240,7 +240,7 @@ Tests replay the complete upstream AAC corpus, all Producer Envelope vectors,
 and Go/Python authored, received, WHO, DID, and composition fixtures.
 
 The runtime dependency is pinned to
-`@action-state-group/agent-action-capsule@0.4.0`. AAC remains external in the
+`@action-state-group/agent-action-capsule@0.14.0`. AAC remains external in the
 build and carries its BSD-3-Clause license; this package remains Apache-2.0.
 The AAC corpus is pinned by `AAC_COMMIT` in `test/aac-pin.ts` to the source of
 that reviewed npm artifact. Tests require a clean AAC checkout at that exact

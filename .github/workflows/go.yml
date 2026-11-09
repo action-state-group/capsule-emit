@@ -68,9 +68,9 @@ jobs:
         with:
           repository: action-state-group/agent-action-capsule
           # The conformance corpus at the same commit as the Go module go.mod
-          # pins (agent-action-capsule go/v0.7.0), not main: a corpus that moves
+          # pins (agent-action-capsule go/v0.20.1), not main: a corpus that moves
           # ahead of the pinned module turns CI red for no change here.
-          ref: df3af95221da3cd77792a7fd1c24c1db9ce88376
+          ref: 5c2d42bcb58805dc8d70f9ff89adc9fd94c2b091
           path: agent-action-capsule
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -111,9 +111,9 @@ jobs:
         with:
           repository: action-state-group/agent-action-capsule
           # The conformance corpus at the same commit as the Go module go.mod
-          # pins (agent-action-capsule go/v0.7.0), not main: a corpus that moves
+          # pins (agent-action-capsule go/v0.20.1), not main: a corpus that moves
           # ahead of the pinned module turns CI red for no change here.
-          ref: df3af95221da3cd77792a7fd1c24c1db9ce88376
+          ref: 5c2d42bcb58805dc8d70f9ff89adc9fd94c2b091
           path: agent-action-capsule
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

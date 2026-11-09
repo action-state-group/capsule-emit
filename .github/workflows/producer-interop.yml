@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: action-state-group/agent-action-capsule
-          ref: df3af95221da3cd77792a7fd1c24c1db9ce88376
+          ref: 5c2d42bcb58805dc8d70f9ff89adc9fd94c2b091
           path: agent-action-capsule
       - name: Check out consolidated CLL
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

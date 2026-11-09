@@ -5,7 +5,7 @@ draft-mih-agent-settlement-records-00, "Two-Party Settlement Records for Agent
 Payments" (https://datatracker.ietf.org/doc/draft-mih-agent-settlement-records/),
 copied byte for byte from
 [agent-action-capsule](https://github.com/action-state-group/agent-action-capsule)
-`vectors/settlement/` at commit `565d1f0eaab1659b537426b434cc9374a39570f2`.
+`vectors/settlement/` at commit `d89f4600d53fb17fcb15d28ff77723c9310d3c8e` (the `python/v0.15.0` release commit, whose `vectors/settlement` tree is also the one at `go/v0.20.1`).
 They are distributed there under the BSD 3-Clause License, reproduced in `LICENSE`. The upstream
 `README.md`, `manifest.json` and `SHA256SUMS` were not copied; `SHA256SUMS` here is ours, over
 `cases.json`, `registry.json` and `LICENSE`.
