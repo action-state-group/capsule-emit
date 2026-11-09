@@ -1,7 +1,7 @@
 filippo.io/edwards25519 v1.2.0 h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
 filippo.io/edwards25519 v1.2.0/go.mod h1:xzAOLCNug/yB62zG1bQ8uziwrIqIuxhctzJT18Q77mc=
-github.com/action-state-group/agent-action-capsule/go v0.20.1 h1:s3dMJEqhxLiEiuVGRxxuX/hYTX5D5ERQZCaPOWu5TZw=
-github.com/action-state-group/agent-action-capsule/go v0.20.1/go.mod h1:vlUl3rsHyR9DJaSqRSClVgmeuo2ORj7kCa54V25ZxuU=
+github.com/action-state-group/agent-action-capsule/go v0.21.0 h1:PCXDXaWP6bRBXRFqS7XxH+RKCOP3PO3EIi9/CYgNKAQ=
+github.com/action-state-group/agent-action-capsule/go v0.21.0/go.mod h1:/E7MZLjJQsp3376zHviBtVdDGA+TSu3RXK9IWvrhdpY=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sapM=

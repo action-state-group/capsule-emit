@@ -66,7 +66,7 @@ func TestFrozenProducerEnvelopeVectors(t *testing.T) {
 	require.NoError(t, err)
 	var manifest vectorManifest
 	require.NoError(t, json.Unmarshal(manifestData, &manifest))
-	require.GreaterOrEqual(t, len(manifest.Cases), 8)
+	require.Len(t, manifest.Cases, 49) // the corpus at the pinned commit; a bump updates this
 
 	for _, vector := range manifest.Cases {
 		caseRoot := filepath.Join(root, vector.Name)
