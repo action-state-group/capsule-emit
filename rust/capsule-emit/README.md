@@ -103,15 +103,12 @@ the same CLL backend's state, where an Evidence Bundle producer
 other method works as on the flat layout, and the same sealing sequence gives
 the same capsule IDs and checkpoint roots on both.
 
-With these dependencies. Neither `open_stores` nor `load_log` is in a published
-`capsule-emit` yet (0.0.8 and earlier lack them), and `capsule-emit-artifact`
-is not on crates.io yet; until the release that ships them, use both from this
-repository:
+With these dependencies:
 
 ```toml
-capsule-emit = { git = "https://github.com/action-state-group/capsule-emit" }
-cll = { package = "checkpointed-local-log", version = "0.4.0", features = ["sqlite"] }
-capsule-emit-artifact = { git = "https://github.com/action-state-group/capsule-emit", features = ["sqlite"] }
+capsule-emit = "0.0.12"
+cll = { package = "checkpointed-local-log", version = "0.5.0", features = ["sqlite"] }
+capsule-emit-artifact = { version = "0.0.3", features = ["sqlite"] }
 rusqlite = "0.40"
 ```
 
