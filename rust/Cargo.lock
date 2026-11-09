@@ -10,18 +10,6 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agent-action-capsule"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40e21e140db3bb0773e7b00d50bc2efa5983765eb888ea97de71f85a74da944c"
-dependencies = [
- "ed25519-dalek",
- "hex",
- "serde_json",
- "sha2",
-]
-
-[[package]]
-name = "agent-action-capsule"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "490f58497264cf106a47a4a5b394093f4f4d4d99b29c86ed1cf9ed2355ae5e47"
@@ -152,7 +140,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 name = "capsule-emit"
 version = "0.0.11"
 dependencies = [
- "agent-action-capsule 0.10.0",
+ "agent-action-capsule",
  "anyhow",
  "base64 0.22.1",
  "capsule-emit-artifact",
@@ -177,7 +165,7 @@ dependencies = [
 name = "capsule-emit-artifact"
 version = "0.0.2"
 dependencies = [
- "agent-action-capsule 0.8.0",
+ "agent-action-capsule",
  "base64 0.22.1",
  "ed25519-dalek",
  "hex",

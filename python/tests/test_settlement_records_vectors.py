@@ -85,4 +85,4 @@ def test_derivation_matches_the_vector(case):
 
 
 def test_every_case_ran():
-    assert len(CASES["cases"]) == CASES["count"] == 19
+    assert len(CASES["cases"]) == CASES["count"] == 26

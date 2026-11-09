@@ -3,7 +3,7 @@ module github.com/action-state-group/capsule-emit/go
 go 1.27.0
 
 require (
-	github.com/action-state-group/agent-action-capsule/go v0.7.0
+	github.com/action-state-group/agent-action-capsule/go v0.21.0
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/stretchr/testify v1.12.1
 	github.com/veraison/go-cose v1.3.0

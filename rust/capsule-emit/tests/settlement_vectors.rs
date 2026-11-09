@@ -32,7 +32,7 @@ const STRUCTURAL: &[&str] = &[
 
 /// The vendored cases, by id. A case added, dropped or renamed upstream
 /// fails the test until this list is updated with it.
-const CASE_IDS: [&str; 19] = [
+const CASE_IDS: [&str; 26] = [
     "pos-x402-two-sided-agreed",
     "pos-x402-one-sided-payee",
     "pos-x402-one-sided-payer",
@@ -41,6 +41,10 @@ const CASE_IDS: [&str; 19] = [
     "pos-bolt12-two-sided-payer-proof",
     "pos-ap2-receipt-wrapped-by-digest",
     "neg-wrapped-object-resigned",
+    "neg-wrapped-object-resigned-identity-r",
+    "neg-wrapped-object-resigned-mixed-order-r",
+    "neg-wrapped-sd-jwt-resigned-with-disclosure",
+    "neg-wrapped-sd-jwt-resigned-no-disclosure",
     "neg-wrapped-content-digest-mismatch",
     "neg-amount-json-float",
     "neg-amount-decimal-fraction-string",
@@ -50,6 +54,9 @@ const CASE_IDS: [&str; 19] = [
     "pos-ln-receive-fee-two-payments",
     "state-ln-receive-fee-mismatch",
     "neg-ln-receive-fee-absent",
+    "neg-ln-receive-fee-asset-differs",
+    "neg-ln-routing-fee-asset-differs",
+    "neg-ln-both-fee-assets-differ",
     "pos-amount-decimals-mixed-scales",
     "state-amount-decimals-off-by-one-unit",
 ];
@@ -175,7 +182,7 @@ fn the_rust_producer_reproduces_every_vector_record() {
     }
     eprintln!("legs built {legs}, refused {refused}, ids {ids}, envelopes {envelopes}");
     // Every record went through every check that applies to it, and the set
-    // is the vendored one: exactly the 19 cases above, each once, 67 records.
+    // is the vendored one: exactly the 26 cases above, each once, 84 records.
     assert_eq!(seen.len(), CASE_IDS.len(), "case count");
     let mut sorted = seen.clone();
     sorted.sort_unstable();
@@ -184,7 +191,7 @@ fn the_rust_producer_reproduces_every_vector_record() {
     let mut want = CASE_IDS.to_vec();
     want.sort_unstable();
     assert_eq!(sorted, want, "case ids");
-    assert_eq!((legs + refused, records), (67, 67));
+    assert_eq!((legs + refused, records), (84, 84));
     assert_eq!((ids, envelopes), (with_id, with_envelope));
     assert!(refused > 0, "the negative cases were exercised");
 }
