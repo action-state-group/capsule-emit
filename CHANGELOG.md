@@ -6,6 +6,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed (python): the `inspect-ai` extra caps `agent-client-protocol` below 1.0
+
+`inspect-ai` 0.3.288 imports `acp.helpers`, which `agent-client-protocol` 1.0.0 removed, so `import inspect_ai.agent` failed after a fresh install of the extra. The extra now requires `agent-client-protocol>=0.12.0,<1`; the cap lifts once an `inspect-ai` release supports 1.x.
+([#449](https://github.com/action-state-group/capsule-emit/issues/449))
+
 ### Added (python): `append_result` and `capsule-emit ledger append-result` append a sealed Evidence Result capsule
 
 A Result is built and sealed by `capsulectl result build`; capsule-emit only appends it (it builds and seals no Result). `append_result(record, ledger)` (`capsule_emit.result`) and `capsule-emit ledger append-result RECORD [--ledger STORE]` take the artifact record `capsulectl result build --capsule-out` writes, check it and append it to a ledger store: the seal and Producer Envelope verify, the `payload` original is an `evidence-result-v0` document bound by the capsule's `agent_input_digest`, and every `acted_on` reference is a record the ledger already holds (append those first). Appending the same Result again writes nothing. A ledger keeps no originals, so the document itself is checked and not stored: the bundle verifies VALID, but a Result page built from it falls back to the generic page until originals are kept (tracked in [#443](https://github.com/action-state-group/capsule-emit/issues/443)). Then `capsule-emit bundle STORE --record RESULT_ID --closure-depth 1 --interval-from 1` writes a bundle rooted on the Result that verifies VALID under strict verification, tested against a Result sealed by capsulectl (`test-vectors/capsulectl-result/`).

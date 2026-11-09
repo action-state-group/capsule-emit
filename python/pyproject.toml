@@ -89,7 +89,11 @@ agent-framework = ["agent-framework-core>=1.16.0,<2"]
 litellm = ["litellm>=1.99.0"]
 # Verified against inspect_ai 0.3.263 (EvalSample.events / ModelEvent.call
 # shape read by capsule_emit.adapters.inspect_ai).
-inspect-ai = ["inspect-ai>=0.3.263"]
+# agent-client-protocol<1: inspect-ai 0.3.288 (the latest) imports acp.helpers, which
+# agent-client-protocol 1.0.0 removed, so `import inspect_ai.agent` fails on 1.0.0 while
+# inspect-ai's own requirement is an uncapped >=0.12.0 (capsule-emit#449). Drop the cap
+# once an inspect-ai release supports agent-client-protocol 1.x.
+inspect-ai = ["inspect-ai>=0.3.263", "agent-client-protocol>=0.12.0,<1"]
 checkpoint = ["scitt-cose>=0.2.0"]
 # capsule_emit.otel.CapsuleOTelSpanExporter only -- the rest of capsule_emit.otel
 # (allow-list, span classification, SpanFacts, process_span_facts) has no
