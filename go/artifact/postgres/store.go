@@ -140,6 +140,9 @@ func (s *Store) PutTx(ctx context.Context, tx *sql.Tx, record artifact.Record) e
 	if _, err := artifact.Verify(record, s.trusted); err != nil {
 		return err
 	}
+	if err := s.lockIndex(ctx, tx, true); err != nil {
+		return err
+	}
 	hash, err := record.StorageChecksum()
 	if err != nil {
 		return err
@@ -304,6 +307,34 @@ func finishRollback(tx *sql.Tx, err *error) {
 	}
 }
 
+// lockIndex orders writes against index declaration for this namespace with a
+// transaction-scoped advisory lock: PutTx holds it shared from before its insert
+// until the caller's commit, InitIndex and Reindex take it exclusively. A
+// PostgreSQL locking read does not see, and does not wait for, a row another
+// transaction has inserted but not committed, so the row locks the MySQL
+// backend relies on cannot keep a record out of the index here. With this lock
+// a declaration and an in-flight Put never overlap: whichever commits first, the
+// other then reads the committed result in a fresh READ COMMITTED statement.
+// PutTx requires READ COMMITTED for the same reason: a REPEATABLE READ snapshot
+// could predate a declaration that committed before the insert.
+func (s *Store) lockIndex(ctx context.Context, tx *sql.Tx, shared bool) error {
+	if shared {
+		var level string
+		if err := tx.QueryRowContext(ctx, `SELECT current_setting('transaction_isolation')`).Scan(&level); err != nil {
+			return err
+		}
+		if level != "read committed" {
+			return fmt.Errorf("%w: PutTx requires a READ COMMITTED transaction, got %s", artifact.ErrInvalid, level)
+		}
+	}
+	fn := "pg_advisory_xact_lock"
+	if shared {
+		fn += "_shared"
+	}
+	_, err := tx.ExecContext(ctx, `SELECT `+fn+`(hashtextextended('capsule_store_index:' || $1::text, 0))`, s.namespace)
+	return err
+}
+
 // InitIndex provisions the tables as Init does, then declares paths for the
 // namespace and indexes its stored records. The same set again does nothing; a
 // different set is artifact.ErrConflict.
@@ -314,7 +345,14 @@ func (s *Store) InitIndex(ctx context.Context, paths []string) error {
 	if err := s.Init(ctx); err != nil {
 		return err
 	}
-	return retryConflict(ctx, func() error { return s.inTx(ctx, func(tx *sql.Tx) error { return s.lookup.Declare(ctx, tx, paths) }) })
+	return retryConflict(ctx, func() error {
+		return s.inTx(ctx, func(tx *sql.Tx) error {
+			if err := s.lockIndex(ctx, tx, false); err != nil {
+				return err
+			}
+			return s.lookup.Declare(ctx, tx, paths)
+		})
+	})
 }
 
 // Reindex replaces the namespace's declared paths and rebuilds its index.
@@ -325,7 +363,14 @@ func (s *Store) Reindex(ctx context.Context, paths []string) error {
 	if err := s.Init(ctx); err != nil {
 		return err
 	}
-	return retryConflict(ctx, func() error { return s.inTx(ctx, func(tx *sql.Tx) error { return s.lookup.Reindex(ctx, tx, paths) }) })
+	return retryConflict(ctx, func() error {
+		return s.inTx(ctx, func(tx *sql.Tx) error {
+			if err := s.lockIndex(ctx, tx, false); err != nil {
+				return err
+			}
+			return s.lookup.Reindex(ctx, tx, paths)
+		})
+	})
 }
 
 // Find returns one page of IDs matching q in admission order.

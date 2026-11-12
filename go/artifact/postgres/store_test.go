@@ -39,7 +39,7 @@ func openTestDB(t *testing.T) *sql.DB {
 
 func TestPostgresLifecycle(t *testing.T) {
 	db := openTestDB(t)
-	record, pub := testutil.Record(t, "mysql-lifecycle")
+	record, pub := testutil.Record(t, "postgres-lifecycle")
 	namespace := fmt.Sprintf("test-%d", time.Now().UnixNano())
 	store, err := postgres.New(db, namespace, []ed25519.PublicKey{pub})
 	require.NoError(t, err)
