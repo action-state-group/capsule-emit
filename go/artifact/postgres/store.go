@@ -113,7 +113,7 @@ func (s *Store) Put(ctx context.Context, record artifact.Record) (err error) {
 }
 
 func (s *Store) putOnce(ctx context.Context, record artifact.Record) (err error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return err
 	}
@@ -315,7 +315,9 @@ func finishRollback(tx *sql.Tx, err *error) {
 // backend relies on cannot keep a record out of the index here. With this lock
 // a declaration and an in-flight Put never overlap: whichever commits first, the
 // other then reads the committed result in a fresh READ COMMITTED statement.
-// PutTx requires READ COMMITTED for the same reason: a REPEATABLE READ snapshot
+// The store opens its own Put, InitIndex, Reindex and Find transactions at
+// READ COMMITTED explicitly, whatever the connection default. PutTx requires
+// READ COMMITTED for the same reason: a REPEATABLE READ snapshot
 // could predate a declaration that committed before the insert.
 func (s *Store) lockIndex(ctx context.Context, tx *sql.Tx, shared bool) error {
 	if shared {
@@ -383,7 +385,7 @@ func (s *Store) Find(ctx context.Context, q artifact.Query) (page artifact.Page,
 }
 
 func (s *Store) inTx(ctx context.Context, run func(*sql.Tx) error) (err error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return err
 	}

@@ -154,6 +154,11 @@ Both writes commit or roll back together. Notes that differ from MySQL:
 - A native `pgx.Tx` cannot join: begin the transaction through `database/sql`, so
   your own statements run on the same `*sql.Tx`. A pgx pool and a `database/sql`
   handle can share a DSN but not a transaction.
+- `PutTx` requires a READ COMMITTED transaction (the default) and returns
+  `ErrInvalid` otherwise. It also takes a shared per-namespace advisory lock, held
+  until your commit, so that `InitIndex`/`Reindex` (which take it exclusively) and
+  an in-flight write never miss each other's rows; PostgreSQL locking reads do not
+  see uncommitted rows, so the MySQL backend's row locks do not carry over.
 - A failed statement aborts a PostgreSQL transaction. The store therefore detects
   a duplicate record with `ON CONFLICT DO NOTHING` and never relies on catching an
   error; after any `PutTx`/`GetTx` error, roll back the whole transaction.
