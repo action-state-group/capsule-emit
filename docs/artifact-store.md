@@ -241,7 +241,7 @@ commit atomically:
 | Operation | Contract |
 |---|---|
 | `put_tx(tx, record)` | The `put` steps, inside `tx`. Never commits, never retries, never opens a nested transaction. On any error the caller rolls back the whole transaction |
-| `get_tx(tx, id, lock)` | The `get` steps, inside `tx`. With `lock`, the read serializes with concurrent `put_tx` and `purge` on the same record (MySQL `FOR UPDATE`; SQLite serializes writers, so `lock` changes nothing there) |
+| `get_tx(tx, id, lock)` | The `get` steps, inside `tx`. With `lock`, the read serializes with concurrent `put_tx` and `purge` on the same record (MySQL and PostgreSQL `FOR UPDATE`; SQLite serializes writers, so `lock` changes nothing there) |
 
 Callers detect the extension at run time (a Go type assertion to
 `artifact.TxStore`, a TypeScript `TxStore` type guard, a Python `TxStore`
@@ -314,7 +314,7 @@ implements it.
 
 ### Storage
 
-- **`mysql` and `sqlite`**: `init` also creates three tables, without
+- **`mysql`, `postgres` and `sqlite`**: `init` also creates three tables, without
   altering the existing two: `capsule_store_index_paths` (`namespace`,
   `paths`: the sorted set as compact JSON), `capsule_store_index_records`
   (`seq`, an auto-increment admission number; `namespace`; `capsule_id`;
@@ -354,6 +354,7 @@ it (see
 | `jsonl` | One file per namespace, one record per line | No |
 | `memory` | Process memory, for tests and short-lived tools | No |
 | `mysql` | MySQL 8.4 / InnoDB | Yes |
+| `postgres` (Go only) | PostgreSQL through `database/sql` and the pgx stdlib driver | Yes |
 | `sqlite` | One SQLite file, which may also hold a CLL SQLite log in its own tables | Yes |
 | legacy ledger | The flat ledger `seal()` writes, with [capability limits](#capability-limits); exempt from interop ([legacy-ledger.md](legacy-ledger.md)) | No |
 
@@ -371,16 +372,17 @@ Data written by any language opens in the others:
   merged into it; purge rewrites the file through a temporary file and an
   atomic rename. Single writer, no locking. The conformance vectors pin exact
   lines.
-- **`mysql` and `sqlite`**: the same two tables, `capsule_store_capsules`
+- **`mysql`, `postgres` and `sqlite`**: the same two tables, `capsule_store_capsules`
   (`namespace`, `capsule_id`, `capsule_bytes`, `producer_envelope`,
   `record_sha256`, `created_at`) and `capsule_store_artifacts` (`namespace`,
   `capsule_id`, `name`, `digest_field`, `content_bytes`, `content_sha256`,
   `retention_state`, `created_at`, `purged_at`), with the DDL in
-  [`go/artifact/mysql/schema.sql`](../go/artifact/mysql/schema.sql) and
+  [`go/artifact/mysql/schema.sql`](../go/artifact/mysql/schema.sql),
+  [`go/artifact/postgres/schema.sql`](../go/artifact/postgres/schema.sql) and
   [`go/artifact/sqlite/schema.sql`](../go/artifact/sqlite/schema.sql). An
   unbound artifact stores `digest_field` as `''`; `never_retained` stores
   `content_sha256` as `''`. Writers set `created_at` and `purged_at` in UTC
-  (MySQL `UTC_TIMESTAMP(6)`, SQLite `strftime('%Y-%m-%dT%H:%M:%fZ','now')`).
+  (MySQL `UTC_TIMESTAMP(6)`, PostgreSQL `timestamptz` `now()`, SQLite `strftime('%Y-%m-%dT%H:%M:%fZ','now')`).
 - **`memory`** has no persisted format.
 
 ## Limits and deployment
