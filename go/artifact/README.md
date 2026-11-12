@@ -8,8 +8,9 @@ existing storage-free behavior.
 - The contract is written once for every language in
   [docs/artifact-store.md](../../docs/artifact-store.md). In Go it is the
   `artifact.Store` interface (`Namespace`/`Init`/`Put`/`Get`/`Purge`); each
-  backend keeps its own `New`, because each takes its own storage handle. Four
-  backends implement it: `artifact/mysql` (MySQL 8.4/InnoDB), `artifact/sqlite`
+  backend keeps its own `New`, because each takes its own storage handle. Five
+  backends implement it: `artifact/mysql` (MySQL 8.4/InnoDB), `artifact/postgres`
+  (PostgreSQL, through `database/sql`), `artifact/sqlite`
   (modernc, pure-Go, single file), `artifact/jsonl` (a flat JSONL file, single
   writer, no database driver) and `artifact/memory` (process memory, for tests
   and short-lived tools). None is the default; the caller selects one. Each
@@ -111,6 +112,59 @@ persistent contention surfaces as a retryable error the caller replays, rather
 than an internal busy loop (unlike the MySQL backend's InnoDB deadlock retry). It
 stores the same two tables in one local file, which may also hold a cll-go SQLite
 log in its own tables.
+
+## PostgreSQL
+
+The PostgreSQL backend (`artifact/postgres`) exposes the same
+`New`/`Init`/`Put`/`PutTx`/`Get`/`GetTx`/`Purge` and index API, and the same
+immutability, idempotent-retry, conflict and fail-closed-read semantics, on the
+same two tables (`schema.sql` lists the DDL). It runs on `database/sql` with the
+pgx stdlib driver, so `PutTx`/`GetTx` take a `*sql.Tx`, exactly as the other SQL
+backends do:
+
+```go
+import (
+    "database/sql"
+
+    _ "github.com/jackc/pgx/v5/stdlib"
+
+    "github.com/action-state-group/capsule-emit/go/artifact/postgres"
+)
+
+db, err := sql.Open("pgx", dsn)            // driver name "pgx"
+store, err := postgres.New(db, "gateway", trustedKeys)
+err = store.Init(ctx)                       // once, at provisioning
+```
+
+Compose an artifact write with your own rows, such as a checkpointed local-log
+identity, in one transaction begun on the same `*sql.DB`:
+
+```go
+tx, err := db.BeginTx(ctx, nil) // READ COMMITTED, the PostgreSQL default
+if err != nil { return err }
+defer tx.Rollback()
+if err = store.PutTx(ctx, tx, record); err != nil { return err }
+if _, err = tx.ExecContext(ctx, `INSERT INTO my_log_identity (capsule_id, head) VALUES ($1, $2)`,
+    record.CapsuleID, head); err != nil { return err }
+return tx.Commit()
+```
+
+Both writes commit or roll back together. Notes that differ from MySQL:
+
+- A native `pgx.Tx` cannot join: begin the transaction through `database/sql`, so
+  your own statements run on the same `*sql.Tx`. A pgx pool and a `database/sql`
+  handle can share a DSN but not a transaction.
+- A failed statement aborts a PostgreSQL transaction. The store therefore detects
+  a duplicate record with `ON CONFLICT DO NOTHING` and never relies on catching an
+  error; after any `PutTx`/`GetTx` error, roll back the whole transaction.
+- `GetTx` with `lock` reads `FOR UPDATE`. Use READ COMMITTED (the default). Under
+  REPEATABLE READ, locking a row that changed after your snapshot fails with
+  serialization failure `40001`; replay the whole transaction.
+- `Put` retries a serialization failure (`40001`) or deadlock (`40P01`) at most
+  four times after the first attempt, with context-aware bounded backoff. `PutTx`
+  never retries.
+- Provision with `Init` at deployment, not inside a business transaction. The
+  backend does not alter existing tables.
 
 The JSONL backend (`artifact/jsonl`) exposes the same
 `New`/`Init`/`Namespace`/`Put`/`Get`/`Purge` API and the same immutability,

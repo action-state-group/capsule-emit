@@ -6,6 +6,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (go): `artifact/postgres`, a PostgreSQL `artifact.Store` and `artifact.TxStore`
+
+The new `artifact/postgres` package implements the artifact store contract on PostgreSQL through `database/sql` and the pgx stdlib driver (`github.com/jackc/pgx/v5`, a new module dependency): namespaces, idempotent `Init` and `Put`, fail-closed reads, padding records, original-data purge and the index extension, passing the shared `artifacttest.Run` suite including durable reopen. `PutTx`/`GetTx` take a `*sql.Tx`, so `artifact.TxStore` is unchanged; the package documentation shows an artifact write and an application row committed in one transaction, and why a native `pgx.Tx` cannot join. The shared SQL index code gained placeholder and insert hooks for drivers without `LastInsertId`.
+([#454](https://github.com/action-state-group/capsule-emit/issues/454))
+
 ### Fixed (python): the `inspect-ai` extra caps `agent-client-protocol` below 1.0
 
 `inspect-ai` 0.3.288 imports `acp.helpers`, which `agent-client-protocol` 1.0.0 removed, so `import inspect_ai.agent` failed after a fresh install of the extra. The extra now requires `agent-client-protocol>=0.12.0,<1`; the cap lifts once an `inspect-ai` release supports 1.x.

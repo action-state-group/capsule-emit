@@ -144,8 +144,9 @@ pass the current AAC Class 1 verifier.
 
 `artifact` defines originals, digest bindings, verification, and the
 `artifact.Store` interface (`Namespace`/`Init`/`Put`/`Get`/`Purge`), specified in
-the shared [artifact store contract](../docs/artifact-store.md). Four backends
+the shared [artifact store contract](../docs/artifact-store.md). Five backends
 implement it, each with its own `New`: `artifact/mysql` (MySQL 8.4/InnoDB),
+`artifact/postgres` (PostgreSQL through `database/sql` and the pgx stdlib driver),
 `artifact/sqlite` (modernc, pure-Go, single file), `artifact/jsonl` (a flat JSONL
 file, single writer, no database driver) and `artifact/memory` (process memory).
 The SQL backends also implement `artifact.TxStore` (`PutTx`/`GetTx`), which callers

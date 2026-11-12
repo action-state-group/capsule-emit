@@ -8,7 +8,7 @@ import (
 // Store is the backend-neutral artifact store contract, specified in
 // docs/artifact-store.md and checked by the shared conformance suite
 // (artifacttest.Run). Constructors stay per backend because each takes its own
-// storage handle. Every built-in backend (jsonl, memory, mysql, sqlite)
+// storage handle. Every built-in backend (jsonl, memory, mysql, postgres, sqlite)
 // implements Store; a user-supplied backend conforms when it passes the suite.
 type Store interface {
 	// Namespace returns the storage scope the store was constructed with.
@@ -31,7 +31,7 @@ type Store interface {
 //
 // PutTx never commits or retries; on any error the caller rolls back the whole
 // transaction. With lock, GetTx serializes the read with concurrent PutTx and
-// Purge on the same record (MySQL FOR UPDATE; SQLite already serializes writers).
+// Purge on the same record (MySQL and PostgreSQL FOR UPDATE; SQLite already serializes writers).
 type TxStore interface {
 	Store
 	PutTx(ctx context.Context, tx *sql.Tx, record Record) error
