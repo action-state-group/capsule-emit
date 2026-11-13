@@ -473,6 +473,101 @@ def test_cli_flat_ledger_scopes(witnessed_ledger, tmp_path, capsys):
     assert code == 1 and "--signing-key applies to a mesh ledger directory" in err
 
 
+def _directory_for(url: str) -> dict:
+    from _stub_receipt import TEST_TS_PUBLIC_KEY_PEM
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
+
+    raw = load_pem_public_key(TEST_TS_PUBLIC_KEY_PEM).public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+    return {
+        "directory_version": "1",
+        "witnesses": [{"name": "stub witness", "endpoint": url, "since": "2026-01-01", "key_ids": [raw]}],
+    }
+
+
+def test_cli_flat_ledger_bundle_carries_the_checkpoint_witness_receipts(witnessed_ledger, tmp_path, capsys, monkeypatch):
+    """`capsule-emit bundle` keeps the witness receipts of the checkpoint it
+    proves against, so the bundle verifies offline with them."""
+    from capsule_emit.witness import checkpoint_witness_states
+
+    path, _ = witnessed_ledger
+    url = __import__("os").environ["CAPSULE_WITNESS_URL"]
+    out = tmp_path / "b.json"
+    code, _, err = _cli(capsys, path, "--all", "-o", out)
+    assert code == 0, err
+    bundle = json.loads(out.read_bytes())
+
+    newest = checkpoint_witness_states(str(path))[-1]
+    expected = [w.to_dict() for w in newest.effective_witnesses.values()]
+    assert expected, "the fixture's newest checkpoint is witnessed"
+    assert bundle["checkpoint"]["witnesses"] == expected
+
+    result = verify_bundle(bundle, strict=True, witness_directory=_directory_for(url))
+    assert result.witnesses.status == "pass", result.witnesses
+    assert [(r.ts_url, r.status) for r in result.witness_receipts] == [(url, "pass")]
+
+
+def test_bundle_witnesses_are_the_newest_checkpoints_with_its_backfills_only(witnessed_ledger, tmp_path, capsys):
+    """A later backfill for another witness joins the newest checkpoint's
+    receipts; receipts of the earlier checkpoint never do."""
+    from _stub_receipt import build_stub_receipt_b64
+
+    from capsule_emit.checkpoint import WitnessRecord
+    from capsule_emit.witness import _persist_witness_backfill, checkpoint_witness_states
+
+    path, _ = witnessed_ledger
+    older, newest = checkpoint_witness_states(str(path))[-2:]
+    assert older.checkpoint.mmr_size < newest.checkpoint.mmr_size
+    entry_hash = "ab" * 32
+    late = WitnessRecord(
+        ts_url="https://late.example", entry_hash=entry_hash, receipt_b64=build_stub_receipt_b64(entry_hash),
+        leaf_index=0, tree_size=1,
+    )
+    _persist_witness_backfill(newest.checkpoint, late, str(path))
+
+    out = tmp_path / "b.json"
+    code, _, err = _cli(capsys, path, "--all", "-o", out)
+    assert code == 0, err
+    carried = json.loads(out.read_bytes())["checkpoint"]["witnesses"]
+    assert {w["ts_url"] for w in carried} == {*newest.effective_witnesses, "https://late.example"}
+    assert len(carried) == len(newest.effective_witnesses) + 1
+    older_receipts = {w.receipt_b64 for w in older.effective_witnesses.values()}
+    assert not older_receipts & {w["receipt_b64"] for w in carried}
+
+
+def test_cli_mesh_directory_bundle_carries_the_checkpoint_witness_receipts(tmp_path, capsys):
+    from _stub_receipt import build_stub_receipt_b64
+
+    d, _, _ = _mesh_ledger(tmp_path, padding=False)
+    lines = [json.loads(x) for x in (d / "checkpoints.jsonl").read_text().splitlines() if x.strip()]
+    from cll.checkpoint import CheckpointRecord
+
+    newest = max(lines, key=lambda raw: raw["mmr_size"])
+    entry_hash = __import__("hashlib").sha256(
+        bytes.fromhex(CheckpointRecord.from_dict(newest).digest())
+    ).hexdigest()
+    witness = {
+        "ts_url": "https://witness.example",
+        "entry_hash": entry_hash,
+        "receipt_b64": build_stub_receipt_b64(entry_hash),
+        "leaf_index": 0,
+        "tree_size": 1,
+    }
+    newest["witnesses"] = [witness]
+    (d / "checkpoints.jsonl").write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    out = tmp_path / "b.json"
+    code, _, err = _cli(capsys, d, "--all", "-o", out)
+    assert code == 0, err
+    assert json.loads(out.read_bytes())["checkpoint"]["witnesses"] == [witness]
+
+
+def test_cli_bundle_of_an_unwitnessed_checkpoint_has_no_witnesses_member(tmp_path, capsys):
+    d, _, _ = _mesh_ledger(tmp_path, padding=False)
+    out = tmp_path / "b.json"
+    code, _, err = _cli(capsys, d, "--all", "-o", out)
+    assert code == 0, err
+    assert "witnesses" not in json.loads(out.read_bytes())["checkpoint"]
+
+
 @pytest.mark.parametrize(
     ("edit", "message"),
     [
