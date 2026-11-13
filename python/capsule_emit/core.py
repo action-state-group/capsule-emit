@@ -829,10 +829,9 @@ def _emit_capsule_at(
             inside the signed payload, committed to ``capsule_id``).  Default is
             ``CANONICALIZATION_ID`` (``"jcs"``) — this path always delegates to
             :func:`capsule_emit.builder.build_capsule`, which builds only ``format_version``
-            ``"4"`` and REQUIRES ``canonicalization_id="jcs"`` (§5.1). Pass a
-            different registered value only for deliberate negative/mutant
-            testing — a mismatched declaration makes the resulting capsule fail
-            verification's ``canonicalization_profile_mismatch`` check by design.
+            ``"4"`` and REQUIRES ``canonicalization_id="jcs"`` (§5.1). Any
+            other value, the withdrawn ``"jcs-n"`` included, raises
+            :class:`~capsule_emit.canonicalization.UnsupportedCanonicalizationError`.
         signer: Bring your own :class:`~capsule_emit.signing.Signer` (KMS,
             HSM, TPM, or any object with ``.sign(bytes) -> (signature,
             key_id)``) to sign this capsule with instead of the default

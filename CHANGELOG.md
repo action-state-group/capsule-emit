@@ -6,6 +6,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Removed (python): the withdrawn `jcs-n` Capsule ID construction
+
+capsule-emit no longer recomputes a `capsule_id` under `jcs-n` (JCS with `chain` dropped and null and empty members removed), nor reads an absent `canonicalization_id` as `jcs-n`. `compute_capsule_id` and `canonical_capsule_bytes` accept only `jcs`; a `seal()` call that passes `canonicalization_id="jcs-n"` raises `UnsupportedCanonicalizationError`; `KNOWN_ALGORITHMS` drops `jcs-n`, so `verify_canonicalization_id` returns `UNKNOWN_ID` for it and `NON_CONFORMING` for a record with no slot; the legacy ledger refuses such lines, so ledgers holding pre-format-4 lines no longer verify; `VINTAGE_CANONICALIZATION_ID`, `resolve_canonicalization_id` and the legacy-ledger fixture's two `jcs-n` lines are gone. Disclosure records now declare `canonicalization_id: "jcs"`, since they were the one record kind that relied on the absent-id reading; records written before this change are not verifiable. The AAC spec already withdraws `jcs-n`. Maintainer decision: Ethan, 2026-11-13, "放弃".
+([#447](https://github.com/action-state-group/capsule-emit/issues/447))
+
 ### Added (go): `artifact/postgres`, a PostgreSQL `artifact.Store` and `artifact.TxStore`
 
 The new `artifact/postgres` package implements the artifact store contract on PostgreSQL through `database/sql` and the pgx stdlib driver (`github.com/jackc/pgx/v5`, a new module dependency): namespaces, idempotent `Init` and `Put`, fail-closed reads, padding records, original-data purge and the index extension, passing the shared `artifacttest.Run` suite including durable reopen. `PutTx`/`GetTx` take a `*sql.Tx`, so `artifact.TxStore` is unchanged; the package documentation shows an artifact write and an application row committed in one transaction, and why a native `pgx.Tx` cannot join. The shared SQL index code gained placeholder and insert hooks for drivers without `LastInsertId`.

@@ -71,6 +71,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from .numbers import CANONICALIZATION_ID
+
 if TYPE_CHECKING:
     from .artifact import Store
 
@@ -462,6 +464,7 @@ def disclose(
     record = {
         "kind": DISCLOSURE_RECORD_KIND,
         "v": 1,
+        "canonicalization_id": CANONICALIZATION_ID,
         "audience": audience,
         "selector": selector,
         "disclosed_capsule_ids": [r["capsule_id"] for r in selected],

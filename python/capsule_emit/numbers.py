@@ -21,20 +21,14 @@ to ``"jcs"``. ``capsule_emit/holds/capsules.py`` builds an
 ``agent_action_capsule.parse.Capsule.__post_init__`` and
 ``compute_capsule_id``, which both reject anything other than
 ``format_version="4"`` + ``canonicalization_id="jcs"``) and imports this
-constant rather than repeating the literal. The withdrawn vintage
-``format_version`` ``"2"`` profile (``"jcs-n"``, JCS + absent-field
-normalization, chain excluded) — ``capsule_emit.canonicalization
-.VINTAGE_CANONICALIZATION_ID`` — is verify-only: it can no longer be
-produced anywhere in this library, only recognized when verifying records
-minted before the draft-04 reversal below. Do not repoint this constant to
-``"jcs-n"``, and do not use it as a default for verifying format-2 records.
+constant rather than repeating the literal. The withdrawn ``jcs-n`` profile (``format_version`` ``"2"``) is
+neither produced nor verified anywhere in this library. Do not repoint this constant
+to it.
 
 **draft-04 reversal (2026-08-24):** the profile default
 moved from ``jcs-n`` to ``jcs`` — plain JCS excluding only ``capsule_id``, so
 ``chain`` (parent_capsule_id/relation) is now committed into the preimage
-too, closing the prior unauthenticated-chain gap. ``jcs-n`` (absent-field
-normalization, chain excluded) is verification-only from here on, for
-records minted before this reversal.
+too, closing the prior unauthenticated-chain gap. The withdrawn ``jcs-n`` is no longer recognized.
 
 This constant is the single declaration point for the core-path profile's
 algorithm. When the profile revs again, the change is one edit here;
@@ -72,9 +66,7 @@ from agent_action_capsule.canonical import FloatInDigestError
 #: ``format_version`` ``"4"`` (§5.1), and reused as-is by
 #: ``capsule_emit/holds/capsules.py``, the one caller that builds an
 #: ``agent_action_capsule.Capsule`` directly instead of going through
-#: ``emit()``. The format-2 vintage profile (``jcs-n``, absent-field
-#: normalization, chain excluded) is a separate constant, verify-only — see
-#: :data:`capsule_emit.canonicalization.VINTAGE_CANONICALIZATION_ID`.
+#: ``emit()``.
 #: When the profile revs again: change this constant only — the internal
 #: primitive accepts it as a parameter default, so all call sites (via
 #: seal()/received()) update automatically.

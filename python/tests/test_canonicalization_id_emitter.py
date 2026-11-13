@@ -13,8 +13,7 @@ Test categories:
   § Commitment                  — id is committed to capsule_id
   § Mutant: strip id            — strip id without recomputing → DIGEST_MISMATCH
   § Mutant: alter id            — alter to unknown id → UNKNOWN_ID
-  § Profile: two contexts       — "jcs-n" and "jcs" produce different capsule_ids
-  § Vintage rule                — absent-id legacy record → VERIFIED (resolved jcs-n)
+  § Withdrawn jcs-n             — "jcs-n" and an absent id are refused everywhere
   § Unknown id fixture          — unregistered id → UNKNOWN_ID
   § Verifier: KNOWN_ALGORITHMS  — registry contents
 """
@@ -116,14 +115,9 @@ class TestCommitment:
             "canonicalization_id — recomputed value does not match"
         )
 
-    def test_different_id_values_yield_different_capsule_ids(self):
-        """Changing the canonicalization_id changes the capsule_id preimage."""
-        r1 = _emit_no_anchor(canonicalization_id="jcs-n")
-        r2 = _emit_no_anchor(canonicalization_id="jcs")
-        assert r1.capsule["capsule_id"] != r2.capsule["capsule_id"], (
-            "Distinct canonicalization_id values MUST produce distinct capsule_ids "
-            "because the id is in the JCS preimage"
-        )
+    def test_sealing_with_the_withdrawn_jcs_n_is_refused(self):
+        with pytest.raises(UnsupportedCanonicalizationError):
+            _emit_no_anchor(canonicalization_id="jcs-n")
 
 
 class TestAlgorithmDispatch:
@@ -147,13 +141,17 @@ class TestAlgorithmDispatch:
             "e2039e7d7de5396c470bfd98b70594d281cc091ae6d069adc99f95dea0c1165e"
         )
 
-    def test_jcs_n_known_answer_removes_null_and_empty_members(self):
-        capsule = {"canonicalization_id": "jcs-n", **self._MEMBERS}
-        expected = b'{"canonicalization_id":"jcs-n","kept":"value"}'
-        assert canonical_capsule_bytes(capsule) == expected
-        assert compute_capsule_id(capsule) == (
-            "6e3ea8090d41c46a493413f7b18d3b69190e03c5712115231ad94362be7e50ba"
-        )
+    @pytest.mark.parametrize("declared", ["jcs-n", "as-transmitted", "evil-algo", "", None])
+    def test_only_jcs_has_bytes(self, declared):
+        capsule = {"canonicalization_id": declared, **self._MEMBERS}
+        with pytest.raises(UnsupportedCanonicalizationError):
+            canonical_capsule_bytes(capsule)
+        with pytest.raises(UnsupportedCanonicalizationError):
+            compute_capsule_id(capsule)
+
+    def test_an_absent_canonicalization_id_has_no_bytes(self):
+        with pytest.raises(UnsupportedCanonicalizationError):
+            canonical_capsule_bytes(dict(self._MEMBERS))
 
     def test_jcs_emission_uses_plain_jcs_and_signature_verifies(self):
         r = _emit_no_anchor(
@@ -161,14 +159,6 @@ class TestAlgorithmDispatch:
             extra_compute=self._MEMBERS,
         )
         assert r.capsule["capsule_id"] == compute_capsule_id(r.capsule)
-        # agent_action_capsule.canonical.compute_capsule_id (compute_legacy_capsule_id)
-        # now ALSO dispatches on declared canonicalization_id and agrees with
-        # capsule-emit's own jcs computation for a jcs-declared capsule --
-        # interop convergence, not a bug. The real algorithm-selects-the-bytes
-        # proof is against the vintage (absent-id, normalized) construction.
-        vintage_source = dict(r.capsule)
-        del vintage_source["canonicalization_id"]
-        assert r.capsule["capsule_id"] != compute_capsule_id(vintage_source)
         assert verify_capsule_signature(r.capsule)
 
     def test_jcs_emission_passes_public_verifiers(self, tmp_path, capsys):
@@ -186,31 +176,15 @@ class TestAlgorithmDispatch:
         assert verify_capsule(r.capsule).ok
         assert verify_store_signed([r.capsule])[0].ok
 
-        vintage_source = dict(r.capsule)
-        del vintage_source["canonicalization_id"]
-        vintage_digest_mutant = dict(r.capsule)
-        vintage_digest_mutant["capsule_id"] = compute_capsule_id(vintage_source)
-        result = verify_capsule(vintage_digest_mutant)
+        stale = dict(r.capsule)
+        stale["capsule_id"] = "0" * 64
+        result = verify_capsule(stale)
         assert not result.ok
         assert any(finding.code == "capsule_id_mismatch" for finding in result.findings)
 
         rc = cli.main(["verify", "--store", str(ledger)])
         assert rc == 0
         assert "1/1 VALID" in capsys.readouterr().out
-
-    def test_jcs_label_with_jcs_n_digest_is_rejected(self):
-        r = _emit_no_anchor(
-            canonicalization_id="jcs",
-            extra_compute=self._MEMBERS,
-        )
-        vintage_source = dict(r.capsule)
-        del vintage_source["canonicalization_id"]
-        mutant = dict(r.capsule)
-        mutant["capsule_id"] = compute_capsule_id(vintage_source)
-
-        result = verify_canonicalization_id(mutant, profile_algorithm="jcs")
-        assert not result.ok
-        assert result.verdict == CanonicalizationVerdict.DIGEST_MISMATCH
 
     def test_as_transmitted_fails_closed_without_original_bytes(self):
         with pytest.raises(UnsupportedCanonicalizationError, match="as-transmitted"):
@@ -225,26 +199,22 @@ class TestAlgorithmDispatch:
 class TestMutantStripId:
     """Strip canonicalization_id from a G1 record without recomputing capsule_id.
 
-    Expected: DIGEST_MISMATCH — the strip is a tamper; the base capsule_id
-    is now wrong so recomputation detects the inconsistency before the vintage
-    branch is reached.
+    Expected: NON_CONFORMING — a record with no canonicalization_id has no
+    withdrawn-construction fallback, so it cannot be recomputed at all.
     """
 
     def test_mutant_stripped_id_fails_verification(self):
-        """GUARD — stripped id returns DIGEST_MISMATCH."""
+        """GUARD — a stripped id returns NON_CONFORMING."""
         r = _emit_no_anchor()
         original = dict(r.capsule)
 
         # Build mutant: strip id but leave capsule_id pointing to the G1 hash.
         mutant = dict(original)
         del mutant["canonicalization_id"]
-        # capsule_id still equals H2 (computed with canonicalization_id).
-        # recompute_capsule_id(mutant) → H1 ≠ H2 → DIGEST_MISMATCH.
-
         result = verify_canonicalization_id(mutant)
         assert not result.ok, "Stripped id with stale capsule_id must NOT verify"
-        assert result.verdict == CanonicalizationVerdict.DIGEST_MISMATCH, (
-            f"Expected DIGEST_MISMATCH, got {result.verdict}"
+        assert result.verdict == CanonicalizationVerdict.NON_CONFORMING, (
+            f"Expected NON_CONFORMING, got {result.verdict}"
         )
 
     def test_original_passes_verification(self):
@@ -284,39 +254,32 @@ class TestMutantAlterId:
         r = _emit_no_anchor()
         mutant = dict(r.capsule)
         mutant["canonicalization_id"] = "evil-algo"
-        # capsule_id is stale (computed over "jcs-n"); recompute over "evil-algo" differs.
-
+        
         result = verify_canonicalization_id(mutant)
         assert not result.ok
         assert result.verdict == CanonicalizationVerdict.UNKNOWN_ID
 
     def test_mutant_known_but_wrong_profile_fails(self):
         """Known algorithm that doesn't match the profile → DIGEST_MISMATCH."""
-        r = _emit_no_anchor(canonicalization_id="jcs-n")
-        mutant = dict(r.capsule)
-        mutant["canonicalization_id"] = "jcs"
-        mutant["capsule_id"] = compute_capsule_id(mutant)  # consistent, but wrong profile
-
-        result = verify_canonicalization_id(mutant, profile_algorithm="jcs-n")
+        r = _emit_no_anchor()
+        result = verify_canonicalization_id(r.capsule, profile_algorithm="as-transmitted")
         assert not result.ok
         assert result.verdict == CanonicalizationVerdict.DIGEST_MISMATCH
 
+    def test_declared_jcs_n_is_unknown(self):
+        r = _emit_no_anchor()
+        mutant = dict(r.capsule, canonicalization_id="jcs-n")
+        result = verify_canonicalization_id(mutant)
+        assert not result.ok
+        assert result.verdict == CanonicalizationVerdict.UNKNOWN_ID
+
 
 # ---------------------------------------------------------------------------
-# § Profile: two different declared contexts
+# § Profile and the withdrawn jcs-n
 # ---------------------------------------------------------------------------
 
 
-class TestTwoDeclaredContexts:
-    """Parameterized canonicalization_id — demonstrate two profiles."""
-
-    def test_jcs_n_profile_verifies(self):
-        r = _emit_no_anchor(canonicalization_id="jcs-n")
-        result = verify_canonicalization_id(r.capsule, profile_algorithm="jcs-n")
-        assert result.ok
-        assert result.declared == "jcs-n"
-        assert result.resolved == "jcs-n"
-
+class TestProfile:
     def test_jcs_profile_verifies(self):
         r = _emit_no_anchor(canonicalization_id="jcs")
         result = verify_canonicalization_id(r.capsule, profile_algorithm="jcs")
@@ -324,57 +287,15 @@ class TestTwoDeclaredContexts:
         assert result.declared == "jcs"
         assert result.resolved == "jcs"
 
-    def test_jcs_capsule_id_differs_from_jcs_n(self):
-        """Wire-level proof: two declared contexts produce distinct capsule_ids."""
-        r_n = _emit_no_anchor(canonicalization_id="jcs-n")
-        r_j = _emit_no_anchor(canonicalization_id="jcs")
-        assert r_n.capsule["canonicalization_id"] == "jcs-n"
-        assert r_j.capsule["canonicalization_id"] == "jcs"
-        assert r_n.capsule["capsule_id"] != r_j.capsule["capsule_id"]
-
-    def test_cross_profile_mismatch_fails(self):
-        """A jcs-n capsule verified as jcs profile → DIGEST_MISMATCH."""
-        r = _emit_no_anchor(canonicalization_id="jcs-n")
-        result = verify_canonicalization_id(r.capsule, profile_algorithm="jcs")
-        assert not result.ok
-        assert result.verdict == CanonicalizationVerdict.DIGEST_MISMATCH
-
-
-# ---------------------------------------------------------------------------
-# § Vintage rule — absent id on a legacy record
-# ---------------------------------------------------------------------------
-
-
-class TestVintageRule:
-    """Absent canonicalization_id on a record whose capsule_id recomputes → VERIFIED.
-
-    Pre-G1 capsule records have no canonicalization_id field.  Their capsule_id
-    was computed without that field, so recomputation succeeds.  The vintage
-    rule infers "jcs-n" and returns VERIFIED.
-    """
-
-    def _make_legacy_record(self) -> dict:
-        """Simulate a pre-G1 record: capsule_id computed without canonicalization_id."""
+    def test_a_record_without_the_slot_is_non_conforming(self):
         r = _emit_no_anchor()
-        legacy = dict(r.capsule)
-        # Strip the id and recompute capsule_id WITHOUT it — as pre-G1 producers did.
-        del legacy["canonicalization_id"]
-        legacy["capsule_id"] = compute_capsule_id(legacy)
-        return legacy
+        legacy = {k: v for k, v in r.capsule.items() if k != "canonicalization_id"}
+        for record in (legacy, dict(legacy, canonicalization_id=None)):
+            result = verify_canonicalization_id(record)
+            assert not result.ok
+            assert result.verdict == CanonicalizationVerdict.NON_CONFORMING
 
-    def test_vintage_record_verifies(self):
-        legacy = self._make_legacy_record()
-        result = verify_canonicalization_id(legacy)
-        assert result.ok, "Pre-G1 legacy record must verify via vintage rule"
-        assert result.verdict == CanonicalizationVerdict.VERIFIED
-        assert result.declared is None
-        assert result.resolved == "jcs-n"
-
-    def test_vintage_record_capsule_id_recomputes(self):
-        legacy = self._make_legacy_record()
-        assert compute_capsule_id(legacy) == legacy["capsule_id"]
-
-    def test_explicit_null_is_the_signed_vintage_shape(self, tmp_path):
+    def test_a_signed_pre_format_4_record_fails_structural_verification(self, tmp_path):
         from capsule_emit.signing import sign_producer_envelope
 
         r = _emit_no_anchor()
@@ -383,52 +304,13 @@ class TestVintageRule:
             for key, value in r.capsule.items()
             if key not in {"canonicalization_id", "signature", "key_id", "capsule_id"}
         }
-        # Simulate the actual vintage shape: format_version '2', not the
-        # default format_version '4' -- format '4' REQUIRES a declared,
-        # string canonicalization_id (§5.1), which an explicit null is not.
         vintage["format_version"] = "2"
+        vintage["capsule_id"] = "0" * 64
         signer = LocalKeypairSigner(tmp_path / "vintage-signing-key.pem")
-        vintage["capsule_id"] = compute_capsule_id(vintage)
-        vintage["signature"], vintage["key_id"] = sign_producer_envelope(
-            signer, vintage["capsule_id"]
-        )
-
-        explicit_null = dict(vintage, canonicalization_id=None)
-        assert compute_capsule_id(explicit_null) == vintage["capsule_id"]
-        assert verify_capsule_signature(explicit_null)
-        # NOT verify_store_signed: upstream agent_action_capsule's Class-1
-        # structural check independently requires canonicalization_id, when
-        # PRESENT, to be a string (§5.1) -- explicit null fails that check
-        # even though it is a well-formed vintage capsule_id/signature by
-        # capsule-emit's own (more tolerant) dispatch, exercised above and
-        # via verify_canonicalization_id below. That upstream structural
-        # rule is unrelated to and unchanged by the draft-04 reversal.
-
-        # Canonicalization-layer equivalence still holds: a null-valued slot
-        # digests identically to an absent one (resolve_canonicalization_id
-        # treats them the same), and the vintage rule still resolves it.
-        result = verify_canonicalization_id(explicit_null)
-        assert result.ok
-        assert result.declared is None
-        assert result.resolved == "jcs-n"
-
-        # But full structural verification correctly REJECTS it. agent_action_capsule's
-        # reference verifier is format-4-only (its canonical.py docstring: "any other
-        # format_version is rejected with unsupported_format_version, and the legacy
-        # absent-field construction has been removed" -- vintage format-2 records are
-        # verified with the frozen legacy-verify/v0.1.0 release, not this reference).
-        # So format_version '2' is rejected outright, before the null-vs-absent
-        # canonicalization_id distinction is ever reached -- unlike canonicalization_id
-        # digest equivalence (checked above), THIS check is format-version-driven, not
-        # value-driven: an absent-field vintage record fails identically.
-        store_result = verify_store_signed([explicit_null])[0]
+        vintage["signature"], vintage["key_id"] = sign_producer_envelope(signer, vintage["capsule_id"])
+        store_result = verify_store_signed([vintage])[0]
         assert not store_result.ok
         assert any(f.code == "unsupported_format_version" for f in store_result.findings)
-
-        vintage_absent = dict(vintage)
-        store_result_absent = verify_store_signed([vintage_absent])[0]
-        assert not store_result_absent.ok
-        assert any(f.code == "unsupported_format_version" for f in store_result_absent.findings)
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +346,7 @@ class TestUnknownIdFixture:
 
 class TestKnownAlgorithmsRegistry:
     def test_registry_contains_required_entries(self):
-        assert "jcs-n" in KNOWN_ALGORITHMS
+        assert "jcs-n" not in KNOWN_ALGORITHMS
         assert "jcs" in KNOWN_ALGORITHMS
         assert "as-transmitted" in KNOWN_ALGORITHMS
 
