@@ -675,7 +675,7 @@ yet: it reads originals only from `--reveal`.
 appends a **disclosure record** — who disclosed what range to which
 audience, when — to the SAME ledger, signed with the same producer
 `Signer` `seal()` uses (`kind: "disclosure_record"`,
-`capsule_emit.ledger.DISCLOSURE_RECORD_KIND`). It becomes an MMR leaf like
+`capsule_emit.ledger.DISCLOSURE_RECORD_KIND`, declaring `canonicalization_id: "jcs"`). It becomes an MMR leaf like
 any other entry the next time a checkpoint covers it: disclosures are
 receipts too, and the audit trail of showing evidence is part of the
 history. It is excluded from `read_ledger()` (and therefore `ledger

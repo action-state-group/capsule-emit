@@ -167,6 +167,15 @@ def _reveal_all(caps, payloads):
 # ---------------------------------------------------------------------------
 
 
+def test_a_disclosure_record_declares_jcs(three_record_ledger):
+    ledger_path, caps, payloads = three_record_ledger
+    cid = caps[0]["capsule_id"]
+    disclose(ledger_path, cid, audience="auditor", reveal={cid: {"agent_input": payloads[0][0], "agent_output": payloads[0][1]}})
+    last = json.loads(open(ledger_path).read().splitlines()[-1])
+    assert last["kind"] == "disclosure_record"
+    assert last["canonicalization_id"] == "jcs"
+
+
 def test_disclose_single_id_is_contiguous(three_record_ledger):
     ledger_path, caps, payloads = three_record_ledger
     cid = caps[0]["capsule_id"]

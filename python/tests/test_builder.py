@@ -252,7 +252,7 @@ def test_emit_simple_capsule_verifies():
 
 
 def test_emit_rejects_vintage_format():
-    with pytest.raises(InvariantError, match="verification-only"):
+    with pytest.raises(InvariantError, match="withdrawn"):
         emit(operator="ACME-CO", developer="agent@v1", format_version="2")
 
 

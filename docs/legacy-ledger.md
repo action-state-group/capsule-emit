@@ -194,23 +194,16 @@ artifact store; `import_flat` moves a Python ledger's records into one.
 
 ### Verification
 
-Legacy capsules are checked with capsule-emit's own rules. In Python, which
-keeps both canonicalization profiles, `capsule_id` is recomputed per
-`canonicalization_id`:
-
-- `jcs`: SHA-256 of the JCS form without `capsule_id`, `signature` and
-  `key_id`;
-- `jcs-n`, also assumed when `canonicalization_id` is absent: `chain` is
-  excluded too, and null members, empty arrays and empty objects are removed
-  first.
-
-A `jcs` capsule must also pass Class 1 verification, as in every other
-artifact store; historical `jcs-n` capsules predate it and are checked by their
-content address alone. The Go verifier accepts only `jcs`, so `jcs-n` capsules
-are verified with capsule-emit's own verifier. Rust ledgers hold only `jcs`
-capsules (`Ledger::open` recomputes every line under `jcs`), so Rust signed
-records go through the artifact crate's own verification and pre-envelope
-capsules through Class 1 and their content address.
+Legacy capsules are checked with capsule-emit's own rules. In Python,
+`capsule_id` is recomputed under `jcs`: SHA-256 of the JCS form without
+`capsule_id`, `signature` and `key_id`. A capsule with no
+`canonicalization_id`, or the withdrawn `jcs-n`, is refused (`invalid`), and
+every capsule must also pass Class 1 verification, as in every other artifact
+store. Lines written under `jcs-n` before it was withdrawn are no longer
+verifiable by capsule-emit; `capsule-emit` python 0.15.0 and earlier can still read them. Rust ledgers hold only `jcs` capsules
+(`Ledger::open` recomputes every line under `jcs`), so Rust signed records go
+through the artifact crate's own verification and pre-envelope capsules
+through Class 1 and their content address.
 
 When a line carries `signature` or `key_id`, both must be present, non-empty
 strings, the envelope must verify over that `capsule_id`, and `key_id` must be
@@ -288,7 +281,6 @@ allow: the CLL vectors without `digest-append`, and the artifact vectors whose
 cases need neither originals nor purge (the `bare_*` cases and
 `malformed_ids`). The Rust harness adds the required statement to each record
 before `put` and removes it after `get` (`conformance::Limits`). Legacy-specific
-tests cover repeated capsule IDs, `jcs-n` and absent-`canonicalization_id`
-capsules, non-capsule lines, new stamp and padding lines under the next
+tests cover repeated capsule IDs, non-capsule lines, new stamp and padding lines under the next
 checkpoint, every CLI command (Python's commands, Rust's offline verifier), and
 root invariance for a ledger with stamp, disclosure and backfill lines.

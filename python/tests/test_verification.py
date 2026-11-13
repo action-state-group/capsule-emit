@@ -7,7 +7,6 @@ from __future__ import annotations
 import agent_action_capsule
 
 from capsule_emit import seal
-from capsule_emit.canonicalization import compute_capsule_id
 from capsule_emit.verification import verify_capsule, verify_store
 
 
@@ -33,16 +32,14 @@ def test_a_sealed_capsule_verifies(tmp_path):
     assert verify_store([capsule])[0].ok
 
 
-def test_a_vintage_jcs_n_capsule_fails_even_with_a_matching_id(tmp_path):
-    # No canonicalization_id: the pre-slot jcs-n construction, whose id this
-    # package can still compute. AAC defines format 4 with "jcs" only.
+def test_a_capsule_without_canonicalization_id_fails(tmp_path):
+    # The pre-slot construction is withdrawn: AAC defines format 4 with "jcs" only.
     vintage = dict(_sealed(tmp_path))
     del vintage["canonicalization_id"]
-    vintage["capsule_id"] = compute_capsule_id(vintage)
 
     result = verify_capsule(vintage)
     assert not result.ok
-    assert [f.code for f in result.errors] == ["canonicalization_id_missing"]
+    assert "canonicalization_id_missing" in [f.code for f in result.errors]
 
 
 def test_an_undeclared_algorithm_fails(tmp_path):

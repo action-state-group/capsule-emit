@@ -74,10 +74,9 @@ store contract checks padding records and always with its envelope; ``put``
 appends one and ``get`` returns it. Checkpoint stamps, disclosure records and
 witness backfills are log entries only: ``get`` reports them ``not_found``.
 
-The capsule is checked with capsule-emit's own rules, which keep both
-canonicalization profiles: ``capsule_id`` is recomputed per
-``canonicalization_id`` (``jcs``, or ``jcs-n`` when it is absent); a ``jcs``
-capsule must also pass Class 1 verification; and a claimed envelope (either
+The capsule is checked with capsule-emit's own rules: ``capsule_id`` is
+recomputed under ``jcs`` (a capsule with no ``canonicalization_id``, or the
+withdrawn ``jcs-n``, is refused); it must also pass Class 1 verification; and a claimed envelope (either
 member present) must be complete and verify over that ``capsule_id`` with
 ``key_id`` as its signer. With ``trusted`` keys the signer must also be one of
 them (``untrusted_signer``); without them, any valid signer is accepted, as
@@ -143,10 +142,8 @@ from .artifact.record import (
     valid_name,
 )
 from .canonicalization import (
-    CANONICALIZATION_JCS,
     UnsupportedCanonicalizationError,
     compute_capsule_id,
-    resolve_canonicalization_id,
 )
 from .verification import verify_capsule
 
@@ -265,8 +262,7 @@ def _line_form(value: dict) -> str:
 
 
 def _verify_capsule(capsule_id: str, capsule: dict, envelope: bytes | None, trusted: list | None) -> str | None:
-    """capsule-emit's legacy check: the content address per profile, Class 1
-    for the ``jcs`` profile, and the envelope when one is claimed (``None``
+    """capsule-emit's legacy check: the ``jcs`` content address, Class 1, and the envelope when one is claimed (``None``
     means none is). Returns the signer ``key_id`` (hex), or ``None`` for an
     unsigned capsule."""
     if capsule.get("capsule_id") != capsule_id:
@@ -284,10 +280,9 @@ def _verify_capsule(capsule_id: str, capsule: dict, envelope: bytes | None, trus
             raise InvalidError(f"capsule verification: {exc}") from exc
         if computed != capsule_id:
             raise InvalidError("capsule verification: capsule id mismatch")
-        if resolve_canonicalization_id(capsule) == CANONICALIZATION_JCS:
-            result = verify_capsule(capsule)
-            if not result.ok:
-                raise InvalidError("capsule verification: " + ",".join(f.code for f in result.errors))
+        result = verify_capsule(capsule)
+        if not result.ok:
+            raise InvalidError("capsule verification: " + ",".join(f.code for f in result.errors))
     if envelope is None:
         return None
     from agent_action_capsule.producer_envelope import verify_producer_envelope

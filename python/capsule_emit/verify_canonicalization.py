@@ -10,33 +10,23 @@ capsule JSON body, committed to ``capsule_id`` in the signed payload).
 ``VERIFIED``
     The declared algorithm is registered and matches the profile, the
     capsule_id recomputation passes, and the record is consistent.
-    Absent ``canonicalization_id`` on a record whose ``capsule_id`` also
-    recomputes correctly triggers the vintage rule (``resolved="jcs-n"``) and
-    returns VERIFIED — pre-G1 records are unambiguously ``jcs-n``.
 
 ``DIGEST_MISMATCH``
     The ``capsule_id`` does not recompute correctly.  This covers both (a) a
-    tampered record where a known ``canonicalization_id`` was stripped or
-    altered without recomputing ``capsule_id`` and (b) a known algorithm that
-    does not match the declared profile algorithm (profile cross-check failure).
+    tampered record where a known ``canonicalization_id`` was altered to another
+    registered value without recomputing ``capsule_id`` and (b) a known algorithm
+    that does not match the declared profile algorithm (profile cross-check
+    failure).
 
 ``UNKNOWN_ID``
     The ``canonicalization_id`` field is present but names an algorithm not in
     the CPB registry.  The verifier fails closed; the record is unverifiable.
 
 ``NON_CONFORMING``
-    Structural error, an algorithm such as ``as-transmitted`` that cannot be
+    Structural error, an absent or null ``canonicalization_id`` (a pre-format-4
+    record, refused), an algorithm such as ``as-transmitted`` that cannot be
     recomputed from parsed JSON, or an unexpected verifier failure. The record
     cannot be evaluated.
-
-**Vintage rule (absent-id path):**
-
-If ``canonicalization_id`` is absent AND the ``capsule_id`` recomputes
-correctly, infer ``"jcs-n"`` and return VERIFIED.  All pre-G1 capsule records
-were produced under ``jcs-n``; this rule makes them unambiguously verifiable
-without a format-version bump.  A stripped-id tamper is caught by the
-capsule_id recomputation step (DIGEST_MISMATCH) before the vintage branch is
-reached.
 
 **Fail-closed principle:**
 
@@ -58,23 +48,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from .canonicalization import (
-    VINTAGE_CANONICALIZATION_ID,
-    UnsupportedCanonicalizationError,
-    compute_capsule_id,
-    resolve_canonicalization_id,
-)
+from .canonicalization import UnsupportedCanonicalizationError, compute_capsule_id
 from .numbers import CANONICALIZATION_ID
 
 #: CPB Payload Canonicalization Algorithm Registry (normative entries).
 #: Update here when the registry gains a new entry.
-KNOWN_ALGORITHMS: frozenset[str] = frozenset({"jcs-n", "jcs", "as-transmitted"})
-
-#: Vintage inference value — absent canonicalization_id on a format-2 record
-#: resolves to this.  Format-2 records are unambiguously jcs-n and MUST NOT
-#: declare canonicalization_id (§5.1) — this value is only reachable via the
-#: unconditional "absent declared" branch below, never via profile_algorithm.
-_VINTAGE_ALGORITHM = VINTAGE_CANONICALIZATION_ID
+KNOWN_ALGORITHMS: frozenset[str] = frozenset({"jcs", "as-transmitted"})
 
 
 class CanonicalizationVerdict(str, Enum):
@@ -82,8 +61,7 @@ class CanonicalizationVerdict(str, Enum):
 
     VERIFIED = "verified"
     """Declared algorithm is registered, matches the profile, and capsule_id
-    recomputes correctly.  Also returned for pre-G1 records with absent id
-    (vintage rule → resolved=``"jcs-n"``).
+    recomputes correctly.
     """
 
     DIGEST_MISMATCH = "digest_mismatch"
@@ -98,7 +76,8 @@ class CanonicalizationVerdict(str, Enum):
     """
 
     NON_CONFORMING = "non_conforming"
-    """Structural error (missing ``capsule_id`` field, or unexpected exception).
+    """Structural error (missing ``capsule_id`` field, absent or null
+    ``canonicalization_id``, or unexpected exception).
     The record cannot be evaluated.
     """
 
@@ -114,9 +93,8 @@ class CanonicalizationResult:
         ok:       True only when the verdict is VERIFIED.
         verdict:  Reason code from :class:`CanonicalizationVerdict`.
         declared: The raw ``canonicalization_id`` field value from the capsule,
-                  or ``None`` when the field was absent (vintage path).
-        resolved: The algorithm that was evaluated (declared value, or
-                  ``"jcs-n"`` for the vintage-rule path).
+                  or ``None`` when the field was absent.
+        resolved: The algorithm that was evaluated (the declared value).
     """
 
     ok: bool
@@ -145,10 +123,9 @@ def verify_canonicalization_id(
        identifier returns UNKNOWN_ID.
     3. Recompute ``capsule_id`` using the resolved algorithm. If the
        recomputed value does not match → DIGEST_MISMATCH.
-    4. Apply the vintage rule or profile match:
+    4. Profile match:
 
-       a. **Absent** → infer ``"jcs-n"``, return VERIFIED
-          (``declared=None``, ``resolved="jcs-n"``).
+       a. **Absent or null** → NON_CONFORMING (step 3 cannot recompute it).
        b. **Present, known, mismatches** *profile_algorithm* → DIGEST_MISMATCH.
        c. **Present, known, matches** *profile_algorithm* → VERIFIED.
 
@@ -157,14 +134,9 @@ def verify_canonicalization_id(
         profile_algorithm: The registered algorithm identifier that this
                            capsule profile declares.  Default is
                            :data:`capsule_emit.numbers.CANONICALIZATION_ID`
-                           (``"jcs"``) — any record that *declares*
-                           ``canonicalization_id`` at all is a format-4 record
-                           and REQUIRES ``"jcs"`` (§5.1); format-2 vintage
-                           records never declare the field, so this default
-                           never affects them (see the absent-id branch).
-                           Pass ``"jcs-n"`` explicitly only for deliberate
-                           negative/mutant testing of a declared-but-vintage
-                           record.
+                           (``"jcs"``) — a format-4 record REQUIRES ``"jcs"``
+                           (§5.1). Pass another value only for deliberate
+                           negative/mutant testing.
 
     Returns:
         :class:`CanonicalizationResult` with ``.ok``, ``.verdict``,
@@ -179,8 +151,7 @@ def verify_canonicalization_id(
             )
 
         declared: str | None = capsule.get("canonicalization_id")
-        resolved = resolve_canonicalization_id(capsule)
-
+        resolved = declared
         # Present but not in the registry.
         if declared is not None and declared not in KNOWN_ALGORITHMS:
             return CanonicalizationResult(
@@ -205,15 +176,6 @@ def verify_canonicalization_id(
                 verdict=CanonicalizationVerdict.DIGEST_MISMATCH,
                 declared=declared,
                 resolved=resolved,
-            )
-
-        # Absent id, with a valid legacy digest, follows the vintage rule.
-        if declared is None:
-            return CanonicalizationResult(
-                ok=True,
-                verdict=CanonicalizationVerdict.VERIFIED,
-                declared=None,
-                resolved=_VINTAGE_ALGORITHM,
             )
 
         # Present, registered, but wrong profile.

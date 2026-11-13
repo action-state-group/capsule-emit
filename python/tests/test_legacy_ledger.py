@@ -37,8 +37,8 @@ from capsule_emit.legacy_ledger import CAPABILITIES, LegacyLedger
 
 FIXTURE = Path(__file__).parent / "fixtures" / "legacy_ledger" / "ledger.jsonl"
 # The root origin/main's checkpoint index computed for FIXTURE (see
-# fixtures/legacy_ledger/make_fixture.py): 11 leaves, MMR size 19.
-FIXTURE_ROOT = "35bebcfecf0733675e56a7185cdc2bcbeb5a86c3923a40913cbbf3227be23849"
+# fixtures/legacy_ledger/make_fixture.py, less its two withdrawn jcs-n lines): 9 leaves, MMR size 16.
+FIXTURE_ROOT = "7ce684b85ef774897ddeeaaa1c8c5e54d4cc8eb962a523230efe276321a3e0c5"
 
 
 def _lines():
@@ -112,18 +112,18 @@ def test_root_invariance_with_stamp_disclosure_backfill_and_padding_lines(fixtur
         assert kind in kinds
     mmr = MmrLedger(witness._JsonlLogSource(str(fixture_path)))
     mmr.sync()
-    assert (mmr.leaf_count(), mmr.size(), mmr.root().hex()) == (11, 19, FIXTURE_ROOT)
+    assert (mmr.leaf_count(), mmr.size(), mmr.root().hex()) == (9, 16, FIXTURE_ROOT)
 
     # The entry log holds exactly the leaves the index folded.
     entries = LegacyLedger(fixture_path).scan_entries(0, 1000)
-    assert [e.value for e in entries] == [mmr.body_digest(seq) for seq in range(1, 12)]
+    assert [e.value for e in entries] == [mmr.body_digest(seq) for seq in range(1, 10)]
 
 
 def test_scan_keeps_repeated_capsule_ids_and_lookups_return_the_first(fixture_path):
     store = LegacyLedger(fixture_path)
     entries = store.scan_entries(0, 100)
-    assert [e.seq for e in entries] == list(range(1, 12))
-    assert entries[5].value == entries[0].value
+    assert [e.seq for e in entries] == list(range(1, 10))
+    assert entries[3].value == entries[0].value
     assert store.get_entry(entries[0].value).seq == 1
     result = store.append(AppendInput(entries[0].value, datetime.now(timezone.utc)))
     assert (result.outcome, result.entry.seq) == (IDEMPOTENT, 1)
@@ -132,7 +132,7 @@ def test_scan_keeps_repeated_capsule_ids_and_lookups_return_the_first(fixture_pa
     with pytest.raises(NotFoundError):
         store.get_entry(b"\x07" * 32)
     assert store.scan_entries(4, 2) == entries[4:6]
-    assert store.scan_entries(11, 5) == []
+    assert store.scan_entries(9, 5) == []
 
 
 def test_appended_at_is_derived_per_line_kind(fixture_path):
@@ -141,11 +141,10 @@ def test_appended_at_is_derived_per_line_kind(fixture_path):
     def iso(entry):
         return entry.appended_at.isoformat(timespec="milliseconds")
 
-    assert iso(entries[3]) == "2025-01-02T03:04:05.678+00:00"  # jcs-n capsule, offset timestamp
-    assert iso(entries[6]) == "2026-10-15T00:00:01.000+00:00"  # stamp: checkpoint.timestamp
-    assert iso(entries[7]) == "2026-10-15T00:00:02.500+00:00"  # disclosure: timestamp
-    assert iso(entries[8]) == iso(entries[7])  # backfill: inherits
-    assert iso(entries[9]) == iso(entries[7])  # padding: inherits
+    assert iso(entries[4]) == "2026-10-15T00:00:01.000+00:00"  # stamp: checkpoint.timestamp
+    assert iso(entries[5]) == "2026-10-15T00:00:02.500+00:00"  # disclosure: timestamp
+    assert iso(entries[6]) == iso(entries[5])  # backfill: inherits
+    assert iso(entries[7]) == iso(entries[5])  # padding: inherits
     assert all(e.appended_at.tzinfo is not None for e in entries)
 
 
@@ -159,7 +158,7 @@ def test_first_line_without_time_is_the_unix_epoch(tmp_path):
 def test_get_returns_capsule_bytes_and_inline_envelope(fixture_path):
     store = LegacyLedger(fixture_path)
     lines = _lines()
-    for index in (0, 1, 3, 4, 10):  # jcs, jcs chained, jcs-n, absent canonicalization_id, jcs
+    for index in (0, 1, 8):  # jcs, jcs chained, jcs
         line = dict(lines[index])
         record = store.get(line["capsule_id"])
         envelope = bytes.fromhex(line.pop("signature"))
@@ -169,14 +168,14 @@ def test_get_returns_capsule_bytes_and_inline_envelope(fixture_path):
         assert record.artifacts == []
     unsigned = store.get(lines[2]["capsule_id"])  # a log() entry
     assert unsigned.producer_envelope == b""
-    for index in (6, 7, 8):  # stamp, disclosure, backfill: log entries only
+    for index in (4, 5, 6):  # stamp, disclosure, backfill: log entries only
         with pytest.raises(ArtifactNotFoundError):
             store.get(lines[index]["capsule_id"])
     # A padding line is a record, so get checks it; this fixture's is only
     # capsule_id and record_type, not a padding record's shape. A real one
     # round-trips in the shared conformance cases (padding_record).
     with pytest.raises(InvalidError, match="padding record"):
-        store.get(lines[9]["capsule_id"])
+        store.get(lines[7]["capsule_id"])
 
 
 def test_get_authorizes_signers_only_when_trusted_keys_are_given(fixture_path):
@@ -193,11 +192,11 @@ def test_put_of_a_historical_record_reproduces_its_line(fixture_path, tmp_path):
     source = LegacyLedger(fixture_path)
     target = LegacyLedger(tmp_path / "copy.jsonl")
     raw = FIXTURE.read_text().splitlines()
-    for index in (0, 3, 4):
+    for index in (0, 1, 8):
         record = source.get(_lines()[index]["capsule_id"])
         assert target.put_entry(record).outcome == INSERTED
         assert target.put_entry(record).outcome == IDEMPOTENT
-    assert (tmp_path / "copy.jsonl").read_text().splitlines() == [raw[0], raw[3], raw[4]]
+    assert (tmp_path / "copy.jsonl").read_text().splitlines() == [raw[0], raw[1], raw[8]]
 
 
 def test_capability_limits_are_refused_as_unsupported(fixture_path):
@@ -238,7 +237,7 @@ def test_a_different_line_under_an_existing_capsule_id_conflicts(fixture_path):
     unsigned = {k: v for k, v in signed.items() if k not in ("signature", "key_id")}
     with pytest.raises(ConflictError):
         store.append_line(unsigned)
-    stamp = _lines()[6]
+    stamp = _lines()[4]
     with pytest.raises(ConflictError):
         store.append_line({"capsule_id": stamp["capsule_id"], "action_id": "x"})
 
@@ -250,7 +249,7 @@ def test_seal_re_append_is_idempotent_and_new_capsules_keep_their_bytes(fixture_
     assert fixture_path.read_bytes() == before
 
     result = seal({"n": 9}, action="new", operator="acme", anchor=False, witness=False, ledger=fixture_path)
-    assert result.seq == 12
+    assert result.seq == 10
     assert fixture_path.read_bytes()[len(before) :] == (json.dumps(result.capsule, separators=(",", ":")) + "\n").encode()
 
 
@@ -276,7 +275,7 @@ def test_a_complete_last_line_without_newline_still_counts(tmp_path):
     store = LegacyLedger(path)
     assert [e.seq for e in store.scan_entries(0, 10)] == [1, 2]
     assert store.get_entry(bytes.fromhex(_lines()[1]["capsule_id"])).seq == 2
-    store.put(LegacyLedger(FIXTURE).get(_lines()[3]["capsule_id"]))
+    store.put(LegacyLedger(FIXTURE).get(_lines()[8]["capsule_id"]))
     assert [e.seq for e in store.scan_entries(0, 10)] == [1, 2, 3]
     assert path.read_bytes().endswith(b"\n")
 
@@ -320,7 +319,7 @@ def test_handles_see_each_others_writes_and_a_shrunk_file_is_reread(fixture_path
     record = LegacyLedger(fixture_path).get(_lines()[0]["capsule_id"])
     first.put(record)
     assert second.get(record.capsule_id).capsule == record.capsule
-    ledger.append_to_ledger(_lines()[6], path)
+    ledger.append_to_ledger(_lines()[4], path)
     assert [e.seq for e in second.scan_entries(0, 10)] == [1, 2]
     path.write_text("")
     assert second.scan_entries(0, 10) == []
@@ -391,7 +390,7 @@ def test_new_stamp_lines_are_covered_by_the_next_checkpoint(fixture_path):
     }
     ledger.append_to_ledger(stamp, fixture_path)
     seq = LegacyLedger(fixture_path).get_entry(bytes.fromhex(stamp["capsule_id"])).seq
-    assert seq == 12
+    assert seq == 10
     mmr.sync()
     proof = mmr.inclusion_proof(seq)
     assert mmr_core.verify_inclusion(mmr.root(), mmr.size(), seq - 1, bytes.fromhex(stamp["capsule_id"]), proof)
@@ -527,7 +526,7 @@ def test_shared_handles_resolve_relative_paths_once(tmp_path, monkeypatch):
     store = legacy_ledger.shared("ledger.jsonl")
     monkeypatch.chdir(second)
     assert legacy_ledger.shared(first / "ledger.jsonl") is store
-    assert len(store.scan_entries(0, 100)) == 11
+    assert len(store.scan_entries(0, 100)) == 9
 
 
 def test_a_replaced_file_of_the_same_size_is_reread(tmp_path):
@@ -560,4 +559,4 @@ def test_shared_replaces_a_closed_handle(fixture_path):
     store = legacy_ledger.shared(fixture_path)
     store.close()
     assert legacy_ledger.shared(fixture_path) is not store
-    assert len(legacy_ledger.shared(fixture_path).scan_entries(0, 100)) == 11
+    assert len(legacy_ledger.shared(fixture_path).scan_entries(0, 100)) == 9

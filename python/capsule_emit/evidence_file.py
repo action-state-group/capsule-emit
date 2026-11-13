@@ -11,8 +11,7 @@ calls it, and reports the result in plain sentences:
   inclusion proof, and each member of the ``disclosures`` overlay when the
   file carries one (a member that does not match the digest its record
   commits to fails the file, as ``disclosures``);
-* the producer signature on every record (vintage ``jcs-n`` records
-  included).
+* the producer signature on every record.
 
 The checkpoint is read only from its signed COSE form (``checkpoint.cose``):
 its log, size, root, key and time are taken from the verified statement, and

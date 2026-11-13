@@ -14,8 +14,7 @@ os.environ["CAPSULE_WITNESS"] = "off"
 from cll.checkpoint.index import MmrLedger  # noqa: E402
 
 from capsule_emit import ledger, seal, witness  # noqa: E402
-from capsule_emit.canonicalization import compute_capsule_id  # noqa: E402
-from capsule_emit.signing import LocalKeypairSigner, sign_producer_envelope  # noqa: E402
+from capsule_emit.signing import LocalKeypairSigner  # noqa: E402
 from capsule_emit.surface import log  # noqa: E402
 
 out = Path(sys.argv[1])
@@ -30,26 +29,6 @@ seal({"n": 2}, action="fixture-b", operator="acme", anchor=False, witness=False,
 log(b"raw log bytes", action="fixture-log", operator="acme", ledger=path, witness=False)
 
 
-def vintage(action, declared):
-    capsule = {
-        "format_version": "2",
-        "action_id": action,
-        "action_type": "fyi",
-        "operator": "acme",
-        "timestamp": "2025-01-02T03:04:05.678901+00:00",
-        "chain": {"parent_capsule_id": first.capsule_id, "relation": "follows"},
-        "empty_list": [],
-        "null_member": None,
-    }
-    if declared:
-        capsule["canonicalization_id"] = "jcs-n"
-    capsule["capsule_id"] = compute_capsule_id(capsule)
-    capsule["signature"], capsule["key_id"] = sign_producer_envelope(signer, capsule["capsule_id"])
-    ledger.append_to_ledger(capsule, path)
-
-
-vintage("fixture-jcs-n", True)
-vintage("fixture-absent", False)
 # Old writers never deduplicated: a repeated capsule line, written as raw bytes
 # because append_to_ledger now writes each line once.
 with open(path, "a", encoding="utf-8") as fh:

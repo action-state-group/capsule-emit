@@ -146,7 +146,7 @@ def build_capsule(
 
     if format_version != DEFAULT_FORMAT_VERSION:
         raise InvariantError(
-            "build_capsule() creates only format_version '4'; format_version '2' is verification-only"
+            "build_capsule() creates only format_version '4'; format_version '2' (jcs-n) is withdrawn"
         )
 
     # ModelAttestation: with model identity when both are given; compute-only
