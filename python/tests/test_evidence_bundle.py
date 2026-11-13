@@ -506,6 +506,34 @@ def test_cli_flat_ledger_bundle_carries_the_checkpoint_witness_receipts(witnesse
     assert [(r.ts_url, r.status) for r in result.witness_receipts] == [(url, "pass")]
 
 
+def test_bundle_witnesses_are_the_newest_checkpoints_with_its_backfills_only(witnessed_ledger, tmp_path, capsys):
+    """A later backfill for another witness joins the newest checkpoint's
+    receipts; receipts of the earlier checkpoint never do."""
+    from _stub_receipt import build_stub_receipt_b64
+
+    from capsule_emit.checkpoint import WitnessRecord
+    from capsule_emit.witness import _persist_witness_backfill, checkpoint_witness_states
+
+    path, _ = witnessed_ledger
+    older, newest = checkpoint_witness_states(str(path))[-2:]
+    assert older.checkpoint.mmr_size < newest.checkpoint.mmr_size
+    entry_hash = "ab" * 32
+    late = WitnessRecord(
+        ts_url="https://late.example", entry_hash=entry_hash, receipt_b64=build_stub_receipt_b64(entry_hash),
+        leaf_index=0, tree_size=1,
+    )
+    _persist_witness_backfill(newest.checkpoint, late, str(path))
+
+    out = tmp_path / "b.json"
+    code, _, err = _cli(capsys, path, "--all", "-o", out)
+    assert code == 0, err
+    carried = json.loads(out.read_bytes())["checkpoint"]["witnesses"]
+    assert {w["ts_url"] for w in carried} == {*newest.effective_witnesses, "https://late.example"}
+    assert len(carried) == len(newest.effective_witnesses) + 1
+    older_receipts = {w.receipt_b64 for w in older.effective_witnesses.values()}
+    assert not older_receipts & {w["receipt_b64"] for w in carried}
+
+
 def test_cli_mesh_directory_bundle_carries_the_checkpoint_witness_receipts(tmp_path, capsys):
     from _stub_receipt import build_stub_receipt_b64
 

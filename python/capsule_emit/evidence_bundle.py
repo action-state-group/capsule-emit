@@ -40,7 +40,7 @@ from cll.log.engine import check_scan
 from .artifact.record import ArtifactError, InvalidError, NotFoundError, Record, valid_id
 from .legacy_ledger import _EPOCH, _cll_state_at, _line_time, checked_record
 
-__all__ = ["MeshLedgerError", "MeshLedgerLog", "build_store_bundle"]
+__all__ = ["MeshLedgerError", "MeshLedgerLog", "build_store_bundle", "checkpoint_witnesses"]
 
 _CHECKPOINT_KIND = "mmr_checkpoint"
 _PADDING = "padding"
