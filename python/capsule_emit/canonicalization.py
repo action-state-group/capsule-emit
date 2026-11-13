@@ -25,7 +25,7 @@ CANONICALIZATION_JCS = "jcs"
 
 #: capsule-emit's own ledger-line bookkeeping — the COSE_Sign1 producer
 #: envelope and its signing key_id. Never members of the neutral Capsule
-#: object, so never part of any capsule_id preimage, under either algorithm.
+#: object, so never part of any capsule_id preimage.
 _LOCAL_ONLY_FIELDS = ("signature", "key_id")
 
 

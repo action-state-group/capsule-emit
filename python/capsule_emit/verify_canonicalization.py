@@ -13,9 +13,10 @@ capsule JSON body, committed to ``capsule_id`` in the signed payload).
 
 ``DIGEST_MISMATCH``
     The ``capsule_id`` does not recompute correctly.  This covers both (a) a
-    tampered record where a known ``canonicalization_id`` was stripped or
-    altered without recomputing ``capsule_id`` and (b) a known algorithm that
-    does not match the declared profile algorithm (profile cross-check failure).
+    tampered record where a known ``canonicalization_id`` was altered to another
+    registered value without recomputing ``capsule_id`` and (b) a known algorithm
+    that does not match the declared profile algorithm (profile cross-check
+    failure).
 
 ``UNKNOWN_ID``
     The ``canonicalization_id`` field is present but names an algorithm not in

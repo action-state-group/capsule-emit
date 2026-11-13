@@ -279,14 +279,14 @@ capsule-emit  →  agent-action-capsule (spec + reference verifier)
 
 Alpha — API stable, not yet 1.0. The underlying specification is an **individual IETF Internet-Draft**, not an RFC; no RFC number is claimed.
 
-**Conformance & spec tracking.** Every capsule stamps its `spec_version` + `format_version`, and `capsule-emit` produces capsules conforming to the current draft (`draft-mih-scitt-agent-action-capsule`) — proven by the *independent* [`agent-action-capsule`](https://github.com/action-state-group/agent-action-capsule) verifier and its frozen conformance vectors, not by self-assertion. Two format versions exist and both keep verifying:
+**Conformance & spec tracking.** Every capsule stamps its `spec_version` + `format_version`, and `capsule-emit` produces capsules conforming to the current draft (`draft-mih-scitt-agent-action-capsule`) — proven by the *independent* [`agent-action-capsule`](https://github.com/action-state-group/agent-action-capsule) verifier and its frozen conformance vectors, not by self-assertion. Only format `4` is produced and verified:
 
 - **`seal()` / `received()`** (and the `who()`/`can()`/`did()`/`audit()` slot verbs nested in `seal()`) — the developer surface above — produce **format `4`**, canonicalized per RFC 8785 JCS (`canonicalization_id="jcs"`).
 - **`holds/` (reserve/release/expire/reconcile lifecycle capsules)** — also produce **format `4`** (`canonicalization_id="jcs"`). The older `jcs-n` profile (format `2`) is withdrawn: capsule-emit neither produces nor verifies it.
 
 Every capsule this library produces stamps `spec_version` `draft-mih-scitt-agent-action-capsule-05`. Its verifiers accept records carrying -04 or -05 alike, and treat any other `spec_version` as informational, never as a reason to reject: `spec_version` selects no algorithm (`capsule_emit.SPEC_VERSION`, `capsule_emit.ACCEPTED_SPEC_VERSIONS`).
 
-When the spec revises, the version bumps and older capsules keep verifying; that's how this implementation stays tracked to the standard.
+When the spec revises, the version bumps and older format-4 capsules keep verifying; that's how this implementation stays tracked to the standard.
 
 ## Provenance, neutrality & governance
 

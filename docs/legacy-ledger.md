@@ -200,7 +200,7 @@ Legacy capsules are checked with capsule-emit's own rules. In Python,
 `canonicalization_id`, or the withdrawn `jcs-n`, is refused (`invalid`), and
 every capsule must also pass Class 1 verification, as in every other artifact
 store. Lines written under `jcs-n` before it was withdrawn are no longer
-verifiable by capsule-emit. Rust ledgers hold only `jcs` capsules
+verifiable by capsule-emit; `capsule-emit` python 0.15.0 and earlier can still read them. Rust ledgers hold only `jcs` capsules
 (`Ledger::open` recomputes every line under `jcs`), so Rust signed records go
 through the artifact crate's own verification and pre-envelope capsules
 through Class 1 and their content address.
