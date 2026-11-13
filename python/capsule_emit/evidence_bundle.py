@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -227,6 +227,11 @@ class MeshLedgerLog:
             consistency_proof=consistency_proof(nodes, prev, cp.mmr_size) if prev else None,
         )
 
+    def checkpoint_witnesses(self, signed: Mapping[str, Any]) -> list[dict]:
+        """The witness receipts the directory's ``checkpoints.jsonl`` holds for
+        the checkpoint ``signed`` (a bundle's ``checkpoint`` member)."""
+        return _merge_witnesses(cp.witnesses for cp, _ in self._checkpoints if _is_checkpoint(cp, signed))
+
     def commit_cll(self, expected_size: int, expected_checkpoint: bytes | None, next: CllState) -> None:
         from cll.log import UnsupportedError as LogUnsupportedError
 
@@ -244,6 +249,46 @@ class MeshLedgerLog:
 
     def close(self) -> None:
         """Nothing to release: the files were read when the log was opened."""
+
+
+_CHECKPOINT_IDENTITY = ("log_id", "mmr_size", "root", "key_id", "timestamp", "prev_size", "prev_root")
+
+
+def _is_checkpoint(cp: Any, signed: Mapping[str, Any]) -> bool:
+    """Whether the checkpoint record ``cp`` is the checkpoint a bundle states."""
+    return all(getattr(cp, name) == signed.get(name) for name in _CHECKPOINT_IDENTITY)
+
+
+def _merge_witnesses(groups: Iterable[Iterable[Any]]) -> list[dict]:
+    """The ``WitnessRecord`` wire dicts of every group, one per ``ts_url``
+    (the last one read wins), in first-seen order."""
+    merged: dict[str, dict] = {}
+    for group in groups:
+        for witness in group:
+            wire = witness.to_dict()
+            merged[wire["ts_url"]] = wire
+    return list(merged.values())
+
+
+def checkpoint_witnesses(ledger: str | Path, log: Any, signed: Mapping[str, Any]) -> list[dict]:
+    """The witness receipts a ledger holds for the checkpoint ``signed`` (a
+    bundle's ``checkpoint`` member), as ``checkpoint.witnesses`` lists them.
+
+    ``agent_action_capsule.bundle.build_evidence_bundle`` takes no witnesses, so
+    the producer adds them from the ledger: a mesh ledger directory's
+    ``checkpoints.jsonl`` line, or a ledger store's stamp for that checkpoint
+    with the receipts a later backfill added. Receipts of other checkpoints are
+    never carried. Empty when the checkpoint was never witnessed.
+    """
+    if isinstance(log, MeshLedgerLog):
+        return log.checkpoint_witnesses(signed)
+    from .witness import checkpoint_witness_states
+
+    return _merge_witnesses(
+        state.effective_witnesses.values()
+        for state in checkpoint_witness_states(str(ledger))
+        if _is_checkpoint(state.checkpoint, signed)
+    )
 
 
 def build_store_bundle(

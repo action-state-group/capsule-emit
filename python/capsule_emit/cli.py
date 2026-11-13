@@ -1065,6 +1065,10 @@ class _PinnedLog:
         self._log = log
         self._state = log.load_cll()
 
+    @property
+    def inner(self):
+        return self._log
+
     def load_cll(self):
         return self._state
 
@@ -1086,6 +1090,7 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
     from cll.log import CllError
 
     from .artifact.record import ArtifactError
+    from .evidence_bundle import checkpoint_witnesses
 
     scopes = [bool(args.exchange), bool(args.peer), bool(args.since or args.until), bool(args.record), args.all]
     if sum(scopes) != 1:
@@ -1128,6 +1133,11 @@ def _cmd_bundle(args: argparse.Namespace) -> int:
             interval_from=interval_from,
             closure_depth=2 if args.all else (args.closure_depth if args.closure_depth is not None else 0),
         )
+        # The producer takes no witness receipts: carry the ones the ledger
+        # holds for the checkpoint this bundle proves against.
+        witnesses = checkpoint_witnesses(args.ledger, log.inner, bundle["checkpoint"])
+        if witnesses:
+            bundle["checkpoint"]["witnesses"] = witnesses
     except (BundleBuildError, CllError, ArtifactError, ValueError, OSError) as exc:
         print(f"bundle: {exc}", file=sys.stderr)
         return 1
