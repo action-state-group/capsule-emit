@@ -6,6 +6,18 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (go): `artifact/postgres`, a PostgreSQL `artifact.Store` and `artifact.TxStore`
+
+The new `artifact/postgres` package implements the artifact store contract on PostgreSQL through `database/sql` and the pgx stdlib driver (`github.com/jackc/pgx/v5`, a new module dependency): namespaces, idempotent `Init` and `Put`, fail-closed reads, padding records, original-data purge and the index extension, passing the shared `artifacttest.Run` suite including durable reopen. `PutTx`/`GetTx` take a `*sql.Tx`, so `artifact.TxStore` is unchanged; the package documentation shows an artifact write and an application row committed in one transaction, and why a native `pgx.Tx` cannot join. The shared SQL index code gained placeholder and insert hooks for drivers without `LastInsertId`.
+([#454](https://github.com/action-state-group/capsule-emit/issues/454))
+
+### Added (go): `CanonicalizeForDigest` turns decoded JSON numbers into digest-safe values
+
+`emit.CanonicalizeForDigest` is the Go twin of Python's `canonicalize_for_digest`. A float in decoded tool arguments, such as `{"temperature":0.5}`, becomes its RFC 8785 decimal string so `DigestJSON` accepts it; integer tokens stay integers; NaN, infinities, binary64 overflow and integers outside ±(2^53−1) return an error naming the field. `DigestJSON` stays strict. Shared Python/Go vectors in `test-vectors/number-canonicalization` pin the same digest in both languages.
+([#428](https://github.com/action-state-group/capsule-emit/issues/428))
+
+## 0.16.0 — 2026-11-13
+
 ### Removed (python): the withdrawn `jcs-n` Capsule ID construction
 
 capsule-emit no longer recomputes a `capsule_id` under `jcs-n` (JCS with `chain` dropped and null and empty members removed), nor reads an absent `canonicalization_id` as `jcs-n`. `compute_capsule_id` and `canonical_capsule_bytes` accept only `jcs`; a `seal()` call that passes `canonicalization_id="jcs-n"` raises `UnsupportedCanonicalizationError`; `KNOWN_ALGORITHMS` drops `jcs-n`, so `verify_canonicalization_id` returns `UNKNOWN_ID` for it and `NON_CONFORMING` for a record with no slot; the legacy ledger refuses such lines, so ledgers holding pre-format-4 lines no longer verify; `VINTAGE_CANONICALIZATION_ID`, `resolve_canonicalization_id` and the legacy-ledger fixture's two `jcs-n` lines are gone. Disclosure records now declare `canonicalization_id: "jcs"`, since they were the one record kind that relied on the absent-id reading; records written before this change are not verifiable. The AAC spec already withdraws `jcs-n`. Maintainer decision: Ethan, 2026-11-13, "放弃" (give up). Ledgers holding pre-format-4 lines can still be read with python/v0.15.0 or earlier.
@@ -15,11 +27,6 @@ capsule-emit no longer recomputes a `capsule_id` under `jcs-n` (JCS with `chain`
 
 The bundle's `checkpoint` had no `witnesses`, so a verifier given a witness directory found no receipts even when the ledger held them. `bundle` now adds the receipts the ledger holds for the exact checkpoint the bundle proves against (a ledger store's stamp plus later backfills, or a mesh directory's `checkpoints.jsonl` line); a checkpoint never witnessed gets no member.
 ([#457](https://github.com/action-state-group/capsule-emit/issues/457))
-
-### Added (go): `artifact/postgres`, a PostgreSQL `artifact.Store` and `artifact.TxStore`
-
-The new `artifact/postgres` package implements the artifact store contract on PostgreSQL through `database/sql` and the pgx stdlib driver (`github.com/jackc/pgx/v5`, a new module dependency): namespaces, idempotent `Init` and `Put`, fail-closed reads, padding records, original-data purge and the index extension, passing the shared `artifacttest.Run` suite including durable reopen. `PutTx`/`GetTx` take a `*sql.Tx`, so `artifact.TxStore` is unchanged; the package documentation shows an artifact write and an application row committed in one transaction, and why a native `pgx.Tx` cannot join. The shared SQL index code gained placeholder and insert hooks for drivers without `LastInsertId`.
-([#454](https://github.com/action-state-group/capsule-emit/issues/454))
 
 ### Fixed (python): the `inspect-ai` extra caps `agent-client-protocol` below 1.0
 
@@ -60,11 +67,6 @@ The legacy-fallback float walk decided "is a dataclass" with `hasattr`/`dataclas
 
 `seal()` used to seal a numpy array or scalar with a float or complex dtype (0-d, float16 to longdouble, structured and subarray fields included) through `repr()`, which §5.1 forbids and `verify_input_digest` cannot reproduce. It now raises `FloatInDigestError`, decided by dtype alone: no element is read and no user code runs, so a huge array costs the same as a small one. Float-free payloads digest exactly as before (integer, boolean and string arrays, empty float arrays, object arrays and non-float numpy scalars, pinned against the pre-change digests); only payloads that were already outside §5.1 change, from sealed to refused. Convert the array to a list of decimal strings first. An object-dtype array, or an object field of a structured one, is still not inspected: a known limit.
 ([#433](https://github.com/action-state-group/capsule-emit/issues/433))
-
-### Added (go): `CanonicalizeForDigest` turns decoded JSON numbers into digest-safe values
-
-`emit.CanonicalizeForDigest` is the Go twin of Python's `canonicalize_for_digest`. A float in decoded tool arguments, such as `{"temperature":0.5}`, becomes its RFC 8785 decimal string so `DigestJSON` accepts it; integer tokens stay integers; NaN, infinities, binary64 overflow and integers outside ±(2^53−1) return an error naming the field. `DigestJSON` stays strict. Shared Python/Go vectors in `test-vectors/number-canonicalization` pin the same digest in both languages.
-([#428](https://github.com/action-state-group/capsule-emit/issues/428))
 
 ### Added (python): `seal()` accepts Pydantic v2 models
 
