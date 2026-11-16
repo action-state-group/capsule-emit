@@ -88,7 +88,11 @@ def check_entry(card: dict[str, Any]) -> tuple[dict[str, Any] | None, ReadResult
     ``(None, failure)`` for a malformed one (``a2a_entry``, or ``discovery_object``).
     """
     caps = card.get("capabilities") if isinstance(card, dict) else None
-    exts = caps.get("extensions") if isinstance(caps, dict) else None
+    if caps is None:
+        return None, None
+    if not isinstance(caps, dict):
+        return None, ReadResult("a2a_entry", "capabilities is not an object")
+    exts = caps.get("extensions")
     if exts is None:
         return None, None
     if not isinstance(exts, list) or not all(isinstance(e, dict) for e in exts):
