@@ -6,6 +6,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (examples): the A2A agent card advertises the node's evidence-commitment
+
+`examples/a2a-task-evidence/commitment_entry.py` writes the `capabilities.extensions[]` entry of `evidence-commitment-carriers-v0` section 5.2 and reads it back: it checks the entry's form, fetches `commitment_uri`, compares the digest and verifies the commitment's own signature and staples. The example server adds the entry only with `--commitment` and `--commitment-uri`; the `a2a-task-evidence/v1` extension is unchanged. See `docs/a2a-extension/commitment-entry.md`.
+([#410](https://github.com/action-state-group/capsule-emit/issues/410))
+
 ### Added (go): `artifact/postgres`, a PostgreSQL `artifact.Store` and `artifact.TxStore`
 
 The new `artifact/postgres` package implements the artifact store contract on PostgreSQL through `database/sql` and the pgx stdlib driver (`github.com/jackc/pgx/v5`, a new module dependency): namespaces, idempotent `Init` and `Put`, fail-closed reads, padding records, original-data purge and the index extension, passing the shared `artifacttest.Run` suite including durable reopen. `PutTx`/`GetTx` take a `*sql.Tx`, so `artifact.TxStore` is unchanged; the package documentation shows an artifact write and an application row committed in one transaction, and why a native `pgx.Tx` cannot join. The shared SQL index code gained placeholder and insert hooks for drivers without `LastInsertId`.

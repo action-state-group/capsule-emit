@@ -22,7 +22,9 @@ unchanged.
 ```
 
 - `commitment_digest` is SHA-256 over the commitment octets exactly as served.
-- `uri` is compared as a string and is not dereferenced.
+- `uri` is exactly the string shown, compared as a string and not dereferenced. `params` has exactly the
+  two members shown, and `commitment_uri` is an `https:` URI.
+- The entry carries no size or count, and neither does the commitment (spec section 5.1).
 - `required` is `false`: a client that ignores the entry still works.
 - The entry is never placed in another extension's `params`.
 - A card's JWS, when present, authenticates the card; its signer is never compared with the
@@ -40,7 +42,7 @@ profile, the Ed25519 signature over the JCS of the rest, and the staple digests 
 mismatch means the pointer is stale and is reported as such; it never rejects octets that verify. The
 card's own claims (name, description and the rest) are not read; what the reader relies on comes
 from the verified commitment only (V7). Key binding, newest-wins and the hand-off of stapled history cards (V4 to V6)
-belong to the asker's own verifier; pass it as the `verify` argument to replace the small built-in
-check, for example the loop's `scripts/check_commitment.py`.
+belong to the asker's own verifier. The `verify` argument replaces the small built-in check with a
+stricter one that takes the fetched octets.
 
 Out of scope: cards hosted by services that have no `extensions[]`.
