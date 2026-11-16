@@ -5,7 +5,9 @@ An agent card can point to the node's signed `evidence-commitment/1` with one
 [`evidence-commitment-carriers-v0`](https://github.com/action-state-group/agent-action-capsule/blob/main/spec/bindings/evidence-commitment-carriers-v0.md)
 in agent-action-capsule; this page shows how the reference implementation in
 [`examples/a2a-task-evidence`](../../examples/a2a-task-evidence/) writes and reads it. The entry is
-separate from the `a2a-task-evidence/v1` extension, which is unchanged.
+separate from the evidence-request entry of IP section 11.4.4: a card whose evidence-request entry
+carries a commitment member fails V0 (`discovery_object`). The `a2a-task-evidence/v1` extension is
+unchanged.
 
 ```json
 {
@@ -20,9 +22,13 @@ separate from the `a2a-task-evidence/v1` extension, which is unchanged.
 ```
 
 - `commitment_digest` is SHA-256 over the commitment octets exactly as served.
+- `uri` is compared as a string and is not dereferenced.
 - `required` is `false`: a client that ignores the entry still works.
 - The entry is never placed in another extension's `params`.
-- Publishing is off by default. The example server adds the entry only when started with
+- A card's JWS, when present, authenticates the card; its signer is never compared with the
+  commitment's `key_id` (V5).
+- Publishing is off by default (spec section 1; a responder that would not publish its history must
+  not publish a commitment, since the staples are its history). The example server adds the entry only when started with
   `--commitment <file>` and `--commitment-uri <https URI>`.
 
 ## What a reader trusts
@@ -31,9 +37,9 @@ Nothing in the card. `read_commitment` in
 [`commitment_entry.py`](../../examples/a2a-task-evidence/commitment_entry.py) checks the entry's form
 (V0), fetches `commitment_uri`, compares the digest (V1), and verifies the octets on their own: the
 profile, the Ed25519 signature over the JCS of the rest, and the staple digests (V2, V3). A digest
-mismatch means the pointer is stale and is reported as such; it never rejects octets that verify. A
-card whose name, description or other claims contradict the commitment is read the same way: the
-commitment wins. Key binding, newest-wins and the hand-off of stapled history cards (V4 to V6)
+mismatch means the pointer is stale and is reported as such; it never rejects octets that verify. The
+card's own claims (name, description and the rest) are not read; what the reader relies on comes
+from the verified commitment only (V7). Key binding, newest-wins and the hand-off of stapled history cards (V4 to V6)
 belong to the asker's own verifier; pass it as the `verify` argument to replace the small built-in
 check, for example the loop's `scripts/check_commitment.py`.
 
