@@ -22,6 +22,7 @@ from agent_action_capsule.canonical import jcs  # noqa: E402
 from commitment_entry import (  # noqa: E402
     COMMITMENT_EXTENSION_URI,
     ED25519_SPKI,
+    EVIDENCE_REQUEST_URI,
     check_entry,
     commitment_digest,
     commitment_entry,
@@ -188,7 +189,7 @@ def test_commitment_in_another_extensions_params_is_discovery_object():
     card = {
         "capabilities": {
             "extensions": [
-                {"uri": "https://example.test/er", "params": {"commitment_uri": URI}},
+                {"uri": EVIDENCE_REQUEST_URI, "params": {"commitment_uri": URI}},
                 commitment_entry(URI, b"x"),
             ]
         }
@@ -209,7 +210,7 @@ def test_unrelated_extension_with_a_checkpoint_member_coexists():
     card = {
         "capabilities": {
             "extensions": [
-                {"uri": "https://example.test/other", "params": {"checkpoint": "x"}},
+                {"uri": "https://example.test/other", "params": {"checkpoint": "x", "commitment_uri": "y"}},
                 commitment_entry(URI, b"x"),
             ]
         }

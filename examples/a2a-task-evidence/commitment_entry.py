@@ -32,8 +32,10 @@ ENTRY_DESCRIPTION = (
 PROFILES = ("evidence-commitment/1", "evidence-commitment/0")
 ED25519_SPKI = bytes.fromhex("302a300506032b6570032100")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
-#: The pointer members; neither may sit in another extension's ``params`` (V0, ``discovery_object``).
-_COMMITMENT_MEMBERS = {"commitment_uri", "commitment_digest"}
+#: IP section 11.4.4: the evidence-request extension entry. Its ``params`` is the manifest and nothing else.
+EVIDENCE_REQUEST_URI = "https://datatracker.ietf.org/doc/draft-mih-agent-evidence-request/"
+#: Members IP section 11.4.3 forbids in a discovery object (V0, ``discovery_object``).
+_COMMITMENT_MEMBERS = {"commitment_uri", "commitment_digest", "checkpoint", "history_cards", "history_card", "issued_at"}
 
 
 def commitment_digest(octets: bytes) -> str:
@@ -98,8 +100,8 @@ def check_entry(card: dict[str, Any]) -> tuple[dict[str, Any] | None, ReadResult
     if not isinstance(exts, list) or not all(isinstance(e, dict) for e in exts):
         return None, ReadResult("a2a_entry", "capabilities.extensions is not a list of objects")
     for ext in exts:
-        if ext.get("uri") == COMMITMENT_EXTENSION_URI:
-            continue
+        if ext.get("uri") != EVIDENCE_REQUEST_URI:
+            continue  # only the evidence-request entry is a discovery object
         params = ext.get("params")
         if isinstance(params, dict) and _COMMITMENT_MEMBERS & params.keys():
             return None, ReadResult("discovery_object", f"{ext.get('uri')}: commitment member in params")
