@@ -29,7 +29,7 @@ unchanged.
 - The entry is never placed in another extension's `params`.
 - A card's JWS, when present, authenticates the card; its signer is never compared with the
   commitment's `key_id` (V5).
-- Publishing is off by default (spec section 1; a responder that would not publish its history must
+- Publishing is off by default (spec sections 1 and 9; a responder that would not publish its history must
   not publish a commitment, since the staples are its history). The example server adds the entry only when started with
   `--commitment <file>` and `--commitment-uri <https URI>`.
 
