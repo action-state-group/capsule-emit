@@ -106,7 +106,8 @@ def test_publishing_is_off_by_default(tmp_path):
     app = build_app(ledger_path=str(tmp_path / "l"), ts_url="http://127.0.0.1:1")
     card = TestClient(app).get("/.well-known/agent-card.json").json()
     assert check_entry(card) == (None, None)
-    assert read_commitment(card, lambda u: b"").failure == "a2a_entry"
+    res = read_commitment(card, lambda u: pytest.fail("fetched"))
+    assert res.failure is None and res.commitment is None and not res.ok
 
 
 def test_digest_mismatch_is_a_carrier_fact_not_a_rejection(tmp_path):
@@ -202,3 +203,49 @@ def test_entry_helper_refuses_bad_inputs():
         commitment_entry(URI, "sha256:xyz")
     assert commitment_entry(URI, b"x")["params"]["commitment_digest"] == commitment_digest(b"x")
     assert copy.deepcopy(commitment_entry(URI, b"x"))["required"] is False
+
+
+def test_unrelated_extension_with_a_checkpoint_member_coexists():
+    card = {
+        "capabilities": {
+            "extensions": [
+                {"uri": "https://example.test/other", "params": {"checkpoint": "x"}},
+                commitment_entry(URI, b"x"),
+            ]
+        }
+    }
+    entry, bad = check_entry(card)
+    assert bad is None and entry["params"]["commitment_uri"] == URI
+
+
+@pytest.mark.parametrize(
+    "card",
+    [
+        {"capabilities": "invalid"},
+        {"capabilities": {"extensions": [None]}},
+        {"capabilities": {"extensions": "x"}},
+    ],
+)
+def test_malformed_card_never_raises(card):
+    res = read_commitment(card, lambda u: pytest.fail("fetched"))
+    assert res.failure == "a2a_entry"
+
+
+@pytest.mark.parametrize("value", [None, {}, 5])
+def test_missing_or_non_string_sig_value_is_a_named_failure(value):
+    doc = json.loads(make_commitment())
+    if value is None:
+        del doc["sig"]["value"]
+    else:
+        doc["sig"]["value"] = value
+    bad = json.dumps(doc).encode()
+    card = {"capabilities": {"extensions": [commitment_entry(URI, bad)]}}
+    assert read_commitment(card, lambda u: bad).failure == "key_id_spki"
+
+
+def test_uppercase_key_id_is_refused():
+    doc = json.loads(make_commitment())
+    doc["key_id"] = doc["key_id"].upper()
+    bad = json.dumps(doc).encode()
+    card = {"capabilities": {"extensions": [commitment_entry(URI, bad)]}}
+    assert read_commitment(card, lambda u: bad).failure == "key_id_spki"

@@ -32,8 +32,8 @@ ENTRY_DESCRIPTION = (
 PROFILES = ("evidence-commitment/1", "evidence-commitment/0")
 ED25519_SPKI = bytes.fromhex("302a300506032b6570032100")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
-#: Members only a commitment carries; none may sit in another extension's ``params`` (V0).
-_COMMITMENT_MEMBERS = {"commitment_uri", "commitment_digest", "checkpoint", "history_cards", "history_card"}
+#: The pointer members; neither may sit in another extension's ``params`` (V0, ``discovery_object``).
+_COMMITMENT_MEMBERS = {"commitment_uri", "commitment_digest"}
 
 
 def commitment_digest(octets: bytes) -> str:
@@ -66,7 +66,7 @@ def commitment_entry(commitment_uri: str, digest_or_octets: str | bytes) -> dict
 
 @dataclass
 class ReadResult:
-    """What a read found. ``failure`` names the first step that failed; ``commitment`` holds the
+    """What a read found. ``failure`` names the first step that failed (``None`` with no commitment and no digest result means the card publishes none); ``commitment`` holds the
     parsed commitment when its own signature and staples verified, whatever the digest said."""
 
     failure: str | None = None
@@ -87,7 +87,12 @@ def check_entry(card: dict[str, Any]) -> tuple[dict[str, Any] | None, ReadResult
     Returns ``(entry, None)``; ``(None, None)`` when the card has no such entry; or
     ``(None, failure)`` for a malformed one (``a2a_entry``, or ``discovery_object``).
     """
-    exts = (card.get("capabilities") or {}).get("extensions") or []
+    caps = card.get("capabilities") if isinstance(card, dict) else None
+    exts = caps.get("extensions") if isinstance(caps, dict) else None
+    if exts is None:
+        return None, None
+    if not isinstance(exts, list) or not all(isinstance(e, dict) for e in exts):
+        return None, ReadResult("a2a_entry", "capabilities.extensions is not a list of objects")
     for ext in exts:
         if ext.get("uri") == COMMITMENT_EXTENSION_URI:
             continue
@@ -133,8 +138,12 @@ def verify_commitment_octets(octets: bytes) -> tuple[dict[str, Any] | None, tupl
         return None, ("commitment_form", "not JSON")
     try:
         spki = base64.b64decode(doc["spki"], validate=True)
+        if not re.fullmatch(r"[0-9a-f]{64}", doc["key_id"]):
+            raise ValueError("key_id")
         key = bytes.fromhex(doc["key_id"])
         sig = doc["sig"]
+        if not isinstance(sig["value"], str):
+            raise TypeError("sig.value")
         if spki != ED25519_SPKI + key or sig["alg"] != "Ed25519" or sig["canon"] != "jcs":
             return None, ("key_id_spki", "key_id is not the key of spki")
     except (KeyError, TypeError, ValueError):
@@ -173,7 +182,7 @@ def read_commitment(
     if bad:
         return bad
     if entry is None:
-        return ReadResult("a2a_entry", "the card carries no commitment entry")
+        return ReadResult(detail="the card carries no commitment entry")  # not a V0 failure: nothing published
     params = entry["params"]
     try:
         octets = fetch(params["commitment_uri"])
