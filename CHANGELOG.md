@@ -6,6 +6,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Changed (python): depends on `checkpointed-local-log` 0.9
+
+The dependency range moves from `>=0.8,<0.9` to `>=0.9,<0.10`, so capsule-emit installs beside the EvidenceBook Python side on CLL 0.9. With 0.9 a checkpoint's CWT `sub` is the log id, constant per log (CLL -02), instead of `<log_id>#<mmr_size>`; readers still accept the old form, so stored checkpoints keep verifying. A verifier that insists on `<log_id>#<mmr_size>` rejects the checkpoints a node now writes. The witness delivery runners hold a checkpoint until the witness has a receipt for the previous one. The suite passes on Python 3.9 and 3.15.
+([#461](https://github.com/action-state-group/capsule-emit/issues/461))
+
 ### Added (examples): the A2A agent card advertises the node's evidence-commitment
 
 `examples/a2a-task-evidence/commitment_entry.py` writes the `capabilities.extensions[]` entry of `evidence-commitment-carriers-v0` section 5.2 and reads it back: it checks the entry's form, fetches `commitment_uri`, compares the digest and verifies the commitment's own signature and staples. The example server adds the entry only with `--commitment` and `--commitment-uri`; the `a2a-task-evidence/v1` extension is unchanged. See `docs/a2a-extension/commitment-entry.md`.
