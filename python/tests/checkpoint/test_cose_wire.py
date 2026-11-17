@@ -535,6 +535,6 @@ def test_content_type_is_cbor_shaped(signer: LocalKeypairSigner) -> None:
     assert parsed["signature_verified"]
     assert parsed["content_type"] == CLL_CHECKPOINT_CONTENT_TYPE
     assert parsed["issuer"] == cp.log_id
-    assert parsed["subject"] == f"{cp.log_id}#{cp.mmr_size}"
+    assert parsed["subject"] == cp.log_id  # CLL -02: the log id, constant per log
     claims = cbor2.loads(parsed["payload"])
     assert claims["kind"] == "cll-checkpoint"

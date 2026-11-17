@@ -44,7 +44,8 @@ dependencies = [
     # capsule_emit.ledger_store's ledger store directories need.
     # 0.8: so capsule-emit installs beside the EvidenceBook Python shelf, which builds on
     # CLL 0.8's SQLite log and checkpoint runner (evidencebook#254 section 6.3).
-    "checkpointed-local-log>=0.8,<0.9",
+    # 0.9: so evidencebook's Python side can adopt CLL 0.9 (evidencebook#453/#470); the checkpoint CWT `sub` is the log id (CLL -02).
+    "checkpointed-local-log>=0.9,<0.10",
 ]
 
 [project.optional-dependencies]
