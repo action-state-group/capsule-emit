@@ -10,9 +10,9 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agent-action-capsule"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "490f58497264cf106a47a4a5b394093f4f4d4d99b29c86ed1cf9ed2355ae5e47"
+checksum = "c446d9358832e793d33bd8df1b3944b10693915baa21660dee85c7a681715a4d"
 dependencies = [
  "base64 0.22.1",
  "checkpointed-local-log",
@@ -196,9 +196,9 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "checkpointed-local-log"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ec489715bc08d10eb0b0a995217951ed1f9db3c2db76d30923300a81ca8b063"
+checksum = "7ccd2357134d905df3fef856ee2af68e9d80a802d7e280a58c83c60244ca9722"
 dependencies = [
  "base64 0.22.1",
  "coset",

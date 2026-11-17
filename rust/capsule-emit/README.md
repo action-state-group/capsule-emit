@@ -107,7 +107,7 @@ With these dependencies:
 
 ```toml
 capsule-emit = "0.0.12"
-cll = { package = "checkpointed-local-log", version = "0.5.0", features = ["sqlite"] }
+cll = { package = "checkpointed-local-log", version = "0.6.0", features = ["sqlite"] }
 capsule-emit-artifact = { version = "0.0.3", features = ["sqlite"] }
 rusqlite = "0.40"
 ```

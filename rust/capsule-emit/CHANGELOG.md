@@ -7,6 +7,15 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+### Changed
+
+- **Breaking:** requires `checkpointed-local-log` 0.6.0 (was 0.5.0) and `agent-action-capsule` 0.11.0 (was 0.10.0). A caller that
+  names either crate must move to the same versions. No source change in this crate.
+- Checkpoints this crate writes and submits to witnesses now carry the CWT `sub` as the log id (CLL -02; it was
+  `<log_id>#<mmr_size>`). Readers still accept the earlier form, but a witness that insists on it rejects the new
+  checkpoints: run a witness build that accepts both forms (capsule-anchor with capsule-anchor#94, merged 2026-11-16)
+  before deploying this writer.
+
 ## 0.0.12
 
 ### Changed
