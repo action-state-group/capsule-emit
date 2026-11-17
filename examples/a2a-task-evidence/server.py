@@ -39,6 +39,7 @@ from a2a.server.routes import (  # noqa: E402
 )
 from a2a.server.tasks import InMemoryTaskStore, TaskUpdater  # noqa: E402
 from a2a.types import a2a_pb2 as pb  # noqa: E402
+from commitment_entry import commitment_entry  # noqa: E402
 from evidence_extension import (  # noqa: E402
     EVIDENCE_STATUS_FAILED,
     EXTENSION_URI,
@@ -58,7 +59,9 @@ SERVER_AUTHORITY = "reference-implementation-server"
 _ROLE_NAME = {0: "ROLE_UNSPECIFIED", 1: "ROLE_USER", 2: "ROLE_AGENT"}
 
 
-def build_agent_card(public_url: str) -> pb.AgentCard:
+def build_agent_card(public_url: str, commitment: tuple[str, bytes] | None = None) -> pb.AgentCard:
+    """``commitment`` is ``(https URI, octets)`` of the node's evidence commitment. It is
+    advertised only when given: publishing is off by default (spec section 1)."""
     card_dict = {
         "name": "A2A Task Evidence Reference Agent",
         "description": (
@@ -106,6 +109,8 @@ def build_agent_card(public_url: str) -> pb.AgentCard:
             "https://github.com/action-state-group/capsule-emit/tree/main/examples/a2a-task-evidence"
         ),
     }
+    if commitment is not None:
+        card_dict["capabilities"]["extensions"].append(commitment_entry(*commitment))
     card = pb.AgentCard()
     ParseDict(card_dict, card)
     return card
@@ -224,8 +229,14 @@ def _request_base_url(request: Request) -> str:
     return f"{proto}://{host}"
 
 
-def build_app(*, ledger_path: str, ts_url: str, public_url: str | None = None) -> FastAPI:
-    card = build_agent_card(public_url or "http://localhost")
+def build_app(
+    *,
+    ledger_path: str,
+    ts_url: str,
+    public_url: str | None = None,
+    commitment: tuple[str, bytes] | None = None,
+) -> FastAPI:
+    card = build_agent_card(public_url or "http://localhost", commitment)
     executor = TaskEvidenceExecutor(ledger_path=ledger_path, ts_url=ts_url)
     handler = DefaultRequestHandler(executor, InMemoryTaskStore(), card)
     app = FastAPI(title="A2A Task Evidence Reference Agent")
@@ -237,7 +248,7 @@ def build_app(*, ledger_path: str, ts_url: str, public_url: str | None = None) -
 
         @app.get("/.well-known/agent-card.json", include_in_schema=False)
         def agent_card(request: Request) -> JSONResponse:
-            live = build_agent_card(_request_base_url(request))
+            live = build_agent_card(_request_base_url(request), commitment)
             return JSONResponse(MessageToDict(live))
 
     add_a2a_routes_to_fastapi(
@@ -245,6 +256,14 @@ def build_app(*, ledger_path: str, ts_url: str, public_url: str | None = None) -
         agent_card_routes=agent_card_routes,
         jsonrpc_routes=create_jsonrpc_routes(handler, "/a2a"),
     )
+
+    if commitment is not None:
+        from fastapi.responses import Response
+
+        @app.get("/commitment.json", include_in_schema=False)
+        def commitment_octets() -> Response:
+            # Served byte for byte: the carrier digest is over these exact octets.
+            return Response(commitment[1], media_type="application/json")
 
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:
@@ -260,9 +279,18 @@ def main() -> None:
     ap.add_argument("--ledger", default=os.environ.get("LEDGER_PATH") or str(Path(tempfile.mkdtemp()) / "capsule-ledger"))
     ap.add_argument("--ts-url", default=os.environ["TS_URL"])
     ap.add_argument("--public-url", default=os.environ.get("A2A_PUBLIC_URL"))
+    ap.add_argument("--commitment", default=os.environ.get("COMMITMENT_PATH"),
+                    help="file holding the signed evidence-commitment/1 octets; advertised on the card only when set")
+    ap.add_argument("--commitment-uri", default=os.environ.get("COMMITMENT_URI"),
+                    help="the https URI the commitment octets are served at")
     args = ap.parse_args()
+    commitment = None
+    if args.commitment:
+        if not args.commitment_uri:
+            ap.error("--commitment needs --commitment-uri")
+        commitment = (args.commitment_uri, Path(args.commitment).read_bytes())
     uvicorn.run(
-        build_app(ledger_path=args.ledger, ts_url=args.ts_url, public_url=args.public_url),
+        build_app(ledger_path=args.ledger, ts_url=args.ts_url, public_url=args.public_url, commitment=commitment),
         host=args.host,
         port=args.port,
         log_level="warning",

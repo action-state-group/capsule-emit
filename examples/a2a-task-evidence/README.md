@@ -18,6 +18,8 @@ older per-record anchor pattern.
 | `verifier.py` | Independent reader: the ten §13 properties, each `PASS`/`FAIL`/`NOT_PRESENT`/`NOT_CHECKED`/`INCONCLUSIVE`. Never an aggregate `trusted: true`. |
 | `server.py` | a2a-sdk `AgentExecutor` + FastAPI app: advertises the extension, negotiates the requirement, records evidence, attaches the terminal reference + Artifact. |
 | `client.py` | a2a-sdk client: activates the extension, sends `REQUIRED`, checks explicit acceptance, polls to terminal, fetches the bundle via `GetTask`. |
+| `commitment_entry.py` | Writes and reads the card's `evidence-commitment/1` extension entry ([doc](../../docs/a2a-extension/commitment-entry.md)). Off unless `server.py` gets `--commitment` and `--commitment-uri`. |
+| `test_commitment_carrier.py` | Tests of that entry: served card, digest mismatch, unreachable URI, contradicting card claims. |
 | `local_ts.py` | Hermetic loopback Transparency Service double — **not independent**, see below. |
 | `run_demo.py` | Runs the full flow once and writes `vectors/positive_vector.json`. |
 | `make_tamper_vector.py` | Derives `vectors/tamper_negative_vector.json` from the positive vector by flipping one byte in the presented payload. |

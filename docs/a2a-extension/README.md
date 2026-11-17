@@ -18,6 +18,9 @@ the normative prose. What's here:
   POSTED) comments for four adjacent `a2aproject/A2A` threads, asking
   whether to share a composition point before filing a new Issue. An
   operator posts these; this repo never does.
+- **[`commitment-entry.md`](commitment-entry.md)** — the separate
+  `evidence-commitment/1` extension entry an agent card can carry, and how a
+  reader checks it. It leaves the `a2a-task-evidence/v1` extension unchanged.
 - **[`../../examples/a2a-task-evidence/`](../../examples/a2a-task-evidence/)**
   — the reference implementation: an a2a-sdk client + server, a ten-property
   §13 verifier, and a positive + tamper-negative vector pair. See that
