@@ -564,9 +564,9 @@ Where a JSON `CheckpointRecord` uses dev-ergonomic field names,
 `log_size`/`commitment`/`prev_commitment`/`issued_at` instead of
 `mmr_size`/`root`/`prev_root`/`timestamp`, `log_id` moved onto the signed
 CWT `iss` header, `key_id` onto the COSE `kid` header. The full dev↔I-D
-field-mapping table — plus a known `iss`/`sub` semantics deviation from
-the I-D's producer/log identity split, worth reading before relying on
-those two claims for cross-implementation identity matching — lives in
+field-mapping table — plus the `iss`/`sub` claims (CLL -02: `sub` is the
+log id, constant per log; a reader still accepts the pre-02
+`<log_id>#<mmr_size>` form so stored checkpoints keep verifying) — lives in
 `cll.checkpoint.cose_wire`'s module docstring (the resolution here was to
 ship the mapping table, not rename
 `CheckpointRecord`'s own fields). `capsule_emit.checkpoint.cose_wire` is a
