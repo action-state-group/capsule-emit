@@ -15,7 +15,7 @@ capsulectl publish --profile mine --request req.json
 
 The profile is one you created with `capsulectl profile create` and `capsulectl store init`. The first command prints `wrote req.json (4 messages, mode structure)` and the second prints `"state":"appended"`.
 
-`--suite`, `--domain`, `--task-id` and `--trial` (default 0) name the case, `suite:domain:task-<task_id>:trial-<trial>`: give each run of the same task its own trial. `--timestamp` is the task's RFC 3339 time (default: now); with `--timestamp` set, the same request published again gives the same capsule.
+`--suite`, `--domain`, `--task-id` and `--trial` (default 0) name the case, `suite:domain:task-<task_id>:trial-<trial>`: give each run of the same task its own trial. `--timestamp` is the task's RFC 3339 time (default: now); with `--timestamp` set, building the request again from the same messages gives the same capsule.
 
 ## What the record discloses
 
