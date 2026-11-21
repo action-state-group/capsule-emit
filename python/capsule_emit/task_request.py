@@ -12,10 +12,12 @@ The payload is ``{"case": {...}, "agent_interaction": {"mode": ..., "messages": 
 ``mode`` says what the record discloses, so a report can show the receiver:
 
 - ``structure`` (the default): per message only its role, whether it is
-  non-empty, the id of each tool call it makes and the id a tool message
-  answers. No text, no tool name, no argument, no digest of any of them: a
-  plain hash of a short reply or a small argument can be guessed by hashing
-  candidates, so none is sealed. Order is the order of the list.
+  non-empty, a call ref for each tool call it makes and the call ref a tool
+  message answers. A call ref is the ordinal of the call id's first appearance
+  (``"0"``, ``"1"``, ...), never the id itself, because some servers build ids
+  from the tool name. No text, no tool name, no argument, no digest of any of
+  them: a plain hash of a short reply or a small argument can be guessed by
+  hashing candidates, so none is sealed. Order is the order of the list.
 - ``full_text`` (``full_text=True``, one task at a time): the message text, tool
   names, arguments and results are sealed as given.
 
@@ -71,7 +73,7 @@ def _calls(index: int, message: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def _message(index: int, message: Any, full_text: bool) -> dict[str, Any]:
+def _message(index: int, message: Any, full_text: bool, refs: dict[str, str]) -> dict[str, Any]:
     if not isinstance(message, dict):
         raise TaskRequestError(f"message {index}: must be an object")
     role = message.get("role")
@@ -91,10 +93,20 @@ def _message(index: int, message: Any, full_text: bool) -> dict[str, Any]:
     if full_text:
         out["content"] = content
     if calls:
-        out["tool_calls"] = calls if full_text else [{"id": c["id"]} for c in calls]
+        out["tool_calls"] = calls if full_text else [{"id": _ref(refs, c["id"])} for c in calls]
     if answers is not None:
-        out["tool_call_id"] = answers
+        out["tool_call_id"] = answers if full_text else _ref(refs, answers)
     return out
+
+
+def _ref(refs: dict[str, str], call_id: str) -> str:
+    """The positional stand-in for a call id: the ordinal of its first appearance.
+
+    Some servers build ids from the tool name (``functions.get_weather:0``), so a
+    structure record never carries one. Two calls that share an id share a ref, so
+    a duplicate stays visible to the reader; a tool return before its call gets the
+    ref its call will reuse."""
+    return refs.setdefault(call_id, str(len(refs)))
 
 
 def _timestamp(value: str | dt.datetime | None) -> str:
@@ -141,7 +153,8 @@ def task_seal_request(
     for label, value in (("operator", operator), ("developer", developer)):
         if not isinstance(value, str) or not value:
             raise TaskRequestError(f"{label} must be a non-empty string")
-    sealed = [_message(i, m, full_text) for i, m in enumerate(messages)]
+    refs: dict[str, str] = {}
+    sealed = [_message(i, m, full_text, refs) for i, m in enumerate(messages)]
     if not sealed:
         raise TaskRequestError("the conversation has no messages")
     interaction = {"mode": MODE_FULL_TEXT if full_text else MODE_STRUCTURE, "messages": sealed}

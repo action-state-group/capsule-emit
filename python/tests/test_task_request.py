@@ -35,12 +35,12 @@ def test_structure_mode_seals_no_text_names_arguments_or_digests():
     assert inter["messages"] == [
         {"role": "system", "nonempty": True},
         {"role": "user", "nonempty": True},
-        {"role": "assistant", "nonempty": False, "tool_calls": [{"id": "c1"}]},
-        {"role": "tool", "nonempty": True, "tool_call_id": "c1"},
+        {"role": "assistant", "nonempty": False, "tool_calls": [{"id": "0"}]},
+        {"role": "tool", "nonempty": True, "tool_call_id": "0"},
         {"role": "assistant", "nonempty": True},
     ]
     dumped = json.dumps(inter)
-    for secret in ("yes", "bob", "pay", "be brief", "done", "sha256"):
+    for secret in ("yes", "bob", "pay", "be brief", "done", "sha256", "c1"):
         assert secret not in dumped
 
 
@@ -148,3 +148,29 @@ def test_cli_names_the_wrong_top_level_shape(tmp_path, capsys, text):
             "--operator", "o", "--developer", "v", "-o", str(tmp_path / "r.json")]
     assert main(argv) == 1
     assert "JSON list of messages" in capsys.readouterr().err
+
+
+def test_structure_refs_hide_ids_that_carry_a_tool_name_and_keep_the_shape():
+    convo = [
+        {"role": "user", "content": "go"},
+        {"role": "assistant", "tool_calls": [{"id": "functions.get_weather:0", "name": "get_weather"},
+                                             {"id": "functions.get_time:1", "name": "get_time"}]},
+        {"role": "tool", "tool_call_id": "functions.get_time:1", "content": "x"},
+        {"role": "tool", "tool_call_id": "functions.get_weather:0", "content": "y"},
+    ]
+    msgs = task_seal_request(convo, timestamp="2026-11-20T10:00:00Z", **KW)["payload"]["agent_interaction"]["messages"]
+    assert msgs[1]["tool_calls"] == [{"id": "0"}, {"id": "1"}]
+    assert [m["tool_call_id"] for m in msgs[2:]] == ["1", "0"]
+    assert "get_" not in json.dumps(msgs)
+    full = task_seal_request(convo, full_text=True, timestamp="2026-11-20T10:00:00Z", **KW)
+    assert full["payload"]["agent_interaction"]["messages"][2]["tool_call_id"] == "functions.get_time:1"
+
+
+def test_structure_refs_keep_duplicates_and_early_returns_visible():
+    convo = [
+        {"role": "tool", "tool_call_id": "z", "content": "early"},
+        {"role": "assistant", "tool_calls": [{"id": "z", "name": "f"}, {"id": "z", "name": "f"}]},
+    ]
+    msgs = task_seal_request(convo, timestamp="2026-11-20T10:00:00Z", **KW)["payload"]["agent_interaction"]["messages"]
+    assert msgs[0]["tool_call_id"] == "0"
+    assert msgs[1]["tool_calls"] == [{"id": "0"}, {"id": "0"}]
