@@ -32,7 +32,7 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
-from .numbers import canonicalize_for_digest
+from .numbers import FloatInDigestError, canonicalize_for_digest
 
 __all__ = ["MODE_FULL_TEXT", "MODE_STRUCTURE", "TaskRequestError", "task_seal_request"]
 
@@ -146,7 +146,10 @@ def task_seal_request(
         raise TaskRequestError("the conversation has no messages")
     interaction = {"mode": MODE_FULL_TEXT if full_text else MODE_STRUCTURE, "messages": sealed}
     if full_text:  # tool arguments and results may hold floats, which a sealed payload cannot
-        interaction = canonicalize_for_digest(json.loads(json.dumps(interaction)))
+        try:
+            interaction = canonicalize_for_digest(json.loads(json.dumps(interaction)))
+        except FloatInDigestError as exc:  # NaN or an infinity cannot be sealed
+            raise TaskRequestError(str(exc)) from exc
     return {
         "spec_version": "capsule-seal-request/v1",
         "capsule": {

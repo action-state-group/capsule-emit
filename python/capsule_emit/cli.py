@@ -112,8 +112,10 @@ def _cmd_task_request(args: argparse.Namespace) -> int:
             data = json.load(fh)
         if isinstance(data, dict):
             data = data.get("messages")
+        if not isinstance(data, list):
+            raise TaskRequestError("--messages must be a JSON list of messages or an object with a messages list")
         request = task_seal_request(
-            data if isinstance(data, list) else [],
+            data,
             suite=args.suite,
             domain=args.domain,
             task_id=args.task_id,

@@ -131,3 +131,20 @@ def test_cli_refuses_bad_input(tmp_path, capsys):
     assert "no messages" in capsys.readouterr().err
     assert main(["task-request", "--messages", str(tmp_path / "missing.json"), *argv[3:]]) == 1
     assert not (tmp_path / "r.json").exists()
+
+
+def test_nan_in_full_text_arguments_is_refused_as_a_task_request_error():
+    convo = [{"role": "assistant", "tool_calls": [{"id": "a", "name": "f", "arguments": {"q": float("nan")}}]}]
+    with pytest.raises(TaskRequestError, match="NaN"):
+        task_seal_request(convo, full_text=True, timestamp="2026-11-20T10:00:00Z", **KW)
+    assert task_seal_request(convo, timestamp="2026-11-20T10:00:00Z", **KW)  # structure mode never reads it
+
+
+@pytest.mark.parametrize("text", ['"x"', "7", '{"messages": "x"}', '{"other": []}'])
+def test_cli_names_the_wrong_top_level_shape(tmp_path, capsys, text):
+    src = tmp_path / "c.json"
+    src.write_text(text)
+    argv = ["task-request", "--messages", str(src), "--suite", "s", "--domain", "d", "--task-id", "t",
+            "--operator", "o", "--developer", "v", "-o", str(tmp_path / "r.json")]
+    assert main(argv) == 1
+    assert "JSON list of messages" in capsys.readouterr().err
