@@ -24,7 +24,7 @@ The payload is `{"case": ..., "agent_interaction": {"mode": ..., "messages": [..
 | Mode | Per message | Use it when |
 |---|---|---|
 | `structure` (default) | `role`, `nonempty`, a call ref for each tool call and the call ref a tool message answers | The report only needs to know the conversation's shape. |
-| `full_text` (`--full-text`, one task at a time) | the same, plus `content`, and each call's `name` and `arguments` | A reader must judge what was said or done. |
+| `full_text` (`--full-text`, one task at a time) | `role`, `nonempty`, `content`, and each call's original `id`, `name` and `arguments`; a tool message's original `tool_call_id` (not call refs) | A reader must judge what was said or done. |
 
 In `structure` mode a call ref is the ordinal of the call id's first appearance (`"0"`, `"1"`, ...), not the id itself, because some servers build ids from the tool name; two calls that share an id share a ref, so a duplicate stays visible. No text, tool name, argument or result is sealed, and no digest of any of them: a plain hash of a short reply or a small argument can be guessed by hashing candidates. In `full_text` mode a float in an argument is sealed as its decimal string.
 
