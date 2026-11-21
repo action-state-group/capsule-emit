@@ -437,6 +437,8 @@ def test_every_cli_command_through_the_legacy_backend(three_record_ledger, tmp_p
         "ledger import": [["ledger", "import", str(path), str(tmp_path / "imported")]],
         # Appending a Result needs capsulectl's records: tests/test_result_append.py runs it.
         "ledger append-result": [],
+        # task-request reads no ledger: tests/test_task_request.py runs it.
+        "task-request": [],
         "ledger export": [["ledger", "export", "--jsonl", str(tmp_path / "imported"), "-o", str(tmp_path / "exported.jsonl")]],
     }
     runs["verify"] += [["verify", "--bundle", str(bundle)], ["verify", "--bundle", str(proven)]]

@@ -6,6 +6,11 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Added (python): `capsule-emit task-request` builds a seal request for one agent task's conversation
+
+`capsule_emit.task_request.task_seal_request` and `capsule-emit task-request` turn one task's messages into a `capsule-seal-request/v1` whose payload is `{case, agent_interaction: {mode, messages}}`, for `capsulectl publish --request`; nothing is sealed unless it is run. By default (`structure`) a message carries only its role, whether it is non-empty, a call ref for each tool call it makes and the call ref a tool message answers (the ordinal of the call id's first appearance, since some servers build ids from the tool name): no text, tool name, argument, id or digest, because a plain hash of a short value can be guessed. `--full-text` seals the text, names, arguments and results for one task, and the record states its `mode`. See `docs/task-record.md`.
+([action-state-group/evidencebook-skills#193](https://github.com/action-state-group/evidencebook-skills/issues/193))
+
 ### Added (examples): the A2A agent card advertises the node's evidence-commitment
 
 `examples/a2a-task-evidence/commitment_entry.py` writes the `capabilities.extensions[]` entry of `evidence-commitment-carriers-v0` section 5.2 and reads it back: it checks the entry's form, fetches `commitment_uri`, compares the digest and verifies the commitment's own signature and staples. The example server adds the entry only with `--commitment` and `--commitment-uri`; the `a2a-task-evidence/v1` extension is unchanged. See `docs/a2a-extension/commitment-entry.md`.
