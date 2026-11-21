@@ -104,6 +104,36 @@ def _cmd_ledger_show(args: argparse.Namespace) -> int:
     return 0 if found else 1
 
 
+def _cmd_task_request(args: argparse.Namespace) -> int:
+    from .task_request import TaskRequestError, task_seal_request
+
+    try:
+        with open(args.messages, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            data = data.get("messages")
+        request = task_seal_request(
+            data if isinstance(data, list) else [],
+            suite=args.suite,
+            domain=args.domain,
+            task_id=args.task_id,
+            trial=args.trial,
+            operator=args.operator,
+            developer=args.developer,
+            full_text=args.full_text,
+            timestamp=args.timestamp,
+        )
+        with open(args.out, "w", encoding="utf-8") as fh:
+            json.dump(request, fh, sort_keys=True)
+            fh.write("\n")
+    except (TaskRequestError, OSError, ValueError) as exc:
+        print(f"task-request: {exc}", file=sys.stderr)
+        return 1
+    mode = request["payload"]["agent_interaction"]["mode"]
+    print(f"wrote {args.out} ({len(request['payload']['agent_interaction']['messages'])} messages, mode {mode})")
+    return 0
+
+
 def _cmd_ledger_append_result(args: argparse.Namespace) -> int:
     from .result import ResultRefused, append_result_file
 
@@ -237,6 +267,26 @@ def _build_parser() -> argparse.ArgumentParser:
         "--ledger",
         help="the ledger store directory (default: as seal() resolves it); the records the Result cites must be in it",
     )
+
+    # task-request
+    tr = sub.add_parser(
+        "task-request",
+        help="build a capsule-seal-request/v1 for one agent task's conversation (publish it with capsulectl)",
+    )
+    tr.add_argument("--messages", required=True, help="JSON file: a list of messages, or an object with a messages list")
+    tr.add_argument("--suite", required=True, help="the case's benchmark name, e.g. my-agent-evals")
+    tr.add_argument("--domain", required=True, help="the case's domain, e.g. the agent's name")
+    tr.add_argument("--task-id", required=True, help="the task's id")
+    tr.add_argument("--trial", type=int, default=0, help="which run of the task (default 0)")
+    tr.add_argument("--operator", required=True, help="the accountable tenant")
+    tr.add_argument("--developer", required=True, help="the agent identity and version")
+    tr.add_argument(
+        "--full-text",
+        action="store_true",
+        help="seal message text, tool names, arguments and results (default: structure only)",
+    )
+    tr.add_argument("--timestamp", help="RFC 3339 time of the task (default: now)")
+    tr.add_argument("-o", "--out", required=True, help="the request file to write")
 
     # verify
     verify_p = sub.add_parser("verify", help="verify capsules")
@@ -1229,6 +1279,9 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_ledger_import(args)
         if args.ledger_cmd == "export":
             return _cmd_ledger_export(args)
+
+    if args.command == "task-request":
+        return _cmd_task_request(args)
 
     if args.command == "verify":
         return _cmd_verify(args)

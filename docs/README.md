@@ -25,6 +25,7 @@ You add one `seal()` call at each consequential action, and you get a **witnesse
 
 ## Wire it into your stack
 
+- **[Seal one task's conversation](task-record.md)** — `capsule-emit task-request` builds the record a report over a whole task reads (structure by default, full text opt-in), for `capsulectl publish`.
 - **[Adapters](adapters/)** — let MCP / LangChain / CrewAI / Hermes (or any custom loop) emit capsules for you. Each page has a **paste-ready prompt for your coding agent**.
 - **Quickstarts** — copy-paste, framework-specific: **[CrewAI](quickstart-crewai.md)** · **[LangGraph](quickstart-langgraph.md)**.
 - **[The bundle-request shape](a2a-request-shape.md)** — how a caller asks for a bundle of capsules, and how a producer answers honestly in one of three states; includes the A2A skill binding and a [worked example](../examples/startup-lifecycle-template/).
