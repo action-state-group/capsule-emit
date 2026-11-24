@@ -108,9 +108,9 @@ the bar against a dishonest witness. For a first local run with **zero egress**,
 set `CAPSULE_WITNESS=off` — offline `verify` checks the same things either way;
 what you turn off is the outside reference. `CAPSULE_OPERATOR` and
 `CAPSULE_DEVELOPER` seal into the
-hash-chained record permanently — use a role/version tag, not personal data — and so does the `subject` you map from `jwt.sub` through `metadata`, which in
-most identity providers is a stable personal identifier: it seals permanently
-with no erasure path, so map a pseudonymous claim if your provider issues one. Tool
+hash-chained record permanently — use a role/version tag, not personal data — and so does any `subject` you map through `metadata`; `jwt.sub` in
+most identity providers is a stable personal identifier that seals permanently
+with no erasure path, so map a role or tenant claim instead (the quick-start note in step 2 says how). Tool
 arguments and results are sealed as digests: data minimization, not
 confidentiality — a digest of a low-entropy value can be recovered by
 enumeration. The caller's `authorization` header never reaches the processor
@@ -236,6 +236,14 @@ binds:
                     methods:
                       "tools/call": full      # request + response for tool calls ONLY
                     failureMode: failOpen     # capsule outage degrades gracefully
+                    # Optional: seal who called (needs `jwtAuth` on the route). Map a role or tenant
+                    # claim, not a person, never `jwt.sub` as is (see the note below); drop these
+                    # lines to seal no subject. `tenant` is illustrative: use your provider's
+                    # claim name, e.g. `tid`.
+                    metadata:
+                      backendAuth.subject: jwt.tenant
+                    requestHeaders:
+                      disallowed: [authorization]
             backends:
               - mcp:
                   targets:
@@ -244,6 +252,14 @@ binds:
                         cmd: npx
                         args: ["@modelcontextprotocol/server-everything"]
 ```
+
+> **Do not map `jwt.sub` as is.** In most identity providers `sub` is a stable personal
+> identifier, and whatever `metadata` resolves is sealed into the hash-chained record
+> permanently, with no erasure path (the spec's never-enters rule: end-user identity MUST NOT
+> enter a Capsule, in clear or as a digest). Map a claim that names a role or tenant, not a
+> person, or leave `metadata` out. If you genuinely need to correlate one caller across records,
+> use a pairwise or encrypted identifier (for example an OIDC pairwise `sub`), never a raw or
+> hashed user ID. `metadata` also needs `jwtAuth` on the route, or the gateway drops it silently.
 
 **3. Start agentgateway:**
 
@@ -344,11 +360,13 @@ binary, this package at 0.8.1, and `@modelcontextprotocol/server-everything` sta
 gateway over stdio. The full transcript is in the engagement record; the parts that matter:
 
 **The config that ran.** Two things are easy to get wrong and both are here on purpose:
-`jwtAuth` is required for `jwt.sub` to resolve — without it the gateway drops the `metadata`
+`jwtAuth` is required for any `jwt.<claim>` expression to resolve — without it the gateway drops the `metadata`
 expression silently and the record reports `subject` in `absent` — and `authorization` is
 named in `requestHeaders.disallowed` so the caller's credential never reaches the processor.
 The issuer, audience, and `pub-key` file are agentgateway's own sample JWT setup
 (`manifests/jwt/` in their repository; the matching token is `example2.key`, `sub: test-user`).
+The run mapped `jwt.sub` only because that sample token carries no personal data; do not copy that
+mapping for real callers (see the note under the config).
 
 ```yaml
 # yaml-language-server: $schema=https://agentgateway.dev/schema/config
@@ -372,6 +390,8 @@ routes:
         methods:
           tools/call: full
         metadata:
+          # The sample token's claims are only `sub`, so this run maps `jwt.sub`.
+          # For real callers map a role or tenant claim, not a person, or drop `metadata`.
           backendAuth.subject: jwt.sub
         requestHeaders:
           disallowed:

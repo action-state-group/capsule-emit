@@ -73,12 +73,19 @@ Gateway config snippet (config.yaml)::
             # references consumed by agentgateway_audit -- identifiers only,
             # never token material (agentgateway#3042).
             metadata:
-              backendAuth.subject: jwt.sub
+              # a role or tenant claim, not a person; never `jwt.sub` as is (see the note below)
+              backendAuth.subject: jwt.tenant
             # An empty `allowed` list forwards EVERY header to this processor,
             # `authorization` included.  This adapter never reads headers, but
             # drop it at the gateway so the credential is not on the wire.
             requestHeaders:
               disallowed: [authorization]
+
+Do not map ``jwt.sub`` as is: in most identity providers it is a stable personal
+identifier, and what ``metadata`` resolves seals into the record permanently with no
+erasure path (end-user identity MUST NOT enter a Capsule, in clear or as a digest).  Map a
+claim that names a role or tenant, not a person, or omit ``metadata``.  To correlate one
+caller across records use a pairwise or encrypted identifier, never a raw or hashed user ID.
 
 Audit metadata (agentgateway#3042)
 ----------------------------------
