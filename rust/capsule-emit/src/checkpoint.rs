@@ -43,6 +43,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -462,6 +463,13 @@ pub struct CheckpointState {
     witness_deferred: bool,
     /// See [`PaddingSink`]; `None` cuts unpadded.
     padding: Option<Box<dyn PaddingSink>>,
+    /// Whether `tick`, `reconnect` and a clock-leg cut deliver a store
+    /// path's witness rows themselves (the default) or leave that to the
+    /// caller's [`CheckpointState::take_witness_delivery`] round.
+    inline_witness_delivery: bool,
+    /// Set while a [`WitnessDelivery`] taken from this state is out; at most
+    /// one is, so two passes never send to the same witness at once.
+    witness_delivery_out: Arc<AtomicBool>,
 }
 
 /// Where a checkpoint state's leaves come from.
@@ -629,6 +637,8 @@ impl CheckpointState {
             pending_since: (entries_since_checkpoint > 0).then(Instant::now),
             pending_witness_urls: Vec::new(),
             witness_deferred: false,
+            inline_witness_delivery: true,
+            witness_delivery_out: Arc::new(AtomicBool::new(false)),
             padding: None,
         };
         let report = LoadReport {
@@ -761,6 +771,8 @@ impl CheckpointState {
             pending_since: (entries_since_checkpoint > 0).then(Instant::now),
             pending_witness_urls: Vec::new(),
             witness_deferred: false,
+            inline_witness_delivery: true,
+            witness_delivery_out: Arc::new(AtomicBool::new(false)),
             padding: None,
         };
         state.refresh_latest_witnesses();
@@ -1063,7 +1075,7 @@ impl CheckpointState {
         if matches!(self.source, Source::Flat { .. }) {
             self.offer_deferred_to_witnesses();
         }
-        self.retry_pending_witnesses(anchor);
+        self.retry_inline(anchor);
         Ok(None)
     }
 
@@ -1097,7 +1109,7 @@ impl CheckpointState {
         if let Some(last) = self.substrate.last_checkpoint() {
             let last_leaf_count = last.leaf_count()?;
             if self.leaf_count <= last_leaf_count {
-                self.retry_pending_witnesses(anchor);
+                self.retry_inline(anchor);
                 return Ok(None);
             }
         }
@@ -1113,6 +1125,95 @@ impl CheckpointState {
         anchor: &AnchorClient,
     ) -> Result<Option<CheckpointRecord>, CheckpointStateError> {
         self.reconnect(signer, anchor)
+    }
+
+    /// [`Self::retry_pending_witnesses`] for the legs that run it on their
+    /// own; a store path whose caller drives delivery itself (see
+    /// [`Self::set_inline_witness_delivery`]) is left alone.
+    fn retry_inline(&mut self, anchor: &AnchorClient) -> bool {
+        if matches!(self.source, Source::Log { .. }) && !self.inline_witness_delivery {
+            return false;
+        }
+        self.retry_pending_witnesses(anchor)
+    }
+
+    /// Choose who delivers a store path's witness rows (default `true`).
+    ///
+    /// With `true`, `tick`, `reconnect` and a clock-leg cut send them inside
+    /// the call, so the HTTP round trip (up to the witness client's 30 s
+    /// request timeout per send) runs while the caller holds this state.
+    /// With `false` they only record the rows; the caller runs
+    /// [`Self::take_witness_delivery`], [`WitnessDelivery::run`] and
+    /// [`Self::finish_witness_delivery`] around its own lock, so serving never
+    /// waits on a witness. A cut then returns without receipts and
+    /// `checkpoint_on_shutdown` delivers nothing: the caller runs one last
+    /// round itself. [`Self::retry_pending_witnesses`] still delivers inline
+    /// when called. No effect on a state that registers from
+    /// `checkpoints.jsonl`.
+    pub fn set_inline_witness_delivery(&mut self, inline: bool) {
+        self.inline_witness_delivery = inline;
+    }
+
+    /// Take one delivery pass out of the state (store path): what to send is
+    /// read under the caller's lock, [`WitnessDelivery::run`] sends it with no
+    /// lock, and [`Self::finish_witness_delivery`] records the outcome under a
+    /// short re-lock. `None` when there is nothing queued, the state is not
+    /// store-backed, or another pass is out. Delivery keeps its semantics:
+    /// each witness is sent its oldest undelivered cut only after its
+    /// predecessor was accepted, stops at its first failure, and a failed row
+    /// stays due; each outcome is a compare-and-set on the row, so a pass
+    /// that lost a race stops instead of overwriting.
+    pub fn take_witness_delivery(&mut self) -> Option<WitnessDelivery> {
+        let Source::Log {
+            backend,
+            witness_queues,
+            row_witness_ids,
+        } = &self.source
+        else {
+            return None;
+        };
+        if witness_queues.iter().all(|(_, q)| q.is_empty()) {
+            return None;
+        }
+        if self
+            .witness_delivery_out
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return None;
+        }
+        Some(WitnessDelivery {
+            backend: backend.clone(),
+            queues: witness_queues.clone(),
+            started_with: witness_queues.iter().map(|(_, q)| q.len()).collect(),
+            cadence_seconds: self.cfg.cadence_seconds,
+            latest: self.substrate.last_checkpoint().cloned(),
+            all_witness_ids: row_witness_ids.clone(),
+            recorded: false,
+            out: self.witness_delivery_out.clone(),
+        })
+    }
+
+    /// Record a pass run by [`WitnessDelivery::run`]: drop the queue entries
+    /// it consumed (cuts made meanwhile sit behind them and stay queued) and
+    /// refresh the latest checkpoint's witnesses from the rows. Returns whether
+    /// any receipt was recorded. A pass dropped without this leaves the queues
+    /// as they were; the next pass skips the rows that already hold a receipt.
+    pub fn finish_witness_delivery(&mut self, delivery: WitnessDelivery) -> bool {
+        if let Source::Log { witness_queues, .. } = &mut self.source {
+            for (i, (id, queue)) in witness_queues.iter_mut().enumerate() {
+                let (taken_id, left) = &delivery.queues[i];
+                debug_assert_eq!(id, taken_id, "witness queues keep their order");
+                // `run` only ever pops the front, and a cut made meanwhile is
+                // pushed at the back, so the live queue is the taken one's
+                // consumed prefix, its remainder, then the newer cuts.
+                let consumed = delivery.started_with[i] - left.len();
+                debug_assert!(queue.len() >= consumed);
+                queue.drain(..consumed.min(queue.len()));
+            }
+        }
+        self.refresh_latest_witnesses();
+        delivery.recorded
     }
 
     /// `register`: offer the new checkpoint to the configured witnesses now
@@ -1170,7 +1271,9 @@ impl CheckpointState {
                 queue.push_back(cp.mmr_size);
             }
             if register {
-                self.deliver_witness_rows();
+                if self.inline_witness_delivery {
+                    self.deliver_witness_rows();
+                }
                 return Ok(self
                     .substrate
                     .last_checkpoint()
@@ -1208,6 +1311,11 @@ impl CheckpointState {
     /// oldest undelivered cut, then the next, stopping at its first failure,
     /// so a witness only ever sees a cut whose predecessor it accepted. The
     /// result is whether any receipt was recorded.
+    ///
+    /// This runs the whole pass, network included, inside `&mut self`, so a
+    /// caller that keeps the state behind a lock holds it for the round
+    /// trip. [`Self::take_witness_delivery`] is the split form. A pass is
+    /// skipped (returns false) while one taken from this state is out.
     pub fn retry_pending_witnesses(&mut self, _anchor: &AnchorClient) -> bool {
         if matches!(self.source, Source::Log { .. }) {
             return self.deliver_witness_rows();
@@ -1356,6 +1464,63 @@ fn witness_from_row(row: &WitnessState) -> Option<CheckpointWitness> {
         tree_size: receipt.tree_size.unwrap_or_default(),
         is_stub: false,
     })
+}
+
+/// One witness delivery pass taken out of a [`CheckpointState`] (see
+/// [`CheckpointState::take_witness_delivery`]): it owns what it needs, so
+/// [`Self::run`] needs no lock on the state. Pass it back to
+/// [`CheckpointState::finish_witness_delivery`]; dropping it instead frees the
+/// state for the next pass and loses nothing, since a row that holds a receipt
+/// is skipped.
+pub struct WitnessDelivery {
+    backend: Arc<dyn CheckpointLog>,
+    /// Per witness, its queue as taken; `run` pops what it delivers or closes.
+    queues: Vec<(String, VecDeque<u64>)>,
+    started_with: Vec<usize>,
+    cadence_seconds: u64,
+    latest: Option<CheckpointRecord>,
+    all_witness_ids: Vec<String>,
+    recorded: bool,
+    out: Arc<AtomicBool>,
+}
+
+impl WitnessDelivery {
+    /// Send each witness its queued cuts and record the outcomes on the
+    /// witness rows. Blocks for the network, so call it with no lock held.
+    pub fn run(&mut self) {
+        let Self {
+            backend,
+            queues,
+            cadence_seconds,
+            latest,
+            all_witness_ids,
+            recorded,
+            ..
+        } = self;
+        for (witness_id, queue) in queues.iter_mut() {
+            let delivery = RowDelivery {
+                backend: backend.as_ref(),
+                witness_id,
+                client: match client_for(witness_id) {
+                    Ok(client) => client,
+                    Err(why) => {
+                        eprintln!("[checkpoint] cannot reach witness {witness_id}: {why}");
+                        continue;
+                    }
+                },
+                cadence_seconds: *cadence_seconds,
+                latest: latest.as_ref(),
+                all_witness_ids,
+            };
+            *recorded |= delivery.run(queue);
+        }
+    }
+}
+
+impl Drop for WitnessDelivery {
+    fn drop(&mut self) {
+        self.out.store(false, Ordering::Release);
+    }
 }
 
 /// Delivers one witness's rows (see [`CheckpointState::retry_pending_witnesses`]).
@@ -1640,37 +1805,15 @@ fn decoded_root(cose: &[u8]) -> Option<String> {
 }
 
 impl CheckpointState {
-    /// One delivery pass over every configured witness's rows (store path).
+    /// One delivery pass over every configured witness's rows (store path),
+    /// with the caller's `&mut self` held throughout; the split form is
+    /// [`Self::take_witness_delivery`].
     fn deliver_witness_rows(&mut self) -> bool {
-        let Source::Log {
-            backend,
-            witness_queues,
-            row_witness_ids,
-        } = &mut self.source
-        else {
+        let Some(mut delivery) = self.take_witness_delivery() else {
             return false;
         };
-        let latest = self.substrate.last_checkpoint();
-        let mut recorded = false;
-        for (witness_id, queue) in witness_queues.iter_mut() {
-            let delivery = RowDelivery {
-                backend: backend.as_ref(),
-                witness_id,
-                client: match client_for(witness_id) {
-                    Ok(client) => client,
-                    Err(why) => {
-                        eprintln!("[checkpoint] cannot reach witness {witness_id}: {why}");
-                        continue;
-                    }
-                },
-                cadence_seconds: self.cfg.cadence_seconds,
-                latest,
-                all_witness_ids: row_witness_ids,
-            };
-            recorded |= delivery.run(queue);
-        }
-        self.refresh_latest_witnesses();
-        recorded
+        delivery.run();
+        self.finish_witness_delivery(delivery)
     }
 
     /// Rebuild the latest checkpoint's witnesses from its rows that hold a
@@ -4364,5 +4507,199 @@ mod tests {
         assert!(cut.len() <= MAX_REASON_BYTES);
         assert!(long.starts_with(&cut));
         assert_eq!(row_error("short"), "short");
+    }
+    // -- witness delivery outside the caller's lock ----------------------------
+
+    fn queued(state: &CheckpointState, url: &str) -> Vec<u64> {
+        let Source::Log { witness_queues, .. } = &state.source else {
+            panic!("a store state");
+        };
+        witness_queues
+            .iter()
+            .find(|(id, _)| id == url)
+            .map(|(_, q)| q.iter().copied().collect())
+            .unwrap()
+    }
+
+    #[test]
+    fn a_witness_delivery_can_cross_threads() {
+        fn is_send<T: Send + 'static>() {}
+        is_send::<WitnessDelivery>();
+    }
+
+    /// A witness that accepts connections and never answers: it reports each
+    /// one on `accepted` and holds it open until `release` is dropped.
+    fn silent_witness() -> (
+        String,
+        std::sync::mpsc::Receiver<()>,
+        std::sync::mpsc::Sender<()>,
+    ) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (accepted_tx, accepted) = std::sync::mpsc::channel();
+        let (release, release_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { return };
+                held.push(stream);
+                let _ = accepted_tx.send(());
+                // Hold every connection until the test lets go.
+                if release_rx.recv().is_err() {
+                    return;
+                }
+                held.clear();
+            }
+        });
+        (url, accepted, release)
+    }
+
+    /// The bar for the unreachable witness: while a delivery is stuck in its
+    /// round trip, the caller's lock stays free, so a push-time cut and a
+    /// coverage lookup return at once, and the cut they make is queued behind
+    /// the failed one.
+    #[test]
+    fn store_an_unanswering_witness_does_not_hold_the_state_lock() {
+        let (url, accepted, release) = silent_witness();
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&url]);
+        state.set_inline_witness_delivery(false);
+        append_entry(log.as_ref(), "one");
+        let anchor = AnchorClient::new(&url);
+        let first = state.reconnect(&signer(), &anchor).unwrap().unwrap();
+        let second_id = append_entry(log.as_ref(), "two");
+        let shared = std::sync::Arc::new(std::sync::Mutex::new(state));
+
+        let worker = {
+            let shared = shared.clone();
+            std::thread::spawn(move || {
+                let mut delivery = shared.lock().unwrap().take_witness_delivery().unwrap();
+                delivery.run();
+                shared.lock().unwrap().finish_witness_delivery(delivery)
+            })
+        };
+        accepted
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the witness was sent the cut");
+
+        // The witness holds the request open: the lock is free for serving.
+        // (Let go after 3 s regardless, so a regression fails the bound
+        // below instead of hanging the test.)
+        let release = std::sync::Arc::new(std::sync::Mutex::new(Some(release)));
+        let backstop = release.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            backstop.lock().unwrap().take();
+        });
+        let started = Instant::now();
+        let coverage = shared
+            .lock()
+            .unwrap()
+            .checkpoint_covering(&second_id, &signer(), &anchor)
+            .unwrap();
+        assert!(coverage.cut_new);
+        assert!(shared
+            .lock()
+            .unwrap()
+            .existing_coverage(&second_id)
+            .unwrap()
+            .is_some());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "serving waited {:?} behind a witness delivery",
+            started.elapsed()
+        );
+
+        release.lock().unwrap().take();
+        assert!(!worker.join().unwrap(), "no receipt came back");
+        let state = shared.lock().unwrap();
+        let sizes = queued(&state, &url);
+        assert_eq!(sizes.len(), 2, "the failed cut and the new one stay queued");
+        assert_eq!(sizes[0], first.mmr_size);
+        let failed = row(log.as_ref(), &url, first.mmr_size);
+        assert!(failed.receipt.is_none() && !failed.permanent);
+        assert_eq!(failed.attempts, 1);
+    }
+
+    #[test]
+    fn store_a_split_delivery_sends_in_order_and_keeps_a_cut_made_meanwhile() {
+        let a = continuity_witness(None);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&a.url]);
+        state.set_inline_witness_delivery(false);
+        let anchor = AnchorClient::new(&a.url);
+        append_entry(log.as_ref(), "one");
+        let first = state.reconnect(&signer(), &anchor).unwrap().unwrap();
+        assert!(first.witnesses.is_empty(), "a cut with no inline delivery");
+        assert_eq!(hits(&a), 0);
+
+        let mut d = state.take_witness_delivery().expect("a cut is queued");
+        // One pass at a time: no second take, no inline pass, no sends.
+        assert!(state.take_witness_delivery().is_none());
+        assert!(!state.retry_pending_witnesses(&anchor));
+        assert_eq!(hits(&a), 0);
+
+        let second_id = append_entry(log.as_ref(), "two");
+        state
+            .checkpoint_covering(&second_id, &signer(), &anchor)
+            .unwrap();
+        d.run();
+        assert!(state.finish_witness_delivery(d));
+        let latest = state.substrate.last_checkpoint().unwrap().mmr_size;
+        assert_eq!(*a.accepted.lock().unwrap(), vec![first.mmr_size]);
+        assert_eq!(queued(&state, &a.url), vec![latest]);
+
+        // The next round delivers the cut made meanwhile, after its predecessor.
+        let mut d = state.take_witness_delivery().unwrap();
+        d.run();
+        assert!(state.finish_witness_delivery(d));
+        assert_eq!(*a.accepted.lock().unwrap(), vec![first.mmr_size, latest]);
+        assert!(queued(&state, &a.url).is_empty());
+        assert_eq!(
+            state.substrate.last_checkpoint().unwrap().witnesses.len(),
+            1
+        );
+        assert!(state.take_witness_delivery().is_none(), "nothing left");
+    }
+
+    #[test]
+    fn store_a_dropped_delivery_frees_the_state_and_loses_nothing() {
+        let a = continuity_witness(None);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&a.url]);
+        state.set_inline_witness_delivery(false);
+        let anchor = AnchorClient::new(&a.url);
+        append_entry(log.as_ref(), "one");
+        let cp = state.reconnect(&signer(), &anchor).unwrap().unwrap();
+
+        drop(state.take_witness_delivery().unwrap());
+        assert_eq!(queued(&state, &a.url), vec![cp.mmr_size]);
+        let mut d = state
+            .take_witness_delivery()
+            .expect("the guard was cleared");
+        d.run();
+        // A delivery that ran but was dropped unfinished leaves the row
+        // delivered; the next pass skips it without a second send.
+        drop(d);
+        assert_eq!(hits(&a), 1);
+        assert!(!state.retry_pending_witnesses(&anchor));
+        assert_eq!(hits(&a), 1);
+        assert!(queued(&state, &a.url).is_empty());
+    }
+
+    #[test]
+    fn store_a_tick_leaves_delivery_to_the_caller_when_inline_is_off() {
+        let a = continuity_witness(None);
+        let log = memory_log();
+        let mut state = load_store(log.clone(), &[&a.url]);
+        let anchor = AnchorClient::new(&a.url);
+        append_entry(log.as_ref(), "one");
+        state.set_inline_witness_delivery(false);
+        state.reconnect(&signer(), &anchor).unwrap().unwrap();
+        state.tick(&signer(), &anchor).unwrap();
+        assert_eq!(hits(&a), 0);
+        state.set_inline_witness_delivery(true);
+        state.tick(&signer(), &anchor).unwrap();
+        assert_eq!(hits(&a), 1, "inline delivery sends what was left queued");
     }
 }
