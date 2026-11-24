@@ -1200,6 +1200,10 @@ impl CheckpointState {
     /// any receipt was recorded. A pass dropped without this leaves the queues
     /// as they were; the next pass skips the rows that already hold a receipt.
     pub fn finish_witness_delivery(&mut self, delivery: WitnessDelivery) -> bool {
+        if !Arc::ptr_eq(&delivery.out, &self.witness_delivery_out) {
+            eprintln!("[checkpoint] ignoring a witness delivery taken from another state");
+            return false;
+        }
         if let Source::Log { witness_queues, .. } = &mut self.source {
             for (i, (id, queue)) in witness_queues.iter_mut().enumerate() {
                 let (taken_id, left) = &delivery.queues[i];
@@ -1810,6 +1814,14 @@ impl CheckpointState {
     /// [`Self::take_witness_delivery`].
     fn deliver_witness_rows(&mut self) -> bool {
         let Some(mut delivery) = self.take_witness_delivery() else {
+            // Nothing queued: still pick up receipts written to the rows by
+            // anything else, as every pass did before. Not while a split pass
+            // is out, whose finish refreshes.
+            if matches!(self.source, Source::Log { .. })
+                && !self.witness_delivery_out.load(Ordering::Acquire)
+            {
+                self.refresh_latest_witnesses();
+            }
             return false;
         };
         delivery.run();

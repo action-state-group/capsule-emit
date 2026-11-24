@@ -16,7 +16,7 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
   timeout (30 s by default) while a witness was unreachable. `CheckpointState::set_inline_witness_delivery(false)`
   makes `tick`, `reconnect` and a clock-leg cut leave delivery to the caller (a cut then returns without receipts, and
   `checkpoint_on_shutdown` delivers nothing, so run one last round). The default is unchanged: delivery stays inline.
-  Delivery order, the row compare-and-set and the retry of a failed row are unchanged; one pass is out at a time.
+  Delivery order, the row compare-and-set and the retry of a failed row are unchanged; one pass is out at a time, and `retry_pending_witnesses`, `tick` and `reconnect` skip their inline pass while one is out.
 
 ## 0.0.13
 
