@@ -106,7 +106,7 @@ the same capsule IDs and checkpoint roots on both.
 With these dependencies:
 
 ```toml
-capsule-emit = "0.0.13"
+capsule-emit = "0.0.14"
 cll = { package = "checkpointed-local-log", version = "0.6.0", features = ["sqlite"] }
 capsule-emit-artifact = { version = "0.0.4", features = ["sqlite"] }
 rusqlite = "0.40"
