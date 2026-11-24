@@ -7,6 +7,17 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+### Added
+
+- Witness delivery on a store-backed state (`CheckpointState::load_log`) can run outside the caller's lock:
+  `CheckpointState::take_witness_delivery` reads what to send under the lock, `WitnessDelivery::run` sends it with no
+  lock held, and `CheckpointState::finish_witness_delivery` records the outcome under a short re-lock. Before, `tick`
+  sent inside `&mut self`, so a caller holding the state behind a lock stalled serving for each witness request's
+  timeout (30 s by default) while a witness was unreachable. `CheckpointState::set_inline_witness_delivery(false)`
+  makes `tick`, `reconnect` and a clock-leg cut leave delivery to the caller (a cut then returns without receipts, and
+  `checkpoint_on_shutdown` delivers nothing, so run one last round). The default is unchanged: delivery stays inline.
+  Delivery order, the row compare-and-set and the retry of a failed row are unchanged; one pass is out at a time, and `retry_pending_witnesses`, `tick` and `reconnect` skip their inline pass while one is out.
+
 ## 0.0.13
 
 ### Changed
