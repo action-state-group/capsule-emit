@@ -7,6 +7,8 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+## 0.0.14
+
 ### Added
 
 - Witness delivery on a store-backed state (`CheckpointState::load_log`) can run outside the caller's lock:
