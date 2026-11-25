@@ -412,13 +412,14 @@ factory for the backend under test:
 
 All four languages run the suite.
 
-The `artifact-interlock` workflow also runs a cross-language interlock on every
-push to `main` that touches artifact code and nightly (`scripts/check.sh` runs
-it before a push): for each format, every language writes
-the same sequence, every language reads every other language's store, and the
-reports, JSONL bytes, SQL rows, StorageChecksums, purge outcomes and error
-codes must all agree. A language's backend joins it in the pull request that
-adds the backend.
+The `artifact-interlock` workflow also runs a cross-language interlock, not on
+pull requests but on every push to `main` that touches its inputs, nightly, and
+on manual runs; `scripts/check.sh` runs it before a push. For each format, every
+language writes the same sequence, every language reads every other language's
+store, and the reports, JSONL bytes, SQL rows, StorageChecksums, purge outcomes
+and error codes must all agree. A language's backend joins it in the pull
+request that adds the backend, which runs it with `scripts/check.sh` before the
+push; CI first runs it on `main`.
 
 The vectors' README describes the file format, the padding cases, and the
 optional capabilities a case may require (`durable`: the backend can be reopened over the same storage;
