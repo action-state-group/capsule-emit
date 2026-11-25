@@ -404,6 +404,30 @@ pub fn seal_leg(
     chain: Option<ChainLink>,
     signing_key: &ed25519_dalek::SigningKey,
 ) -> Result<Value, SealLegError> {
+    seal_leg_with_blocks(
+        header,
+        action_id,
+        member,
+        Map::new(),
+        references,
+        chain,
+        signing_key,
+    )
+}
+
+/// [`seal_leg`], with `blocks` in the leg's
+/// `model_attestation.compute_attestation`, for a sealer whose legs carry
+/// its own blocks there (as a citation of the agreement the payment is
+/// under). With no blocks it seals what [`seal_leg`] seals.
+pub fn seal_leg_with_blocks(
+    header: &LocalRecordHeader<'_>,
+    action_id: String,
+    member: Value,
+    blocks: Map<String, Value>,
+    references: Option<Value>,
+    chain: Option<ChainLink>,
+    signing_key: &ed25519_dalek::SigningKey,
+) -> Result<Value, SealLegError> {
     let codes = structure_failures(&member);
     if !codes.is_empty() {
         return Err(SettlementError { codes }.into());
@@ -413,7 +437,7 @@ pub fn seal_leg(
     Ok(seal_local_record_with_members(
         header,
         action_id,
-        Map::new(),
+        blocks,
         top,
         references,
         chain,
@@ -616,6 +640,57 @@ mod tests {
         })
         .unwrap();
         assert_eq!(capsule["capsule_id"], json!(id));
+    }
+
+    /// `seal_leg_with_blocks` puts the blocks in `compute_attestation`
+    /// beside the leg; a malformed leg is still never sealed.
+    #[test]
+    fn a_leg_with_blocks_carries_them_in_compute_attestation() {
+        let key = SigningKey::from_bytes(&[7u8; 32]);
+        let header = LocalRecordHeader {
+            operator: "op",
+            developer: "dev",
+            provider: "mesh-llm",
+            model_id: "model",
+        };
+        let mut blocks = Map::new();
+        blocks.insert("x-test-block".into(), json!({"agreement": "a".repeat(64)}));
+        let capsule = seal_leg_with_blocks(
+            &header,
+            "settlement/payee_observed".into(),
+            payee_leg(),
+            blocks,
+            None,
+            None,
+            &key,
+        )
+        .unwrap();
+        assert_eq!(
+            capsule["model_attestation"]["compute_attestation"]["x-test-block"]["agreement"],
+            json!("a".repeat(64))
+        );
+        assert_eq!(
+            capsule[SETTLEMENT_MEMBER]["received"]["value"],
+            json!("995")
+        );
+        let plain = seal_leg(
+            &header,
+            "settlement/payee_observed".into(),
+            payee_leg(),
+            None,
+            None,
+            &key,
+        )
+        .unwrap();
+        assert!(plain["model_attestation"]["compute_attestation"]
+            .get("x-test-block")
+            .is_none());
+        let mut leg = payee_leg();
+        leg["status"] = json!("received");
+        assert!(matches!(
+            seal_leg_with_blocks(&header, "x".into(), leg, Map::new(), None, None, &key),
+            Err(SealLegError::Leg(_))
+        ));
     }
 
     #[test]

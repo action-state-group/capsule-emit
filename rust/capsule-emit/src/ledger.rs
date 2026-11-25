@@ -258,6 +258,28 @@ impl std::fmt::Debug for Stores {
     }
 }
 
+/// A stored record as its ledger line: the record's capsule with
+/// `signature` (the producer envelope, hex) and `key_id` (its signer, hex)
+/// put back, as [`Ledger`] reads a line. For stores that keep records in the
+/// artifact store and serve them as lines.
+pub fn record_line(record: &Record) -> Result<Value, LedgerError> {
+    let mut parsed = decode_record(&record.capsule)?;
+    let envelope =
+        agent_action_capsule::envelope::verify(&record.capsule_id, &record.producer_envelope);
+    let object = parsed
+        .as_object_mut()
+        .ok_or(LedgerError::MissingCapsuleId { line: 0 })?;
+    object.insert(
+        "signature".into(),
+        Value::String(hex::encode(&record.producer_envelope)),
+    );
+    object.insert(
+        "key_id".into(),
+        Value::String(hex::encode(&envelope.public_key)),
+    );
+    Ok(parsed)
+}
+
 impl Stores {
     /// The record for `capsule_id` as a ledger line and its signed statement,
     /// `None` when the statement is missing or purged. `line` numbers errors.
@@ -271,20 +293,10 @@ impl Stores {
             }
             other => other?,
         };
-        let mut parsed = decode_record(&record.capsule)?;
-        let envelope =
-            agent_action_capsule::envelope::verify(capsule_id, &record.producer_envelope);
-        let object = parsed
-            .as_object_mut()
-            .ok_or(LedgerError::MissingCapsuleId { line })?;
-        object.insert(
-            "signature".into(),
-            Value::String(hex::encode(&record.producer_envelope)),
-        );
-        object.insert(
-            "key_id".into(),
-            Value::String(hex::encode(&envelope.public_key)),
-        );
+        let parsed = record_line(&record).map_err(|e| match e {
+            LedgerError::MissingCapsuleId { .. } => LedgerError::MissingCapsuleId { line },
+            e => e,
+        })?;
         let statement = record
             .artifacts
             .into_iter()

@@ -1456,8 +1456,10 @@ fn witness_from_receipt(ts_url: &str, receipt: &Receipt) -> CheckpointWitness {
 }
 
 /// A row's receipt as the checkpoint record's witness entry: the same value
-/// the flat path records for that response.
-fn witness_from_row(row: &WitnessState) -> Option<CheckpointWitness> {
+/// the flat path records for that response. `None` for a row with no
+/// receipt. Public for stores that keep their own checkpoint history beside
+/// the log's witness rows.
+pub fn witness_from_row(row: &WitnessState) -> Option<CheckpointWitness> {
     use base64::Engine;
     let receipt = row.receipt.as_ref()?;
     Some(CheckpointWitness {
