@@ -131,6 +131,16 @@ What neither A1 nor A2 gives:
 - **A misleading kind.** Under A2 an LLM span is sealed as an effect record
   by the fail-safe default. A decision is not an effect; if A2 is offered for
   decisions, the record must say what it is (decision 3 below).
+- **Not an effect count.** The same default seals other gateway spans that
+  carry no read or write signal: `tools/list` and the MCP session `GET` and
+  `DELETE` spans carry only `mcp.method.name` and the target
+  (`crates/agentgateway/src/mcp/upstream/mod.rs:158-165`, `:274-276`), and
+  the guardrail gRPC spans carry the old key `http.method`
+  (`httpproxy.rs:5403`), which the classifier does not read. Each becomes an
+  effect record, so one tool call yields several records, reads included,
+  while phase 1 filters reads out at the gateway (`agentgateway.py:6-7`). A2
+  records reconcile with phase 1 records only after the export is filtered,
+  for example to `mcp.method.name == "tools/call"`.
 
 A is the smallest step and needs no build for A1 and none for A2 beyond
 running it. It protects the adopter's own trace store; it does not answer
@@ -163,14 +173,22 @@ export can find, for each effect, the LLM calls in the same trace.
      `crates/agentgateway/src/proxy/httpproxy.rs:5399-5411`). It is present on
      both phases, needs no header forwarding, and names a gateway span that
      appears in the adopter's own export. It is absent when gateway tracing is
-     off (`httpproxy.rs:5399-5401`).
+     off (`httpproxy.rs:5399-5401`) or the request is not sampled: the
+     gateway makes no span then (`crates/agentgateway/src/telemetry/log.rs:1218-1224`)
+     and passes the client's `traceparent` through untouched
+     (`basic.rs:474-480`), so under head sampling only the sampled share of
+     effects gets it. Unsampled traces are missing from the export too, so
+     those effects cannot be matched under A either. It carries `traceparent`
+     only, never `tracestate` (`log.rs:2929-2935`).
    - **`McpRequest.headers` (fallback).** ExtMcp also delivers the incoming
      HTTP headers, after the gateway's allow/deny filter, on the request phase
      only; `McpResponse` has none, and stdio upstreams have none
      (`crates/protos/proto/ext_mcp.proto:28-31`, `:34-43`). Using it needs
      `requestHeaders: {allowed: [traceparent, tracestate]}`, which also keeps
      `authorization` off the wire; an `allowed` list without `traceparent`
-     yields nothing. Its span id is the agent's own client span.
+     yields nothing. Its span id is the agent's own client span. It is the
+     only source of `tracestate`, and it still carries the agent's
+     `traceparent` on unsampled requests.
 3. **The adapter seals it as the existing block.** It parses `traceparent`
    and adds an `org.agentactioncapsule.otel` block through `build_otel_block`
    (`block.py:147-226`), so the trace id stays a digest by the same default as
@@ -190,10 +208,13 @@ export can find, for each effect, the LLM calls in the same trace.
    (`backfill.py:158-159`).
 
 When a missing or malformed `traceparent` leaves no block, the record says
-nothing about a trace, and its effect shows as unmatched. The item that
-builds this also changes the adapter's stated contract: the module docstring
-and `docs/adapters/agentgateway.md` say today that the adapter never reads
-headers (`agentgateway.py:78-82`, `:317-318`).
+nothing about a trace, and its effect shows as "no trace" (below). The item
+that builds this also changes the adapter's stated contract: the module says
+today that the adapter never reads headers (`agentgateway.py:78-82`,
+`:317-318`), and if the header fallback is used, the reference configs in
+`docs/adapters/agentgateway.md`, which forward every header but
+`authorization` (`agentgateway.md:116-118`, `:245`, `:396`), change to the
+narrower allow list.
 
 A trace id is 128 bits and normally random, so its digest cannot be guessed
 the way a digest of an account number can. That is why B avoids the
@@ -206,18 +227,21 @@ digest.
   and several tool calls in one trace. B groups them; it does not pair one
   decision with one effect. Pairing one to one needs a per-call id on both
   sides, which is not being built.
-- **Shown per effect as matched, unmatched or unresolved**: one LLM call in
-  the trace before it, none, or several. This follows the recommendation of
-  best effort; whether the product presents it that way is not ruled yet
+- **Shown per effect in one of four states**: *matched* (one LLM call in the
+  trace before it), *unmatched* (the trace is known and holds no LLM call
+  before it, which is the real signal: an effect with no decision ahead of
+  it), *unresolved* (several LLM calls before it), or *no trace* (the record
+  carries no trace context, which says only that the context did not
+  arrive). This follows the recommendation of best effort; whether the product presents it that way is not ruled yet
   (decision 2).
 - **The trace id is the agent's claim.** The gateway continues whatever trace
   the agent started, so a faulty or hostile agent can put any trace id on its
   calls; the gRPC source makes the span id a real gateway span, not the trace
   id trustworthy. B is correlation for review, never proof that a decision
   caused an effect.
-- **An effect with no trace context is unmatched**, not an error: the agent
-  did not propagate it, gateway tracing was off, or (with the header
-  fallback) the call came over stdio.
+- **"No trace" is not an error**: the agent did not propagate trace
+  context, gateway tracing was off or the request was not sampled, or (with
+  the header fallback) the call came over stdio.
 
 B is a small build in this repository (items 2 to 4) plus a configuration
 change on the adopter's side (item 1). It adds a block to agentgateway
@@ -233,7 +257,8 @@ units ask for "decided X, did X".
 ## 5. What stays out
 
 - **No clear prompt, completion or tool-argument text** in any record or span
-  attribute. The never-enters rows (`allowlist.py:146-170`) cover messages,
+  attribute. For today's records this is the shipped default; for decision
+  records it is the standing recommendation, not a ruling (decision 5). The never-enters rows (`allowlist.py:146-170`) cover messages,
   system instructions, tool arguments and results, memory and retrieval text,
   conversation and MCP session ids, and `enduser.*`/`user.*`. The allow-list
   is default-deny, so an attribute not listed never leaves the process
@@ -241,8 +266,8 @@ units ask for "decided X, did X".
   its own domain.
 - **No capsule body on a span or log record**, only the id (section 1).
 - **No `tracestate` in clear**; vendor entries can carry identifiers.
-- **No other request header.** B reads `traceparent` and `tracestate` only;
-  the adapter keeps ignoring every other header.
+- **No other request header.** B reads `traceparent` (and, with the header
+  fallback, `tracestate`) only; the adapter keeps ignoring every other header.
 - **Tool arguments on the MCP record stay as they are today.** B adds no
   argument handling. Their digests are unsalted today, so a low-entropy
   argument is guessable from its digest; that is a separate known limit, not
@@ -259,7 +284,7 @@ adopter:
    together. Recommendation: A and B together, since B without A matches
    against a trace store nobody sealed.
 2. **How the match is presented.** As a best-effort, trace-level match shown
-   as matched, unmatched or unresolved, or not at all until a per-call id
+   in the four states above, or not at all until a per-call id
    exists. Recommendation: best effort, never called a guarantee. Not
    ruled yet.
 3. **What an LLM span sealed from a trace is called.** Today it would be an
@@ -271,5 +296,9 @@ adopter:
 4. **Whether phase 1 effect records start carrying the trace id now.** A
    record sealed without it can never be matched later. Adding it is the B
    build above, ahead of the rest. Recommendation: only once the adopter
-   confirms its agents propagate trace context and gateway tracing is on,
-   since otherwise the field is always empty.
+   confirms its agents propagate trace context and that gateway tracing
+   samples the calls it wants matched, since otherwise the field is always
+   empty.
+5. **Whether decision records stay digest-only.** Recommendation: yes; a
+   customer who needs clear text keeps its own copy and discloses it from its
+   own domain. Not ruled yet.
