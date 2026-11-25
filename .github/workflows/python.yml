@@ -4,7 +4,28 @@ name: Python CI
 on:
   push:
     branches: [main]
+  # Only when the package, a file ruff lints, or an input its tests read
+  # changes.
   pull_request:
+    paths:
+      - "python/**"
+      - "**.py"
+      - "test-vectors/**"
+      - "commitment-conformance-vectors/**"
+      - "examples/**"
+      - "docs/**"
+      - "skills/**"
+      - "flows/**"
+      - "witnesses.json"
+      - "go/testdata/**"
+      - "go/artifact/*/schema.sql"
+      - ".github/workflows/python.yml"
+
+concurrency:
+  # Pull request runs of one ref replace each other; a run on main, a nightly
+  # or a dispatch gets its own group and is never cancelled or replaced.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -101,3 +122,27 @@ jobs:
           tests/test_inspect_ai_core.py
           tests/test_inspect_ai_eval_log.py
           tests/test_reconciliation.py
+
+  report-failure:
+    # A red run on main opens or comments on one ci-red issue
+    # (asg-agent-team-ethan#409). A cancelled run is not reported.
+    name: report a red main run
+    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, inspect-ai]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Report on the issue
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "Python CI failed on main"
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ASSIGNEE: ${{ vars.CI_FAILURE_ASSIGNEE }}
+        run: bash .github/scripts/report-failure.sh
