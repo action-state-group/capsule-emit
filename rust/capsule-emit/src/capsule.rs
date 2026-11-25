@@ -170,7 +170,7 @@ pub enum SealError {
     #[error("top-level member {0:?} would replace a capsule member")]
     ReservedMember(String),
     /// A caller's timestamp is not an RFC 3339 time at the minute.
-    #[error("timestamp {0:?} is not an RFC 3339 time with zero seconds")]
+    #[error("timestamp {0:?} is not a UTC minute, YYYY-MM-DDTHH:MM:00Z")]
     Timestamp(String),
 }
 
@@ -503,8 +503,9 @@ pub struct LocalRecordOptions<'a> {
     pub human_disposed: Option<bool>,
     /// `disposition.verdict_class`, default `executed`.
     pub verdict_class: Option<&'a str>,
-    /// `timestamp`, an RFC 3339 time at the minute, default now at the
-    /// minute; for a caller that names the time elsewhere in the record.
+    /// `timestamp`, a UTC minute in the form the crate writes
+    /// (`YYYY-MM-DDTHH:MM:00Z`), default now at the minute; for a caller
+    /// that names the time elsewhere in the record.
     pub timestamp: Option<&'a str>,
 }
 
@@ -539,7 +540,8 @@ pub fn seal_local_record_with_options(
     body.insert("operator".into(), json!(header.operator));
     body.insert("developer".into(), json!(header.developer));
     let timestamp = match options.timestamp {
-        Some(t) if crate::timestamp::is_minute_granular(t) => t.to_string(),
+        // The shape the crate writes itself: UTC, `Z`, zero seconds.
+        Some(t) if crate::timestamp::coarsen_to_minute(t).as_deref() == Some(t) => t.to_string(),
         Some(t) => return Err(SealError::Timestamp(t.to_string())),
         None => crate::timestamp::utc_now_minute(),
     };
@@ -937,12 +939,21 @@ mod tests {
             json!({"decision": "accept", "approver": "human", "human_disposed": true,
                    "verdict_class": "resolved"})
         );
-        assert!(matches!(
-            seal(&LocalRecordOptions {
-                timestamp: Some("2026-11-25T08:00:01Z"),
-                ..LocalRecordOptions::default()
-            }),
-            Err(SealError::Timestamp(_))
-        ));
+        for bad in [
+            "2026-11-25T08:00:01Z",
+            "2026-11-25T02:00:00-06:00",
+            "2026-11-25T08:00:00.000Z",
+        ] {
+            assert!(
+                matches!(
+                    seal(&LocalRecordOptions {
+                        timestamp: Some(bad),
+                        ..LocalRecordOptions::default()
+                    }),
+                    Err(SealError::Timestamp(_))
+                ),
+                "{bad}"
+            );
+        }
     }
 }

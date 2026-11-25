@@ -10,7 +10,7 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 ### Added
 
 - `settlement::seal_leg_with_blocks` seals a leg with blocks in its `compute_attestation` (`seal_leg` is it with none), `ledger::record_line` turns a stored record into its ledger line (as `Ledger` reads one), and `checkpoint::witness_from_row` is public, for stores that keep their own records and checkpoint history (capsule-emit#477).
-- `capsule::seal_local_record_with_options` and `LocalRecordOptions`: a local record with the caller's `action_type`, `provenance`, `disposition.approver`, `human_disposed` and `verdict_class`, and a minute-granular `timestamp`, passed through as given; `seal_local_record_with_members` is it with the defaults and seals what it did. A non-minute `timestamp` is `SealError::Timestamp` (capsule-emit#479).
+- `capsule::seal_local_record_with_options` and `LocalRecordOptions`: a local record with the caller's `action_type`, `provenance`, `disposition.approver`, `human_disposed` and `verdict_class`, and a minute-granular `timestamp`, passed through as given; `seal_local_record_with_members` is it with the defaults and seals what it did. A `timestamp` not in the form the crate writes (`YYYY-MM-DDTHH:MM:00Z`) is `SealError::Timestamp`, a new variant: an exhaustive `match` on `SealError` needs an arm for it (capsule-emit#479).
 
 ## 0.0.14
 
