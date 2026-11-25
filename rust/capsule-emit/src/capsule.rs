@@ -169,6 +169,9 @@ pub enum SealError {
     /// A profile's top-level member would replace a member this crate writes.
     #[error("top-level member {0:?} would replace a capsule member")]
     ReservedMember(String),
+    /// A caller's timestamp is not an RFC 3339 time at the minute.
+    #[error("timestamp {0:?} is not an RFC 3339 time with zero seconds")]
+    Timestamp(String),
 }
 
 /// AAC-05 §5.2's confirmed-effect invariant and status/digest table.
@@ -472,6 +475,53 @@ pub fn seal_local_record_with_members(
     chain: Option<ChainLink>,
     signing_key: &ed25519_dalek::SigningKey,
 ) -> Result<Value, SealError> {
+    seal_local_record_with_options(
+        header,
+        action_id,
+        blocks,
+        members,
+        references,
+        chain,
+        &LocalRecordOptions::default(),
+        signing_key,
+    )
+}
+
+/// Header and disposition values a caller sets on a local record, each in
+/// place of the value [`seal_local_record_with_members`] writes: the caller's
+/// own vocabulary passes through as given (an unregistered value is the
+/// verifier's informational finding, never this crate's to refuse or name).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LocalRecordOptions<'a> {
+    /// `action_type`, default `fyi`.
+    pub action_type: Option<&'a str>,
+    /// `provenance`, default `collector`.
+    pub provenance: Option<&'a str>,
+    /// `disposition.approver`, default `policy`.
+    pub approver: Option<&'a str>,
+    /// `disposition.human_disposed`, default false.
+    pub human_disposed: Option<bool>,
+    /// `disposition.verdict_class`, default `executed`.
+    pub verdict_class: Option<&'a str>,
+    /// `timestamp`, an RFC 3339 time at the minute, default now at the
+    /// minute; for a caller that names the time elsewhere in the record.
+    pub timestamp: Option<&'a str>,
+}
+
+/// [`seal_local_record_with_members`] with the caller's [`LocalRecordOptions`].
+/// With the default options it seals what that function seals.
+// The arguments are `seal_local_record_with_members`'s, plus the options.
+#[allow(clippy::too_many_arguments)]
+pub fn seal_local_record_with_options(
+    header: &LocalRecordHeader<'_>,
+    action_id: String,
+    blocks: Map<String, Value>,
+    members: Map<String, Value>,
+    references: Option<Value>,
+    chain: Option<ChainLink>,
+    options: &LocalRecordOptions<'_>,
+    signing_key: &ed25519_dalek::SigningKey,
+) -> Result<Value, SealError> {
     if blocks.contains_key(STORE_NONCE_FIELD) {
         return Err(SealError::ReservedExtensionKey(
             STORE_NONCE_FIELD.to_string(),
@@ -482,15 +532,23 @@ pub fn seal_local_record_with_members(
     body.insert("format_version".into(), json!(FORMAT_VERSION));
     body.insert("canonicalization_id".into(), json!(CANONICALIZATION_ID));
     body.insert("action_id".into(), json!(action_id));
-    body.insert("action_type".into(), json!("fyi"));
+    body.insert(
+        "action_type".into(),
+        json!(options.action_type.unwrap_or("fyi")),
+    );
     body.insert("operator".into(), json!(header.operator));
     body.insert("developer".into(), json!(header.developer));
-    body.insert(
-        "timestamp".into(),
-        json!(crate::timestamp::utc_now_minute()),
-    );
+    let timestamp = match options.timestamp {
+        Some(t) if crate::timestamp::is_minute_granular(t) => t.to_string(),
+        Some(t) => return Err(SealError::Timestamp(t.to_string())),
+        None => crate::timestamp::utc_now_minute(),
+    };
+    body.insert("timestamp".into(), json!(timestamp));
     body.insert("domain".into(), json!("action"));
-    body.insert("provenance".into(), json!("collector"));
+    body.insert(
+        "provenance".into(),
+        json!(options.provenance.unwrap_or("collector")),
+    );
 
     let mut compute_attestation = blocks;
     compute_attestation.insert(STORE_NONCE_FIELD.into(), json!(fresh_store_nonce()));
@@ -514,9 +572,9 @@ pub fn seal_local_record_with_members(
         "disposition".into(),
         json!({
             "decision": "accept",
-            "approver": "policy",
-            "human_disposed": false,
-            "verdict_class": "executed",
+            "approver": options.approver.unwrap_or("policy"),
+            "human_disposed": options.human_disposed.unwrap_or(false),
+            "verdict_class": options.verdict_class.unwrap_or("executed"),
         }),
     );
     if let Some(chain) = &chain {
@@ -812,6 +870,79 @@ mod tests {
         assert!(matches!(
             seal_local_record(&header, "x".into(), blocks, None, None, &key),
             Err(SealError::ReservedExtensionKey(_))
+        ));
+    }
+
+    /// The options set the header and disposition values a caller names,
+    /// the defaults seal what `seal_local_record_with_members` seals, and a
+    /// timestamp that is not at the minute is refused.
+    #[test]
+    fn local_record_options_set_header_and_disposition_values() {
+        let key = ed25519_dalek::SigningKey::from_bytes(&[3u8; 32]);
+        let header = LocalRecordHeader {
+            operator: "op",
+            developer: "dev",
+            provider: "p",
+            model_id: "m",
+        };
+        let seal = |options: &LocalRecordOptions<'_>| {
+            seal_local_record_with_options(
+                &header,
+                "x/1".into(),
+                Map::new(),
+                Map::new(),
+                None,
+                None,
+                options,
+                &key,
+            )
+        };
+        let strip = |mut v: Value| {
+            let o = v.as_object_mut().unwrap();
+            for k in ["capsule_id", "signature", "key_id", "timestamp"] {
+                o.remove(k);
+            }
+            o["model_attestation"]["compute_attestation"]
+                .as_object_mut()
+                .unwrap()
+                .remove(STORE_NONCE_FIELD);
+            v
+        };
+        let plain = seal_local_record_with_members(
+            &header,
+            "x/1".into(),
+            Map::new(),
+            Map::new(),
+            None,
+            None,
+            &key,
+        )
+        .unwrap();
+        let defaulted = seal(&LocalRecordOptions::default()).unwrap();
+        assert_eq!(strip(defaulted), strip(plain));
+        let set = seal(&LocalRecordOptions {
+            action_type: Some("decide"),
+            provenance: Some("gate"),
+            approver: Some("human"),
+            human_disposed: Some(true),
+            verdict_class: Some("resolved"),
+            timestamp: Some("2026-11-25T08:00:00Z"),
+        })
+        .unwrap();
+        assert_eq!(set["action_type"], json!("decide"));
+        assert_eq!(set["provenance"], json!("gate"));
+        assert_eq!(set["timestamp"], json!("2026-11-25T08:00:00Z"));
+        assert_eq!(
+            set["disposition"],
+            json!({"decision": "accept", "approver": "human", "human_disposed": true,
+                   "verdict_class": "resolved"})
+        );
+        assert!(matches!(
+            seal(&LocalRecordOptions {
+                timestamp: Some("2026-11-25T08:00:01Z"),
+                ..LocalRecordOptions::default()
+            }),
+            Err(SealError::Timestamp(_))
         ));
     }
 }
