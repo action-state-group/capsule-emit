@@ -7,6 +7,10 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+### Added
+
+- `substrate::CheckpointWitness` converts to and from `cll::checkpoint::WitnessRecord` (`From` both ways, member for member), for a store that builds the log's checkpoint record from `checkpoint::witness_from_row`; `CheckpointRecord`'s own conversions to and from the log record use it. No output changes (capsule-emit#487, Mesh-LLM/capsules-plugin#368 row B12).
+
 ## 0.0.15
 
 ### Added
