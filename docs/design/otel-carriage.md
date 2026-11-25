@@ -300,5 +300,5 @@ adopter:
    samples the calls it wants matched, since otherwise the field is always
    empty.
 5. **Whether decision records stay digest-only.** Recommendation: yes; a
-   customer who needs clear text keeps its own copy and discloses it from its
-   own domain. Not ruled yet.
+   customer who needs clear text keeps its own plaintext copy in its own domain
+   and discloses it through the disclosure envelope. Not ruled yet.
