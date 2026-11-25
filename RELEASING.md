@@ -21,18 +21,21 @@ The prefix is only on the Git tag. The registry version stays plain (`0.9.1`).
 1. **Prepare.** Run [Release · Prepare](https://github.com/action-state-group/capsule-emit/actions/workflows/prepare-release.yml)
    on `main`, choosing the package and `patch`, `minor` or `major`. It raises
    the version from the current one, commits the bump with a sign-off, and
-   pushes `release/<package>-v<version>`.
+   pushes `release/<package>-v<version>` (slashes in the package name become
+   dashes, e.g. `release/crates-capsule-emit-v0.0.15`).
 2. **Review.** Open the pull request from the link in the run summary. Open it
    yourself: a pull request opened by the workflow would not start CI. Add the
    CHANGELOG entry on the same branch if it is not in yet.
    Pull requests run only the fast checks, and these workflows run nightly and
    on `main`, after the tag is cut on the merge. So before merging, run each
-   on the release branch and merge only when all pass:
-   `gh workflow run <file> --ref release/<package>-v<version>` for Producer
+   on the release branch with
+   `gh workflow run <file> --ref <the release branch>`: Producer
    interoperability (`producer-interop.yml`), Clean-room install
    (`clean-room-install.yml`), Artifact store interlock
    (`artifact-interlock.yml`), TypeScript CI (`ts.yml`, for Node 22) and
-   Rust CI (`rust.yml`, for macOS).
+   Rust CI (`rust.yml`, for macOS). Merge only when all pass on the branch's
+   current head; run them again after any push to the branch, including an
+   update from `main`.
 3. **Merge.** [Release · Tag](https://github.com/action-state-group/capsule-emit/actions/workflows/tag-release.yml)
    runs on the merge. For each package whose version changed it creates the
    tag and GitHub Release on the merge commit and dispatches the package's
@@ -43,7 +46,9 @@ The prefix is only on the Git tag. The registry version stays plain (`0.9.1`).
    version on the registry.
 
 Bumping a version by hand in any pull request releases it the same way when it
-merges, so run the same workflows on its branch and merge only when they pass.
+merges, so run the same workflows on its branch and merge only when they pass
+on the branch's current head; run them again after any push to the branch,
+including an update from `main`.
 
 TypeScript versions up to 0.3.0 were published from the former
 capsule-emit-ts repository and have no commit here. `publish-ts.yml` refuses
