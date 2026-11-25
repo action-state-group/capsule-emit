@@ -133,6 +133,35 @@ pub struct CheckpointWitness {
     pub is_stub: bool,
 }
 
+/// The log's own witness record, field for field: for a caller that builds
+/// a log checkpoint record (`cll::checkpoint::CheckpointRecord`) from
+/// [`crate::checkpoint::witness_from_row`].
+impl From<CheckpointWitness> for LogWitness {
+    fn from(w: CheckpointWitness) -> Self {
+        LogWitness {
+            ts_url: w.ts_url,
+            entry_hash: w.entry_hash,
+            receipt_b64: w.receipt_b64,
+            leaf_index: w.leaf_index,
+            tree_size: w.tree_size,
+            is_stub: w.is_stub,
+        }
+    }
+}
+
+impl From<LogWitness> for CheckpointWitness {
+    fn from(w: LogWitness) -> Self {
+        CheckpointWitness {
+            ts_url: w.ts_url,
+            entry_hash: w.entry_hash,
+            receipt_b64: w.receipt_b64,
+            leaf_index: w.leaf_index,
+            tree_size: w.tree_size,
+            is_stub: w.is_stub,
+        }
+    }
+}
+
 /// A signed checkpoint: one committed state of the log. Same fields and wire
 /// shape as the log's checkpoint record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,14 +221,8 @@ impl CheckpointRecord {
             witnesses: self
                 .witnesses
                 .iter()
-                .map(|w| LogWitness {
-                    ts_url: w.ts_url.clone(),
-                    entry_hash: w.entry_hash.clone(),
-                    receipt_b64: w.receipt_b64.clone(),
-                    leaf_index: w.leaf_index,
-                    tree_size: w.tree_size,
-                    is_stub: w.is_stub,
-                })
+                .cloned()
+                .map(LogWitness::from)
                 .collect(),
         }
     }
@@ -219,14 +242,7 @@ impl CheckpointRecord {
             witnesses: cp
                 .witnesses
                 .into_iter()
-                .map(|w| CheckpointWitness {
-                    ts_url: w.ts_url,
-                    entry_hash: w.entry_hash,
-                    receipt_b64: w.receipt_b64,
-                    leaf_index: w.leaf_index,
-                    tree_size: w.tree_size,
-                    is_stub: w.is_stub,
-                })
+                .map(CheckpointWitness::from)
                 .collect(),
         }
     }

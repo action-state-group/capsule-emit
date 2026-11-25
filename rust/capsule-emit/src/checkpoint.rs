@@ -4745,5 +4745,20 @@ mod tests {
         assert_eq!(w.entry_hash, "ab".repeat(32));
         assert_eq!(w.receipt_b64, "CQk=");
         assert_eq!((w.leaf_index, w.tree_size, w.is_stub), (4, 8, false));
+
+        // As the log's own witness record, member for member, and back.
+        let log: cll::checkpoint::WitnessRecord = w.clone().into();
+        assert_eq!(
+            serde_json::to_value(&log).unwrap(),
+            serde_json::to_value(&w).unwrap()
+        );
+        assert_eq!(crate::substrate::CheckpointWitness::from(log), w);
+        let stub = crate::substrate::CheckpointWitness {
+            is_stub: true,
+            ..w.clone()
+        };
+        let log: cll::checkpoint::WitnessRecord = stub.clone().into();
+        assert!(log.is_stub);
+        assert_eq!(crate::substrate::CheckpointWitness::from(log), stub);
     }
 }
