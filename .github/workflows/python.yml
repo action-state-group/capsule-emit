@@ -21,6 +21,9 @@ on:
       - "go/artifact/*/schema.sql"
       - ".github/workflows/python.yml"
 
+permissions:
+  contents: read
+
 concurrency:
   # Pull request runs of one ref replace each other; a run on main, a nightly
   # or a dispatch gets its own group and is never cancelled or replaced.

@@ -20,7 +20,8 @@
 # TypeScript MySQL tests' own container), Go, rustup, uv (Python 3.9 and 3.12),
 # git, curl and network access. It fetches Node 22 and 24, and the pinned
 # agent-action-capsule and checkpointed-local-log commits the workflows name,
-# into $CAPSULE_EMIT_CHECK_CACHE (default ~/.cache/capsule-emit-check).
+# into $CAPSULE_EMIT_CHECK_CACHE (default ~/.cache/capsule-emit-check); Node comes
+# from $CHECK_NODE_DIST (default https://nodejs.org/dist).
 #
 # It runs every step, prints each step's result and time, and exits non-zero
 # if any failed. It leaves the working tree as it found it, except for
@@ -69,41 +70,56 @@ need docker go rustup cargo uv git curl tar shasum perl
 docker info > /dev/null 2>&1 || { echo "check.sh: needs a running Docker daemon" >&2; exit 2; }
 
 # ---- shared setup ---------------------------------------------------------
+#
+# The helpers below are called through $(...), where errexit does not apply,
+# so each one returns non-zero itself on any failure; the caller's assignment
+# then fails the step.
 
-# checkout NAME URL SHA: a cached checkout of one commit.
+# checkout NAME URL SHA: a cached checkout of one commit. The .done marker is
+# written only after the fetch and checkout succeeded.
 checkout() {
   local dir="$cache/$1-$3"
   if [[ ! -e "$dir/.done" ]]; then
-    rm -rf "$dir"
-    git init -q "$dir"
-    git -C "$dir" fetch -q --depth 1 "$2" "$3"
-    git -C "$dir" checkout -q FETCH_HEAD
-    touch "$dir/.done"
+    rm -rf "$dir" || return 1
+    git init -q "$dir" >&2 || return 1
+    git -C "$dir" fetch -q --depth 1 "$2" "$3" >&2 || { echo "check.sh: cannot fetch $3 from $2" >&2; return 1; }
+    git -C "$dir" checkout -q FETCH_HEAD >&2 || return 1
+    [[ "$(git -C "$dir" rev-parse HEAD)" == "$3" ]] || { echo "check.sh: $dir is not at $3" >&2; return 1; }
+    touch "$dir/.done" || return 1
   fi
   echo "$dir"
 }
 
-# node_home MAJOR: the latest Node MAJOR.x, as actions/setup-node resolves it.
+# node_home MAJOR: the latest Node MAJOR.x, as actions/setup-node resolves it,
+# checked against nodejs.org's SHASUMS256.txt. There is no fallback to the
+# Node on PATH: if the pinned major cannot be installed, the step fails.
 node_home() {
-  local major=$1 os arch sums file dir
-  case "$(uname -s)" in Darwin) os=darwin ;; Linux) os=linux ;; *) echo "unsupported OS" >&2; return 1 ;; esac
-  case "$(uname -m)" in arm64 | aarch64) arch=arm64 ;; x86_64) arch=x64 ;; *) echo "unsupported CPU" >&2; return 1 ;; esac
-  sums=$(curl -fsSL "https://nodejs.org/dist/latest-v$major.x/SHASUMS256.txt")
-  file=$(awk -v f="-$os-$arch.tar.gz" 'index($2, f) && $2 ~ /^node-v/ {print $2}' <<< "$sums")
+  local major=$1 base=${CHECK_NODE_DIST:-https://nodejs.org/dist} os arch sums file line dir
+  case "$(uname -s)" in Darwin) os=darwin ;; Linux) os=linux ;; *) echo "check.sh: unsupported OS" >&2; return 1 ;; esac
+  case "$(uname -m)" in arm64 | aarch64) arch=arm64 ;; x86_64) arch=x64 ;; *) echo "check.sh: unsupported CPU" >&2; return 1 ;; esac
+  sums=$(curl -fsSL "$base/latest-v$major.x/SHASUMS256.txt") || { echo "check.sh: cannot fetch the Node $major checksum list" >&2; return 1; }
+  file=$(awk -v f="node-v$major." -v s="-$os-$arch.tar.gz" 'index($2, f) == 1 && substr($2, length($2) - length(s) + 1) == s {print $2}' <<< "$sums")
+  if [[ -z "$file" || "$file" == *$'\n'* ]]; then
+    echo "check.sh: the Node $major checksum list has no single $os-$arch tarball" >&2
+    return 1
+  fi
+  line=$(grep -E "^[0-9a-f]{64}  $file\$" <<< "$sums") || { echo "check.sh: no valid checksum for $file" >&2; return 1; }
   dir="$cache/${file%.tar.gz}"
   if [[ ! -x "$dir/bin/node" ]]; then
-    curl -fsSL -o "$tmp/$file" "https://nodejs.org/dist/latest-v$major.x/$file"
-    (cd "$tmp" && grep " $file\$" <<< "$sums" | shasum -a 256 -c - > /dev/null)
-    tar -xzf "$tmp/$file" -C "$cache"
+    curl -fsSL -o "$tmp/$file" "$base/latest-v$major.x/$file" || { echo "check.sh: cannot download $file" >&2; return 1; }
+    (cd "$tmp" && shasum -a 256 -c - <<< "$line" > /dev/null) || { echo "check.sh: checksum mismatch for $file" >&2; return 1; }
+    rm -rf "$dir" || return 1
+    tar -xzf "$tmp/$file" -C "$cache" || { rm -rf "$dir"; return 1; }
   fi
+  [[ "$("$dir/bin/node" --version)" == "v$major."* ]] || { echo "check.sh: $dir is not Node $major" >&2; return 1; }
   echo "$dir"
 }
 
 # venv NAME VERSION: a fresh virtual environment, as each CI job starts with.
 venv() {
   local dir="$tmp/venv-$1"
-  uv venv -q --seed --python "$2" "$dir" >&2
-  "$dir/bin/python" -m pip install -q --upgrade pip >&2
+  uv venv -q --seed --python "$2" "$dir" >&2 || return 1
+  "$dir/bin/python" -m pip install -q --upgrade pip >&2 || return 1
   echo "$dir"
 }
 
@@ -114,7 +130,12 @@ start_db() {
   docker run -d --rm --name "$name" "$@" "$image" > /dev/null
   containers+=("$name")
 }
-db_port() { docker port "capsule-emit-check-$$-$1" "$2" | head -n 1 | sed 's/.*://'; }
+db_port() {
+  local port
+  port=$(docker port "capsule-emit-check-$$-$1" "$2" | head -n 1 | sed 's/.*://') || return 1
+  [[ "$port" =~ ^[0-9]+$ ]] || { echo "check.sh: no host port for $1" >&2; return 1; }
+  echo "$port"
+}
 wait_db() {
   local name="capsule-emit-check-$$-$1" port=$2
   shift 2
@@ -225,7 +246,7 @@ print(a.__file__, a.DEFAULT_SPEC_VERSION)"
 # ts.yml, for one Node version.
 ts_test() {
   local node
-  node=$("node_home" "$1")
+  node=$(node_home "$1")
   export PATH="$node/bin:$PATH" AAC_ROOT=$aac_ts CAPSULE_EMIT_GO_ROOT=../go ARTIFACT_MYSQL_TEST=1
   cd "$repo/ts"
   node --version
@@ -358,8 +379,11 @@ open(os.environ["LED_PATH"], "w").write(led)
 PY
   local led out
   led=$(cat "$tmp/led_path")
-  out=$("$room/bin/agent-action-capsule" verify --store "$led" 2>&1) || true
+  local rc=0
+  out=$("$room/bin/agent-action-capsule" verify --store "$led" 2>&1) || rc=$?
   echo "$out"
+  # As in clean-room-install.yml, a non-zero exit from the verifier fails the step.
+  if ((rc != 0)); then echo "verify --store exited $rc on a fresh install" >&2; exit "$rc"; fi
   if echo "$out" | grep -q "capsule_id_mismatch"; then echo "capsule_id_mismatch on a fresh install" >&2; exit 1; fi
   if echo "$out" | grep -qE "ok: False"; then echo "a capsule failed verification on a fresh install" >&2; exit 1; fi
   echo "clean-room OK: fresh PyPI install can seal() and verify --store"
@@ -417,7 +441,12 @@ artifact_interlock() {
   done
 }
 
-hostname_lint() { cd "$repo" && "$(venv lint 3.12)/bin/python" .github/hostname_lint.py .; }
+hostname_lint() {
+  local py
+  py=$(venv lint 3.12)
+  cd "$repo"
+  "$py/bin/python" .github/hostname_lint.py .
+}
 
 messaging_guard() {
   local py
@@ -443,7 +472,12 @@ dco() {
 }
 
 # a2a-controls.yml (nightly in CI; --full only): GETs against the live anchor.
-a2a_controls() { cd "$repo" && "$(venv a2a 3.12)/bin/python" examples/a2a-ap2/boundary-seal/check_controls.py; }
+a2a_controls() {
+  local py
+  py=$(venv a2a 3.12)
+  cd "$repo"
+  "$py/bin/python" examples/a2a-ap2/boundary-seal/check_controls.py
+}
 
 # ---- run --------------------------------------------------------------------
 
