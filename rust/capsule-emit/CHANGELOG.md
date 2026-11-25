@@ -7,9 +7,9 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
-### Added: `CheckpointWitness` converts to and from `cll::checkpoint::WitnessRecord`
+### Added
 
-`From` both ways, member for member: a caller that builds the log's checkpoint record from `checkpoint::witness_from_row` (a store keeping its own checkpoint history beside the log's witness rows) calls the conversion instead of a copy. `Checkpoint`'s own conversions to and from the log record use it too. No output changes (Mesh-LLM/capsules-plugin#368, row B12).
+- `substrate::CheckpointWitness` converts to and from `cll::checkpoint::WitnessRecord` (`From` both ways, member for member), for a store that builds the log's checkpoint record from `checkpoint::witness_from_row`; `CheckpointRecord`'s own conversions to and from the log record use it. No output changes (capsule-emit#487, Mesh-LLM/capsules-plugin#368 row B12).
 
 ## 0.0.15
 
