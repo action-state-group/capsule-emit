@@ -25,6 +25,14 @@ The prefix is only on the Git tag. The registry version stays plain (`0.9.1`).
 2. **Review.** Open the pull request from the link in the run summary. Open it
    yourself: a pull request opened by the workflow would not start CI. Add the
    CHANGELOG entry on the same branch if it is not in yet.
+   Pull requests run only the fast checks, and these workflows run nightly and
+   on `main`, after the tag is cut on the merge. So before merging, run each
+   on the release branch and merge only when all pass:
+   `gh workflow run <file> --ref release/<package>-v<version>` for Producer
+   interoperability (`producer-interop.yml`), Clean-room install
+   (`clean-room-install.yml`), Artifact store interlock
+   (`artifact-interlock.yml`), TypeScript CI (`ts.yml`, for Node 22) and
+   Rust CI (`rust.yml`, for macOS).
 3. **Merge.** [Release · Tag](https://github.com/action-state-group/capsule-emit/actions/workflows/tag-release.yml)
    runs on the merge. For each package whose version changed it creates the
    tag and GitHub Release on the merge commit and dispatches the package's
@@ -35,7 +43,7 @@ The prefix is only on the Git tag. The registry version stays plain (`0.9.1`).
    version on the registry.
 
 Bumping a version by hand in any pull request releases it the same way when it
-merges.
+merges, so run the same workflows on its branch and merge only when they pass.
 
 TypeScript versions up to 0.3.0 were published from the former
 capsule-emit-ts repository and have no commit here. `publish-ts.yml` refuses
