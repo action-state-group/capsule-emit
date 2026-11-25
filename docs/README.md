@@ -32,6 +32,7 @@ You add one `seal()` call at each consequential action, and you get a **witnesse
 
 ## Go further
 
+- **[Design note: capsules and OpenTelemetry traces](design/otel-carriage.md)** — what the OpenTelemetry exporter seals today, and the two trace-based options (seal the trace export; match a decision to its effect on trace id) for recording model decisions later.
 - **[Going deeper — and popping out](going-deeper.md)** — *down* into the spec + `scitt-cose` substrate to verify it yourself; *up* to a compatible enforcement gateway when you want capsules to **block**, not just record.
 
 ---
