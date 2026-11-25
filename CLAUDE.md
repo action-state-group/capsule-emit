@@ -6,6 +6,10 @@ product documentation. `go/CLAUDE.md` adds the Go module's own rules.
 
 ## Commands
 
+Before every push: `scripts/check.sh` ("Before you push" in `CONTRIBUTING.md`
+says what it needs and when to add `--full`). Pull requests run only a fast set
+of CI jobs; the commands below run one part.
+
 ```bash
 # Python (repository root; Python 3.9 compatible)
 pip install -e "./python[dev]"

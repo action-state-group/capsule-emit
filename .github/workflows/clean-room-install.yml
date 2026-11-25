@@ -4,10 +4,28 @@
 # installs, which previously masked a missing transitive module + an interop mismatch.
 name: Clean-room install
 
+# Not on pull requests: scripts/check.sh runs this before push (CONTRIBUTING.md).
+# On main when an input changes, nightly (which also catches a PyPI
+# dependency that broke the published extras) and on dispatch.
 on:
   push:
     branches: [main]
-  pull_request:
+    paths:
+      - "python/**"
+      - ".github/scripts/check_python_package.py"
+      - ".github/workflows/clean-room-install.yml"
+  schedule:
+    - cron: "45 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Pull request runs of one ref replace each other; a run on main, a nightly
+  # or a dispatch gets its own group and is never cancelled or replaced.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -120,3 +138,27 @@ jobs:
           assert b"must never reach the ledger" not in raw, "never-enters content leaked into the ledger"
           print("OTel dogfood OK -> sealed", entries[0]["capsule_id"])
           PY
+
+  report-failure:
+    # A red run on main or the nightly opens or comments on one ci-red issue
+    # (asg-agent-team-ethan#409). A dispatch or a cancelled run is not reported.
+    name: report a red main or nightly run
+    if: failure() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule')
+    needs: [from-nothing]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Report on the issue
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "Clean-room install failed on main or nightly"
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ASSIGNEE: ${{ vars.CI_FAILURE_ASSIGNEE }}
+        run: bash .github/scripts/report-failure.sh

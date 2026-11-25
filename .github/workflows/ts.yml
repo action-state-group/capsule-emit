@@ -1,20 +1,40 @@
 name: TypeScript CI
+# Pull requests run Node 24 only, and only when the package or an input its
+# tests read changes. Node 22 runs on main (when those inputs change), nightly
+# and on dispatch; run scripts/check.sh before push (CONTRIBUTING.md).
 on:
   push:
     branches: [main]
+    paths:
+      - "ts/**"
+      - "go/testdata/capsule-emit/format4-interop/**"
+      - "go/testdata/capsule-emit/format4-interop-v05/**"
+      - "test-vectors/artifact-store/**"
+      - ".github/workflows/ts.yml"
   pull_request:
+    paths:
+      - "ts/**"
+      - "go/testdata/capsule-emit/format4-interop/**"
+      - "go/testdata/capsule-emit/format4-interop-v05/**"
+      - "test-vectors/artifact-store/**"
+      - ".github/workflows/ts.yml"
+  schedule:
+    - cron: "45 7 * * *"
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: ts-${{ github.ref }}
-  cancel-in-progress: true
+  # Pull request runs of one ref replace each other; a run on main, a nightly
+  # or a dispatch gets its own group and is never cancelled or replaced.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       matrix:
-        node: [22, 24]
+        node: ${{ fromJSON(github.event_name == 'pull_request' && '[24]' || '[22, 24]') }}
     defaults:
       run:
         working-directory: emit/ts
@@ -51,3 +71,26 @@ jobs:
       - run: npm run build
       - name: Packed external consumer and optional-driver isolation
         run: node scripts/check-packed-consumer.mjs
+
+  report-failure:
+    # A red run on main or the nightly opens or comments on one ci-red issue
+    # (asg-agent-team-ethan#409). A dispatch or a cancelled run is not reported.
+    name: report a red main or nightly run
+    if: failure() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule')
+    needs: [test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Report on the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "TypeScript CI failed on main or nightly"
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ASSIGNEE: ${{ vars.CI_FAILURE_ASSIGNEE }}
+        run: bash .github/scripts/report-failure.sh

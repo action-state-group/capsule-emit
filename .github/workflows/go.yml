@@ -3,14 +3,22 @@ name: Go CI
 on:
   push:
     branches: [main]
+  # Only when the Go module or an input its tests read changes.
   pull_request:
+    paths:
+      - "go/**"
+      - "test-vectors/artifact-store/**"
+      - "test-vectors/number-canonicalization/**"
+      - ".github/workflows/go.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Pull request runs of one ref replace each other; a run on main, a nightly
+  # or a dispatch gets its own group and is never cancelled or replaced.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   quality:
@@ -150,3 +158,25 @@ jobs:
       - name: Race test
         run: go test -race ./...
 
+  report-failure:
+    # A red run on main opens or comments on one ci-red issue
+    # (asg-agent-team-ethan#409). A cancelled run is not reported.
+    name: report a red main run
+    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [quality, test, race]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Report on the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "Go CI failed on main"
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ASSIGNEE: ${{ vars.CI_FAILURE_ASSIGNEE }}
+        run: bash .github/scripts/report-failure.sh
