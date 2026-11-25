@@ -7,6 +7,8 @@ this crate uses [Semantic Versioning](https://semver.org/) once it reaches 1.0.
 
 ## Unreleased
 
+## 0.0.15
+
 ### Added
 
 - `settlement::seal_leg_with_blocks` seals a leg with blocks in its `compute_attestation` (`seal_leg` is it with none), `ledger::record_line` turns a stored record into its ledger line (as `Ledger` reads one), and `checkpoint::witness_from_row` is public, for stores that keep their own records and checkpoint history (capsule-emit#477).
