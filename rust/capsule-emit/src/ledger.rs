@@ -262,6 +262,13 @@ impl std::fmt::Debug for Stores {
 /// `signature` (the producer envelope, hex) and `key_id` (its signer, hex)
 /// put back, as [`Ledger`] reads a line. For stores that keep records in the
 /// artifact store and serve them as lines.
+///
+/// It does not check the producer signature: `key_id` is the key the
+/// envelope names over `record.capsule_id` (empty when the envelope is not
+/// over that id), so a line it returns is the stored record, not a verified
+/// one. A capsule that is not a JSON object is
+/// [`LedgerError::MissingCapsuleId`] with `line` 0, since a stored record
+/// has no ledger line number.
 pub fn record_line(record: &Record) -> Result<Value, LedgerError> {
     let mut parsed = decode_record(&record.capsule)?;
     let envelope =
@@ -1496,5 +1503,38 @@ mod tests {
         assert!(reopened.cites_counterparty_half(&"a".repeat(64)));
         assert!(reopened.cites_counterparty_half(&"b".repeat(64)));
         assert!(!reopened.cites_counterparty_half(&"c".repeat(64)));
+    }
+
+    /// `record_line` gives back the line a record was stored from:
+    /// `signature` and `key_id` put back over the stored capsule.
+    #[test]
+    fn record_line_round_trips_a_stored_line() {
+        let key = ed25519_dalek::SigningKey::from_bytes(&[5u8; 32]);
+        let header = crate::capsule::LocalRecordHeader {
+            operator: "op",
+            developer: "dev",
+            provider: "p",
+            model_id: "m",
+        };
+        let line = crate::capsule::seal_local_record(
+            &header,
+            "test/record-line".into(),
+            serde_json::Map::new(),
+            None,
+            None,
+            &key,
+        )
+        .unwrap();
+        let id = line["capsule_id"].as_str().unwrap().to_string();
+        let record = to_record(&id, &line, b"").unwrap();
+        assert_eq!(record_line(&record).unwrap(), line);
+        let not_object = Record {
+            capsule: b"[1]".to_vec(),
+            ..record
+        };
+        assert!(matches!(
+            record_line(&not_object),
+            Err(LedgerError::MissingCapsuleId { line: 0 })
+        ));
     }
 }

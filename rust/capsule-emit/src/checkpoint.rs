@@ -4716,4 +4716,34 @@ mod tests {
         state.tick(&signer(), &anchor).unwrap();
         assert_eq!(hits(&a), 1, "inline delivery sends what was left queued");
     }
+
+    /// `witness_from_row`: a row with a receipt is the checkpoint's witness
+    /// entry, a row without one is none.
+    #[test]
+    fn witness_from_row_maps_a_receipt_and_skips_a_row_without_one() {
+        use cll::log::{Timestamp, WitnessReceiptState, WitnessState};
+        let mut row = WitnessState {
+            witness_id: "https://witness.example".into(),
+            checkpoint_size: 7,
+            checkpoint: vec![1, 2, 3],
+            attempts: 1,
+            next_attempt_at: Timestamp::from_unix_millis(0),
+            receipt: None,
+            permanent: false,
+            last_error: None,
+        };
+        assert!(witness_from_row(&row).is_none());
+        row.receipt = Some(WitnessReceiptState {
+            bytes: vec![9, 9],
+            entry_hash: Some("ab".repeat(32)),
+            leaf_index: Some(4),
+            tree_size: Some(8),
+            ..WitnessReceiptState::default()
+        });
+        let w = witness_from_row(&row).unwrap();
+        assert_eq!(w.ts_url, "https://witness.example");
+        assert_eq!(w.entry_hash, "ab".repeat(32));
+        assert_eq!(w.receipt_b64, "CQk=");
+        assert_eq!((w.leaf_index, w.tree_size, w.is_stub), (4, 8, false));
+    }
 }
