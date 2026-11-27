@@ -13,6 +13,7 @@ from test_openai_agents_listener import (  # helpers shared with the framework-f
     _compute,
     _hooks,
     _ledger,
+    _no_egress,  # noqa: F401 -- the autouse fence: no checkpoint leaves the process
     _processor,
 )
 
