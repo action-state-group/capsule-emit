@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: Apache-2.0
+# The examples' demos and test suites, each in its own fresh install, one
+# matrix row per entry of .github/scripts/examples.sh --list
+# (.github/tests/test_examples_matrix.py checks that).
+name: Examples
+
+# Not on pull requests: scripts/check.sh runs this before push (CONTRIBUTING.md).
+# On main when an input changes, nightly (which also catches a framework
+# release that broke a demo) and on dispatch.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "python/**"
+      - "examples/**"
+      - ".github/scripts/examples.sh"
+      - ".github/workflows/examples.yml"
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A run on main, a nightly or a dispatch gets its own group and is never
+  # cancelled or replaced.
+  group: ${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: example (${{ matrix.entry }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        entry: [agno, strands, llamaindex, litellm, openai-agents, adk, langchain, msft-agent-framework, nemo-guardrails, goose, aauth-capsule-interop, nanda-tax-audit, a2a-task-evidence]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: install and run
+        env:
+          ENTRY: ${{ matrix.entry }}
+        run: bash .github/scripts/examples.sh "$ENTRY" python
+
+  report-failure:
+    # A red run on main or a nightly opens or comments on one ci-red issue
+    # (asg-agent-team-ethan#409). A cancelled run is not reported.
+    name: report a red main run
+    if: failure() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule')
+    needs: [run]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Report on the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "Examples failed on main"
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ASSIGNEE: ${{ vars.CI_FAILURE_ASSIGNEE }}
+        run: bash .github/scripts/report-failure.sh

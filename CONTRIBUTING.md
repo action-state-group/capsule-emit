@@ -61,8 +61,9 @@ framework (`.github/scripts/python_extras_tests.sh --list`), also
 each adapter's tests with its framework installed). Both need Docker, Go, rustup and uv; the script's header
 lists every prerequisite and what it cannot run locally. Pull requests run only
 the fast set; producer interoperability, the clean-room install, the artifact
-store interlock, TypeScript on Node 22, the Rust tests on macOS and the Python
-adapter tests that need their framework run nightly and on main.
+store interlock, the examples (`.github/scripts/examples.sh`), TypeScript on Node 22, the
+Rust tests on macOS and the Python adapter tests that need their framework run
+nightly and on main.
 
 ## Releasing
 
