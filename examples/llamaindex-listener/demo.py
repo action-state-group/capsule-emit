@@ -309,7 +309,7 @@ def main() -> int:
         print(f"\n[step 4] Ledger: {len(caps)} capsule(s) sealed")
 
         proc = subprocess.run(
-            [sys.executable, "-m", "capsule_emit.cli", "evidence", "--ledger", str(ledger)],
+            [sys.executable, "-m", "capsule_emit.cli", "evidence", "--ledger", str(ledger), "--no-viewer-link"],
             capture_output=True,
             text=True,
         )

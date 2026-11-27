@@ -166,7 +166,7 @@ def main() -> int:
         print()
 
         proc = subprocess.run(
-            [sys.executable, "-m", "capsule_emit.cli", "evidence", "--ledger", str(ledger)],
+            [sys.executable, "-m", "capsule_emit.cli", "evidence", "--ledger", str(ledger), "--no-viewer-link"],
             capture_output=True,
             text=True,
         )

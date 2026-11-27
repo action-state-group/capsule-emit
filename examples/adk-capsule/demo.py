@@ -146,7 +146,7 @@ def main() -> int:
             )
 
         proc = subprocess.run(
-            [sys.executable, "-m", "capsule_emit.cli", "evidence", "--ledger", str(ledger)],
+            [sys.executable, "-m", "capsule_emit.cli", "evidence", "--ledger", str(ledger), "--no-viewer-link"],
             capture_output=True, text=True,
         )
         print("\ncapsule-emit evidence (Verification-stage render, fail-closed):")

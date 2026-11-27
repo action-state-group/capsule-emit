@@ -6,6 +6,16 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ## Unreleased
 
+### Fixed (examples): the listener demos render evidence again, and a workflow runs every example
+
+The agno, strands, llamaindex, litellm, openai-agents, adk and langchain (and LangGraph) demos called `capsule-emit evidence` with neither `--base-url` nor `--no-viewer-link`, which the command refuses, so each ended in `DEMO FAILED`; they now pass `--no-viewer-link`. `examples/nanda-tax-audit` seals its auditor's fines as decimal strings, since a JSON float in a digest-bearing field is refused. The new Examples workflow (on main, nightly and on dispatch) runs every demo and example test suite listed in `scripts/examples.sh` in its own fresh install, and `scripts/check.sh` runs the same list.
+([#491](https://github.com/action-state-group/capsule-emit/issues/491))
+
+### Removed (examples): `examples/nanda-trust-capsule`
+
+It imported `nest_plugins_reference.trust.agent_receipts`, which is in no published `nest-plugins-reference` release (0.1.0, 0.1.1); upstream moved its trust layer to `src/nandatown/layers/`. No one could install it. `examples/nanda-tax-audit` remains the NANDA composition example and now runs in CI.
+([#491](https://github.com/action-state-group/capsule-emit/issues/491))
+
 ### Added (examples): the A2A agent card advertises the node's evidence-commitment
 
 `examples/a2a-task-evidence/commitment_entry.py` writes the `capabilities.extensions[]` entry of `evidence-commitment-carriers-v0` section 5.2 and reads it back: it checks the entry's form, fetches `commitment_uri`, compares the digest and verifies the commitment's own signature and staples. The example server adds the entry only with `--commitment` and `--commitment-uri`; the `a2a-task-evidence/v1` extension is unchanged. See `docs/a2a-extension/commitment-entry.md`.

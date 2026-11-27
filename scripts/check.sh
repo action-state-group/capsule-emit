@@ -9,7 +9,8 @@
 #                             Rust (test, artifact store, conformance, package),
 #                             producer interoperability, clean-room install, the
 #                             artifact store interlock (jsonl, sqlite, mysql),
-#                             the hostname lint, the messaging guard and DCO.
+#                             every example in scripts/examples.sh, the
+#                             hostname lint, the messaging guard and DCO.
 #   scripts/check.sh --full   Also what only main and the nightly ran: the A2A
 #                             controls against the live anchor (network GETs;
 #                             their offline tests run without --full too) and
@@ -539,6 +540,13 @@ a2a_controls() {
   fi
 }
 
+# examples.yml, for one entry of scripts/examples.sh.
+example() {
+  local py
+  py=$(venv "example-$1" 3.12)
+  PYTHON="$py/bin/python" "$repo/scripts/examples.sh" run "$1"
+}
+
 # ---- run --------------------------------------------------------------------
 #
 # Lanes run at the same time; the steps in a lane run in order. Lanes that only
@@ -637,6 +645,11 @@ lane_interlock() {
   mkdir -p "$cache/interlock-rust-target" && ln -s "$cache/interlock-rust-target" "$repo/rust/target" || return 1
   step "artifact store interlock" with_lock "$cache/interlock-rust-target.lock" artifact_interlock
 }
+lane_example() {
+  # Each installs the package editable, which writes build metadata into its tree.
+  repo=$(lane_tree "example-$1") || return 1
+  step "example $1" example "$1"
+}
 lane_ts() {
   repo=$(lane_tree "ts$1") || return 1
   step "typescript (node $1)" ts_test "$1"
@@ -645,6 +658,7 @@ lane_ts() {
 snapshot
 
 lanes=(lints go python:3.9 python:3.12 inspect_ai rust interop clean_room interlock ts:22 ts:24)
+while IFS= read -r entry; do lanes+=("example:$entry"); done < <("$repo/scripts/examples.sh" list)
 if ((full)); then lanes+=(extras); fi
 pids=()
 for spec in "${lanes[@]}"; do

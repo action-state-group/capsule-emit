@@ -86,13 +86,13 @@ def test_fine_multiplier() -> None:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def scenario_trace():
+def scenario_trace(tmp_path_factory):
     """Run the tax_audit scenario for 5000 ticks and return the trace path."""
     register_scenario("tax_audit", tax_audit_factory)
 
     config = ScenarioConfig.from_yaml(_SCENARIO_YAML)
     config.duration = "ticks: 5000"
-    trace_path = Path("/tmp/test_tax_audit.jsonl")
+    trace_path = tmp_path_factory.mktemp("trace") / "test_tax_audit.jsonl"
     config.output.trace = str(trace_path)
 
     # Clean up any stale ledgers before running

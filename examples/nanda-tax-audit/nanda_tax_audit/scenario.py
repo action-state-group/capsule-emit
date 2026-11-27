@@ -374,7 +374,8 @@ class AuditorAgent(StateMachineAgent):
         # Update crossover running totals
         self._cap_fines_total += cap_fine
 
-        # Seal auditor reasoning capsule
+        # Seal auditor reasoning capsule. Fines go in as exact decimal strings:
+        # a JSON float in a digest-bearing field is refused (AAC section 5.1).
         reasoning = {
             "tick": self._tick,
             "biz_control": {
@@ -383,7 +384,7 @@ class AuditorAgent(StateMachineAgent):
             },
             "biz_capsule": {
                 "verdict": "fine" if cap_tampered else "no_fine",
-                "amount": cap_fine,
+                "amount": f"{cap_fine:.2f}",
                 "reason": cap_reason,
             },
         }
@@ -392,7 +393,10 @@ class AuditorAgent(StateMachineAgent):
             action="audit_decision",
             operator="auditor",
             developer=str(self._id),
-            agent_output={"biz_capsule_fine": cap_fine, "biz_control_fine": ctrl_fine},
+            agent_output={
+                "biz_capsule_fine": f"{cap_fine:.2f}",
+                "biz_control_fine": f"{ctrl_fine:.2f}",
+            },
             anchor=self._anchor,
             ledger="tax-audit-auditor-reasoning",
         )
