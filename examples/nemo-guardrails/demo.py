@@ -260,7 +260,7 @@ def main() -> int:
         print(f"[step 6] raw user messages in ledger: {leaked or 'none (digest-only)'}")
 
         proc = subprocess.run(
-            [sys.executable, "-m", "capsule_emit.cli", "evidence", "--ledger", str(ledger)],
+            [sys.executable, "-m", "capsule_emit.cli", "evidence", "--ledger", str(ledger), "--no-viewer-link"],
             capture_output=True,
             text=True,
         )

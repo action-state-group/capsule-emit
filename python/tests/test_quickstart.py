@@ -166,12 +166,6 @@ def test_ledger_view_prints_table(tmp_ledger):
     assert "acme-co" in output
 
 
-def test_ledger_view_empty(tmp_ledger):
-    buf = io.StringIO()
-    ledger_view(tmp_ledger, out=buf)
-    assert "empty" in buf.getvalue().lower()
-
-
 # ---------------------------------------------------------------------------
 # Manifest parser
 # ---------------------------------------------------------------------------

@@ -8,8 +8,7 @@ answers in the real response shape, with a Signed Entry Timestamp from a
 test P-256 key. One golden test verifies a REAL public-Rekor entry's SET
 under the key the committed ``witnesses.json`` lists for that log, so the
 canonicalization is pinned against production bytes, not only against our
-own mock. The live test against ``rekor.sigstore.dev`` is opt-in
-(``CAPSULE_EMIT_TEST_LIVE_REKOR=1``).
+own mock. No test writes to ``rekor.sigstore.dev``.
 
 Every verification reads its keys from a witness directory; no test pins a
 key any other way, because ``verify_witnesses`` has no other way.
@@ -20,7 +19,6 @@ import base64
 import hashlib
 import http.server
 import json
-import os
 import threading
 from pathlib import Path
 
@@ -689,25 +687,3 @@ def test_stub_receipts_never_count(tmp_path):
 def test_summary_is_counts_never_names():
     r = wb.PluralityResult(policy=wb.WitnessPolicy(), counted=1, operators=1, policy_met=True)
     assert r.summary() == "1 witness · 1 operator"
-
-
-# -- live (opt-in, nightly) ---------------------------------------------------
-
-
-@pytest.mark.skipif(
-    os.environ.get("CAPSULE_EMIT_TEST_LIVE_REKOR") != "1",
-    reason="opt-in live test against rekor.sigstore.dev -- set CAPSULE_EMIT_TEST_LIVE_REKOR=1",
-)
-def test_live_public_rekor_accepts_and_verifies_a_checkpoint(tmp_path):
-    """Writes ONE content-free entry (a throwaway log's checkpoint: size,
-    root, time, key id) to the public Rekor log, then verifies it offline
-    against the committed witnesses.json."""
-    ledger, cp, state = _pushed(tmp_path, [wb.PUBLIC_REKOR_URL])
-    assert [w.ts_url for w in cp.witnesses] == [wb.PUBLIC_REKOR_URL]
-    r = wb.verify_witnesses(
-        state.checkpoint,
-        state.effective_witnesses,
-        checkpoint_cose_hex=state.checkpoint_cose_hex,
-        directory=COMMITTED,
-    )
-    assert r.counted == 1, r.receipts

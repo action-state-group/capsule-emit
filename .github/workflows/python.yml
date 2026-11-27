@@ -20,6 +20,12 @@ on:
       - "go/testdata/**"
       - "go/artifact/*/schema.sql"
       - ".github/workflows/python.yml"
+      - ".github/scripts/python_extras_tests.sh"
+  # The optional-SDK tests (the extras job) run on main, nightly and on
+  # dispatch, not on pull requests.
+  schedule:
+    - cron: "20 7 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -126,12 +132,34 @@ jobs:
           tests/test_inspect_ai_eval_log.py
           tests/test_reconciliation.py
 
+  # The tests that need one optional SDK (an adapter's real framework), one SDK
+  # per row, failing if any of them skipped. The test job installs none of
+  # these SDKs. The rows are python_extras_tests.sh --list
+  # (.github/tests/test_python_extras_matrix.py checks that).
+  extras:
+    name: extras (${{ matrix.entry }})
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        entry: [litellm, llamaindex, openai-agents, msft-agent-framework, strands, nemo-guardrails, crewai, langgraph]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: tests with the SDK installed
+        run: bash ../.github/scripts/python_extras_tests.sh "${{ matrix.entry }}" python
+
   report-failure:
-    # A red run on main opens or comments on one ci-red issue
-    # (asg-agent-team-ethan#409). A cancelled run is not reported.
-    name: report a red main run
-    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [test, inspect-ai]
+    # A red run on main or the nightly opens or comments on one ci-red issue
+    # (asg-agent-team-ethan#409). A dispatch or a cancelled run is not reported.
+    name: report a red main or nightly run
+    if: failure() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule')
+    needs: [test, inspect-ai, extras]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -145,7 +173,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         env:
           GH_TOKEN: ${{ github.token }}
-          TITLE: "Python CI failed on main"
+          TITLE: "Python CI failed on main or nightly"
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ASSIGNEE: ${{ vars.CI_FAILURE_ASSIGNEE }}
         run: bash .github/scripts/report-failure.sh

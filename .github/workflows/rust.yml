@@ -153,11 +153,35 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install the Python reference (this repository's package)
+      # The Go COSE verifier (scitt-cose-go-verify) and the capsule-anchor
+      # server the cross-language and anchor tests run against, at pinned
+      # commits.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: action-state-group/scitt-cose
+          ref: c6c6df627cfaf48d1d55902c76cad9639d6418f8
+          path: ext/scitt-cose
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: action-state-group/capsule-anchor
+          ref: 45f2e89a01267e033664bd4d8cb95a0204043a39
+          path: ext/capsule-anchor
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ext/scitt-cose/scitt-cose-go-verify/go.mod
+          cache: false
+
+      - name: Install the Python reference (this repository's package) and capsule-anchor
         working-directory: python
         run: |
           python -m venv "$RUNNER_TEMP/ref"
-          "$RUNNER_TEMP/ref/bin/pip" install .
+          "$RUNNER_TEMP/ref/bin/pip" install . ../ext/capsule-anchor
+          "$RUNNER_TEMP/ref/bin/python" -c "import scitt_cose, agent_action_capsule, capsule_emit, capsule_anchor.app, uvicorn"
+          go version
           echo "AAC_PYTHON=$RUNNER_TEMP/ref/bin/python" >> "$GITHUB_ENV"
 
       - name: Rust output checked by the reference (fails if a test skipped itself)
@@ -167,6 +191,8 @@ jobs:
           AAC_VERIFY_LEDGER_SCRIPT="$scripts/verify_rust_ledger.py" run chain_ledger_conformance
           AAC_CHECKPOINT_VERIFY_SCRIPT="$scripts/checkpoint_invariance_check.py" run checkpoint_invariance
           AAC_SETTLEMENT_VERIFY_SCRIPT="$scripts/verify_rust_settlement.py" run settlement_conformance
+          AAC_VERIFY_SCRIPT="$scripts/verify_rust_capsule.py" AAC_GO_VERIFY_DIR="$GITHUB_WORKSPACE/ext/scitt-cose/scitt-cose-go-verify" run cross_language_conformance
+          AAC_VERIFY_ANCHOR_RECEIPT_SCRIPT="$scripts/verify_anchor_receipt.py" CAPSULE_ANCHOR_DIR="$GITHUB_WORKSPACE/ext/capsule-anchor/packages" run anchor_conformance
           if grep -i "skipping" "$RUNNER_TEMP/conformance.log"; then
             echo "a conformance test skipped itself" >&2
             exit 1

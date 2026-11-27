@@ -15,8 +15,6 @@ from __future__ import annotations
 
 import random
 
-import pytest
-
 from capsule_emit.adapters.inspect_ai import InspectAIListenerCore
 from capsule_emit.reconciliation import (
     ReconciliationState,
@@ -137,31 +135,12 @@ def test_spoofed_tool_result_reconciles_as_contradicted(tmp_path):
     )
 
 
-def test_mutant_a_revert_seal_at_harness_makes_the_spoof_pass():
-    """MUTANT A, recorded not executed as part of the suite: if the value
-    sealed as the 'harness' half were instead read from the same spoofable
-    source as the downstream transcript (i.e. the harness's own seal step
-    is reverted to trust agent-writable state), the two halves agree and
-    the spoof becomes invisible -- reconciliation reports MATCHED instead
-    of CONTRADICTED. This function documents the red assertion; it is not
-    run by the real seal path, which always seals from the actual capture
-    (see InspectAIListenerCore.seal_tool_call's callers in
-    capsule_emit/adapters/inspect_ai.py -- there is no parameter that lets a
-    caller substitute a different source for what a harness-sealed tool
-    result actually was).
-
-    To reproduce the mutant for real: change
-    test_spoofed_tool_result_reconciles_as_contradicted's harness_record
-    call above to seal `result=spoofed_result` instead of `result=
-    real_result` (i.e., simulate the harness sealing from the same tampered
-    source as the transcript), and re-run -- the CONTRADICTED assertion
-    fails. See the results report for the captured red/green pair.
-    """
-    pytest.skip(
-        "documentation-only placeholder for the mutant -- reproduced by "
-        "editing test_spoofed_tool_result_reconciles_as_contradicted's "
-        "harness_record.result to spoofed_result; see results report"
-    )
+# Mutant check, done by hand: seal the harness half above from
+# `spoofed_result` instead of `real_result` (the harness trusting the same
+# agent-writable source as the transcript) and the CONTRADICTED assertion
+# fails, because both halves then agree. The real seal path has no way to do
+# that: InspectAIListenerCore.seal_tool_call's callers in
+# capsule_emit/adapters/inspect_ai.py always seal the captured result.
 
 
 # ---------------------------------------------------------------------------
