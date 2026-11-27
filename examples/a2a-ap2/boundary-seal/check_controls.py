@@ -45,17 +45,21 @@ class Unreachable(Exception):
 def get(url: str, sleep=time.sleep) -> tuple[int, dict]:
     for attempt in range(1, ATTEMPTS + 1):
         try:
-            with urllib.request.urlopen(url, timeout=30) as resp:
-                return resp.status, json.loads(resp.read() or b"{}")
+            # urlopen returns once the status line and headers have arrived.
+            resp = urllib.request.urlopen(url, timeout=30)
         except urllib.error.HTTPError as err:
             return err.code, {}
         except (urllib.error.URLError, OSError) as err:
-            # URLError wraps DNS and connection failures; TimeoutError and
-            # ConnectionResetError are OSErrors raised while reading.
+            # No HTTP answer: URLError wraps DNS and connection failures;
+            # TimeoutError and ConnectionResetError are OSErrors.
             print(f"attempt {attempt}/{ATTEMPTS}: no answer from {url}: {err}", file=sys.stderr)
             if attempt == ATTEMPTS:
                 raise Unreachable(url) from err
             sleep(BACKOFF_SECONDS[attempt - 1])
+            continue
+        # The anchor answered: a failure reading the body is not retried.
+        with resp:
+            return resp.status, json.loads(resp.read() or b"{}")
 
 
 def main() -> int:

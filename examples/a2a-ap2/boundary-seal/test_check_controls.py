@@ -18,6 +18,11 @@ import check_controls  # noqa: E402
 class Response(io.BytesIO):
     status = 200
 
+
+class SlowBody(Response):
+    def read(self, *args):
+        raise TimeoutError("The read operation timed out")
+
     def __enter__(self):
         return self
 
@@ -65,6 +70,10 @@ class GetTest(unittest.TestCase):
         result, calls, sleeps = self.run_get(*outcomes)
         self.assertEqual(result, (200, {}))
         self.assertEqual((calls, sleeps), (3, [5, 15]))
+
+    def test_body_timeout_after_an_answer_is_not_retried(self):
+        with self.assertRaises(TimeoutError):
+            self.run_get(SlowBody(b""), Response(b"{}"))
 
     def test_unreachable_after_every_attempt(self):
         outcomes = [TimeoutError("timed out")] * check_controls.ATTEMPTS

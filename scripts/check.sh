@@ -181,19 +181,24 @@ reset_dbs() {
   fi
 }
 
-# lane_tree NAME: a fresh copy of the working tree (tracked and untracked
-# files git does not ignore, uncommitted edits included) for a lane that
-# installs packages, runs npm ci or regenerates committed files, so that no two
-# lanes write the same paths. It has no .git.
-lane_tree() {
-  local dir="$tmp/tree-$1" f
-  mkdir -p "$dir" || return 1
+# snapshot: a copy of the working tree (tracked and untracked files git does
+# not ignore, uncommitted edits included), taken before any lane starts, so no
+# lane copies a file another lane is changing (go_quality rewrites go.mod).
+# lane_tree NAME: a fresh copy of the snapshot for a lane that installs
+# packages, runs npm ci or regenerates committed files, so that no two lanes
+# write the same paths. Neither has a .git.
+snapshot() {
+  local f
+  mkdir -p "$tmp/snapshot" || return 1
   (cd "$repo" && git ls-files -z -co --exclude-standard) |
     while IFS= read -r -d '' f; do
       if [[ -e "$repo/$f" || -L "$repo/$f" ]]; then printf '%s\0' "$f"; fi
     done |
-    (cd "$repo" && tar --null -T - -cf -) | tar -xf - -C "$dir" || return 1
-  echo "$dir"
+    (cd "$repo" && tar --null -T - -cf -) | tar -xf - -C "$tmp/snapshot"
+}
+lane_tree() {
+  cp -Rp "$tmp/snapshot" "$tmp/tree-$1" || return 1
+  echo "$tmp/tree-$1"
 }
 
 echo "==> setup: databases, pinned checkouts, Node 22 and 24"
@@ -539,6 +544,17 @@ step() {
   fi
 }
 
+# with_lock FILE FUNCTION ARGS...: runs FUNCTION (in this shell) while holding
+# an exclusive lock on FILE; perl holds the lock on an inherited descriptor and
+# the kernel drops it when the step's process exits, however it exits.
+with_lock() {
+  local file=$1
+  shift
+  exec 9>> "$file"
+  perl -MFcntl=:flock -e 'open(my $f, ">&=", 9) or die "lock: $!"; flock($f, LOCK_EX) or die "lock: $!"'
+  "$@"
+}
+
 lane_lints() {
   # dco and the hostname lint read git; the messaging guard scans every *.md
   # file, so it runs on a copy that has no build output, as CI's checkout.
@@ -581,14 +597,19 @@ lane_clean_room() {
 lane_interlock() {
   repo=$(lane_tree interlock) || return 1
   # A fresh tree would rebuild every Rust dependency: its rust/target is a
-  # cached directory, where cargo rebuilds only what changed.
-  mkdir -p "$cache/interlock-rust-target" && ln -s "$cache/interlock-rust-target" "$repo/rust/target"
-  step "artifact store interlock" artifact_interlock
+  # cached directory, where cargo rebuilds only what changed. The interlock
+  # runs the example binary from there after building it, so a second
+  # check.sh (another worktree) waits for the lock instead of replacing the
+  # binary mid-run; the lock is released when the step's process exits.
+  mkdir -p "$cache/interlock-rust-target" && ln -s "$cache/interlock-rust-target" "$repo/rust/target" || return 1
+  step "artifact store interlock" with_lock "$cache/interlock-rust-target.lock" artifact_interlock
 }
 lane_ts() {
   repo=$(lane_tree "ts$1") || return 1
   step "typescript (node $1)" ts_test "$1"
 }
+
+snapshot
 
 lanes=(lints go python:3.9 python:3.12 inspect_ai rust interop clean_room interlock ts:22 ts:24)
 pids=()
@@ -597,9 +618,13 @@ for spec in "${lanes[@]}"; do
   args=()
   if [[ "$spec" == *:* ]]; then args=("${spec#*:}"); fi
   (
+    # Not called in a condition: bash ignores errexit inside a function
+    # called from one, including each step's own set -e. A lane whose setup
+    # (its tree copy or databases) fails records that.
     set +e
-    # A lane whose setup (its tree copy or databases) fails records that.
-    "lane_${spec%%:*}" ${args[@]+"${args[@]}"} || echo "FAIL  $lane setup (exit $?)" >> "$tmp/results/$lane"
+    "lane_${spec%%:*}" ${args[@]+"${args[@]}"}
+    rc=$?
+    if ((rc != 0)); then echo "FAIL  $lane setup (exit $rc)" >> "$tmp/results/$lane"; fi
   ) > "$tmp/logs/$lane.log" 2>&1 < /dev/null &
   pids+=("$!")
   echo "started lane $lane"
