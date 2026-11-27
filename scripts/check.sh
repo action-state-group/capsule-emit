@@ -22,7 +22,10 @@
 # git, curl and network access. It fetches Node 22 and 24, and the pinned
 # agent-action-capsule and checkpointed-local-log commits the workflows name,
 # into $CAPSULE_EMIT_CHECK_CACHE (default ~/.cache/capsule-emit-check); Node comes
-# from $CHECK_NODE_DIST (default https://nodejs.org/dist).
+# from $CHECK_NODE_DIST (default https://nodejs.org/dist). With Colima, point
+# DOCKER_HOST at its socket and set
+# TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock, or the TypeScript
+# tests' container cannot mount the host's socket path.
 #
 # It runs the steps in parallel lanes (see "run" below), prints each step's
 # result and time and the full output of any lane that failed, and exits
