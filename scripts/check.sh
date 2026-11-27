@@ -605,7 +605,7 @@ lane_interlock() {
   # A fresh tree would rebuild every Rust dependency: its rust/target is a
   # cached directory, where cargo rebuilds only what changed. The interlock
   # runs the example binary from there after building it, so a second
-  # check.sh (another worktree) waits for the lock instead of replacing the
+  # check.sh (from another checkout) waits for the lock instead of replacing the
   # binary mid-run; the lock is released when the step's process exits.
   mkdir -p "$cache/interlock-rust-target" && ln -s "$cache/interlock-rust-target" "$repo/rust/target" || return 1
   step "artifact store interlock" with_lock "$cache/interlock-rust-target.lock" artifact_interlock
