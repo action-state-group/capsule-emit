@@ -526,17 +526,20 @@ a2a_controls() {
 
 mkdir -p "$tmp/logs" "$tmp/results"
 step() {
-  local name=$1 start=$SECONDS rc
+  local name=$1 start=$SECONDS rc errexit=0
   shift
   echo
   echo "==> $name"
+  # Lanes run with errexit off, so a failed step never ends the lane; keep
+  # the caller's setting rather than turning errexit on.
+  if [[ $- == *e* ]]; then errexit=1; fi
   set +e
   (
     set -euo pipefail
     "$@"
   )
   rc=$?
-  set -e
+  if ((errexit)); then set -e; fi
   if ((rc == 0)); then
     echo "ok    $name ($((SECONDS - start))s)" >> "$tmp/results/$lane"
   else
@@ -629,7 +632,12 @@ for spec in "${lanes[@]}"; do
   pids+=("$!")
   echo "started lane $lane"
 done
-for pid in "${pids[@]}"; do wait "$pid" || true; done
+# A lane that exits non-zero fails the check even if every step it recorded
+# passed (it may have stopped before recording the rest).
+for i in "${!lanes[@]}"; do
+  lane=${lanes[$i]/:/-}
+  wait "${pids[$i]}" || echo "FAIL  lane $lane exited $?" >> "$tmp/results/$lane"
+done
 
 failed=0
 for spec in "${lanes[@]}"; do
