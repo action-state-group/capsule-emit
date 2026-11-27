@@ -653,8 +653,11 @@ for spec in "${lanes[@]}"; do
   fi
 done
 
+# Keep every lane's log, passing ones included, until the next run.
+rm -rf "$cache/last-run" && cp -R "$tmp/logs" "$cache/last-run" || true
+
 echo
-echo "==> summary ($SECONDS s)"
+echo "==> summary ($SECONDS s; lane logs in $cache/last-run)"
 for spec in "${lanes[@]}"; do
   lane=${spec/:/-}
   cat "$tmp/results/$lane" 2> /dev/null || echo "FAIL  lane $lane recorded no step"
