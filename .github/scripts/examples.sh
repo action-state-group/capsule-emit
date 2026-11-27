@@ -106,5 +106,8 @@ if [[ $# -ne 2 ]]; then
   echo "usage: $0 --list | <entry> <python>" >&2
   exit 2
 fi
+# The demos and suites run from a temporary directory, so a relative
+# interpreter path is made absolute first (a bare name is found on PATH).
 py=$2
+if [[ "$py" == */* && "$py" != /* ]]; then py=$PWD/$py; fi
 run "$1"
