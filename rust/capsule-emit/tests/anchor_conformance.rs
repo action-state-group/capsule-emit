@@ -8,7 +8,8 @@
 //! Spins up `capsule-anchor` in its own documented insecure-ephemeral/
 //! in-memory test mode (`CAPSULE_ANCHOR_INSECURE_EPHEMERAL_KEY=1`,
 //! `CAPSULE_ANCHOR_INSECURE_IN_MEMORY=1` -- the same env vars
-//! `capsule-anchor/packages/tests/conftest.py` sets for its own test suite)
+//! `capsule-anchor/packages/tests/conftest.py` sets for its own test suite --
+//! and `CAPSULE_ANCHOR_PUBLIC_HOST=localhost`, which it needs to start)
 //! as a real HTTP server via `uvicorn`, so this exercises the actual wire
 //! protocol, not an in-process test client.
 //!
@@ -65,6 +66,8 @@ impl AnchorServer {
             .current_dir(&env.anchor_dir)
             .env("CAPSULE_ANCHOR_INSECURE_EPHEMERAL_KEY", "1")
             .env("CAPSULE_ANCHOR_INSECURE_IN_MEMORY", "1")
+            // capsule-anchor refuses to start without the host its DID names.
+            .env("CAPSULE_ANCHOR_PUBLIC_HOST", "localhost")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()

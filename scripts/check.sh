@@ -12,7 +12,9 @@
 #                             the hostname lint, the messaging guard and DCO.
 #   scripts/check.sh --full   Also what only main and the nightly ran: the A2A
 #                             controls against the live anchor (network GETs;
-#                             their offline tests run without --full too).
+#                             their offline tests run without --full too) and
+#                             the Python tests that need an optional SDK
+#                             (python.yml extras; installs eight SDKs).
 #
 # It cannot run the leak lint and neutrality scan (their vocabulary is a
 # repository secret) or the Rust tests on Linux; CI runs those.
@@ -53,7 +55,11 @@ aac_go_pin=$(sed -n 's/^ *ref: \([0-9a-f]\{40\}\).*/\1/p' "$repo/.github/workflo
 aac_ts_pin=$(sed -n 's/^export const AAC_COMMIT = "\([0-9a-f]\{40\}\)";$/\1/p' "$repo/ts/test/aac-pin.ts")
 cll_pin=$(sed -n 's/^ *ref: \([0-9a-f]\{40\}\).*python\/v.*/\1/p' "$repo/.github/workflows/producer-interop.yml")
 rust_toolchain=$(sed -n 's/^ *RUST_TOOLCHAIN: "\(.*\)"/\1/p' "$repo/.github/workflows/rust.yml")
-for v in aac_go_pin aac_ts_pin cll_pin rust_toolchain; do
+# rust.yml checks out these two at "ref:" on the line after "repository:".
+ext_pin() { sed -n "/repository: action-state-group\/$1\$/{n;s/^ *ref: \([0-9a-f]\{40\}\)\$/\1/p;}" "$repo/.github/workflows/rust.yml"; }
+scitt_cose_pin=$(ext_pin scitt-cose)
+anchor_pin=$(ext_pin capsule-anchor)
+for v in aac_go_pin aac_ts_pin cll_pin rust_toolchain scitt_cose_pin anchor_pin; do
   [[ -n "${!v}" ]] || { echo "check.sh: could not read $v from the workflows" >&2; exit 2; }
 done
 
@@ -286,6 +292,15 @@ print(a.__file__, a.DEFAULT_SPEC_VERSION)"
   "$py/bin/python" -m pytest -v -rs tests/test_inspect_ai_core.py tests/test_inspect_ai_eval_log.py tests/test_reconciliation.py
 }
 
+# python.yml extras, one entry (--full only).
+python_extras() {
+  local py
+  py=$(venv "extras-$1" 3.12)
+  export PATH="$py/bin:$PATH"
+  cd "$repo/python"
+  bash ../.github/scripts/python_extras_tests.sh "$1" "$py/bin/python"
+}
+
 # ts.yml, for one Node version.
 ts_test() {
   local node
@@ -327,9 +342,12 @@ rust_artifact_store() {
 
 # rust.yml conformance.
 rust_conformance() {
-  local ref
+  local ref scitt anchor
+  scitt=$(checkout scitt-cose https://github.com/action-state-group/scitt-cose.git "$scitt_cose_pin")
+  anchor=$(checkout capsule-anchor https://github.com/action-state-group/capsule-anchor.git "$anchor_pin")
   ref=$(venv rust-ref 3.12)
-  (cd "$repo/python" && "$ref/bin/pip" install -q .)
+  (cd "$repo/python" && "$ref/bin/pip" install -q . "$anchor")
+  "$ref/bin/python" -c "import scitt_cose, agent_action_capsule, capsule_emit, capsule_anchor.app, uvicorn"
   export AAC_PYTHON="$ref/bin/python"
   cd "$repo/rust"
   local scripts="$PWD/capsule-emit/tests/scripts" log="$tmp/conformance.log"
@@ -338,6 +356,8 @@ rust_conformance() {
   AAC_VERIFY_LEDGER_SCRIPT="$scripts/verify_rust_ledger.py" run chain_ledger_conformance
   AAC_CHECKPOINT_VERIFY_SCRIPT="$scripts/checkpoint_invariance_check.py" run checkpoint_invariance
   AAC_SETTLEMENT_VERIFY_SCRIPT="$scripts/verify_rust_settlement.py" run settlement_conformance
+  AAC_VERIFY_SCRIPT="$scripts/verify_rust_capsule.py" AAC_GO_VERIFY_DIR="$scitt/scitt-cose-go-verify" run cross_language_conformance
+  AAC_VERIFY_ANCHOR_RECEIPT_SCRIPT="$scripts/verify_anchor_receipt.py" CAPSULE_ANCHOR_DIR="$anchor/packages" run anchor_conformance
   if grep -i "skipping" "$log"; then
     echo "a conformance test skipped itself" >&2
     exit 1
@@ -581,6 +601,13 @@ lane_python() {
   use_dbs "py$1" || return 1
   step "python $1" python_test "$1"
 }
+lane_extras() {
+  local e
+  repo=$(lane_tree extras) || return 1
+  for e in $(bash "$repo/.github/scripts/python_extras_tests.sh" --list); do
+    step "python extras ($e)" python_extras "$e"
+  done
+}
 lane_inspect_ai() {
   repo=$(lane_tree inspect) || return 1
   step "python inspect-ai" python_inspect_ai
@@ -618,6 +645,7 @@ lane_ts() {
 snapshot
 
 lanes=(lints go python:3.9 python:3.12 inspect_ai rust interop clean_room interlock ts:22 ts:24)
+if ((full)); then lanes+=(extras); fi
 pids=()
 for spec in "${lanes[@]}"; do
   lane=${spec/:/-}

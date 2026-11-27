@@ -64,6 +64,8 @@ def test_committed_directory_has_only_the_two_top_level_fields():
 
 
 def test_valid_document_passes():
+    # Its order is case-insensitive: "beta log" sorts before "Gamma Ltd"
+    # although "G" < "b" in code points.
     assert validate_directory(_valid()) == []
 
 
@@ -86,11 +88,6 @@ def test_out_of_order_rows_fail():
     doc = _valid()
     doc["witnesses"].reverse()
     assert any("alphabetical" in e for e in validate_directory(doc))
-
-
-def test_order_is_case_insensitive():
-    # "beta log" sorts before "Gamma Ltd" although "G" < "b" in code points.
-    assert validate_directory(_valid()) == []
 
 
 def test_same_name_rows_order_by_endpoint():

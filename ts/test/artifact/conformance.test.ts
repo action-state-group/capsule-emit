@@ -74,7 +74,7 @@ register("sqlite", {
   durableIndex: true,
 });
 
-// Opt-in: needs Docker, like mysql.test.ts. Enable with ARTIFACT_MYSQL_TEST=1.
+// Opt-in: needs Docker. Enable with ARTIFACT_MYSQL_TEST=1.
 const mysqlEnabled = process.env.ARTIFACT_MYSQL_TEST === "1";
 describe.skipIf(!mysqlEnabled)("mysql conformance", () => {
   let container: Awaited<ReturnType<MySqlContainer["start"]>>;

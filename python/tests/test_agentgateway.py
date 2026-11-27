@@ -440,11 +440,6 @@ def test_planned_seal_failure_marks_outcome_unchained(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_agentgateway_module_importable():
-    """The adapter module imports without error."""
-    from capsule_emit.adapters import agentgateway  # noqa: F401
-
-
 def test_ext_mcp_pb2_importable():
     """Generated protobuf stubs import and basic message construction works."""
     req = ext_mcp_pb2.McpRequest(method="tools/call", service_names=["svc"])
