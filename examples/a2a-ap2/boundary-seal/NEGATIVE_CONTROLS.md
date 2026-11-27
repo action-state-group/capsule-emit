@@ -36,7 +36,9 @@ and never registers anything.
 ## The liveness check
 
 `check_controls.py` checks every control with GETs only, and exits 1 naming
-each one that changed:
+each one that changed. A GET that gets no HTTP answer (a timeout or a dropped
+connection) says nothing about the controls: it is tried up to 3 times, and if
+the anchor never answers the check exits 2, naming it unreachable.
 
 | Control | Expected |
 | --- | --- |

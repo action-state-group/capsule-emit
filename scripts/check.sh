@@ -11,7 +11,8 @@
 #                             artifact store interlock (jsonl, sqlite, mysql),
 #                             the hostname lint, the messaging guard and DCO.
 #   scripts/check.sh --full   Also what only main and the nightly ran: the A2A
-#                             controls against the live anchor (network GETs).
+#                             controls against the live anchor (network GETs;
+#                             their offline tests run without --full too).
 #
 # It cannot run the leak lint and neutrality scan (their vocabulary is a
 # repository secret) or the Rust tests on Linux; CI runs those.
@@ -21,12 +22,16 @@
 # git, curl and network access. It fetches Node 22 and 24, and the pinned
 # agent-action-capsule and checkpointed-local-log commits the workflows name,
 # into $CAPSULE_EMIT_CHECK_CACHE (default ~/.cache/capsule-emit-check); Node comes
-# from $CHECK_NODE_DIST (default https://nodejs.org/dist).
+# from $CHECK_NODE_DIST (default https://nodejs.org/dist). With Colima, point
+# DOCKER_HOST at its socket and set
+# TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock, or the TypeScript
+# tests' container cannot mount the host's socket path.
 #
-# It runs every step, prints each step's result and time, and exits non-zero
-# if any failed. It leaves the working tree as it found it, except for
-# ts/node_modules (built for Node 24, the last one run) and git-ignored build
-# output.
+# It runs the steps in parallel lanes (see "run" below), prints each step's
+# result and time and the full output of any lane that failed, and exits
+# non-zero if any step failed. It leaves the working tree as it found it, except
+# for git-ignored build output (rust/target, python/build). Docker needs room for
+# six database containers and the TypeScript tests' two (about 4 GB).
 set -euo pipefail
 
 usage() { echo "usage: scripts/check.sh [--full]" >&2; }
@@ -52,9 +57,11 @@ for v in aac_go_pin aac_ts_pin cll_pin rust_toolchain; do
   [[ -n "${!v}" ]] || { echo "check.sh: could not read $v from the workflows" >&2; exit 2; }
 done
 
-containers=()
 cleanup() {
-  if ((${#containers[@]})); then docker rm -f "${containers[@]}" > /dev/null 2>&1 || true; fi
+  local ids
+  ids=$(docker ps -aq --filter "name=^capsule-emit-check-$$-" 2> /dev/null) || true
+  # shellcheck disable=SC2086 # one container id per word
+  if [[ -n "$ids" ]]; then docker rm -f $ids > /dev/null 2>&1 || true; fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -123,21 +130,25 @@ venv() {
   echo "$dir"
 }
 
-# start_db NAME IMAGE ARGS...: starts a disposable container; prints host:port.
+# Every container is named capsule-emit-check-<pid>-<name>; the EXIT trap
+# removes them all, including those a lane started.
+db() { echo "capsule-emit-check-$$-$1"; }
+# start_db NAME IMAGE ARGS...: starts a disposable container.
 start_db() {
-  local name="capsule-emit-check-$$-$1" image=$2
+  local name image=$2
+  name=$(db "$1")
   shift 2
   docker run -d --rm --name "$name" "$@" "$image" > /dev/null
-  containers+=("$name")
 }
 db_port() {
   local port
-  port=$(docker port "capsule-emit-check-$$-$1" "$2" | head -n 1 | sed 's/.*://') || return 1
+  port=$(docker port "$(db "$1")" "$2" | head -n 1 | sed 's/.*://') || return 1
   [[ "$port" =~ ^[0-9]+$ ]] || { echo "check.sh: no host port for $1" >&2; return 1; }
   echo "$port"
 }
 wait_db() {
-  local name="capsule-emit-check-$$-$1" port=$2
+  local name port=$2
+  name=$(db "$1")
   shift 2
   for _ in $(seq 1 120); do
     if docker exec "$name" "$@" > /dev/null 2>&1 && (exec 3<> "/dev/tcp/127.0.0.1/$port") 2> /dev/null; then
@@ -149,17 +160,53 @@ wait_db() {
   docker logs "$name" >&2 || true
   return 1
 }
-mysql_exec() { docker exec "capsule-emit-check-$$-mysql" mysql -h127.0.0.1 -uroot -e "$1"; }
+# Lanes that use databases each have their own server, so their tests never
+# share a database: $db_lane names the lane's MySQL (and Postgres for go).
+start_mysql() {
+  start_db "$1-mysql" mysql:8.4 -p 127.0.0.1::3306 \
+    -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=capsule_storage_test
+}
+use_dbs() {
+  db_lane=$1
+  mysql_port=$(db_port "$1-mysql" 3306) || return 1
+  wait_db "$1-mysql" "$mysql_port" mysql -h127.0.0.1 -uroot -e "SELECT 1" || return 1
+  if [[ "$1" == go ]]; then
+    pg_port=$(db_port go-postgres 5432) || return 1
+    wait_db go-postgres "$pg_port" pg_isready -h 127.0.0.1 -U postgres || return 1
+  fi
+}
 reset_dbs() {
-  mysql_exec "DROP DATABASE IF EXISTS capsule_storage_test; CREATE DATABASE capsule_storage_test"
-  docker exec "capsule-emit-check-$$-postgres" psql -q -U postgres \
-    -c "DROP DATABASE IF EXISTS capsule_storage_test" -c "CREATE DATABASE capsule_storage_test"
+  docker exec "$(db "$db_lane-mysql")" mysql -h127.0.0.1 -uroot \
+    -e "DROP DATABASE IF EXISTS capsule_storage_test; CREATE DATABASE capsule_storage_test"
+  if [[ "$db_lane" == go ]]; then
+    docker exec "$(db go-postgres)" psql -q -U postgres \
+      -c "DROP DATABASE IF EXISTS capsule_storage_test" -c "CREATE DATABASE capsule_storage_test"
+  fi
+}
+
+# snapshot: a copy of the working tree (tracked and untracked files git does
+# not ignore, uncommitted edits included), taken before any lane starts, so no
+# lane copies a file another lane is changing (go_quality rewrites go.mod).
+# lane_tree NAME: a fresh copy of the snapshot for a lane that installs
+# packages, runs npm ci or regenerates committed files, so that no two lanes
+# write the same paths. Neither has a .git.
+snapshot() {
+  local f
+  mkdir -p "$tmp/snapshot" || return 1
+  (cd "$repo" && git ls-files -z -co --exclude-standard) |
+    while IFS= read -r -d '' f; do
+      if [[ -e "$repo/$f" || -L "$repo/$f" ]]; then printf '%s\0' "$f"; fi
+    done |
+    (cd "$repo" && tar --null -T - -cf -) | tar -xf - -C "$tmp/snapshot"
+}
+lane_tree() {
+  cp -Rp "$tmp/snapshot" "$tmp/tree-$1" || return 1
+  echo "$tmp/tree-$1"
 }
 
 echo "==> setup: databases, pinned checkouts, Node 22 and 24"
-start_db mysql mysql:8.4 -p 127.0.0.1::3306 \
-  -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=capsule_storage_test
-start_db postgres postgres:17 -p 127.0.0.1::5432 \
+for lane in go py3.9 py3.12 rust; do start_mysql "$lane"; done
+start_db go-postgres postgres:17 -p 127.0.0.1::5432 \
   -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=capsule_storage_test
 # The interlock's server is not on UTC, as in artifact-interlock.yml.
 start_db interlock mysql:8.4 -p 127.0.0.1::3306 \
@@ -169,11 +216,7 @@ aac_ts=$(checkout agent-action-capsule https://github.com/action-state-group/age
 cll=$(checkout checkpointed-local-log https://github.com/action-state-group/checkpointed-local-log.git "$cll_pin")
 node_home 22 > /dev/null
 node_home 24 > /dev/null
-mysql_port=$(db_port mysql 3306)
-pg_port=$(db_port postgres 5432)
 interlock_port=$(db_port interlock 3306)
-wait_db mysql "$mysql_port" mysql -h127.0.0.1 -uroot -e "SELECT 1"
-wait_db postgres "$pg_port" pg_isready -h 127.0.0.1 -U postgres
 wait_db interlock "$interlock_port" mysql -h127.0.0.1 -uroot -e "SELECT 1"
 
 export GOTOOLCHAIN=${GOTOOLCHAIN:-auto}
@@ -312,19 +355,12 @@ rust_package() {
 }
 
 # producer-interop.yml (main and nightly in CI). The vector generator rewrites
-# committed vectors under go/testdata; they are restored afterwards.
+# committed vectors under go/testdata, so it runs in its lane's own tree.
 producer_interop() {
   local py node24_home
-  # Not local: the EXIT trap that restores them runs after this function returns.
-  v04="go/testdata/capsule-emit/format4-interop" v05="go/testdata/capsule-emit/format4-interop-v05"
   py=$(venv interop 3.12)
   node24_home=$(node_home 24)
   cd "$repo"
-  mkdir -p "$tmp/vectors"
-  cp -a "$v04" "$tmp/vectors/v04" && cp -a "$v05" "$tmp/vectors/v05"
-  # shellcheck disable=SC2329 # called by the EXIT trap
-  restore() { rm -rf "${repo:?}/$v04" "${repo:?}/$v05"; cp -a "$tmp/vectors/v04" "$repo/$v04"; cp -a "$tmp/vectors/v05" "$repo/$v05"; }
-  trap restore EXIT
   export PATH="$py/bin:$node24_home/bin:$PATH"
   export AAC_REPO=$aac_go CAPSULE_EMIT_TS_ROOT="$repo/ts" CAPSULE_EMIT_GO_ROOT="$repo/go"
   export CLL_GO_ROOT="$cll/go" CLL_TS_ROOT="$cll/ts"
@@ -471,66 +507,163 @@ dco() {
   ((missing == 0))
 }
 
-# a2a-controls.yml (nightly in CI; --full only): GETs against the live anchor.
+# a2a-controls.yml: the offline tests always; the GETs against the live anchor
+# (nightly in CI) with --full only.
 a2a_controls() {
   local py
   py=$(venv a2a 3.12)
   cd "$repo"
-  "$py/bin/python" examples/a2a-ap2/boundary-seal/check_controls.py
+  "$py/bin/python" -m unittest discover -s examples/a2a-ap2/boundary-seal -p "test_*.py" -v
+  if ((full)); then
+    "$py/bin/python" examples/a2a-ap2/boundary-seal/check_controls.py
+  fi
 }
 
 # ---- run --------------------------------------------------------------------
+#
+# Lanes run at the same time; the steps in a lane run in order. Lanes that only
+# read the working tree run in it (go: go_quality restores go.mod and go.sum
+# before the tests start; rust: cargo locks its target directory). Every other
+# lane works in its own copy (lane_tree). Each lane's output goes to its own log,
+# printed in full when one of its steps fails.
 
-failed=()
-summary=()
+mkdir -p "$tmp/logs" "$tmp/results"
 step() {
-  local name=$1 start=$SECONDS rc
+  local name=$1 start=$SECONDS rc errexit=0
   shift
   echo
   echo "==> $name"
+  # Lanes run with errexit off, so a failed step never ends the lane; keep
+  # the caller's setting rather than turning errexit on.
+  if [[ $- == *e* ]]; then errexit=1; fi
   set +e
   (
     set -euo pipefail
     "$@"
   )
   rc=$?
-  set -e
+  if ((errexit)); then set -e; fi
   if ((rc == 0)); then
-    summary+=("ok    $name ($((SECONDS - start))s)")
+    echo "ok    $name ($((SECONDS - start))s)" >> "$tmp/results/$lane"
   else
-    summary+=("FAIL  $name ($((SECONDS - start))s, exit $rc)")
-    failed+=("$name")
+    echo "FAIL  $name ($((SECONDS - start))s, exit $rc)" >> "$tmp/results/$lane"
   fi
 }
 
-step "dco" dco
-step "hostname lint" hostname_lint
-step "messaging guard" messaging_guard
-step "go quality" go_quality
-step "go test (coverage)" go_test
-step "go race" go_race
-step "python 3.9" python_test 3.9
-step "python 3.12" python_test 3.12
-step "python inspect-ai" python_inspect_ai
-step "rust test" rust_test
-step "rust artifact store" rust_artifact_store
-step "rust conformance" rust_conformance
-step "rust package" rust_package
-step "producer interoperability" producer_interop
-step "clean-room install" clean_room
-step "artifact store interlock" artifact_interlock
-# Node 24 last, so ts/node_modules is left built for the Node CI uses.
-step "typescript (node 22)" ts_test 22
-step "typescript (node 24)" ts_test 24
-if ((full)); then
-  step "a2a controls (live anchor)" a2a_controls
-fi
+# with_lock FILE FUNCTION ARGS...: runs FUNCTION (in this shell) while holding
+# an exclusive lock on FILE; perl holds the lock on an inherited descriptor and
+# the kernel drops it when the step's process exits, however it exits.
+with_lock() {
+  local file=$1
+  shift
+  exec 9>> "$file"
+  perl -MFcntl=:flock -e 'open(my $f, ">&=", 9) or die "lock: $!"; flock($f, LOCK_EX) or die "lock: $!"'
+  "$@"
+}
+
+lane_lints() {
+  # dco and the hostname lint read git; the messaging guard scans every *.md
+  # file, so it runs on a copy that has no build output, as CI's checkout.
+  step "dco" dco
+  step "hostname lint" hostname_lint
+  repo=$(lane_tree lints) || return 1
+  step "messaging guard" messaging_guard
+  step "a2a controls" a2a_controls
+}
+lane_go() {
+  step "go quality" go_quality
+  use_dbs go || return 1
+  step "go test (coverage)" go_test
+  step "go race" go_race
+}
+lane_python() {
+  repo=$(lane_tree "py$1") || return 1
+  use_dbs "py$1" || return 1
+  step "python $1" python_test "$1"
+}
+lane_inspect_ai() {
+  repo=$(lane_tree inspect) || return 1
+  step "python inspect-ai" python_inspect_ai
+}
+lane_rust() {
+  use_dbs rust || return 1
+  step "rust test" rust_test
+  step "rust artifact store" rust_artifact_store
+  step "rust conformance" rust_conformance
+  step "rust package" rust_package
+}
+lane_interop() {
+  repo=$(lane_tree interop) || return 1
+  step "producer interoperability" producer_interop
+}
+lane_clean_room() {
+  repo=$(lane_tree cleanroom) || return 1
+  step "clean-room install" clean_room
+}
+lane_interlock() {
+  repo=$(lane_tree interlock) || return 1
+  # A fresh tree would rebuild every Rust dependency: its rust/target is a
+  # cached directory, where cargo rebuilds only what changed. The interlock
+  # runs the example binary from there after building it, so a second
+  # check.sh (from another checkout) waits for the lock instead of replacing the
+  # binary mid-run; the lock is released when the step's process exits.
+  mkdir -p "$cache/interlock-rust-target" && ln -s "$cache/interlock-rust-target" "$repo/rust/target" || return 1
+  step "artifact store interlock" with_lock "$cache/interlock-rust-target.lock" artifact_interlock
+}
+lane_ts() {
+  repo=$(lane_tree "ts$1") || return 1
+  step "typescript (node $1)" ts_test "$1"
+}
+
+snapshot
+
+lanes=(lints go python:3.9 python:3.12 inspect_ai rust interop clean_room interlock ts:22 ts:24)
+pids=()
+for spec in "${lanes[@]}"; do
+  lane=${spec/:/-}
+  args=()
+  if [[ "$spec" == *:* ]]; then args=("${spec#*:}"); fi
+  (
+    # Not called in a condition: bash ignores errexit inside a function
+    # called from one, including each step's own set -e. A lane whose setup
+    # (its tree copy or databases) fails records that.
+    set +e
+    "lane_${spec%%:*}" ${args[@]+"${args[@]}"}
+    rc=$?
+    if ((rc != 0)); then echo "FAIL  $lane setup (exit $rc)" >> "$tmp/results/$lane"; fi
+  ) > "$tmp/logs/$lane.log" 2>&1 < /dev/null &
+  pids+=("$!")
+  echo "started lane $lane"
+done
+# A lane that exits non-zero fails the check even if every step it recorded
+# passed (it may have stopped before recording the rest).
+for i in "${!lanes[@]}"; do
+  lane=${lanes[$i]/:/-}
+  wait "${pids[$i]}" || echo "FAIL  lane $lane exited $?" >> "$tmp/results/$lane"
+done
+
+failed=0
+for spec in "${lanes[@]}"; do
+  lane=${spec/:/-}
+  if [[ ! -s "$tmp/results/$lane" ]] || grep -q '^FAIL' "$tmp/results/$lane"; then
+    failed=$((failed + 1))
+    echo
+    echo "==> lane $lane failed; its output:"
+    cat "$tmp/logs/$lane.log"
+  fi
+done
+
+# Keep every lane's log, passing ones included, until the next run.
+rm -rf "$cache/last-run" && cp -R "$tmp/logs" "$cache/last-run" || true
 
 echo
-echo "==> summary ($SECONDS s)"
-printf '%s\n' "${summary[@]}"
-if ((${#failed[@]})); then
-  echo "check.sh: ${#failed[@]} step(s) failed" >&2
+echo "==> summary ($SECONDS s; lane logs in $cache/last-run)"
+for spec in "${lanes[@]}"; do
+  lane=${spec/:/-}
+  cat "$tmp/results/$lane" 2> /dev/null || echo "FAIL  lane $lane recorded no step"
+done
+if ((failed)); then
+  echo "check.sh: $failed lane(s) failed" >&2
   exit 1
 fi
 echo "check.sh: all steps passed"

@@ -53,10 +53,10 @@ python examples/quickstart_demo.py # the 5-minute acceptance demo
 
 ## Before you push
 
-Before every push: `scripts/check.sh` (about 25 min on an Apple-silicon
-Mac). Before pushing a change to `examples/a2a-ap2/boundary-seal/`, also
-`scripts/check.sh --full` (about 25 min; it also needs network access to
-the live anchor). Both need Docker, Go, rustup and uv; the script's header
+Before every push: `scripts/check.sh` (about 4 min on an 18-core Apple-silicon
+Mac; its steps run in parallel lanes). Before pushing a change to
+`examples/a2a-ap2/boundary-seal/`, also `scripts/check.sh --full` (the same,
+plus network access to the live anchor). Both need Docker, Go, rustup and uv; the script's header
 lists every prerequisite and what it cannot run locally. Pull requests run only
 the fast set; producer interoperability, the clean-room install, the artifact
 store interlock, TypeScript on Node 22 and the Rust tests on macOS run nightly

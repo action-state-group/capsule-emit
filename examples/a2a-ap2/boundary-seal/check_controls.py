@@ -14,7 +14,11 @@ Controls:
   fresh negative   a random 32-byte id drawn for this run is absent (404).
 
 Exits 1, naming each control that changed, so a negative that starts passing
-fails the check instead of going unnoticed.
+fails the check instead of going unnoticed. A request that gets no HTTP answer
+(a timeout or a dropped connection) is a fault of the network or the anchor,
+not a changed control: it is tried again, at most ATTEMPTS times in all, each
+failure printed, and if none answers the check exits 2, naming the anchor as
+unreachable. An HTTP answer, whatever its status, is never retried.
 
 Usage: python check_controls.py [--anchor https://anchor.agentactioncapsule.org]
 """
@@ -24,19 +28,38 @@ import argparse
 import json
 import secrets
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ATTEMPTS = 3
+BACKOFF_SECONDS = (5, 15)
 
 
-def get(url: str) -> tuple[int, dict]:
-    try:
-        with urllib.request.urlopen(url, timeout=30) as resp:
+class Unreachable(Exception):
+    """No attempt got an HTTP answer from the anchor."""
+
+
+def get(url: str, sleep=time.sleep) -> tuple[int, dict]:
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            # urlopen returns once the status line and headers have arrived.
+            resp = urllib.request.urlopen(url, timeout=30)
+        except urllib.error.HTTPError as err:
+            return err.code, {}
+        except (urllib.error.URLError, OSError) as err:
+            # No HTTP answer: URLError wraps DNS and connection failures;
+            # TimeoutError and ConnectionResetError are OSErrors.
+            print(f"attempt {attempt}/{ATTEMPTS}: no answer from {url}: {err}", file=sys.stderr)
+            if attempt == ATTEMPTS:
+                raise Unreachable(url) from err
+            sleep(BACKOFF_SECONDS[attempt - 1])
+            continue
+        # The anchor answered: a failure reading the body is not retried.
+        with resp:
             return resp.status, json.loads(resp.read() or b"{}")
-    except urllib.error.HTTPError as err:
-        return err.code, {}
 
 
 def main() -> int:
@@ -80,5 +103,13 @@ def main() -> int:
     return 1 if failures else 0
 
 
+def run() -> None:
+    try:
+        sys.exit(main())
+    except Unreachable as err:
+        print(f"FAIL: the anchor did not answer {err} after {ATTEMPTS} attempts", file=sys.stderr)
+        sys.exit(2)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    run()

@@ -27,6 +27,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: what the check retries (offline)
+        run: python -m unittest discover -s examples/a2a-ap2/boundary-seal -p "test_*.py" -v
+
       - name: check the positive and negative controls
         run: python examples/a2a-ap2/boundary-seal/check_controls.py
 
