@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-# The examples' demos and test suites (scripts/examples.sh lists them), each in
-# its own fresh install.
+# The examples' demos and test suites, each in its own fresh install, one
+# matrix row per entry of .github/scripts/examples.sh --list
+# (.github/tests/test_examples_matrix.py checks that).
 name: Examples
 
 # Not on pull requests: scripts/check.sh runs this before push (CONTRIBUTING.md).
@@ -12,7 +13,7 @@ on:
     paths:
       - "python/**"
       - "examples/**"
-      - "scripts/examples.sh"
+      - ".github/scripts/examples.sh"
       - ".github/workflows/examples.yml"
   schedule:
     - cron: "41 6 * * *"
@@ -28,23 +29,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  list:
-    runs-on: ubuntu-latest
-    outputs:
-      entries: ${{ steps.list.outputs.entries }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - id: list
-        run: echo "entries=$(scripts/examples.sh json)" >> "$GITHUB_OUTPUT"
-
   run:
-    needs: list
+    name: example (${{ matrix.entry }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        entry: ${{ fromJSON(needs.list.outputs.entries) }}
+        entry: [agno, strands, llamaindex, litellm, openai-agents, adk, langchain, msft-agent-framework, nemo-guardrails, goose, aauth-capsule-interop, nanda-tax-audit, a2a-task-evidence]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -52,18 +44,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: ${{ matrix.entry }}
+      - name: install and run
         env:
-          PYTHON: python
           ENTRY: ${{ matrix.entry }}
-        run: scripts/examples.sh run "$ENTRY"
+        run: bash .github/scripts/examples.sh "$ENTRY" python
 
   report-failure:
     # A red run on main or a nightly opens or comments on one ci-red issue
     # (asg-agent-team-ethan#409). A cancelled run is not reported.
     name: report a red main run
     if: failure() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule')
-    needs: [list, run]
+    needs: [run]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

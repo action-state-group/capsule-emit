@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 # The examples that render evidence or carry a test suite, each with what it
-# installs and what it runs. The Examples workflow and scripts/check.sh both run
-# them from this list, so the two cannot drift.
+# installs and what it runs.
 #
-#   scripts/examples.sh list         the entry names, one per line
-#   scripts/examples.sh json         the same, as a JSON array (the workflow's matrix)
-#   scripts/examples.sh run ENTRY    install ENTRY into $PYTHON (default: python3)
-#                                    and run it; give each entry a fresh environment
+#   examples.sh --list            print the entry names
+#   examples.sh <entry> <python>  install the entry into <python>'s environment
+#                                 and run it; give each entry a fresh environment
+#
+# examples.yml runs one entry per matrix row; scripts/check.sh runs every entry,
+# one lane each. Add an entry here and to that matrix together
+# (.github/tests/test_examples_matrix.py checks that).
 #
 # Each demo and suite runs from a fresh temporary copy of its directory, so
 # nothing it writes (ledgers, keys, traces) lands in the working tree. Each runs
@@ -16,8 +18,7 @@
 # CAPSULE_WITNESS=off; the A2A suite witnesses against its own loopback server).
 set -euo pipefail
 
-repo=$(cd "$(dirname "$0")/.." && pwd)
-py=${PYTHON:-python3}
+repo=$(cd "$(dirname "$0")/../.." && pwd)
 
 entries=(
   agno strands llamaindex litellm openai-agents adk langchain
@@ -25,7 +26,6 @@ entries=(
   aauth-capsule-interop nanda-tax-audit a2a-task-evidence
 )
 
-usage() { echo "usage: scripts/examples.sh list | json | run ENTRY" >&2; }
 
 install() { "$py" -m pip install -q "$@"; }
 
@@ -92,18 +92,19 @@ run() {
       suite examples/a2a-task-evidence
       ;;
     *)
-      echo "examples.sh: no entry $1 (scripts/examples.sh list)" >&2
+      echo "examples.sh: no entry $1 (examples.sh --list)" >&2
       return 2
       ;;
   esac
 }
 
-case "${1:-}" in
-  list) printf '%s\n' "${entries[@]}" ;;
-  json) printf '%s\n' "${entries[@]}" | "$py" -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))' ;;
-  run)
-    [[ $# -eq 2 ]] || { usage; exit 2; }
-    run "$2"
-    ;;
-  *) usage; exit 2 ;;
-esac
+if [[ "${1:-}" == --list ]]; then
+  printf '%s\n' "${entries[@]}"
+  exit 0
+fi
+if [[ $# -ne 2 ]]; then
+  echo "usage: $0 --list | <entry> <python>" >&2
+  exit 2
+fi
+py=$2
+run "$1"

@@ -9,7 +9,7 @@
 #                             Rust (test, artifact store, conformance, package),
 #                             producer interoperability, clean-room install, the
 #                             artifact store interlock (jsonl, sqlite, mysql),
-#                             every example in scripts/examples.sh, the
+#                             every example in .github/scripts/examples.sh, the
 #                             hostname lint, the messaging guard and DCO.
 #   scripts/check.sh --full   Also what only main and the nightly ran: the A2A
 #                             controls against the live anchor (network GETs;
@@ -540,11 +540,11 @@ a2a_controls() {
   fi
 }
 
-# examples.yml, for one entry of scripts/examples.sh.
+# examples.yml, for one entry of .github/scripts/examples.sh.
 example() {
   local py
   py=$(venv "example-$1" 3.12)
-  PYTHON="$py/bin/python" "$repo/scripts/examples.sh" run "$1"
+  bash "$repo/.github/scripts/examples.sh" "$1" "$py/bin/python"
 }
 
 # ---- run --------------------------------------------------------------------
@@ -658,7 +658,7 @@ lane_ts() {
 snapshot
 
 lanes=(lints go python:3.9 python:3.12 inspect_ai rust interop clean_room interlock ts:22 ts:24)
-while IFS= read -r entry; do lanes+=("example:$entry"); done < <("$repo/scripts/examples.sh" list)
+while IFS= read -r entry; do lanes+=("example:$entry"); done < <(bash "$repo/.github/scripts/examples.sh" --list)
 if ((full)); then lanes+=(extras); fi
 pids=()
 for spec in "${lanes[@]}"; do

@@ -8,7 +8,7 @@ All notable changes to `capsule-emit` are documented here. The format follows
 
 ### Fixed (examples): the listener demos render evidence again, and a workflow runs every example
 
-The agno, strands, llamaindex, litellm, openai-agents, adk and langchain (and LangGraph) demos called `capsule-emit evidence` with neither `--base-url` nor `--no-viewer-link`, which the command refuses, so each ended in `DEMO FAILED`; they now pass `--no-viewer-link`. `examples/nanda-tax-audit` seals its auditor's fines as decimal strings, since a JSON float in a digest-bearing field is refused. The new Examples workflow (on main, nightly and on dispatch) runs every demo and example test suite listed in `scripts/examples.sh` in its own fresh install, and `scripts/check.sh` runs the same list.
+The agno, strands, llamaindex, litellm, openai-agents, adk and langchain (and LangGraph) demos called `capsule-emit evidence` with neither `--base-url` nor `--no-viewer-link`, which the command refuses, so each ended in `DEMO FAILED`; they now pass `--no-viewer-link`. `examples/nanda-tax-audit` seals its auditor's fines as decimal strings, since a JSON float in a digest-bearing field is refused. The new Examples workflow (on main, nightly and on dispatch) runs every demo and example test suite listed in `.github/scripts/examples.sh` in its own fresh install, and `scripts/check.sh` runs the same list.
 ([#491](https://github.com/action-state-group/capsule-emit/issues/491))
 
 ### Removed (examples): `examples/nanda-trust-capsule`
